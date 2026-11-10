@@ -1,8 +1,11 @@
 // ヘッダーの同期の表示（docs/SPEC.md の 18.4）。押すと設定の「同期」へ。NS の src/ui/SyncIndicator.tsx から。
 // 段階0の仮: 同期のエンジン（NS の src/sync/engine.ts）と司令塔の同期の部分は段階1で写す。それまでは同期の状態（useSyncView）を
-// だれも入れないので、何も出さない。段階1で、同期の司令塔が今の状態を useSyncView に入れる
+// だれも入れないので、段階0ではどの画面にも何も出さない（段階0は同期しないので、出す状態が無い）。段階1でやること:
+// - 同期の司令塔（src/sync/controller.ts）が今の状態を useSyncView に入れる（8つの状態の言葉と色は下の syncBadge のまま使う）
+// - S は押すと小さな窓（PopupMenu）に詳しい字と［今すぐ同期］を出す（18.4）。今はどの幅も設定の「同期」へのリンク
 import { Link } from 'react-router-dom'
 import { create } from 'zustand'
+import { CloudIcon, CloudOffIcon } from './icons'
 import './sync.css'
 
 /** 同期の状態（docs/SPEC.md の 18.4 の表の8つ） */
@@ -64,27 +67,8 @@ export function SyncIndicator() {
       data-tone={badge.tone}
       style={view.kind === 'sending' ? { opacity: 0.6 } : undefined}
     >
-      <SyncCloudIcon off={badge.off} />
+      {badge.off ? <CloudOffIcon /> : <CloudIcon />}
       <span className="hide-mobile">{badge.label}</span>
     </Link>
-  )
-}
-
-/** 雲（止まっている時は斜線付き）。線のアイコンの CloudIcon・CloudOffIcon（docs/SPEC.md の 4.10）ができたら、そちらに替える */
-function SyncCloudIcon({ off }: { off: boolean }) {
-  return (
-    <svg
-      className="icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.1 4.5 4.5 0 0 0 7 18Z" />
-      {off ? <path d="m4 4 16 16" /> : null}
-    </svg>
   )
 }

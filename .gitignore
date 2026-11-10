@@ -8,3 +8,5 @@ e2e/artifacts
 .claude/worktrees
 .firebase
 test-results
+playwright-report
+blob-report

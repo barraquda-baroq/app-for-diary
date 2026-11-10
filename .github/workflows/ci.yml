@@ -1,0 +1,52 @@
+name: CI
+
+# 型の確かめ・単体テスト・ビルド・E2E（docs/SPEC.md の 2.10・21. の段階0）。NS の .github/workflows/ci.yml から、
+# iPhone・Android のアプリ（android・ios の仕事）・GitHub Pages の公開・Claude 用のコネクタの部分を外した物。
+# 同期のテスト（Firebase エミュレーター。Java 21 が要る）は段階1で足す（NS の test:sync・test:e2e:sync の段と同じ形）。
+on:
+  push:
+    branches: [main, master, 'claude/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: 型チェック
+        run: npm run typecheck
+      - name: 整形の確かめ（Prettier）
+        run: npm run format:check
+      # src/ の単体テストと、scripts/ のテスト（vite.config.ts の埋め込み・manifest・アイコン・書体のライセンス、公開の前の確かめ）
+      - name: 単体テスト
+        run: npm test
+      - name: ビルド
+        run: npm run build
+      # 公開するビルドに、テスト用の入口（ログインの印・開発用フック window.__ds・エミュレーターのプロジェクト名）が残っていない
+      # （docs/SPEC.md の 2.10。ビルドした物で印を置いても効かないことは e2e/offline.spec.ts でも確かめる）
+      - name: ビルドにテスト用の入口が無いことの確かめ
+        run: "! grep -rqE 'diary-studio:test-auth|fakeSignIn|showUpdateBanner|__ds|demo-diary-studio' dist/"
+      - name: E2E テスト用ブラウザ
+        run: npx playwright install --with-deps chromium webkit
+      # PC 1400×900・Pixel 7 に、E2E_WEBKIT で iPhone 14（WebKit）を足す（playwright.config.ts）。
+      # E2E_PREVIEW: 上でビルドした dist/ を vite preview でも出し、オフラインで開けて書体も出ることを確かめる（e2e/offline.spec.ts）
+      - name: E2E テスト
+        run: npm run test:e2e
+        env:
+          E2E_WEBKIT: '1'
+          E2E_PREVIEW: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results
+          path: e2e/artifacts
+          retention-days: 7

@@ -9,6 +9,10 @@ interface DevHook {
   fakeSignIn: () => void
   /** ログインしているアカウント（同期のテスト用） */
   syncUid: () => string | null
+  /** 新しい版を受け取った時の帯（本物の UpdateBanner）を出す */
+  showUpdateBanner: () => void
+  /** showUpdateBanner で出した帯の［更新する］が押されたか */
+  updateApplied: () => boolean
 }
 
 declare global {
@@ -32,6 +36,15 @@ export async function openApp(page: Page, hash = '/', { signedIn = true }: { sig
     }, hash)
   }
   await expect(page.getByText('読み込み中…')).toHaveCount(0)
+}
+
+/**
+ * ビルドした物（dist/）を出す vite preview の URL（E2E_PREVIEW=1 の時だけ playwright.config.ts が立ち上げる）。
+ * ポートは開発サーバー（E2E_PORT、無ければ 5174）の +100
+ */
+export function previewURL(): string | null {
+  if (!process.env.E2E_PREVIEW) return null
+  return `http://localhost:${Number(process.env.E2E_PORT ?? 5174) + 100}`
 }
 
 /** 横にはみ出していない（横スクロールが出ない） */

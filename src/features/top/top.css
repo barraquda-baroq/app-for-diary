@@ -1,0 +1,584 @@
+/* ===== トップ画面（docs/SPEC.md の 3.4〜3.7）: 段階0の空の形 =====
+   色・大きさは src/styles.css のトークン（docs/SPEC.md の 4.5・4.8）だけを使う */
+
+/* ---------- L（900px 以上。3.4）: 左にカレンダーの領域、右に右の列（300px）。間は 24px ----------
+   ページ全体はスクロールせず、カレンダーの領域と右の列はそれぞれの中だけでスクロールする（高さは 100dvh − ヘッダー − 上下の余白） */
+.top-wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--side-w);
+  gap: 24px;
+  height: calc(100vh - var(--header-h) - var(--safe-top));
+  height: calc(100dvh - var(--header-h) - var(--safe-top));
+  padding: 16px max(var(--gutter), var(--safe-right)) calc(16px + var(--safe-bottom)) max(var(--gutter), var(--safe-left));
+  overflow: hidden;
+}
+
+/* 新しい版の帯（.banner。docs/SPEC.md の 2.8）が上に出ている間も、L のトップはページ全体をスクロールさせない（帯の分だけ縮める）。
+   L のトップ（.top-wide）がある時だけに絞る: S・M のトップや設定の画面はページ全体がスクロールするので、.app を 1画面の高さに
+   縮めると、sticky のヘッダー（.app の直下）が 1画面より下へスクロールした時に上へ消えてしまう（3.3「上に固定」） */
+.app:has(> .banner):has(> .top-wide) {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.app:has(> .banner) > .top-wide {
+  flex: 1 1 0;
+  height: auto;
+}
+
+.top-wide .top-calendar,
+.top-side {
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.top-wide .top-calendar {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 右の列: 上から Routine List → Task List → Favorite List。中の左右の余白は 16px、リストどうしの間は 20px（4.8） */
+.top-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--list-gap);
+  padding: 0 var(--side-pad) 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---------- S・M（3.5）: 切り替えの列と、カレンダー → Routine → Task → Favorite の縦の積み ---------- */
+.top-stacked {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 切り替えの列（高さ 40px。ヘッダーの下に固定。押すとその先頭へスクロールする） */
+.top-switcher {
+  position: sticky;
+  top: calc(var(--header-h) + var(--safe-top));
+  z-index: 15;
+  display: flex;
+  align-items: stretch;
+  height: var(--switcher-h);
+  padding: 0 max(8px, var(--safe-right)) 0 max(8px, var(--safe-left));
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(8px);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* 幅は字の幅から決め、余りを等しく分ける（数が2〜3桁になっても「Favorite 12」「Routine 120」が 360px で切れないよう、
+   短い「Task」「カレンダー」の方が狭くなる。3.2・3.5） */
+.top-switcher-btn {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: inset 0 -2px 0 transparent;
+  transition:
+    color var(--dur-hover),
+    box-shadow var(--dur-hover);
+}
+
+/* 「カレンダー｜Routine｜Task｜Favorite」の区切りの線 */
+.top-switcher-btn + .top-switcher-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--rule);
+}
+
+.top-switcher-btn:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .top-switcher-btn:hover {
+    color: var(--text);
+  }
+}
+
+/* 表示中の区切り（スクロールの位置で決め、押した直後は押した物） */
+.top-switcher-btn[aria-current='true'] {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.top-switcher-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-synthesis-weight: none;
+}
+
+.top-switcher-name.is-ja {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.top-switcher-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* 積んだ区切り: 左右の余白 16px、区切りの間は 24px（3.5） */
+.top-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px max(var(--gutter), var(--safe-right)) calc(32px + var(--safe-bottom)) max(var(--gutter), var(--safe-left));
+}
+
+/* 押した区切りの先頭までスクロールできるよう、いちばん下に足す空き（高さは TopPage.tsx が足りない分だけ入れる） */
+.top-stack-spacer {
+  flex: none;
+  height: 0;
+}
+
+/* 切り替えの列で飛んだ時に、見出しがヘッダーと切り替えの列の下に隠れないように */
+.top-pane {
+  scroll-margin-top: calc(var(--header-h) + var(--safe-top) + var(--switcher-h) + 12px);
+}
+
+.top-stacked .top-calendar {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* ---------- カレンダーの領域と操作の列（3.7） ---------- */
+.cal {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.cal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cal-toolbar-left,
+.cal-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cal-toolbar-left {
+  gap: 12px;
+}
+
+/* 右の物は右寄せ（3.7）。カレンダーの領域が狭くて（L の 900〜1080px ほど・M）2行に折り返した時も、2行目の右の端に寄せる */
+.cal-toolbar-right {
+  margin-left: auto;
+}
+
+/* 大きく淡い数字（等幅 300・--numeral。L・M 44px、S 32px は src/styles.css の .numeral）と、期間の小さな表記（2行） */
+.cal-period {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.cal-period:focus {
+  outline: none;
+}
+
+.cal-period:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+/* 1桁と2桁で ‹ › の位置が動かないように */
+.cal-numeral {
+  min-width: 2ch;
+}
+
+.cal-period-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  /* 等幅 11px の11字（「11.08–11.14」）と字間が入る幅。週を移っても ‹ › の位置が動かないように */
+  min-width: 12.5ch;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* そのモードに無いボタンは消すが、ほかのボタンの位置は動かさない（3.7） */
+.cal-tool-hidden {
+  visibility: hidden;
+}
+
+.cal-add .icon,
+.cal-taskview .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------- カレンダーの中（段階0の仮の絵）。マンスリーは空のマス目（9.1） ---------- */
+.cal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 16px 16px;
+}
+
+.cal-stage-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.cal-empty {
+  margin-top: 16px;
+}
+
+.cal-month {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.cal-month-head,
+.cal-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+/* 曜日の行（等幅 11px・500・大文字。日曜は --sun、土曜は --sat。左寄せで左の余白 8px） */
+.cal-month-head {
+  padding: 12px 0 6px;
+}
+
+.cal-weekday {
+  padding-left: 8px;
+  color: var(--text-muted);
+}
+
+.cal-weekday.is-sun {
+  color: var(--sun);
+}
+
+.cal-weekday.is-sat {
+  color: var(--sat);
+}
+
+/* マス: 上に 2px の --rule-strong、左に 1px の --rule（いちばん左の列を除く）。中の余白は上下 6px・左右 8px。
+   L・M の高さは 88px 以上で、領域の高さを行の数で分ける */
+.cal-month-grid {
+  flex: 1 1 auto;
+  grid-auto-rows: minmax(88px, 1fr);
+}
+
+.cal-cell {
+  min-width: 0;
+  padding: 6px 8px;
+  border-top: 2px solid var(--rule-strong);
+}
+
+.cal-cell:not(:nth-child(7n + 1)) {
+  border-left: 1px solid var(--rule);
+}
+
+.cal-date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.cal-cell.is-sun .cal-date {
+  color: var(--sun);
+}
+
+.cal-cell.is-sat .cal-date {
+  color: var(--sat);
+}
+
+/* 前後の月の日は日付だけを --numeral で（不透明度は使わない。4.5 の例外） */
+.cal-cell.is-outside .cal-date {
+  color: var(--numeral);
+}
+
+/* 今日は日付を直径 22px の丸に入れ、太さ 600（7.3。地・字・輪は src/styles.css の .today-mark） */
+.cal-cell .cal-date.today-mark {
+  width: 22px;
+  height: 22px;
+  margin: -4px 0 0 -5px;
+  border-radius: var(--radius-pill);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+/* S のマスは 56px 以上・日付 12px */
+.cal-month.is-compact .cal-month-grid {
+  grid-auto-rows: minmax(56px, auto);
+}
+
+.cal-month.is-compact .cal-cell {
+  padding: 6px 4px;
+}
+
+.cal-month.is-compact .cal-weekday {
+  padding-left: 4px;
+}
+
+.cal-month.is-compact .cal-date {
+  font-size: 12px;
+}
+
+.cal-month.is-compact .cal-date.today-mark {
+  margin: -4px 0 0 -4px;
+}
+
+/* ---------- 3つのリストの空の形（3.6） ---------- */
+.list-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* S・M の縦に積んだリストは、1つずつ面に載せる */
+.list-panel.is-stacked {
+  padding: 0 var(--side-pad);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* 見出し（高さ 44px）: 英語の名前＋下に小さく日本語、右にまだ済んでいない数と畳む・開くの山形。見出しを押しても畳む・開く */
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.list-panel.is-stacked.is-collapsed .list-head {
+  border-bottom-color: transparent;
+}
+
+.list-head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.list-head-title:focus {
+  outline: none;
+}
+
+.list-head-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.list-head-all {
+  flex: none;
+}
+
+.list-head-count {
+  flex: none;
+  min-width: 1ch;
+  font-size: 12px;
+  text-align: right;
+  color: var(--text-faint);
+}
+
+.list-head-fold {
+  margin-right: -6px;
+}
+
+.list-head-fold .icon {
+  transition: rotate var(--dur-fold) ease;
+}
+
+.list-panel.is-collapsed .list-head-fold .icon {
+  rotate: -90deg;
+}
+
+/* 畳む・開くの中身（.fold は src/styles.css）。入力欄のフォーカスの影（3px）が切れないよう、左右に 4px のゆとりを取る */
+.list-fold-inner {
+  margin-inline: -4px;
+  padding-inline: 4px;
+}
+
+.list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0 14px;
+}
+
+.list-input {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.45;
+}
+
+/* Routine List: 入力欄の左に種類の切り替え［日｜週｜月｜四半期｜年］（狭い時は上の行に） */
+.list-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-input-row .list-input {
+  flex: 1 1 140px;
+  width: auto;
+  min-width: 0;
+}
+
+.segmented.list-cycle {
+  padding: 2px;
+}
+
+.segmented.list-cycle button {
+  min-height: 28px;
+  padding: 2px 7px;
+  font-size: 12px;
+}
+
+.list-input-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* 入力欄の下の小さなボタン（開始日・締め切り日・依頼者）と［すべて開く］は、見出し・入力欄より控えめに */
+.list-input-tools .btn,
+.btn.list-head-all {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ---------- MIM の仮の画面（16.1） ---------- */
+.mim-ph {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.mim-ph-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.mim-ph-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.mim-ph-title:focus {
+  outline: none;
+}
+
+.mim-ph-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.mim-ph-name {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  font-synthesis-weight: none;
+}
+
+/* ---------- S（599px まで）: 操作の列を2行にし（1行目に左の物、2行目に右の物）、360px に収める（3.7） ---------- */
+@media (max-width: 599px) {
+  .cal-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 12px 10px;
+  }
+
+  .cal-toolbar-left {
+    gap: 10px;
+  }
+
+  .cal-toolbar-right {
+    gap: 6px;
+    margin-left: 0;
+  }
+
+  .segmented.cal-modes button {
+    min-width: var(--tap);
+    padding: 4px 10px;
+  }
+
+  .cal-body {
+    padding: 0 8px 12px;
+  }
+}

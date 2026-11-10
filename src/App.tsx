@@ -1,5 +1,5 @@
 // 画面の行き先と外枠。NS の src/App.tsx から（小説の画面・ゴミ箱の自動の片付け・Claude 連携を外し、ログインの関所を足した物）。
-// 段階0の行き先はトップ・ログイン・設定の3つ（docs/SPEC.md の 3.1・21.）
+// 段階0の行き先はトップ・MIM（仮の画面）・ログイン・設定の4つ（docs/SPEC.md の 3.1・21.）
 import { lazy, Suspense } from 'react'
 import {
   createHashRouter,
@@ -11,6 +11,7 @@ import {
   type RouteObject,
 } from 'react-router-dom'
 import { LoginPage } from './features/login/LoginPage'
+import { startTestAuth } from './features/login/testAuth'
 import { TopPage } from './features/top/TopPage'
 import { paths } from './routes'
 import { useSync } from './sync/controller'
@@ -19,7 +20,7 @@ import { AppFrame } from './ui/Layout'
 import { NotFound } from './ui/NotFound'
 
 // 起動を軽くするため、トップ・ログイン以外の画面は開いた時に読み込む（PWA ではオフライン用に事前キャッシュされる）
-const SettingsPage = lazy(() => import('./features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+const AppSettingsPage = lazy(() => import('./features/appSettings/AppSettingsPage').then((m) => ({ default: m.AppSettingsPage })))
 
 function PageLoading() {
   return (
@@ -76,8 +77,10 @@ export const routes: RouteObject[] = [
     errorElement: <RootError />,
     children: [
       { path: paths.top(), element: <TopPage /> },
+      // MIM はトップの画面の中で開く（L はカレンダーの領域、M はカレンダーの区切りが替わり、S は全面。docs/SPEC.md の 16.1）
+      { path: paths.mim(), element: <TopPage /> },
       { path: paths.login(), element: <LoginPage /> },
-      { path: paths.settings(), element: <SettingsPage /> },
+      { path: paths.settings(), element: <AppSettingsPage /> },
       { path: '*', element: <NotFound /> },
     ],
   },
@@ -87,6 +90,8 @@ export const routes: RouteObject[] = [
 let router: ReturnType<typeof createHashRouter> | null = null
 
 export function App() {
+  // テストの時だけ: localStorage の diary-studio:test-auth があれば、ログインした状態で開く（開発サーバーだけ。src/features/login/testAuth.ts）
+  if (import.meta.env.DEV) void startTestAuth()
   router ??= createHashRouter(routes)
   return <RouterProvider router={router} />
 }

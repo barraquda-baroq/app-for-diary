@@ -1,0 +1,62 @@
+/* ===== ヘッダーの中身（docs/SPEC.md の 3.3） =====
+   ヘッダーの枠（.app-header: 高さ 52px＋ノッチの分・上に固定・--surface を 92% にしてぼかす・下に 1px の --rule）と
+   アイコン（26px・角丸 6px・--brand-filter）は src/styles.css。ここは名前と［MIM］のボタン */
+
+/* 幅 380px 未満ではアプリの名前を出さず、アイコンだけ */
+@media (max-width: 379px) {
+  .app-header .brand-name {
+    display: none;
+  }
+}
+
+/* ［MIM］: 高さ 34px・左右 12px・角丸 999px・地 --surface-3・枠 1px --border。鍵のアイコン 16px と等幅の「MIM」 */
+.mim-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background var(--dur-hover),
+    border-color var(--dur-hover),
+    color var(--dur-hover),
+    box-shadow var(--dur-hover);
+}
+
+.mim-btn:hover {
+  border-color: var(--border-strong);
+}
+
+.mim-btn-icon {
+  display: inline-flex;
+}
+
+.mim-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.mim-btn-label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  font-synthesis-weight: none;
+}
+
+/* MIM を開いている間は押した状態（地 --today-bg・字 --on-primary・1.5px の --today-ring の輪。docs/SPEC.md の 7.3 と同じ） */
+.mim-btn[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--today-bg);
+  color: var(--on-primary);
+  box-shadow: 0 0 0 1.5px var(--today-ring);
+}

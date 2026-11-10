@@ -80,9 +80,6 @@
   --active-soft: var(--accent-soft);
   --active-fill: var(--primary);
   --on-active: var(--on-primary);
-  /* 件名のハイライトの別名（仮。部品は 4.5 の名前 --work-marker・--private-marker を使う） */
-  --work-highlight: var(--work-marker);
-  --private-highlight: var(--private-marker);
   /* 影（NS の値。どの外観でも同じ物） */
   --shadow-knob: 0 1px 2px rgb(0 0 0 / 25%);
   --shadow-segmented: 0 1px 2px rgb(0 0 0 / 12%);
@@ -640,7 +637,7 @@ h4 {
   color: var(--numeral);
 }
 
-/* 時刻・日付（カード・行） */
+/* 時刻・日付（カード・行。段階2・3で使う） */
 .mono-time {
   font-size: 11px;
   font-weight: 400;
@@ -692,13 +689,6 @@ h4 {
   flex: 1;
 }
 
-.app-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
 .page {
   width: 100%;
   max-width: 1180px;
@@ -708,19 +698,6 @@ h4 {
 
 .page-narrow {
   max-width: 820px;
-}
-
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-
-.page-head .grow {
-  flex: 1;
-  min-width: 200px;
 }
 
 .stack {
@@ -755,10 +732,6 @@ h4 {
 
 .small {
   font-size: 13px;
-}
-
-.tiny {
-  font-size: 12px;
 }
 
 .ellipsis {
@@ -811,18 +784,6 @@ h4 {
 .btn-primary:hover:not(:disabled):not([aria-disabled='true']) {
   background: var(--primary-hover);
   border-color: color-mix(in srgb, var(--primary-hover) 70%, var(--primary-border));
-}
-
-/* NS の「採用」のボタン。DS では主なボタンと同じくすんだ青（--active-fill は --primary） */
-.btn-active {
-  background: var(--active-fill);
-  border-color: var(--active-fill);
-  color: var(--on-active);
-}
-
-.btn-active:hover:not(:disabled):not([aria-disabled='true']) {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
 }
 
 /* 削除のボタン。--danger は --surface の上でだけ使う（区分の色の地の上には置かない。docs/SPEC.md の 4.5） */
@@ -880,11 +841,6 @@ h4 {
   cursor: not-allowed;
 }
 
-.icon-btn.sm {
-  width: 28px;
-  height: 28px;
-}
-
 /* 線のアイコン（src/ui/icons.tsx。24 四方・線 1.8・丸い端・文字と同じ色） */
 .icon {
   width: 18px;
@@ -905,8 +861,7 @@ h4 {
   gap: 4px;
 }
 
-.field > span,
-.field-label {
+.field > span {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
@@ -938,25 +893,6 @@ h4 {
 .textarea {
   resize: vertical;
   line-height: 1.7;
-}
-
-.input-bare {
-  width: 100%;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  padding: 2px 6px;
-  margin: 0 -6px;
-}
-
-.input-bare:hover {
-  border-color: var(--border);
-}
-
-.input-bare:focus {
-  outline: none;
-  border-color: var(--accent);
-  background: var(--surface);
 }
 
 .check {
@@ -1074,21 +1010,6 @@ h4 {
   margin-top: 28px;
 }
 
-.section-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.section-head h2 {
-  font-size: 17px;
-}
-
-.section-head .grow {
-  flex: 1;
-}
-
 .list {
   display: flex;
   flex-direction: column;
@@ -1109,7 +1030,7 @@ h4 {
 
 /* ===== DS の小さな部品（docs/SPEC.md の 4.3・4.4・4.11） ===== */
 
-/* 丸いラベル（ウィークリー・デイリーの曜日の見出し。中に .caps の英字3文字） */
+/* 丸いラベル（ウィークリー・デイリーの曜日の見出し。中に .caps の英字3文字）。段階2で使う */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -1163,7 +1084,7 @@ h4 {
   }
 }
 
-/* 件名のハイライト（デイリーのタイムスケジュール・Task List。docs/SPEC.md の 4.3）。件名の字を包む inline の要素に付け、
+/* 件名のハイライト（デイリーのタイムスケジュール・Task List。docs/SPEC.md の 4.3。段階2・3で使う）。件名の字を包む inline の要素に付け、
    data-kind の中で使う。字の高さの下 6割ほどの帯を字の幅だけに引く（折り返したら各行に）。帯の上の字は --text・--text-muted だけ。
    完了・済みの物には付けない。ディープダークは --*-marker が transparent なので帯は出ない */
 .kind-marker {
@@ -1173,12 +1094,12 @@ h4 {
   box-decoration-break: clone;
 }
 
-/* ラベルの色の左の一辺（幅 4px。ウィークリーのカード・タイムスケジュールの予定）。ラベルが無ければ（data-label が無ければ）付けない */
+/* ラベルの色の左の一辺（幅 4px。ウィークリーのカード・タイムスケジュールの予定。段階2で使う）。ラベルが無ければ（data-label が無ければ）付けない */
 .label-edge[data-label] {
   box-shadow: inset var(--edge-w) 0 0 var(--label);
 }
 
-/* ラベルの色の上の辺の帯（高さ 6px。予定・タスクの詳細と登録の画面）。小さな画面・シートの角丸に沿って切れる */
+/* ラベルの色の上の辺の帯（高さ 6px。予定・タスクの詳細と登録の画面。段階2で使う）。小さな画面・シートの角丸に沿って切れる */
 .label-band[data-label] {
   box-shadow: inset 0 var(--band-h) 0 var(--label);
 }
@@ -1212,7 +1133,7 @@ h4 {
   transition: visibility 0s linear var(--dur-fold);
 }
 
-/* カードを掴んだ時に浮く（1.03倍・--shadow-lift・不透明度 0.95）。scale を使い、ドラッグの transform とぶつけない */
+/* カードを掴んだ時に浮く（1.03倍・--shadow-lift・不透明度 0.95。段階2のドラッグで使う）。scale を使い、ドラッグの transform とぶつけない */
 .lift {
   scale: 1.03;
   box-shadow: var(--shadow-lift);
@@ -1236,7 +1157,7 @@ h4 {
   animation: shake var(--dur-shake) ease-in-out;
 }
 
-/* 右の列の上に重ねるパネル（右から 180ms） */
+/* 右の列の上に重ねるパネル（右から 180ms。段階3のリストの［詳しく］で使う） */
 .panel-in {
   animation: slide-in-right var(--dur-panel) ease-out;
 }
@@ -1256,68 +1177,9 @@ h4 {
   color: var(--text-muted);
 }
 
-.badge-active {
-  background: var(--active-soft);
-  color: var(--active);
-}
-
-.badge-missing {
-  background: var(--warn-soft);
-  color: var(--warn);
-}
-
 .badge-accent {
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.badge-danger {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-/* ===== タブ ===== */
-.tabs {
-  display: flex;
-  gap: 2px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 18px;
-  scrollbar-width: none;
-}
-
-.tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.tabs button,
-.tabs a {
-  padding: 10px 14px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  white-space: nowrap;
-  text-decoration: none;
-  margin-bottom: -1px;
-  transition:
-    background var(--dur-hover),
-    color var(--dur-hover),
-    border-color var(--dur-hover);
-}
-
-.tabs button:hover,
-.tabs a:hover {
-  color: var(--text);
-}
-
-.tabs [aria-selected='true'] {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
 }
 
 /* ===== 小さな画面（NS の Modal。L は真ん中の幅 520px・角丸 14px、S・M は下からのシート。docs/SPEC.md の 3.8） ===== */
@@ -1387,13 +1249,6 @@ h4 {
   width: 100%;
 }
 
-/* 大きな選択肢ボタン（追加種別の選択など） */
-.choice-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
-}
-
 .choice {
   display: flex;
   flex-direction: column;
@@ -1455,7 +1310,7 @@ h4 {
   animation: toast-in var(--dur-toast) ease-out;
 }
 
-/* 消える時（消す側が付けてから 160ms 後に取り除く） */
+/* 消える時（消す側が付けてから 160ms 後に取り除く。docs/SPEC.md の 4.9。今のお知らせはすぐ取り除くので、消える動きを付ける時に使う） */
 .toast.is-leaving {
   animation: toast-out var(--dur-toast) ease-in forwards;
 }
@@ -1500,6 +1355,7 @@ h4 {
   flex-wrap: wrap;
 }
 
+/* 止まっている知らせの帯（段階1の同期の止まり・要更新などで使う） */
 .banner-error {
   background: var(--danger-soft);
   color: var(--danger);
@@ -1509,36 +1365,6 @@ h4 {
 .banner-info {
   background: var(--accent-soft);
   color: var(--accent-strong);
-}
-
-/* ===== 保存状態 ===== */
-.save-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-faint);
-  white-space: nowrap;
-}
-
-.save-status .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--active);
-}
-
-.save-status.pending .dot,
-.save-status.saving .dot {
-  background: var(--warn);
-}
-
-.save-status.error {
-  color: var(--danger);
-}
-
-.save-status.error .dot {
-  background: var(--danger);
 }
 
 /* ===== 設定の画面の区切りと行（aset-。NS の src/features/appSettings/appSettings.css から、
@@ -1801,7 +1627,7 @@ h4 {
     min-height: var(--tap);
   }
 
-  /* キーボードのショートカットの案内は、指で操作する端末では出さない */
+  /* キーボードのショートカットの案内は、指で操作する端末では出さない（案内は段階2・3のキーボードの操作（3.10）で出す） */
   .hint-keyboard {
     display: none !important;
   }

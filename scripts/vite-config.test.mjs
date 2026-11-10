@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import config, { PWA_ICONS, PWA_MANIFEST, inlineScripts } from '../vite.config.ts'
+import config, { PWA_ICONS, PWA_MANIFEST, PWA_WORKBOX, inlineScripts } from '../vite.config.ts'
 
 // 外観と起動アニメーション（src/launch/launch.js）を index.html に埋め込む（読み込みを増やさず、アプリの本体より先に動かす）
 describe('inlineScripts（index.html の <script data-inline>）', () => {
@@ -73,8 +73,6 @@ describe('PWA_ICONS（manifest のアイコン）', () => {
   const file = (name) => readFileSync(new URL(`../public/${name}`, import.meta.url))
   /** PNG の幅と高さ（IHDR） */
   const pngSize = (buf) => `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`
-  /** アイコンの画像を書き出した後だけ、画像の中身を確かめる */
-  const rendered = PWA_ICONS.every((icon) => existsSync(new URL(`../public/${icon.src}`, import.meta.url)))
 
   it('any（スタートメニュー・タスクバー・ウインドウ）は3つの大きさ、maskable は別の名前の2つ。1つの画像を両方には使わない', () => {
     const any = PWA_ICONS.filter((i) => i.purpose === 'any')
@@ -85,7 +83,14 @@ describe('PWA_ICONS（manifest のアイコン）', () => {
     expect(new Set(PWA_ICONS.map((i) => i.src)).size).toBe(PWA_ICONS.length)
   })
 
-  it.skipIf(!rendered)('どの画像も public/ にあり、書いてある大きさの PNG。maskable は any と違う絵', () => {
+  // 画像はリポジトリに入れる物なので、無ければ飛ばさずに落とす（manifest が無い画像を指したまま公開しないように）
+  it('どの画像も public/ にあり、書いてある大きさの PNG。maskable は any と違う絵', () => {
+    for (const icon of PWA_ICONS) {
+      expect(
+        existsSync(new URL(`../public/${icon.src}`, import.meta.url)),
+        `public/${icon.src} がありません。node scripts/render-icons.mjs で書き出してください`,
+      ).toBe(true)
+    }
     for (const icon of PWA_ICONS) {
       const buf = file(icon.src)
       expect(buf.subarray(1, 4).toString()).toBe('PNG')
@@ -96,5 +101,34 @@ describe('PWA_ICONS（manifest のアイコン）', () => {
       const a = PWA_ICONS.find((i) => i.purpose === 'any' && i.sizes === m.sizes)
       expect(file(a.src).equals(file(m.src))).toBe(false)
     }
+  })
+})
+
+// サービスワーカーの事前キャッシュと、オフライン用のアプリの画面に差し替えない行き先（docs/SPEC.md の 2.8・4.7）
+describe('PWA_WORKBOX（サービスワーカー）', () => {
+  /** Workbox の NavigationRoute と同じく、行き先のパスが denylist のどれかに当たるか */
+  const denied = (pathname) => PWA_WORKBOX.navigateFallbackDenylist.some((re) => re.test(pathname))
+
+  it('アプリの本体・書体の woff2・書体のライセンスの全文を事前キャッシュに入れる', () => {
+    expect(PWA_WORKBOX.globPatterns).toContain('**/*.{js,css,html,woff2}')
+    expect(PWA_WORKBOX.globPatterns).toContain('licenses/*.txt')
+  })
+
+  it('Firebase のログイン画面とライセンスの全文はアプリの画面に差し替えず、アプリの行き先は差し替える', () => {
+    expect(denied('/__/auth/handler')).toBe(true)
+    expect(denied('/licenses/RobotoMono-OFL.txt')).toBe(true)
+    expect(denied('/')).toBe(false)
+    expect(denied('/index.html')).toBe(false)
+  })
+})
+
+// 同梱する書体のライセンス（SIL Open Font License 1.1 の全文を公開物に入れる。docs/SPEC.md の 4.7）
+describe('Roboto Mono のライセンス', () => {
+  it('public/licenses/RobotoMono-OFL.txt に、@fontsource/roboto-mono の LICENSE と同じ全文がある', () => {
+    const copied = readFileSync(new URL('../public/licenses/RobotoMono-OFL.txt', import.meta.url), 'utf8')
+    const original = readFileSync(new URL('../node_modules/@fontsource/roboto-mono/LICENSE', import.meta.url), 'utf8')
+    expect(copied).toBe(original)
+    expect(copied).toContain('Copyright 2015 The Roboto Mono Project Authors')
+    expect(copied).toContain('SIL OPEN FONT LICENSE Version 1.1')
   })
 })

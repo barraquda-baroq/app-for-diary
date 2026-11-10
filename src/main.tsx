@@ -12,7 +12,7 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import { App } from './App'
 import { afterNextPaint, notifyAppReady } from './launch/launchHook'
-import { installLeaveHandlers, saveBeforeLeave } from './store/lifecycle'
+import { installLeaveHandlers } from './store/lifecycle'
 import { useAppUpdate } from './store/uiStore'
 import { fakeSignInForTest, initSync, signInForTest, useSync, whenAuthKnown } from './sync/controller'
 
@@ -22,24 +22,21 @@ void navigator.storage?.persist?.().catch(() => undefined)
 // 画面を閉じる・裏に回る時は、入力中の下書きも含めて保留中の変更をすぐ保存する
 installLeaveHandlers()
 
-// 新しい版の知らせ（サービスワーカー）。更新は「更新する」を押した時だけ（docs/SPEC.md の 2.8）
+// 新しい版の知らせ（サービスワーカー）。更新は「更新する」を押した時だけ（docs/SPEC.md の 2.8）。
+// 入力中の下書きの保存は、帯の［更新する］（src/ui/Layout.tsx の UpdateBanner）がしてから apply を呼ぶ（保存は1か所だけ）
 if (import.meta.env.PROD) {
   const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
-      useAppUpdate.setState({
-        ready: true,
-        apply: async () => {
-          await saveBeforeLeave()
-          await updateSW(true)
-        },
-      })
+      useAppUpdate.setState({ ready: true, apply: () => updateSW(true) })
     },
   })
 }
 
 // E2E テストから操作するための開発用フック（本番ビルドには含まれない。NS の window.__ns と同じ。docs/SPEC.md の 2.10）
 if (import.meta.env.DEV) {
+  /** showUpdateBanner で出した帯の［更新する］が押されたか */
+  let updateApplied = false
   ;(window as unknown as { __ds: unknown }).__ds = {
     /** エミュレーターにつないでいる時だけ: 仮のアカウントでログインする */
     signInForTest,
@@ -47,6 +44,17 @@ if (import.meta.env.DEV) {
     fakeSignIn: () => fakeSignInForTest(),
     /** ログインしているアカウント（同期のテスト用） */
     syncUid: () => useSync.getState().user?.uid ?? null,
+    /** 画面のテスト用: 新しい版を受け取った時の帯（本物の UpdateBanner）を出す。［更新する］を押すと updateApplied() が true になる */
+    showUpdateBanner: () => {
+      updateApplied = false
+      useAppUpdate.setState({
+        ready: true,
+        apply: async () => {
+          updateApplied = true
+        },
+      })
+    },
+    updateApplied: () => updateApplied,
   }
 }
 

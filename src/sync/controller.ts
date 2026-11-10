@@ -35,7 +35,8 @@ function message(e: unknown): string {
 
 function boot(): Promise<void> {
   booted ??= (async () => {
-    useSync.setState({ auth: 'checking' })
+    // 画面のテスト用にもうログインした状態にしてあれば、その状態を上書きしない（確かめている間も 'signedIn' のまま）
+    if (!faked) useSync.setState({ auth: 'checking' })
     try {
       const fb = await firebaseModule()
       fb.firebase()
@@ -119,8 +120,9 @@ export async function signOut(): Promise<void> {
   }
 }
 
-/** テスト用: エミュレーターの仮のアカウントでログインする */
+/** テスト用: エミュレーターの仮のアカウントでログインする（開発サーバーだけ。公開するビルドでは中身がビルドで消える） */
 export async function signInForTest(sub: string): Promise<void> {
+  if (!import.meta.env.DEV) throw new Error('開発サーバーだけで使えます')
   await boot()
   const fb = await firebaseModule()
   await fb.signInForTest(sub)

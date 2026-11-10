@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, transformWithEsbuild, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import { VitePWA, type ManifestOptions } from 'vite-plugin-pwa'
+import { VitePWA, type ManifestOptions, type VitePWAOptions } from 'vite-plugin-pwa'
 
 /** index.html の <script data-inline="ファイル">…</script> */
 const INLINE_SCRIPT = /<script data-inline="([^"]+)">([\s\S]*?)<\/script>/g
@@ -62,6 +62,19 @@ export const PWA_MANIFEST = {
   icons: PWA_ICONS,
 } satisfies Partial<ManifestOptions>
 
+/**
+ * サービスワーカー（Workbox）の事前キャッシュと、オフラインの時にアプリの画面へ差し替える行き先の決まり（docs/SPEC.md の 2.8・4.7）
+ */
+export const PWA_WORKBOX = {
+  // 書体（Roboto Mono の woff2）も事前キャッシュに入れ、オフラインでも等幅の字で出す（既定は js・css・html だけ。
+  // woff は古いブラウザ用なので入れない。docs/SPEC.md の 4.7）。書体のライセンスの全文（public/licenses/。4.7・18.1 の
+  // 「全文へのリンク」）も入れ、オフラインでも開けるようにする
+  globPatterns: ['**/*.{js,css,html,woff2}', 'licenses/*.txt'],
+  // 次の行き先はオフライン用のアプリの画面（index.html）に差し替えない: Firebase のログイン画面（/__/auth/…）と、
+  // 書体のライセンスの全文（差し替えると全文ではなくアプリの画面が返り、相対パスの assets も読めずに白い画面になる）
+  navigateFallbackDenylist: [/^\/__\//, /^\/licenses\//],
+} satisfies VitePWAOptions['workbox']
+
 function inlineLaunchScript(): Plugin {
   const root = fileURLToPath(new URL('.', import.meta.url))
   let minify = false
@@ -93,13 +106,7 @@ export default defineConfig({
     VitePWA({
       // 入力中に勝手に再読み込みしないよう、更新はユーザーが「更新する」を押した時に適用する（docs/SPEC.md の 2.8）
       registerType: 'prompt',
-      workbox: {
-        // 書体（Roboto Mono の woff2）も事前キャッシュに入れ、オフラインでも等幅の字で出す（既定は js・css・html だけ。
-        // woff は古いブラウザ用なので入れない。docs/SPEC.md の 4.7）
-        globPatterns: ['**/*.{js,css,html,woff2}'],
-        // Firebase のログイン画面（/__/auth/…）はオフライン用のアプリの画面に差し替えない
-        navigateFallbackDenylist: [/^\/__\//],
-      },
+      workbox: PWA_WORKBOX,
       includeAssets: ['favicon.svg', 'icon.svg', 'apple-touch-icon.png'],
       manifest: PWA_MANIFEST,
     }),

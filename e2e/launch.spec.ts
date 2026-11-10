@@ -71,6 +71,15 @@ async function withPrefs(page: Page, prefs: Record<string, unknown>) {
 }
 
 test.describe('起動アニメーション', () => {
+  // ほかのテストは「テストではふだん出さない」を前提にしている（出ると最初に押した物を重なりが飲み込む。5.2）。
+  // ブラウザ（WebKit など）が navigator.webdriver を true にしないと全部のテストが崩れるので、原因が分かるようにここで確かめる
+  test('テストのブラウザでは navigator.webdriver が true で、強制しなければ出さない', async ({ page }) => {
+    await page.goto('/#/', { waitUntil: 'domcontentloaded' })
+    expect(await page.evaluate(() => navigator.webdriver)).toBe(true)
+    await expect(overlay(page)).toHaveCount(0)
+    await expect(loginButton(page)).toBeVisible()
+  })
+
   test('強制すると最初に出て、アニメーションが終わりアプリの画面ができたら消えて取り除かれる', async ({ page }) => {
     await recordLaunchEnd(page)
     await recordAppClicks(page)
@@ -237,12 +246,15 @@ test.describe('起動アニメーション', () => {
 
   test('設定の「起動アニメーション」をオフにすると出ない。オンに戻すとまた出る', async ({ page, context }) => {
     await openApp(page, '/settings')
-    // 設定 → 表示 の「起動アニメーション」（オン／オフ。初めはオン。docs/SPEC.md の 5.2・18.1）
-    const sw = page.getByLabel('起動アニメーション', { exact: true })
-    const toggle = page.getByText('起動アニメーション', { exact: true })
+    // 設定 → 表示 の「起動アニメーション」（オン／オフ。初めはオン。docs/SPEC.md の 5.2・18.1）。
+    // スイッチ（NS と同じ <label class="switch">。押すと切り替わる）と、読み上げの名前「起動アニメーション」
+    const toggle = page.getByTestId('launch-switch')
+    const sw = page.getByRole('switch', { name: '起動アニメーション', exact: true })
     await expect(sw).toBeChecked()
+    await expect(toggle).toContainText('オン')
     await toggle.click()
     await expect(sw).not.toBeChecked()
+    await expect(toggle).toContainText('オフ')
     expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}').launchAnimation, PREFS_KEY)).toBe(false)
 
     // 新しいタブ（ウインドウを開いた最初の1回）でも出ない

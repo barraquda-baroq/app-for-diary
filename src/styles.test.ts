@@ -6,13 +6,21 @@ import { WIDTH_L, WIDTH_M } from './ui/hooks'
 // テストでは CSS を import すると（?raw でも）中身が空になるので、ファイルを読む。node:fs の型はアプリの tsconfig に無いので、
 // 名前を変数にして読み込み、使う関数の形だけを書く
 const NODE_FS = 'node:fs'
-const { readFileSync } = (await import(/* @vite-ignore */ NODE_FS)) as {
+const { readFileSync, readdirSync } = (await import(/* @vite-ignore */ NODE_FS)) as {
   readFileSync: (path: string, encoding: 'utf8') => string
+  readdirSync: (path: string, options: { recursive: true }) => string[]
 }
 // jsdom の URL は node:fs が受け取らないので、ファイルの場所の文字列にして渡す
 const read = (relative: string) => readFileSync(decodeURIComponent(new URL(relative, import.meta.url).pathname), 'utf8')
 const css = read('./styles.css')
 const menuCss = read('./ui/menu.css')
+/** src/ の下のすべての CSS（画面ごとの CSS も。[src/ からの場所, 中身]）。段階2以降で画面の CSS が増えても確かめから漏れないように */
+// （new URL('.', import.meta.url) は Vite が開発サーバーの URL に書き換えるので、import.meta.url のファイルの場所から作る）
+const SRC_DIR = decodeURIComponent(new URL(import.meta.url).pathname).replace(/[^/]*$/, '')
+const ALL_CSS: readonly (readonly [string, string])[] = readdirSync(SRC_DIR, { recursive: true })
+  .filter((f) => f.endsWith('.css'))
+  .sort()
+  .map((f) => [f, readFileSync(`${SRC_DIR}${f}`, 'utf8')] as const)
 
 /** docs/SPEC.md の 4.5 の表（トークン: [ホワイト, ダーク, ディープダーク]） */
 const SPEC_TOKENS: Record<string, readonly [string, string, string]> = {
@@ -276,9 +284,12 @@ describe('色のトークン（docs/SPEC.md の 4.5）', () => {
     }
   })
 
-  it('件名のハイライトの仮の別名（--work-highlight・--private-highlight）は 4.5 の --*-marker を指す', () => {
-    expect(VARS.white.get('--work-highlight')).toBe('var(--work-marker)')
-    expect(VARS.white.get('--private-highlight')).toBe('var(--private-marker)')
+  it('件名のハイライトは 4.5 の名前（--work-marker・--private-marker）だけで、仮の別名（--*-highlight）を持たない', () => {
+    expect(stripComments(css)).not.toMatch(/--(work|private)-highlight/)
+    for (const theme of THEMES) {
+      expect(VARS[theme].has('--work-marker'), theme).toBe(true)
+      expect(VARS[theme].has('--private-marker'), theme).toBe(true)
+    }
   })
 
   it('小説の機能の色・原稿の書体・アプリのキーボードの変数を持ち込んでいない', () => {
@@ -416,10 +427,20 @@ describe('部品の書き方', () => {
     return out
   }
 
-  it.each([
-    ['styles.css', css],
-    ['menu.css', menuCss],
-  ])('%s: 部品は色を直接書かず、変数だけを使う', (_name, source) => {
+  it('src/ の下の CSS をすべて確かめる（共通・メニュー・画面ごとの CSS）', () => {
+    const names = ALL_CSS.map(([name]) => name)
+    for (const name of [
+      'styles.css',
+      'ui/menu.css',
+      'ui/layout.css',
+      'ui/sync.css',
+      'features/top/top.css',
+      'features/login/login.css',
+    ])
+      expect(names).toContain(name)
+  })
+
+  it.each(ALL_CSS)('%s: 部品は色を直接書かず、変数だけを使う', (_name, source) => {
     const rest = componentCss(source)
     expect(rest).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
     expect(rest).not.toMatch(/\b(?:rgba?|hsla?|oklch|oklab)\(/)
@@ -432,6 +453,14 @@ describe('部品の書き方', () => {
     expect(css).toContain(`@media (max-width: ${WIDTH_M - 1}px)`)
     expect(css).toContain(`@media (max-width: ${WIDTH_L - 1}px)`)
     expect(css).toContain(`@media (max-width: ${WIDTH_L - 1}px), (pointer: coarse)`)
+  })
+
+  // ヘッダーの名前を出さない 380px 未満（docs/SPEC.md の 3.3）だけは、幅の区分とは別の値
+  const HEADER_NAME_MAX = 379
+  it.each(ALL_CSS)('%s: 幅の値は幅の区分（WIDTH_M・WIDTH_L）か、ヘッダーの名前を隠す 380px 未満だけ', (_name, source) => {
+    const allowed = new Set([WIDTH_M - 1, WIDTH_M, WIDTH_L - 1, WIDTH_L, HEADER_NAME_MAX])
+    const widths = [...stripComments(source).matchAll(/\((?:max|min)-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]))
+    for (const w of widths) expect(allowed.has(w), `${w}px`).toBe(true)
   })
 
   it('視差効果を減らす設定では、CSS の動きを全部止める（docs/SPEC.md の 4.9）', () => {

@@ -1,0 +1,208 @@
+/* ===== ログインの画面（docs/SPEC.md の 2.5）: 参考画像の表紙の見た目 =====
+   画面いっぱいに --cover（くすんだ青）の地。ボタンの外の字は --on-cover。ボタンは地 --surface・字 --text・枠 1px --border-strong
+   （src/styles.css の .btn。ホワイトでは白い地、ダーク・ディープダークでは暗い面の色になり、暗い表紙の上でボタンだけがギラつかない） */
+.login {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(32px + var(--safe-top)) max(40px, var(--safe-right)) calc(24px + var(--safe-bottom)) max(40px, var(--safe-left));
+  background: var(--cover);
+  color: var(--on-cover);
+}
+
+.login-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  max-width: 440px;
+  /* 真ん中より少し上に置く */
+  padding-bottom: 8vh;
+}
+
+/* 等幅の「Diary Studio」（Roboto Mono 300・40px。S は 32px） */
+.login-logo {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 40px;
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  font-synthesis-weight: none;
+}
+
+/* 今日の曜日と日付（等幅 12px・字間 0.08em） */
+.login-date {
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+.login-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 40px;
+}
+
+/* 高さ 44px */
+.btn.login-google {
+  min-height: 44px;
+  padding: 8px 20px;
+  font-size: 15px;
+}
+
+.login-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* 失敗・まだ準備ができていない時の言葉（表紙の地の上なので --on-cover のまま。左の線で目立たせる） */
+.login-note.is-alert {
+  padding-left: 10px;
+  border-left: 2px solid currentColor;
+}
+
+/* iPhone をホーム画面のアプリでなく開いた時の案内 */
+.login-home {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--on-cover) 30%, transparent);
+  border-radius: var(--radius);
+}
+
+.login-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+/* 小さな［このまま Safari で使う］（押すと案内を閉じる） */
+.login-link {
+  min-height: var(--tap);
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.login .btn:focus-visible,
+.login-link:focus-visible {
+  outline-color: var(--on-cover);
+}
+
+/* 画面の左下の「DIARY STUDIO  v0.1」（10px） */
+.login-foot {
+  display: flex;
+  gap: 2ch;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 599px) {
+  .login {
+    padding-left: max(24px, var(--safe-left));
+    padding-right: max(24px, var(--safe-right));
+  }
+
+  .login-logo {
+    font-size: 32px;
+  }
+}
+
+/* ===== ホーム画面に追加の手順（InstallHelp。ログインの画面の［追加の手順］の小さな画面と、設定の区切り） ===== */
+.install-help {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.install-help.is-framed {
+  padding: 16px;
+}
+
+.install-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.install-head h2 {
+  font-size: 17px;
+}
+
+.install-lead,
+.install-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.install-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.install-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.install-guides {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.install-guide {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.install-guide.is-current {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--accent-soft);
+}
+
+.install-guide-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.install-guide-steps {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.7;
+}

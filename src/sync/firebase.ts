@@ -25,7 +25,8 @@ import { EMULATOR_PROJECT_ID, firebaseConfig } from './firebaseConfig'
  * 公開するビルドでは使わない（環境変数が残ったままビルドしても、公開したアプリがエミュレーターにつながらないように）
  */
 const emulatorHost = import.meta.env.DEV ? import.meta.env.VITE_FIREBASE_EMULATOR : undefined
-export const usingEmulator = Boolean(emulatorHost)
+// 公開するビルドでは false に決まり、エミュレーター用の分岐（プロジェクト名・テスト用のログイン）はビルドで消える
+export const usingEmulator = import.meta.env.DEV && Boolean(emulatorHost)
 
 /**
  * Firebase Hosting に置いた時は、ログインの画面も同じドメインで開く
@@ -119,9 +120,9 @@ export async function signOutUser(): Promise<void> {
   await signOut(firebase().auth)
 }
 
-/** テスト用: エミュレーターの仮のアカウントでログインする */
+/** テスト用: エミュレーターの仮のアカウントでログインする（開発サーバーだけ。公開するビルドでは中身がビルドで消える） */
 export async function signInForTest(sub: string, email = `${sub}@example.com`): Promise<void> {
-  if (!usingEmulator) throw new Error('エミュレーターを使っている時だけ使えます')
+  if (!import.meta.env.DEV || !usingEmulator) throw new Error('エミュレーターを使っている時だけ使えます')
   const cred = GoogleAuthProvider.credential(JSON.stringify({ sub, email, email_verified: true, name: sub }))
   await signInWithCredential(firebase().auth, cred)
 }
