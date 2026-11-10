@@ -16,14 +16,14 @@
 3. 「アプリのニックネーム」に「Diary Studio」と入れる。
    「このアプリの Firebase Hosting も設定します」にはチェックを入れない。「アプリを登録」を押す。
 
-4. 「Firebase SDK の追加」に、次のような設定値が出ます（「npm を使用」のままで見る）。
+4. 「Firebase SDK の追加」に、次のような設定値が出ます（「npm を使用」のままで見る。値はプロジェクトごとに違います。下は DS の場合）。
 
    ```
    const firebaseConfig = {
      apiKey: "AIza……",
-     authDomain: "diary-studio-xxxx.firebaseapp.com",
-     projectId: "diary-studio-xxxx",
-     storageBucket: "diary-studio-xxxx.firebasestorage.app",
+     authDomain: "diary-studio-35f4e.firebaseapp.com",
+     projectId: "diary-studio-35f4e",
+     storageBucket: "diary-studio-35f4e.firebasestorage.app",
      messagingSenderId: "123456789012",
      appId: "1:123456789012:web:……"
    };
@@ -81,7 +81,7 @@ npm ci
 node scripts/deploy.mjs --check
 ```
 
-「公開先: https://diary-studio-xxxx.web.app」と自分のプロジェクト ID で出れば OK です。「✗」の行が出たら、その画面を Claude に見せてください（この確かめでは何も公開しません）。
+「公開先: https://diary-studio-35f4e.web.app」と出れば OK です（自分のプロジェクト ID で出ます）。「✗」の行が出たら、その画面を Claude に見せてください（この確かめでは何も公開しません）。
 
 ### Firebase にログインする
 
@@ -100,7 +100,7 @@ npm run deploy
 ```
 
 - 型の確かめ → ビルド → 公開を続けて行います（数分かかります）。
-- 最後に「公開しました: https://diary-studio-xxxx.web.app」と出れば完了です。
+- 最後に「公開しました: https://diary-studio-35f4e.web.app」と出れば完了です（自分のプロジェクト ID で出ます）。
 
 ## うまくいかない時
 

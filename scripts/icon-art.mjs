@@ -3,8 +3,11 @@
 // 字は起動アニメーションのロゴと同じ 5×7 の点の字（src/launch/launch.js の GLYPHS）。
 // 書き出しは scripts/render-icons.mjs。DS は Web 版だけなので、NS のアプリ用の背景と絵を分ける作り（layer）は外した。
 
-/** 点の青（起動アニメーションのダークのロゴ・レーザーと同じ。docs/SPEC.md の 5.4） */
-export const BLUE = '#5cc0ff'
+/**
+ * 点の青（起動アニメーションのダークのロゴ・レーザーと同じ。docs/SPEC.md の 5.4）。初めの案 #5cc0ff から OKLCH の L だけを
+ * 0.03 下げた暗い案（作者が見比べて決めた）。点の光（DEFS の led の明るい2色）も同じ規則で下げてある
+ */
+export const BLUE = '#52b6f5'
 /** 地の色（起動アニメーションのダークの地と同じ。PWA の theme_color・background_color も） */
 export const BACKGROUND = '#050607'
 
@@ -55,7 +58,7 @@ function unlitDots(cols, rows, p, d, litSet, { a0 = 0.075, a1 = 0.012, rmax = 72
 
 const DEFS = {
   bg: '<radialGradient id="bg" cx="50%" cy="48%" r="72%"><stop offset="0" stop-color="#0a1422"/><stop offset="1" stop-color="#030404"/></radialGradient>',
-  led: `<radialGradient id="led" cx="50%" cy="46%" r="62%"><stop offset="0" stop-color="#eaf5ff"/><stop offset=".42" stop-color="#9ccfff"/><stop offset="1" stop-color="${BLUE}"/></radialGradient>`,
+  led: `<radialGradient id="led" cx="50%" cy="46%" r="62%"><stop offset="0" stop-color="#e0ebf5"/><stop offset=".42" stop-color="#93c5f5"/><stop offset="1" stop-color="${BLUE}"/></radialGradient>`,
   halo: `<radialGradient id="halo"><stop offset="0" stop-color="${BLUE}" stop-opacity="0.42"/><stop offset=".38" stop-color="${BLUE}" stop-opacity="0.13"/><stop offset="1" stop-color="${BLUE}" stop-opacity="0"/></radialGradient>`,
 }
 

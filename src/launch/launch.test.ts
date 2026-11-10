@@ -31,7 +31,6 @@ interface Controller {
   state(): string
 }
 interface FrameLimits {
-  maxDpr: number
   setupMs: number
   frameMs: number
   frames: number
@@ -84,6 +83,7 @@ interface LaunchApi {
   decide(env: Env): 'none' | 'play' | 'still'
   createController(o: ControllerOptions): Controller
   createFrameWatch(limits: FrameLimits): FrameWatch
+  MAX_DPR: number
   PAGE_DRAW: FrameLimits
   play(stage: HTMLElement, theme: string, opts?: { still?: boolean; at?: number }): Player
   workerSource(): string
@@ -212,10 +212,10 @@ describe('外観（最初の描画の前）', () => {
     const { PALETTES } = load()
     expect(PALETTES.light).toEqual({
       bg: '#fbfcfe',
-      laser: '#2f6fd9',
-      core: '#1d4fb8',
-      logo: '#25539a',
-      hot: '#2f6fd9',
+      laser: '#2666cf',
+      core: '#1446ae',
+      logo: '#1c4a90',
+      hot: '#2666cf',
       splitA: '#ff4f8b',
       splitB: '#13b5c9',
       blend: 'source-over',
@@ -226,10 +226,10 @@ describe('外観（最初の描画の前）', () => {
     })
     expect(PALETTES.dark).toEqual({
       bg: '#050607',
-      laser: '#5cc0ff',
-      core: '#c2e3ff',
-      logo: '#5cc0ff',
-      hot: '#eef7ff',
+      laser: '#52b6f5',
+      core: '#b8d9f5',
+      logo: '#52b6f5',
+      hot: '#e4edf5',
       splitA: '#ff2b6e',
       splitB: '#2bffd2',
       blend: 'lighter',
@@ -240,10 +240,10 @@ describe('外観（最初の描画の前）', () => {
     })
     expect(PALETTES.deep).toEqual({
       bg: '#000000',
-      laser: '#3d74c4',
-      core: '#4f80c4',
-      logo: '#3d74c4',
-      hot: '#8fb6e6',
+      laser: '#346bba',
+      core: '#4677ba',
+      logo: '#346bba',
+      hot: '#86addc',
       splitA: '#5c1430',
       splitB: '#0e4a50',
       blend: 'lighter',
@@ -518,8 +518,12 @@ describe('消すまでの流れ（createController）', () => {
 })
 
 describe('ページの中で描く時の、1コマの時間の見張り（createFrameWatch）', () => {
-  it('決まり: 倍率は 2 まで、下ごしらえと最初の絵は 0.25秒、1コマは 0.05秒まで。コマの間隔は最初の5コマの真ん中の値で見る', () => {
-    expect(load().PAGE_DRAW).toEqual({ maxDpr: 2, setupMs: 250, frameMs: 50, frames: 5 })
+  it('決まり: 下ごしらえと最初の絵は 0.25秒、1コマは 0.05秒まで。コマの間隔は最初の5コマの真ん中の値で見る', () => {
+    expect(load().PAGE_DRAW).toEqual({ setupMs: 250, frameMs: 50, frames: 5 })
+  })
+
+  it('描く大きさの倍率の上限は 2（ページの中でも Worker でも同じ1つの値）', () => {
+    expect(load().MAX_DPR).toBe(2)
   })
 
   it('下ごしらえと最初の絵が 0.25秒を超えたら setup', () => {
@@ -1333,12 +1337,14 @@ describe('Worker（別のスレッド）で描く', () => {
     expect(draws).toBe(0)
   })
 
-  it('Worker で描く時は、描く大きさの倍率を 3 まで使う（ページの中で描く時の上限 2 は使わない）', () => {
-    Object.defineProperty(window, 'devicePixelRatio', { value: 4, configurable: true })
+  // 倍率 3 のまま Worker で描くと、CI の WebKit（ソフトウェアの描画）では最初の絵まで約1.5秒かかり、アニメーションの終わりより
+  // 先に5秒の期限が来ていた。点の絵なので 2 にしても見た目はほぼ変わらない
+  it('Worker で描く時も、描く大きさの倍率は 2 まで（ページの中で描く時と同じ）', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { value: 3, configurable: true })
     try {
       load().boot()
       t(0)
-      expect(FakeWorker.last!.posted[0].size).toMatchObject({ dpr: 3 })
+      expect(FakeWorker.last!.posted[0].size).toMatchObject({ dpr: 2 })
     } finally {
       delete (window as { devicePixelRatio?: number }).devicePixelRatio
     }

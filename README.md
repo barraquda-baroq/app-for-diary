@@ -4,7 +4,7 @@
 Routine List・Task List・Favorite List・MIM（most important memo）・Task View がすべて並び、見ている場所でそのまま足す・直す・消し込む使い方をします。
 仕事とプライベートは切り替えずに、いつも並べて出します。
 
-- Web アプリ（PWA。React + TypeScript + Vite）。Windows の PC（Chrome・Edge の「アプリとしてインストール」）・Android・iPhone（ホーム画面に追加）で同じように動きます。
+- Web アプリ（PWA。React + TypeScript + Vite）。Windows の PC（Chrome・Edge の「アプリとしてインストール」）・Android（Chrome）・iPhone（Chrome の「共有 → ホーム画面に追加」。Safari でも同じ手順で置けます）で同じように動きます。
 - データは端末の中（IndexedDB）に置き、Google アカウントでログインして、Firebase（Cloud Firestore）で自分の端末どうしを同期します。
 - 同じ作者の Novel Studio（NS。`app-for-novel`）の土台（PWA・同期・ログイン・起動アニメーション・画面の部品）を写して作っています。
 
@@ -36,7 +36,7 @@ npm ci
 npm run dev           # http://localhost:5173 で起動
 npm run typecheck     # 型の確かめ
 npm test              # 単体テスト（Vitest。scripts/ のテストも）
-npm run test:e2e      # E2E テスト（Playwright: PC 1400×900 と Pixel 7。E2E_WEBKIT=1 で iPhone 14 も）
+npm run test:e2e      # E2E テスト（Playwright: PC 1400×900 と Pixel 7。E2E_WEBKIT=1 で iPhone 14 も。iPhone の Chrome も今は中身が WebKit の見込み）
 npm run build         # dist/ に本番ビルド（PWA）
 npm run format        # Prettier で整形
 npm run deploy        # Firebase Hosting とアクセスルールを公開（docs/DEPLOY.md）
@@ -61,4 +61,4 @@ e2e/           Playwright の E2E テスト
 docs/          仕様書・要件・確認の回答・公開の手順書
 ```
 
-公開先は `https://<Firebase のプロジェクト ID>.web.app` です（プロジェクトを作るまでは、設定値は差し替え用の仮の値。docs/DEPLOY.md の 1）。
+公開先は `https://<Firebase のプロジェクト ID>.web.app` で、DS の場合は <https://diary-studio-35f4e.web.app>（プロジェクト ID `diary-studio-35f4e`。設定値は `src/sync/firebaseConfig.ts` と `.firebaserc`。docs/DEPLOY.md の 1）。

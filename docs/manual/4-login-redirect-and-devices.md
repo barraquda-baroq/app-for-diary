@@ -11,27 +11,27 @@ Google でログインした後に DS へ戻ってこられるよう、Google �
 
 1. PC のブラウザで https://console.cloud.google.com/apis/credentials を開く（Firebase と同じ Google アカウントで）。
 
-2. 画面の上のプロジェクトの選択が、DS のプロジェクト（diary-studio。ID は diary-studio-xxxx）になっていることを確かめる。
+2. 画面の上のプロジェクトの選択が、DS のプロジェクト（diary-studio。ID は diary-studio-35f4e）になっていることを確かめる。
    違う時は押して選び直す。NS の novel-studio-3352e と間違えないように。
-   - アドレスの後ろに ?project=diary-studio-xxxx（自分の ID）を付けて開くと、最初から DS のプロジェクトで開きます。
+   - アドレスの後ろに ?project=diary-studio-35f4e（自分のプロジェクト ID）を付けて開くと、最初から DS のプロジェクトで開きます。
    - 画面が「Google Auth Platform」の形の時は、左のメニューの「クライアント」を開く。
 
 3. 「OAuth 2.0 クライアント ID」の一覧の「Web client (auto created by Google Service)」を押す。
    手順2で Google ログインをオンにした時に、自動で作られています。
 
-4. 「承認済みのリダイレクト URI」の「URI を追加」を押して、次を入れる（diary-studio-xxxx は自分の ID に）。
+4. 「承認済みのリダイレクト URI」の「URI を追加」を押して、次を入れる（DS の場合。別のプロジェクトの時は diary-studio-35f4e を自分のプロジェクト ID に）。
 
    ```
-   https://diary-studio-xxxx.web.app/__/auth/handler
+   https://diary-studio-35f4e.web.app/__/auth/handler
    ```
 
-   元からある「https://diary-studio-xxxx.firebaseapp.com/__/auth/handler」は消さないでください。
+   元からある「https://diary-studio-35f4e.firebaseapp.com/__/auth/handler」は消さないでください。
 
 5. 「保存」を押す。
 
 ## B. PC でログインできるか確かめる
 
-1. PC の Chrome か Edge で https://diary-studio-xxxx.web.app を開く。
+1. PC の Chrome か Edge で https://diary-studio-35f4e.web.app を開く。
 
 2. 起動アニメーション → ログインの画面 →［Google でログイン］→ 小さなウインドウで Google アカウントを選ぶ → トップの画面、と進めば完了です。
 
@@ -44,7 +44,7 @@ Google でログインした後に DS へ戻ってこられるよう、Google �
 
 ### Windows の PC（Chrome か Edge）
 
-1. ふだん使うブラウザで https://diary-studio-xxxx.web.app を開く。
+1. ふだん使うブラウザで https://diary-studio-35f4e.web.app を開く。
 
 2. アプリとしてインストールする。
    - Chrome: アドレスバーの右端の「インストール」アイコンを押す。見当たらない時は右上の「︙」→「キャスト、保存、共有」→「ページをアプリとしてインストール」。
@@ -54,7 +54,7 @@ Google でログインした後に DS へ戻ってこられるよう、Google �
 
 ### Android（Chrome）
 
-1. Chrome で https://diary-studio-xxxx.web.app を開く。
+1. Chrome で https://diary-studio-35f4e.web.app を開く。
 
 2. 右上の「︙」→「ホーム画面に追加」→「インストール」（「アプリをインストール」と出ることもあります）。
 
@@ -64,7 +64,7 @@ Google でログインした後に DS へ戻ってこられるよう、Google �
 
 iOS 16.4 以降の Chrome なら、ホーム画面に追加して、アプリのように開けます。
 
-1. Chrome で https://diary-studio-xxxx.web.app を開く。
+1. Chrome で https://diary-studio-35f4e.web.app を開く。
 
 2. アドレスバーの右の共有のボタン（四角から上向きの矢印）を押す。
    見当たらない時は、右下の「…」から「共有」を探す。

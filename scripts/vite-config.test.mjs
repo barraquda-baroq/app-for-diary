@@ -1,9 +1,11 @@
 // @vitest-environment node
 // vite.config.ts の確かめ（NS の scripts/vite-config.test.mjs から。NS のビルドの日時・ネイティブ用のビルドの部分は DS に無いので外した）
+// と、manifest が指すアイコンの絵（scripts/icon-art.mjs と、それから書き出した public/ の画像）の確かめ
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import config, { PWA_ICONS, PWA_MANIFEST, PWA_WORKBOX, inlineScripts } from '../vite.config.ts'
+import { BACKGROUND, BLUE, faviconSvg, iconSvg } from './icon-art.mjs'
 
 // 外観と起動アニメーション（src/launch/launch.js）を index.html に埋め込む（読み込みを増やさず、アプリの本体より先に動かす）
 describe('inlineScripts（index.html の <script data-inline>）', () => {
@@ -101,6 +103,34 @@ describe('PWA_ICONS（manifest のアイコン）', () => {
       const a = PWA_ICONS.find((i) => i.purpose === 'any' && i.sizes === m.sizes)
       expect(file(a.src).equals(file(m.src))).toBe(false)
     }
+  })
+})
+
+// アプリのアイコンの青（scripts/icon-art.mjs。docs/SPEC.md の 5.4・5.8）
+describe('アイコンの青と、書き出したアイコン', () => {
+  const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
+
+  it('点の青は、OKLCH の L を 0.03 下げた暗い案の #52b6f5（初めの案 #5cc0ff）。点の光の明るい2色も同じ規則で下げた値', () => {
+    expect(BLUE).toBe('#52b6f5')
+    const svg = iconSvg()
+    expect(svg).toContain('stop-color="#e0ebf5"')
+    expect(svg).toContain('stop-color="#93c5f5"')
+    // 初めの案の青が残っていない
+    for (const old of ['#5cc0ff', '#eaf5ff', '#9ccfff']) expect(svg).not.toContain(old)
+    expect(BACKGROUND).toBe('#050607')
+  })
+
+  it('起動アニメーションのダークのロゴ・レーザーと同じ青', () => {
+    const win = {}
+    new Function('window', 'document', read('../src/launch/launch.js'))(win, {})
+    expect(win.DiaryStudioLaunch.PALETTES.dark.logo).toBe(BLUE)
+    expect(win.DiaryStudioLaunch.PALETTES.dark.laser).toBe(BLUE)
+  })
+
+  // PNG は中身を比べられないので、同じ時に書き出す SVG で、icon-art.mjs を変えた後に書き出し直したかを確かめる
+  it('public/ の icon.svg・favicon.svg は、今の icon-art.mjs から書き出した物（node scripts/render-icons.mjs）', () => {
+    expect(read('../public/icon.svg')).toBe(iconSvg({ radius: 224 }))
+    expect(read('../public/favicon.svg')).toBe(faviconSvg())
   })
 })
 

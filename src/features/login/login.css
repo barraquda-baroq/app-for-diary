@@ -94,7 +94,7 @@
   gap: 4px 12px;
 }
 
-/* 小さな［このまま Safari で使う］（押すと案内を閉じる） */
+/* 小さな［このまま Chrome で使う］（Safari で開いた時は「Safari」、ほかは「ブラウザ」。押すと案内を閉じる） */
 .login-link {
   min-height: var(--tap);
   padding: 0 2px;
@@ -202,8 +202,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   font-size: 14px;
+}
+
+/* 今の端末の手順の札「お使いの端末」: 札の地（--accent-soft）が枠の地と同じで見えなくなるので、面の色と細い輪にする */
+.install-guide.is-current .badge-accent {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .install-guide-steps {

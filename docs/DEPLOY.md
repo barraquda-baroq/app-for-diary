@@ -8,7 +8,9 @@ Diary Studio（DS）は、アプリを Firebase Hosting に置き、Google ア�
 - 作業は **Windows（PowerShell）でも Mac（ターミナル）でも同じ手順・同じコマンド**でできます（コマンドは1行ずつ入力して Enter）。
 - 作者にお願いするのは、「Firebase のプロジェクトを作る」（1 の 3〜7）と「ログインの戻り先を1回登録する」（1 の 10）の2つです。
   ほかは決まったコマンドを打つだけです。
-- この手順書では、作ったプロジェクトの ID を `diary-studio-xxxx` と書きます。読む時は、自分のプロジェクトの ID（例 `diary-studio-1a2b3`）に置き換えてください。
+- この手順書では、プロジェクト ID を **DS の場合の `diary-studio-35f4e`**（作者が 2026-11-10 に作ったプロジェクト）で書きます。
+  公開先は `https://diary-studio-35f4e.web.app` です。別のプロジェクトで作り直した時は、`diary-studio-35f4e` を自分のプロジェクト ID に置き換えて読んでください。
+  `diary-studio-xxxx` と書いてある所は、設定値を差し替える前の仮の値（1 の 7）のことです。
 
 > 今の版（段階0・土台）は、公開すると「起動アニメーション → ログインの画面 → 空のトップ画面」まで動きます。
 > カレンダー・リストの中身・端末どうしの同期は、後の版で入ります（[SPEC.md](SPEC.md) の 21.）。
@@ -45,7 +47,7 @@ npm ci
 
 1. <https://console.firebase.google.com/> を開き、Google アカウントでログインする（NS と同じアカウントでかまいません。この後の手順も、すべてこのアカウントで行います）。
 2. 「Firebase プロジェクトを作成」（「プロジェクトを追加」「新しい Firebase プロジェクトを作成」と出ることもある）を押す。
-3. プロジェクト名に `diary-studio` と入れる。名前の下に、自動で付いた **プロジェクト ID**（例 `diary-studio-1a2b3`）が小さく出るので、メモしておく
+3. プロジェクト名に `diary-studio` と入れる。名前の下に、自動で付いた **プロジェクト ID**（DS の場合は `diary-studio-35f4e`）が小さく出るので、メモしておく
    （この後、何度も使います。プロジェクト ID は後から変えられません）。規約の確認にチェックを入れて「続行」。
 4. 「Gemini in Firebase」（AI のアシスタント）を聞かれたら、オフのままで「続行」（DS では使いません）。
 5. 「Google アナリティクス」は **オフ** にして、「プロジェクトを作成」。
@@ -64,7 +66,7 @@ npm ci
    - 「プロジェクトのサポートメール」に自分のメールアドレス
 
    を選び、「保存」。一覧の「Google」の行に「有効」と出れば OK。
-5. 「設定」のタブ →「承認済みドメイン」に `diary-studio-xxxx.web.app` と `diary-studio-xxxx.firebaseapp.com` があることを確かめる
+5. 「設定」のタブ →「承認済みドメイン」に `diary-studio-35f4e.web.app` と `diary-studio-35f4e.firebaseapp.com`（自分のプロジェクト ID のもの）があることを確かめる
    （はじめから入っています。無ければ「ドメインの追加」で足す）。
 
 ### 5. Firestore（クラウドの保存先）を作る
@@ -82,21 +84,21 @@ npm ci
    **「App Hosting」ではなく「Hosting」** を選んでください（App Hosting は有料のプランが要ります）。
 2. 「始める」を押す。続けて出る説明（Firebase CLI のインストール・プロジェクトの初期化・デプロイ）は、このリポジトリで済ませてあるので、
    コマンドは打たずに「次へ」「次へ」「コンソールに進む」と進む。
-3. Hosting の画面に `diary-studio-xxxx.web.app` が出ていれば OK（まだ何も置いていないので、開いても DS は出ません）。
+3. Hosting の画面に `diary-studio-35f4e.web.app`（自分のプロジェクト ID のもの）が出ていれば OK（まだ何も置いていないので、開いても DS は出ません）。
 
 ### 7. Web アプリを登録して、設定値を差し替える
 
 1. 左上の「プロジェクトの概要」（家のアイコン）を押し、まん中の「アプリを追加」→ `</>`（ウェブ）のアイコンを押す
    （見当たらない時は、左上の歯車 →「プロジェクトの設定」→「全般」のいちばん下の「マイアプリ」→ `</>`）。
 2. 「アプリのニックネーム」に `Diary Studio`。「このアプリの Firebase Hosting も設定します」には **チェックを入れない**。「アプリを登録」。
-3. 「Firebase SDK の追加」に、次のような設定値が出ます（「npm を使用」のままで見る。値はプロジェクトごとに違います）。
+3. 「Firebase SDK の追加」に、次のような設定値が出ます（「npm を使用」のままで見る。値はプロジェクトごとに違います。下は DS の場合）。
 
    ```
    const firebaseConfig = {
      apiKey: "AIza……",
-     authDomain: "diary-studio-xxxx.firebaseapp.com",
-     projectId: "diary-studio-xxxx",
-     storageBucket: "diary-studio-xxxx.firebasestorage.app",
+     authDomain: "diary-studio-35f4e.firebaseapp.com",
+     projectId: "diary-studio-35f4e",
+     storageBucket: "diary-studio-35f4e.firebasestorage.app",
      messagingSenderId: "123456789012",
      appId: "1:123456789012:web:……"
    };
@@ -104,8 +106,9 @@ npm ci
 
    `const firebaseConfig = {` から `};` までをコピーして控え、「コンソールに進む」を押す。
    （後からもう一度見る時は、歯車 →「プロジェクトの設定」→「全般」→「マイアプリ」の「SDK の設定と構成」で「構成」を選ぶ）
-4. 控えた値を、リポジトリの2つのファイル（`src/sync/firebaseConfig.ts` と `.firebaserc`）に入れます。今は差し替え用の仮の値
-   （`REPLACE_WITH_FIREBASE_API_KEY`・`diary-studio-xxxx`）が入っています。次のどちらかの方法で（結果は同じ）。
+4. 控えた値を、リポジトリの2つのファイル（`src/sync/firebaseConfig.ts` と `.firebaserc`）に入れます。差し替える前は仮の値
+   （`REPLACE_WITH_FIREBASE_API_KEY`・`diary-studio-xxxx`）が入っています（DS は `diary-studio-35f4e` の値に差し替え済みです）。
+   次のどちらかの方法で（結果は同じ）。
 
    > この設定値は秘密ではありません（公開したアプリの中にそのまま入り、誰でも見られる物です）。
    > データは、9 で公開するアクセスルールで、持ち主の本人だけが読み書きできるようにしています。
@@ -126,26 +129,26 @@ npm ci
       控えた `apiKey` から `appId` までの6行を貼る。`export const firebaseConfig = {` の行、`}` の行、その上下のほかの行はそのまま残す
       （`"` と `'` はどちらでもかまいません。`measurementId` の行があれば、貼っても消してもかまいません）。保存して閉じる。
 
-      書き換えた後の形（値は自分のもの）:
+      書き換えた後の形（値は自分のもの。下は DS の場合）:
 
       ```ts
       export const firebaseConfig = {
         apiKey: "AIza……",
-        authDomain: "diary-studio-1a2b3.firebaseapp.com",
-        projectId: "diary-studio-1a2b3",
-        storageBucket: "diary-studio-1a2b3.firebasestorage.app",
+        authDomain: "diary-studio-35f4e.firebaseapp.com",
+        projectId: "diary-studio-35f4e",
+        storageBucket: "diary-studio-35f4e.firebasestorage.app",
         messagingSenderId: "123456789012",
         appId: "1:123456789012:web:……"
       }
       ```
 
-   3. `.firebaserc` を同じように開き（Windows: `notepad .firebaserc`、Mac: `open -e .firebaserc`）、`diary-studio-xxxx` を
-      自分のプロジェクト ID に書き換えて保存する。
+   3. `.firebaserc` を同じように開き（Windows: `notepad .firebaserc`、Mac: `open -e .firebaserc`）、仮の値の `diary-studio-xxxx` を
+      自分のプロジェクト ID（DS の場合は `diary-studio-35f4e`）に書き換えて保存する。
 
       ```json
       {
         "projects": {
-          "default": "diary-studio-1a2b3"
+          "default": "diary-studio-35f4e"
         }
       }
       ```
@@ -160,7 +163,7 @@ npm ci
    node scripts/deploy.mjs --check
    ```
 
-   `公開先: https://diary-studio-xxxx.web.app（Firebase のプロジェクト diary-studio-xxxx）` と出れば OK です（自分のプロジェクト ID で出ます）。
+   `公開先: https://diary-studio-35f4e.web.app（Firebase のプロジェクト diary-studio-35f4e）` と出れば OK です（自分のプロジェクト ID で出ます）。
    `✗` の行が出たら、その行のとおりに直してください（何も公開はしません）。
 
 ### 8. Firebase にログインする
@@ -182,7 +185,7 @@ npm run deploy
 ```
 
 型の確かめ → ビルド → アプリ（Hosting）とアクセスルール（Firestore のルール・索引の設定）の公開を、続けて行います（`scripts/deploy.mjs`。数分かかります）。
-最後に `Hosting URL: https://diary-studio-xxxx.web.app` と表示され、`公開しました: https://diary-studio-xxxx.web.app` と出れば完了です。
+最後に `Hosting URL: https://diary-studio-35f4e.web.app` と表示され、`公開しました: https://diary-studio-35f4e.web.app` と出れば完了です（自分のプロジェクト ID で出ます）。
 
 - 設定値が仮の値のまま（7 をまだしていない）の時と、2つのファイルのプロジェクト ID が食い違っている時は、何も公開せずに
   `公開を始める前に止めました` と出て止まり、直す所を出します。
@@ -193,27 +196,27 @@ npm run deploy
 
 ### 10. Google ログインの戻り先を登録する（最初の1回だけ）
 
-DS は、ログインの画面も `diary-studio-xxxx.web.app` で開きます（iPhone のホーム画面のアプリでもログインできるように。[SPEC.md](SPEC.md) の 2.5）。
+DS は、ログインの画面も `diary-studio-35f4e.web.app` で開きます（iPhone のホーム画面のアプリでもログインできるように。[SPEC.md](SPEC.md) の 2.5）。
 そのため、Google 側にその戻り先を教えておきます。これをしないと、ログインの時に「エラー 400: redirect_uri_mismatch」と出ます。
 
 1. [Google Cloud コンソールの「認証情報」](https://console.cloud.google.com/apis/credentials) を開く（Firebase と同じ Google アカウントで）。
-   画面の上のプロジェクトの選択が **DS のプロジェクト**（`diary-studio`。ID `diary-studio-xxxx`）になっていることを確かめる
+   画面の上のプロジェクトの選択が **DS のプロジェクト**（`diary-studio`。ID `diary-studio-35f4e`）になっていることを確かめる
    （違う時は押して選び直す。NS の `novel-studio-3352e` と間違えないように）。
-   - アドレスの後ろに `?project=diary-studio-xxxx`（自分の ID）を付けて開くと、最初から DS のプロジェクトで開きます。
+   - アドレスの後ろに `?project=diary-studio-35f4e`（自分のプロジェクト ID）を付けて開くと、最初から DS のプロジェクトで開きます。
    - 画面が「Google Auth Platform」の形になっている時は、左のメニューの「クライアント」を開く。
 2. 「OAuth 2.0 クライアント ID」の一覧の **Web client (auto created by Google Service)** を押す（1 の 4 で Google ログインをオンにした時に、自動で作られています）。
-3. 「承認済みのリダイレクト URI」の「URI を追加」で次を足して、「保存」を押す（`diary-studio-xxxx` は自分の ID に。
-   元からある `https://diary-studio-xxxx.firebaseapp.com/__/auth/handler` は消さない）。
+3. 「承認済みのリダイレクト URI」の「URI を追加」で次を足して、「保存」を押す（DS の場合。別のプロジェクトの時は `diary-studio-35f4e` を自分のプロジェクト ID に。
+   元からある `https://diary-studio-35f4e.firebaseapp.com/__/auth/handler` は消さない）。
 
    ```
-   https://diary-studio-xxxx.web.app/__/auth/handler
+   https://diary-studio-35f4e.web.app/__/auth/handler
    ```
 
 4. 反映まで数分（長いと数時間）かかることがあります。
 
 ### 11. ログインできるか確かめる
 
-1. PC の Chrome か Edge で `https://diary-studio-xxxx.web.app` を開く。
+1. PC の Chrome か Edge で `https://diary-studio-35f4e.web.app` を開く。
 2. 起動アニメーション → ログインの画面 →［Google でログイン］→ 小さなウインドウで Google アカウントを選ぶ → トップの画面、と進めば完了です。
 3. 「エラー 400: redirect_uri_mismatch」と出た時は、10 がまだ反映されていない（しばらく待つ）か、URI の打ち間違いです。
 
@@ -228,7 +231,7 @@ DS は、ログインの画面も `diary-studio-xxxx.web.app` で開きます（
 
 Chrome でも Edge でも同じように使えます。違うのはインストールのボタンの場所だけです。
 
-1. ふだん使うブラウザで `https://diary-studio-xxxx.web.app` を開く。
+1. ふだん使うブラウザで `https://diary-studio-35f4e.web.app` を開く。
 2. アプリとしてインストールする。スタートメニューやデスクトップから、専用のウインドウで開けるようになります。
    - Chrome: アドレスバーの右端の「インストール」アイコン（画面に下向きの矢印）を押す
      （見当たらない時は右上の「︙」→「キャスト、保存、共有」→「ページをアプリとしてインストール」。表示は Chrome の版で少し違うことがあります）
@@ -239,21 +242,28 @@ Chrome でも Edge でも同じように使えます。違うのはインスト�
 
 ### Android（Chrome）
 
-1. Chrome で `https://diary-studio-xxxx.web.app` を開く。
+1. Chrome で `https://diary-studio-35f4e.web.app` を開く。
 2. 右上の「︙」→「ホーム画面に追加」→「インストール」（「アプリをインストール」と出ることもあります）。
 3. ホーム画面（かアプリの一覧）の Diary Studio のアイコンから開いて、［Google でログイン］。
 
-### iPhone（Safari）
+### iPhone（Chrome）
 
-1. **Safari** で `https://diary-studio-xxxx.web.app` を開く（Chrome などのほかのブラウザではなく Safari で）。
-2. 共有のボタン（四角から上向きの矢印）を押して、「ホーム画面に追加」を押す。
-   - iOS 26 では、アドレスバーの右の「…」→「共有」の中にあります。見当たらない時は、一覧を上へずらすか「その他」を押す。
-   - 「Web アプリとして開く」のスイッチが出た時は、オンのまま。
-3. 右上の「追加」を押す。
-4. **ホーム画面の Diary Studio のアイコンから開いて**、［Google でログイン］（ページが Google のログインに切り替わり、アカウントを選ぶと戻ってきます）。
+iOS 16.4 以降の Chrome なら、ホーム画面に追加して、アプリのように開けます。
 
-Safari のタブのまま使うと、ホーム画面のアプリとはデータが別々になり、しばらく開かないと Safari が端末の中のデータを消すこともあります。
-いつもホーム画面のアイコンから開いて使ってください（Safari のタブでログインしても、ホーム画面のアプリはログインしていない状態のままです）。
+1. Chrome で `https://diary-studio-35f4e.web.app` を開く。
+2. アドレスバーの右の共有のボタン（四角から上向きの矢印）を押す。
+   見当たらない時は、右下の「…」から「共有」を探す。
+3. 一覧から「ホーム画面に追加」を押す（見当たらない時は、一覧を上へずらすか「その他」を押す）。
+   「Web アプリとして開く」のスイッチが出た時は、オンのまま。
+4. 右上の「追加」を押す。
+5. **ホーム画面の Diary Studio のアイコンから開いて**、［Google でログイン］。
+   ページが Google のログインに切り替わり、アカウントを選ぶと DS に戻ってきます。
+
+Chrome のタブで開いた DS と、ホーム画面のアイコンから開いた DS は、端末の中のデータが別々です。
+いつもホーム画面のアイコンから開いて使ってください（Chrome のタブでログインしても、ホーム画面の DS はログインしていない状態のままです）。
+
+> Safari で開いた時も、同じ共有のボタン（iOS 26 ではアドレスバーの右の「…」→「共有」）→「ホーム画面に追加」で置けます。
+> ホーム画面から開いた後は、Chrome から置いた時と同じです。
 
 ### 一度ログインした端末
 
@@ -323,9 +333,10 @@ npm run deploy
 | ログインの時に「エラー 400: redirect_uri_mismatch」 | ログインの戻り先を登録する（1 の 10）。登録した直後なら、しばらく待つ |
 | ログインの画面で［Google でログイン］を押すと「まだ公開の準備ができていません（docs/DEPLOY.md）」 | 設定値が差し替え用の仮の値のままです。1 の 7 で設定値を差し替えてから、もう一度 `npm run deploy`（`npm run deploy` は仮の値のままでは公開を始める前に止まるので、ほかの方法で公開した時や開発サーバーで出ます） |
 | ログインの画面に「Firebase の設定がまだ仮の値です」 | 設定値の打ち間違い（API キーなど）。1 の 7 の値と見比べて直してから、もう一度 `npm run deploy` |
-| ログインの画面に「このアドレスからはログインできません」 | Authentication の「承認済みドメイン」に、開いているアドレス（`diary-studio-xxxx.web.app`）を足す（1 の 4 の 5） |
+| ログインの画面に「このアドレスからはログインできません」 | Authentication の「承認済みドメイン」に、開いているアドレス（`diary-studio-35f4e.web.app`）を足す（1 の 4 の 5） |
 | ログインの画面に「ポップアップがブロックされました」 | アドレスバーの右に出るポップアップのアイコンから、このサイトのポップアップを許可する |
-| iPhone でログインしたのに、次に開くとログインの画面に戻る | Safari のタブではなく、ホーム画面のアイコンから開いてログインする（2 の iPhone） |
+| iPhone でログインしたのに、次に開くとログインの画面に戻る | Chrome のタブではなく、ホーム画面のアイコンから開いてログインする（2 の iPhone（Chrome）） |
+| iPhone の Chrome の共有の一覧に「ホーム画面に追加」が無い | 一覧を上へずらすか「その他」を押す。それでも無い時は、iOS が 16.4 より前です（設定 → 一般 → 情報 の「iOS バージョン」）。iOS を新しくするか、Safari で開いて同じ手順で追加する |
 
 ## 7. 開発者向け: エミュレーターで試す
 

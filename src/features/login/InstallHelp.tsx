@@ -14,12 +14,14 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export const INSTALL_GUIDES: readonly { platform: Platform; title: string; steps: readonly string[] }[] = [
+  // iPhone は Chrome を基準にする（作者の指示「iOS では Chrome 基準でいい」）。Safari でも同じ「共有 → ホーム画面に追加」で置けるので、
+  // 「Chrome（または Safari）」の形で並べて書く。Chrome で置けるのは iOS 16.4 以降（docs/DEPLOY.md の 2 の iPhone（Chrome））
   {
     platform: 'ios',
-    title: 'iPhone・iPad（Safari）',
+    title: 'iPhone・iPad（Chrome または Safari）',
     steps: [
-      'Safari で開き、画面下（iPad は右上）の共有ボタン（□に↑）をタップ',
-      '「ホーム画面に追加」を選び、「追加」をタップ',
+      'Chrome（または Safari）で開き、アドレスバーの右の共有のボタン（□に↑）をタップ（見当たらない時は「…」→「共有」）',
+      '一覧から「ホーム画面に追加」を選び、「追加」をタップ（「Web アプリとして開く」のスイッチが出たら、オンのまま）',
       'ホーム画面にできた Diary Studio のアイコンから開いて、ログインする',
     ],
   },
@@ -125,8 +127,8 @@ export function InstallHelp({ framed = true }: { framed?: boolean }) {
       </ul>
 
       <p className="install-note">
-        データはその端末の中に保存し、ログインすると自分のほかの端末と同期します。iPhone・iPad では Safari
-        とホーム画面のアプリでデータが別々になるので、ホーム画面のアプリで使ってください。
+        データはその端末の中に保存し、ログインすると自分のほかの端末と同期します。iPhone・iPad では、Chrome（または
+        Safari）のタブとホーム画面のアプリでデータが別々になるので、ホーム画面のアプリから開いてログインしてください。
       </p>
     </>
   )

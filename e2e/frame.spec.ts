@@ -201,7 +201,11 @@ test.describe('PC（L）の並べ方（3.4）', () => {
     await openSignedIn(page)
     for (const width of [960, 700]) {
       await page.setViewportSize({ width, height: 800 })
+      // 960（L）から 700（M）に替えると、トップ画面が L の並べ方から S・M の並べ方に作り直される。作り直しが済む前に測ると、
+      // 消える途中の操作の列を測って大きさが null になることがあるので、幅の区分が替わったのを待ってから測る
+      await expect(page.getByTestId('top-page')).toHaveAttribute('data-width', width >= 900 ? 'L' : 'M')
       const toolbar = page.getByTestId('calendar-toolbar')
+      await expect(toolbar.locator('.cal-toolbar-right')).toBeVisible()
       const left = await toolbar.locator('.cal-toolbar-left').boundingBox()
       const right = await toolbar.locator('.cal-toolbar-right').boundingBox()
       const bar = await toolbar.boundingBox()

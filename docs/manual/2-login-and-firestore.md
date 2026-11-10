@@ -25,9 +25,9 @@
 7. 一覧の「Google」の行に「有効」と出ていれば OK。
 
 8. 「設定」のタブ → 「承認済みドメイン」に、次の2つがあることを確かめる（はじめから入っています）。
-   - diary-studio-xxxx.web.app
-   - diary-studio-xxxx.firebaseapp.com
-   （diary-studio-xxxx は自分のプロジェクト ID。無ければ「ドメインの追加」で足す）
+   - diary-studio-35f4e.web.app
+   - diary-studio-35f4e.firebaseapp.com
+   （DS の場合。別のプロジェクトの時は、自分のプロジェクト ID のもの。無ければ「ドメインの追加」で足す）
 
 ## B. 保存先（Firestore）を作る
 
@@ -54,7 +54,7 @@
 
 3. 続けて出る説明（Firebase CLI のインストールなど）は、DS ではもう済ませてあります。コマンドは打たずに、「次へ」「次へ」「コンソールに進む」と進む。
 
-4. Hosting の画面に「diary-studio-xxxx.web.app」が出ていれば OK です（まだ何も置いていないので、開いても DS は出ません）。
+4. Hosting の画面に「diary-studio-35f4e.web.app」（自分のプロジェクト ID のもの）が出ていれば OK です（まだ何も置いていないので、開いても DS は出ません）。
 
 ## 終わったら
 

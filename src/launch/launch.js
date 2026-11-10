@@ -10,8 +10,9 @@
 //   ブラウザの枠の色にする。起動後は src/ui/Layout.tsx の PrefsEffect が同じ規則で反映する
 // - 起動アニメーション: 画面いっぱいの重なり（<html> の直下。<body> はまだ無い）を置き、地の色だけをその場で出す。絵は HTML を
 //   読み終えた後、ふだんは Worker（OffscreenCanvas。別のスレッド）が canvas に描く（アプリの起動と取り合わない）。Worker を使えない
-//   時はページの中で描く（下ごしらえは最初の描画の時。描く大きさの倍率は 2 まで。下ごしらえ・1コマが重い端末では、アプリの起動を
-//   遅らせないよう動きをやめて最後の絵（ロゴ）に飛ぶ。PAGE_DRAW）。出すのは、ウインドウ・タブを開いた最初の1回（再読み込みでは出さない）。
+//   時はページの中で描く（下ごしらえは最初の描画の時。下ごしらえ・1コマが重い端末では、アプリの起動を遅らせないよう動きをやめて
+//   最後の絵（ロゴ）に飛ぶ。PAGE_DRAW）。描く大きさの倍率は、どちらで描く時も 2 まで（MAX_DPR）。出すのは、ウインドウ・タブを
+//   開いた最初の1回（再読み込みでは出さない）。
 //   設定の「起動アニメーション」をオフにすると出さない。テスト（navigator.webdriver）では、localStorage の diary-studio:launch を
 //   'force' にするか URL に launch=1 を付けた時だけ出す（e2e/launch.spec.ts）
 // - 消える時: アニメーションが終わり（約2.27秒）、アプリが最初の画面を出せた（src/main.tsx が DiaryStudioLaunch.appReady() を呼ぶ）
@@ -144,13 +145,19 @@
   }
 
   /**
+   * 描く大きさの倍率（devicePixelRatio）の上限。Worker で描く時もページの中で描く時も同じ。点で描いた絵なので、倍率 3 の画面
+   * （iPhone など）で 2 にしても見た目はほぼ変わらず、1コマの重さは半分以下になる（3² → 2² の画素の数）。CI の WebKit
+   * （ソフトウェアの描画）は倍率 3 の Worker で最初の絵まで約1.5秒かかり、メインのスレッドも 0.6〜0.8秒詰まって、アニメーションの
+   * 終わりより先に5秒の期限が来ていた
+   */
+  var MAX_DPR = 2
+
+  /**
    * ページの中で描く時（Worker を使えない古い・遅い端末）の見張り。ページの中で描くと、1コマごとにアプリの起動と同じスレッドを
    * 使うので、重い時は動きをやめて最後の絵（ロゴ）に飛び、視差効果を減らす時と同じく stillMs 出して終わる（createFrameWatch）。
    * Worker で描く時は使わない（別のスレッドなのでアプリの起動と取り合わない。見た目も時間も変えない）
    */
   var PAGE_DRAW = {
-    /** 描く大きさの倍率（devicePixelRatio）の上限。Worker で描く時は WORKER_MAX_DPR */
-    maxDpr: 2,
     /** 下ごしらえ（点の絵・字の絵を作る）と最初の絵にかけてよい時間（ミリ秒） */
     setupMs: 250,
     /** 1コマを描くのにかけてよい時間。コマの間隔もこれで見る（20コマ／秒） */
@@ -158,8 +165,6 @@
     /** コマの間隔は、最初のこのコマ数の真ん中の値で見る（アプリの起動の重い処理で、1・2コマだけ遅れたのは数えない） */
     frames: 5,
   }
-  /** Worker で描く時の、描く大きさの倍率の上限 */
-  var WORKER_MAX_DPR = 3
 
   /**
    * ページの中で描く時の、1コマの時間の見張り（画面には触らない）。戻り値の関数は、重い時に理由を返す（重くなければ ''）。
@@ -302,14 +307,15 @@
     var DURATION = 2.27
 
     // 色の組（外観ごとの青。docs/SPEC.md の 5.4）。blend: 光の重ね方（暗い地は足し合わせて光らせる）、glow: 光の強さ、
-    // flicker: ちらつきの強さ。ダークの logo はアイコンの青（scripts/icon-art.mjs の BLUE）と同じ
+    // flicker: ちらつきの強さ。ダークの logo はアイコンの青（scripts/icon-art.mjs の BLUE）と同じ。
+    // 青（laser・core・logo・hot）は、初めの案から OKLCH の L だけを 0.03 下げた暗い案（作者が見比べて決めた）
     var PALETTES = {
       light: {
         bg: '#fbfcfe',
-        laser: '#2f6fd9',
-        core: '#1d4fb8',
-        logo: '#25539a',
-        hot: '#2f6fd9',
+        laser: '#2666cf',
+        core: '#1446ae',
+        logo: '#1c4a90',
+        hot: '#2666cf',
         splitA: '#ff4f8b',
         splitB: '#13b5c9',
         blend: 'source-over',
@@ -320,10 +326,10 @@
       },
       dark: {
         bg: '#050607',
-        laser: '#5cc0ff',
-        core: '#c2e3ff',
-        logo: '#5cc0ff',
-        hot: '#eef7ff',
+        laser: '#52b6f5',
+        core: '#b8d9f5',
+        logo: '#52b6f5',
+        hot: '#e4edf5',
         splitA: '#ff2b6e',
         splitB: '#2bffd2',
         blend: 'lighter',
@@ -334,10 +340,10 @@
       },
       deep: {
         bg: '#000000',
-        laser: '#3d74c4',
-        core: '#4f80c4',
-        logo: '#3d74c4',
-        hot: '#8fb6e6',
+        laser: '#346bba',
+        core: '#4677ba',
+        logo: '#346bba',
+        hot: '#86addc',
         splitA: '#5c1430',
         splitB: '#0e4a50',
         blend: 'lighter',
@@ -1225,12 +1231,12 @@
   var DURATION = renderer.DURATION
   var PALETTES = renderer.PALETTES
 
-  /** stage の大きさ（CSS ピクセル）と画素の細かさ（maxDpr まで） */
-  function stageSize(stage, safe, maxDpr) {
+  /** stage の大きさ（CSS ピクセル）と画素の細かさ（MAX_DPR まで） */
+  function stageSize(stage, safe) {
     return {
       width: stage.clientWidth || 240,
       height: stage.clientHeight || 520,
-      dpr: Math.min(window.devicePixelRatio || 1, maxDpr),
+      dpr: Math.min(window.devicePixelRatio || 1, MAX_DPR),
       safe: safe || {},
     }
   }
@@ -1245,12 +1251,12 @@
 
   /**
    * ページの中で描く（stage の中に canvas を作る）。Worker を使えない時と、テスト・確かめ用。
-   * 1コマを軽くするため、描く大きさの倍率は PAGE_DRAW.maxDpr まで（それより細かい画面では、少しにじむのを受け入れる）。
+   * 1コマを軽くするため、描く大きさの倍率は MAX_DPR まで（それより細かい画面では、少しにじむのを受け入れる。Worker でも同じ）。
    * opts は start と同じ（opts.safe も）。戻り値は start と同じ
    */
   function play(stage, theme, opts) {
     opts = opts || {}
-    return renderer.start(stageCanvas(stage), stageSize(stage, opts.safe, PAGE_DRAW.maxDpr), theme, opts)
+    return renderer.start(stageCanvas(stage), stageSize(stage, opts.safe), theme, opts)
   }
 
   /** Worker の中で動かす部分（これも文字列にして渡す。外にあるものは使わない） */
@@ -1317,7 +1323,7 @@
         {
           type: 'start',
           canvas: offscreen,
-          size: stageSize(stage, opts.safe, WORKER_MAX_DPR),
+          size: stageSize(stage, opts.safe),
           theme: theme,
           still: !!opts.still,
           at: opts.at,
@@ -1626,6 +1632,7 @@
     decide: decide,
     createController: createController,
     createFrameWatch: createFrameWatch,
+    MAX_DPR: MAX_DPR,
     PAGE_DRAW: PAGE_DRAW,
     play: play,
     playInWorker: playInWorker,

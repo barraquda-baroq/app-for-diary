@@ -1,5 +1,5 @@
 // ログインの画面（docs/SPEC.md の 2.5・Q27）: ログインしていない間はこの画面だけを出す。表紙の見た目の中身（名前・今日の日付・
-// ［Google でログイン］・左下の版）、Firebase の設定が仮の値の時の言葉、電波が無い時の言葉、iPhone の Safari の案内
+// ［Google でログイン］・左下の版）、Firebase の設定が仮の値の時の言葉、電波が無い時の言葉、iPhone の案内（Chrome を基準に、Safari でも）
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
@@ -22,10 +22,14 @@ vi.mock('../../sync/controller', async (importOriginal) => ({
 
 const { routes } = await import('../../App')
 const { useSync } = await import('../../sync/controller')
-const { HOME_SCREEN_MESSAGE, NOT_READY_MESSAGE, OFFLINE_MESSAGE } = await import('./LoginPage')
+const { homeScreenMessage, NOT_READY_MESSAGE, OFFLINE_MESSAGE } = await import('./LoginPage')
 
-const IPHONE_UA =
+const IPHONE_CHROME_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0.7444.77 Mobile/15E148 Safari/604.1'
+const IPHONE_SAFARI_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+const IPHONE_FIREFOX_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/132.0 Mobile/15E148 Safari/605.1.15'
 
 function setNavigator(key: 'userAgent' | 'onLine' | 'standalone', value: unknown) {
   Object.defineProperty(window.navigator, key, { value, configurable: true })
@@ -126,13 +130,17 @@ describe('ログインの画面', () => {
   })
 })
 
-describe('iPhone の Safari で開いた時（2.5・D44）', () => {
-  it('ログインのボタンの上に案内と［追加の手順］、［このまま Safari で使う］で案内を閉じる', async () => {
-    setNavigator('userAgent', IPHONE_UA)
+describe('iPhone をホーム画面のアプリでなく開いた時（2.5・D44。Chrome を基準に）', () => {
+  it('Chrome: ログインのボタンの上に案内と［追加の手順］、［このまま Chrome で使う］で案内を閉じる', async () => {
+    setNavigator('userAgent', IPHONE_CHROME_UA)
     const user = userEvent.setup()
     renderAt('/login')
     const notice = screen.getByTestId('login-home-notice')
-    expect(notice.textContent).toContain(HOME_SCREEN_MESSAGE)
+    expect(notice.textContent).toContain(homeScreenMessage('chrome'))
+    expect(homeScreenMessage('chrome')).toBe(
+      'ホーム画面に追加してから使ってください。Chrome のタブのままだと、ホーム画面のアプリとデータが別々になり、しばらく使わないとデータが消されることもあります。',
+    )
+    expect(notice.textContent).not.toContain('Safari')
     // 案内はログインのボタンより上
     expect(notice.compareDocumentPosition(screen.getByTestId('login-google')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
@@ -143,16 +151,38 @@ describe('iPhone の Safari で開いた時（2.5・D44）', () => {
       .filter((li) => li.dataset.testid?.startsWith('install-guide-'))
     expect(guides.map((g) => g.dataset.testid)).toEqual(['install-guide-ios', 'install-guide-android', 'install-guide-desktop'])
     expect(within(guides[0]).getByText('お使いの端末')).toBeTruthy()
+    // iPhone の手順は Chrome を基準に、Safari も除かない
+    expect(within(guides[0]).getByText('iPhone・iPad（Chrome または Safari）')).toBeTruthy()
+    expect(guides[0].querySelector('ol li')?.textContent).toMatch(/^Chrome（または Safari）で開き、/)
+    expect(dialog.textContent).not.toMatch(/Safari で開いて|Safari で開き/)
     await user.click(within(dialog).getByTestId('modal-close'))
     expect(screen.queryByRole('dialog')).toBeNull()
 
-    await user.click(screen.getByTestId('login-stay-safari'))
+    const stay = screen.getByTestId('login-stay-browser')
+    expect(stay.textContent).toBe('このまま Chrome で使う')
+    await user.click(stay)
     expect(screen.queryByTestId('login-home-notice')).toBeNull()
     expect(screen.getByTestId('login-google')).toBeTruthy()
   })
 
+  it('Safari で開いた時も同じ案内を、Safari の名前で出す', () => {
+    setNavigator('userAgent', IPHONE_SAFARI_UA)
+    renderAt('/login')
+    expect(screen.getByTestId('login-home-notice').textContent).toContain(homeScreenMessage('safari'))
+    expect(homeScreenMessage('safari')).toContain('Safari のタブのままだと、')
+    expect(screen.getByTestId('login-stay-browser').textContent).toBe('このまま Safari で使う')
+  })
+
+  it('ほかのブラウザ（Firefox など）では「ブラウザ」と呼ぶ', () => {
+    setNavigator('userAgent', IPHONE_FIREFOX_UA)
+    renderAt('/login')
+    expect(screen.getByTestId('login-home-notice').textContent).toContain(homeScreenMessage('other'))
+    expect(homeScreenMessage('other')).toContain('ブラウザのタブのままだと、')
+    expect(screen.getByTestId('login-stay-browser').textContent).toBe('このままブラウザで使う')
+  })
+
   it('ホーム画面に追加したアプリで開いている時は出さない', () => {
-    setNavigator('userAgent', IPHONE_UA)
+    setNavigator('userAgent', IPHONE_CHROME_UA)
     setNavigator('standalone', true)
     renderAt('/login')
     expect(screen.queryByTestId('login-home-notice')).toBeNull()
