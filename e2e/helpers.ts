@@ -8,18 +8,50 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
  * 「page-diagnostics」として添付する（line reporter はこの文を CI のログにそのまま出す）。ファイルの先頭で1回呼ぶ
  */
 export function collectDiagnosticsOnFailure(): void {
-  const logs = new WeakMap<Page, { lines: string[]; pending: Map<string, number>; t0: number }>()
+  interface Rec {
+    nav: string[]
+    errors: string[]
+    beats: string[]
+    other: string[]
+    pending: Map<string, number>
+    t0: number
+  }
+  const logs = new WeakMap<Page, Rec>()
   test.beforeEach(async ({ page }) => {
-    const rec = { lines: [] as string[], pending: new Map<string, number>(), t0: Date.now() }
+    const rec: Rec = { nav: [], errors: [], beats: [], other: [], pending: new Map(), t0: Date.now() }
     logs.set(page, rec)
     const at = () => `@${Date.now() - rec.t0}`
-    page.on('console', (m) => rec.lines.push(`console.${m.type()}${at()}: ${m.text()}`))
-    page.on('pageerror', (e) => rec.lines.push(`pageerror${at()}: ${e.message}`))
+    page.on('console', (m) => {
+      const text = m.text()
+      if (text.startsWith('[diag]')) rec.beats.push(`${text.slice(7)}${at()}`)
+      else if (m.type() === 'error' || m.type() === 'warning')
+        rec.errors.push(`console.${m.type()}${at()}: ${text.slice(0, 160)}`)
+      // 毎回出るだけの物（開発サーバーの接続・React の案内）は省く
+      else if (!text.startsWith('[vite]') && !text.includes('React DevTools'))
+        rec.other.push(`console.${m.type()}${at()}: ${text.slice(0, 120)}`)
+    })
+    page.on('pageerror', (e) => rec.errors.push(`pageerror${at()}: ${e.message.slice(0, 200)}`))
     page.on('request', (r) => rec.pending.set(r.url(), Date.now() - rec.t0))
     page.on('requestfinished', (r) => rec.pending.delete(r.url()))
     page.on('requestfailed', (r) => {
       rec.pending.delete(r.url())
-      rec.lines.push(`requestfailed${at()}: ${r.url()} ${r.failure()?.errorText ?? ''}`)
+      rec.errors.push(`requestfailed${at()}: ${r.url()} ${r.failure()?.errorText ?? ''}`)
+    })
+    // 読み込み直し（開発サーバーの「依存を作り直したので再読み込み」など）が途中で起きていないかを見る
+    page.on('framenavigated', (f) => {
+      if (f === page.mainFrame()) rec.nav.push(`navigated${at()}: ${f.url()}`)
+    })
+    page.on('load', () => rec.nav.push(`load${at()}`))
+    // テストが時間切れで終わるとページが閉じられ、後から様子を読めないので、2秒ごとにページの様子を console に残す
+    await page.addInitScript(() => {
+      const beat = () => {
+        const overlay = document.getElementById('ds-launch')
+        const text = (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 80)
+        console.debug(
+          `[diag] ready=${document.readyState} overlay=${overlay ? (overlay.getAttribute('data-launch-end') ?? 'shown') : 'none'} body=${text}`,
+        )
+      }
+      setInterval(beat, 2000)
     })
   })
   test.afterEach(async ({ page }, testInfo) => {
@@ -31,12 +63,15 @@ export function collectDiagnosticsOnFailure(): void {
       .evaluate(() => {
         const overlay = document.getElementById('ds-launch')
         const attrs = overlay ? [...overlay.attributes].map((a) => `${a.name}=${a.value}`).join(' ') : 'none'
-        const text = (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 300)
-        return `url=${location.href}\noverlay=${attrs}\nbody=${text}`
+        const text = (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 200)
+        return `url=${location.href} overlay=${attrs} body=${text}`
       })
-      .catch((e: unknown) => `evaluate failed: ${String(e)}`)
+      .catch((e: unknown) => `（ページは閉じられていた: ${String(e).slice(0, 60)}）`)
+    // CI のログは長い添付の後ろを切るので、手がかりの大きい物から並べる
     await testInfo.attach('page-diagnostics', {
-      body: [state, ...rec.lines, ...pending].join('\n'),
+      body: [state, ...rec.nav, ...rec.errors, ...pending, ...rec.beats.slice(-5).map((b) => `beat ${b}`), ...rec.other].join(
+        '\n',
+      ),
       contentType: 'text/plain',
     })
   })
