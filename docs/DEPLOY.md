@@ -400,6 +400,7 @@ npx firebase emulators:start --config firebase.emu.json --only auth,firestore --
   `npm run deploy` はこの開発用の値を公開するアプリに入れませんが、念のため）
 
 エミュレーターにつないだ開発サーバーでは、［Google でログイン］を押すとエミュレーターの仮のログイン画面が開きます。
+エミュレーターにつないだ開発サーバーは持ち主の記録（`config/owner`）を確かめないので、エミュレーターに `config/owner` を作る必要はありません（持ち主の流れは、`npm run test:sync` のテストが、最初に管理者の権限で `config/owner` を作ってから確かめます）。
 
 - `npm run test:e2e`（起動アニメーションなどの E2E テスト）は、エミュレーター無しで動きます（開発サーバーだけで使える仮のログインを使う）。
-- 端末2台の同期のテスト（エミュレーターで動かす）は、同期を作る段階1で足す `npm run test:sync` です（[SPEC.md](SPEC.md) の 2.10）。
+- 端末2台の同期のテスト（`src/sync/*.emu.test.ts`）は `npm run test:sync` です（エミュレーターを自分で起動して動かすので、上のエミュレーターは止めてから）（[SPEC.md](SPEC.md) の 2.10）。

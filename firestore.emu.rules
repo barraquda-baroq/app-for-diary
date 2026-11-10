@@ -2,8 +2,9 @@ rules_version = '2';
 
 // テスト（Firebase エミュレーター）用のアクセスルール。本番の firestore.rules から持ち主の制限だけを外したもの（NS と同じ考え方）。
 // 同期のテストは、テストごとに別のアカウントを使って互いのデータが混ざらないようにしているため。
-// 持ち主の制限そのものは、同期のテスト（src/sync/sync.emu.test.ts）で本番のルールを読み込んで確かめる（持ち主の記録 config/owner は、
-// テストの最初に管理者の権限（エミュレーターの Authorization: Bearer owner）で作る。アプリからは作れない。形1）。
+// 持ち主の制限そのものは、同期のテスト（src/sync/sync.emu.test.ts・src/sync/upgrade.emu.test.ts）で本番のルールを読み込んで確かめる
+// （持ち主の記録 config/owner は、テストの最初に管理者の権限（エミュレーターの Authorization: Bearer owner）で作る。アプリからは作れない。形1）。
+// エミュレーターにつないだ開発サーバーは持ち主を確かめないので、エミュレーターに config/owner を作らなくてよい（docs/DEPLOY.md の 7）。
 // 本番のルールを変えた時は、こちらも同じように直す（段階6で Claude 用のコネクタの部分を足す）。
 service cloud.firestore {
   match /databases/{database}/documents {
