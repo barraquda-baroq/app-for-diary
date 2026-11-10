@@ -1,0 +1,10 @@
+node_modules
+dist
+dev-dist
+coverage
+*.log
+.DS_Store
+e2e/artifacts
+.claude/worktrees
+.firebase
+test-results

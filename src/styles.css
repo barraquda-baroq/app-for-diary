@@ -1,0 +1,1825 @@
+/* 共通のスタイル（docs/SPEC.md の 4.）。NS（Novel Studio）の src/styles.css を写し、小説の機能のためだけのクラス・色
+   （領域ごとの色・メモ・特殊ブロック・差分・原稿の書体・原稿エディタ・分割ペイン・パンくず）と、iPhone / Android のアプリ
+   （--kb-native）の部分を外して、色・余白・角丸・動き・部品の大きさを DS の値にした物。
+
+   ===== デザイントークン =====
+   外観は3種類。<html data-theme> で切り替える（「端末の設定に合わせる」は white か dark が入る。最初の描画の前は
+   src/launch/launch.js の boot()、起動後は src/ui/Layout.tsx の PrefsEffect が入れる。docs/SPEC.md の 4.2）。
+   - white（ホワイト）: 白い地。ダークで決めたパステルの色合いを保ったまま、白い地で見えるよう濃くした物
+   - dark（ダーク）: 黒い地。色の基準。カードや領域の地は暗く沈め、明るいパステルは細い所（左の一辺・帯・●・線）だけに使う
+   - deep-dark（ディープダーク）: さらに暗く、区分の色分けをすべて無くす（区分は位置とかばん／家のアイコンで見分ける）
+   色の値は docs/SPEC.md の 4.5（色のトークン）と 4.6（ラベルの24色）の表のとおり（src/styles.test.ts で表と同じか確かめる）。
+   部品はこの変数だけを使い、#fff などの色を直接書かない。字の色は、置く地の上で 4.5:1 以上（4.5 の例外を除く）。
+
+   等幅の英数字の書体（Roboto Mono。latin の 300・400・500・600）は src/main.tsx で読み込む（docs/SPEC.md の 4.7。
+   ここで @import すると同じ @font-face が2つずつできるので、読み込むのは main.tsx の1か所だけにしている） */
+
+/* ===== 外観で変わらない物 ===== */
+:root {
+  /* 書体（docs/SPEC.md の 4.7）。各端末の標準のゴシック体: iOS・Mac はヒラギノ角ゴ、Windows は游ゴシック UI（なければメイリオ）、
+     Android は sans-serif（<html lang="ja"> なので Noto Sans CJK JP）になる */
+  --font-gothic: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', Meiryo, 'Noto Sans JP', system-ui, sans-serif;
+  /* 起動アニメーションの言葉だけに使う */
+  --font-mincho: 'Hiragino Mincho ProN', 'Yu Mincho', 'YuMincho', 'Noto Serif JP', 'BIZ UDPMincho', serif;
+  --font-ui: var(--font-gothic);
+  /* 等幅の英数字（数字・英語の見出し・曜日と月の英字）。日本語が混ざった時はゴシックで出る。600 より太い字は使わない */
+  --font-mono: 'Roboto Mono', var(--font-ui);
+
+  /* 余白は 4px を単位にする（4・8・12・16・24・32。docs/SPEC.md の 4.8） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  /* 画面の左右の余白（S・M は 16px、L は 24px。下の @media で替える） */
+  --gutter: 16px;
+  /* 右の列の中の左右の余白と、リストどうしの間 */
+  --side-pad: 16px;
+  --list-gap: 20px;
+
+  /* 角丸 */
+  --radius: 10px; /* パネル */
+  --radius-sm: 6px; /* ボタン・カード・入力欄（NS） */
+  --radius-pill: 999px; /* 丸いラベル・［MIM］ */
+  --radius-modal: 14px; /* 小さな画面 */
+  --radius-sheet: 16px; /* 下からのシートの上の角 */
+
+  /* 線（罫線 1px の --rule・日の上の線 2px の --rule-strong・部品の枠 1px は色のトークンと合わせて使う） */
+  --edge-w: 4px; /* カードの左の一辺（ラベルの色。box-shadow: inset 4px 0 0 色） */
+  --band-h: 6px; /* 詳細の画面の上の辺の帯（ラベルの色） */
+  --span-w: 2px; /* 複数日の線 */
+  --dot-d: 10px; /* デイリーの行頭の● */
+
+  /* 動き（docs/SPEC.md の 4.9） */
+  --dur-hover: 120ms; /* 乗せた時・押した時の色 */
+  --dur-backdrop: 120ms; /* 小さな画面の後ろ（fade-in） */
+  --dur-pop: 140ms; /* 小さな画面・下からのシート（pop-in） */
+  --dur-menu: 120ms; /* メニュー（pop-in） */
+  --dur-panel: 180ms; /* 右の列のパネル（右から） */
+  --dur-fold: 180ms; /* 畳む・開く */
+  --dur-lift: 120ms; /* カードを掴んだ時に浮く */
+  --dur-settle: 160ms; /* 落とした後に収まる */
+  --dur-flash: 1200ms; /* 移った先・押した区切りを目立たせる */
+  --dur-shake: 240ms; /* ロック中で掴めない時の揺れ */
+  --dur-toast: 160ms; /* お知らせが出る・消える */
+
+  /* 大きさ */
+  --header-h: 52px;
+  --switcher-h: 40px; /* S・M の切り替えの列（docs/SPEC.md の 3.5） */
+  --side-w: 300px; /* L の右の列（docs/SPEC.md の 3.2） */
+  --tap: 34px; /* 指で押せる所の最小（docs/SPEC.md の 4.11） */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  /* iPhone のキーボードの高さ --kb は、入力欄の処理が visualViewport で測って <html> に入れる（無い間は 0。docs/SPEC.md の 2.7） */
+
+  /* NS の部品に残る緑の「採用」の色は使わず、くすんだ青にする（docs/SPEC.md の 4.5） */
+  --active: var(--accent);
+  --active-soft: var(--accent-soft);
+  --active-fill: var(--primary);
+  --on-active: var(--on-primary);
+  /* 件名のハイライトの別名（仮。部品は 4.5 の名前 --work-marker・--private-marker を使う） */
+  --work-highlight: var(--work-marker);
+  --private-highlight: var(--private-marker);
+  /* 影（NS の値。どの外観でも同じ物） */
+  --shadow-knob: 0 1px 2px rgb(0 0 0 / 25%);
+  --shadow-segmented: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
+@media (min-width: 900px) {
+  :root {
+    --gutter: 24px;
+  }
+}
+
+/* ===== 色: ホワイト（data-theme が無い時もこれ） ===== */
+:root {
+  /* 面と線 */
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-2: #fafaf9;
+  --surface-3: #efefec;
+  --stripe: #f2f2ef;
+  --rule: #dcdcd7;
+  --rule-strong: #7a7e86;
+  --border: #e0e0dc;
+  --border-strong: #c8c8c2;
+  /* 文字 */
+  --text: #25282e;
+  --text-muted: #5c6068;
+  --text-faint: #62666e;
+  --numeral: #858991;
+  /* くすんだ青（今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ） */
+  --accent: #4a6c92;
+  --accent-strong: #3b5a7e;
+  --accent-soft: #e5ecf4;
+  --on-accent: #ffffff;
+  --primary: #56789e;
+  --primary-hover: #4a6c92;
+  --primary-border: var(--primary);
+  --on-primary: #ffffff;
+  --today-bg: var(--primary);
+  --today-ring: #4a6c92;
+  --switch-on: var(--accent);
+  /* ログインの画面（表紙の青） */
+  --cover: #a3bbd3;
+  --on-cover: #15202c;
+  /* 土日祝・休み */
+  --sat: #3f69a3;
+  --sun: #ac4257;
+  --off-fill: #ebebee;
+  --off-text: #5c6068;
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3） */
+  --work-soft: #e4edf8;
+  --work-area: #f1f5fb;
+  --work-sheet: #ecf2fa;
+  --work-marker: #d3e3f7;
+  --work-text: #2d5288;
+  --work-line: #7a92b3;
+  --private-soft: #fae5ed;
+  --private-area: #fcf1f5;
+  --private-sheet: #fbedf3;
+  --private-marker: #f6d3e1;
+  --private-text: #a23d5e;
+  --private-line: #b97f93;
+  --on-label: #17181b;
+  /* 完了・注意 */
+  --done-bg: #ededeb;
+  --done-text: #80848b;
+  --overdue: #b5525f;
+  --danger: #b0402d;
+  --danger-soft: #f8e6e2;
+  /* お知らせ・重なり・そのほか */
+  --toast-bg: #2b2f38;
+  --toast-text: #ffffff;
+  --backdrop: rgb(15 17 22 / 45%);
+  --selection: #cfdcec;
+  --shadow-lift: 0 6px 20px rgb(30 30 40 / 18%);
+  --brand-filter: none;
+  --qr-bg: #ffffff;
+  --qr-fg: #000000;
+  /* ラベルの24色（4.6） */
+  --label-rose-l: #e499a4;
+  --label-coral-l: #e39e86;
+  --label-apricot-l: #d7a672;
+  --label-lemon-l: #c0b26e;
+  --label-lime-l: #a0bc7e;
+  --label-mint-l: #7cc39d;
+  --label-teal-l: #65c3c0;
+  --label-sky-l: #6dbddc;
+  --label-blue-l: #8db3ea;
+  --label-wisteria-l: #aea8e8;
+  --label-violet-l: #c99fd6;
+  --label-peony-l: #dd9ab9;
+  --label-rose-d: #c26576;
+  --label-coral-d: #c26b4c;
+  --label-apricot-d: #b57727;
+  --label-lemon-d: #9a861b;
+  --label-lime-d: #71943f;
+  --label-mint-d: #339c6d;
+  --label-teal-d: #039a97;
+  --label-sky-d: #0994ba;
+  --label-blue-d: #5787ce;
+  --label-wisteria-d: #8379ca;
+  --label-violet-d: #a46eb5;
+  --label-peony-d: #bb6690;
+  /* NS から持ってくる色（4.5 の表に無い物。NS のホワイトの値） */
+  --segmented-on: var(--surface);
+  --switch-knob: #ffffff;
+  --warn: #8d6110;
+  --warn-soft: #f8efd9;
+  --toast-border: transparent;
+  --toast-error-bg: #8e2f20;
+  --toast-error-text: #ffffff;
+  --shadow: 0 1px 2px rgb(30 30 40 / 6%), 0 4px 16px rgb(30 30 40 / 6%);
+  --shadow-sm: 0 1px 2px rgb(30 30 40 / 4%);
+  --shadow-lg: 0 10px 40px rgb(20 20 30 / 22%);
+  color-scheme: light;
+}
+
+/* ===== 色: ダーク（色の基準） ===== */
+:root[data-theme='dark'] {
+  /* 面と線 */
+  --bg: #101113;
+  --surface: #17181b;
+  --surface-2: #1c1d21;
+  --surface-3: #25272c;
+  --stripe: #1f2125;
+  --rule: #2a2c31;
+  --rule-strong: #5f636b;
+  --border: #2e3036;
+  --border-strong: #43464e;
+  /* 文字 */
+  --text: #e6e5e1;
+  --text-muted: #a8aab0;
+  --text-faint: #90939a;
+  --numeral: #6b6e76;
+  /* くすんだ青（今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ） */
+  --accent: #9fb9d6;
+  --accent-strong: #c3d4e8;
+  --accent-soft: #1f2a37;
+  --on-accent: #10161e;
+  --primary: #3d5675;
+  --primary-hover: #47628a;
+  --primary-border: var(--primary);
+  --on-primary: #eef3f9;
+  --today-bg: var(--primary);
+  --today-ring: #9fb9d6;
+  --switch-on: #4d6a8f;
+  /* ログインの画面（表紙の青） */
+  --cover: #2b3a4c;
+  --on-cover: #e6edf5;
+  /* 土日祝・休み */
+  --sat: #8a9bb5;
+  --sun: #c79199;
+  --off-fill: #272a30;
+  --off-text: #a8aab0;
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3） */
+  --work-soft: #1d2938;
+  --work-area: #1a212b;
+  --work-sheet: #1c2532;
+  --work-marker: #2a3d55;
+  --work-text: #9fc1ec;
+  --work-line: #7a9cc9;
+  --private-soft: #33202a;
+  --private-area: #261c22;
+  --private-sheet: #2c1f26;
+  --private-marker: #4a2a3a;
+  --private-text: #f1a8c3;
+  --private-line: #c48aa1;
+  --on-label: #17181b;
+  /* 完了・注意 */
+  --done-bg: #222326;
+  --done-text: #73767d;
+  --overdue: #e2919d;
+  --danger: #f08a77;
+  --danger-soft: #331d19;
+  /* お知らせ・重なり・そのほか */
+  --toast-bg: #2a2c31;
+  --toast-text: #e6e4de;
+  --backdrop: rgb(0 0 0 / 62%);
+  --selection: #2f4560;
+  --shadow-lift: 0 6px 20px rgb(0 0 0 / 55%);
+  --brand-filter: brightness(0.95);
+  --qr-bg: #ffffff;
+  --qr-fg: #000000;
+  /* ラベルの24色（4.6） */
+  --label-rose-l: #febdc6;
+  --label-coral-l: #fdc1ac;
+  --label-apricot-l: #f2c89c;
+  --label-lemon-l: #ded299;
+  --label-lime-l: #c3dba6;
+  --label-mint-l: #a6e1c0;
+  --label-teal-l: #96e1de;
+  --label-sky-l: #9bdcf6;
+  --label-blue-l: #b5d3ff;
+  --label-wisteria-l: #cecaff;
+  --label-violet-l: #e6c2f1;
+  --label-peony-l: #f8bdd8;
+  --label-rose-d: #ea909e;
+  --label-coral-d: #e99578;
+  --label-apricot-d: #dca05d;
+  --label-lemon-d: #c0af58;
+  --label-lime-d: #9abb6e;
+  --label-mint-d: #6ac396;
+  --label-teal-d: #44c4c0;
+  --label-sky-d: #54bce2;
+  --label-blue-d: #82b0f3;
+  --label-wisteria-d: #aaa3f0;
+  --label-violet-d: #cb98db;
+  --label-peony-d: #e391b8;
+  /* NS から持ってくる色（NS のダークの値） */
+  --segmented-on: #383b43;
+  --switch-knob: #d6d4ce;
+  --warn: #e6b65a;
+  --warn-soft: #2e2512;
+  --toast-border: #43464e;
+  --toast-error-bg: #4a201a;
+  --toast-error-text: #ffd9d0;
+  --shadow: 0 1px 2px rgb(0 0 0 / 35%), 0 4px 16px rgb(0 0 0 / 30%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-lg: 0 10px 40px rgb(0 0 0 / 60%);
+  color-scheme: dark;
+}
+
+/* ===== 色: ディープダーク（区分の色分けを無くし、ラベル・差し色もほぼ灰色） ===== */
+:root[data-theme='deep-dark'] {
+  /* 面と線 */
+  --bg: #08090a;
+  --surface: #0e0f11;
+  --surface-2: #121315;
+  --surface-3: #191a1d;
+  --stripe: #131417;
+  --rule: #1e1f23;
+  --rule-strong: #3e4045;
+  --border: #202125;
+  --border-strong: #2d2f33;
+  /* 文字 */
+  --text: #aeaca6;
+  --text-muted: #8a8984;
+  --text-faint: #858480;
+  --numeral: #66676b;
+  /* くすんだ青（今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ） */
+  --accent: #8a96a8;
+  --accent-strong: #a3adbc;
+  --accent-soft: #15181d;
+  --on-accent: #0b0c0e;
+  --primary: #1b1e24;
+  --primary-hover: #22262d;
+  --primary-border: #2e333c;
+  --on-primary: #b1bac7;
+  --today-bg: #2c313a;
+  --today-ring: #8a96a8;
+  --switch-on: #4a5262;
+  /* ログインの画面（表紙の青） */
+  --cover: #15181d;
+  --on-cover: #aeb4bd;
+  /* 土日祝・休み */
+  --sat: #808b9b;
+  --sun: #a08589;
+  --off-fill: #1c1e22;
+  --off-text: #8a8984;
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3） */
+  --work-soft: #141518;
+  --work-area: var(--surface);
+  --work-sheet: var(--surface);
+  --work-marker: transparent;
+  --work-text: #aeaca6;
+  --work-line: #6d727b;
+  --private-soft: #141518;
+  --private-area: var(--surface);
+  --private-sheet: var(--surface);
+  --private-marker: transparent;
+  --private-text: #aeaca6;
+  --private-line: #6d727b;
+  --on-label: #e6e5e1;
+  /* 完了・注意 */
+  --done-bg: #0b0c0d;
+  --done-text: #666561;
+  --overdue: #9b8589;
+  --danger: #b98a82;
+  --danger-soft: #1c1412;
+  /* お知らせ・重なり・そのほか */
+  --toast-bg: #141518;
+  --toast-text: #aeaca6;
+  --backdrop: rgb(0 0 0 / 70%);
+  --selection: #262c36;
+  --shadow-lift: 0 6px 20px rgb(0 0 0 / 70%);
+  --brand-filter: grayscale(0.85) brightness(0.6);
+  --qr-bg: #ffffff;
+  --qr-fg: #000000;
+  /* ラベルの24色（4.6） */
+  --label-rose-l: #816f71;
+  --label-coral-l: #81706b;
+  --label-apricot-l: #7d7267;
+  --label-lemon-l: #787566;
+  --label-lime-l: #717769;
+  --label-mint-l: #6a7970;
+  --label-teal-l: #667978;
+  --label-sky-l: #67777e;
+  --label-blue-l: #6d7582;
+  --label-wisteria-l: #737381;
+  --label-violet-l: #7a717d;
+  --label-peony-l: #7f6f76;
+  --label-rose-d: #5e4e50;
+  --label-coral-d: #5e4f49;
+  --label-apricot-d: #5b5046;
+  --label-lemon-d: #565345;
+  --label-lime-d: #4f5548;
+  --label-mint-d: #48564e;
+  --label-teal-d: #455756;
+  --label-sky-d: #46555c;
+  --label-blue-d: #4b535f;
+  --label-wisteria-d: #52515e;
+  --label-violet-d: #584f5b;
+  --label-peony-d: #5c4e54;
+  /* NS から持ってくる色（NS のディープダークの値） */
+  --segmented-on: #26282c;
+  --switch-knob: #9a9893;
+  --warn: #a99766;
+  --warn-soft: #18160f;
+  --toast-border: #2d2f33;
+  --toast-error-bg: #1d1412;
+  --toast-error-text: #c9a39b;
+  --shadow: 0 1px 2px rgb(0 0 0 / 50%);
+  --shadow-sm: none;
+  --shadow-lg: 0 10px 40px rgb(0 0 0 / 70%);
+  color-scheme: dark;
+}
+
+/* ===== 区分とラベルの色を、要素に付けた印から使う =====
+   data-kind="work|private"（項目の kind。docs/SPEC.md の 6.2）を付けた要素の中では --kind-* が区分の色になる。
+   data-label="rose-l" など（ラベルのキー。4.6）を付けた要素の中では --label がラベルの色になる（知らないキーは付けない＝ラベルなし） */
+[data-kind='work'] {
+  --kind-soft: var(--work-soft);
+  --kind-area: var(--work-area);
+  --kind-sheet: var(--work-sheet);
+  --kind-marker: var(--work-marker);
+  --kind-text: var(--work-text);
+  --kind-line: var(--work-line);
+}
+
+[data-kind='private'] {
+  --kind-soft: var(--private-soft);
+  --kind-area: var(--private-area);
+  --kind-sheet: var(--private-sheet);
+  --kind-marker: var(--private-marker);
+  --kind-text: var(--private-text);
+  --kind-line: var(--private-line);
+}
+
+[data-label='rose-l'] {
+  --label: var(--label-rose-l);
+}
+
+[data-label='coral-l'] {
+  --label: var(--label-coral-l);
+}
+
+[data-label='apricot-l'] {
+  --label: var(--label-apricot-l);
+}
+
+[data-label='lemon-l'] {
+  --label: var(--label-lemon-l);
+}
+
+[data-label='lime-l'] {
+  --label: var(--label-lime-l);
+}
+
+[data-label='mint-l'] {
+  --label: var(--label-mint-l);
+}
+
+[data-label='teal-l'] {
+  --label: var(--label-teal-l);
+}
+
+[data-label='sky-l'] {
+  --label: var(--label-sky-l);
+}
+
+[data-label='blue-l'] {
+  --label: var(--label-blue-l);
+}
+
+[data-label='wisteria-l'] {
+  --label: var(--label-wisteria-l);
+}
+
+[data-label='violet-l'] {
+  --label: var(--label-violet-l);
+}
+
+[data-label='peony-l'] {
+  --label: var(--label-peony-l);
+}
+
+[data-label='rose-d'] {
+  --label: var(--label-rose-d);
+}
+
+[data-label='coral-d'] {
+  --label: var(--label-coral-d);
+}
+
+[data-label='apricot-d'] {
+  --label: var(--label-apricot-d);
+}
+
+[data-label='lemon-d'] {
+  --label: var(--label-lemon-d);
+}
+
+[data-label='lime-d'] {
+  --label: var(--label-lime-d);
+}
+
+[data-label='mint-d'] {
+  --label: var(--label-mint-d);
+}
+
+[data-label='teal-d'] {
+  --label: var(--label-teal-d);
+}
+
+[data-label='sky-d'] {
+  --label: var(--label-sky-d);
+}
+
+[data-label='blue-d'] {
+  --label: var(--label-blue-d);
+}
+
+[data-label='wisteria-d'] {
+  --label: var(--label-wisteria-d);
+}
+
+[data-label='violet-d'] {
+  --label: var(--label-violet-d);
+}
+
+[data-label='peony-d'] {
+  --label: var(--label-peony-d);
+}
+
+/* ===== ベース ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.6;
+  /* 数字は桁をそろえる（日本語の文・ボタン・お知らせの中の数字も。docs/SPEC.md の 4.4） */
+  font-variant-numeric: tabular-nums;
+  /* チェックボックス・スライダーなどの標準部品も外観の色に合わせる */
+  accent-color: var(--accent);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--accent);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ===== 文字（docs/SPEC.md の 4.7） =====
+   等幅にするのは、数字や英字だけで1かたまりになっている所（カレンダーの日付・曜日・月、時刻、件数、見出しの英語、
+   Task List の締め切り日、残りの字数）だけ。日本語の文・ボタン・お知らせ・詳細の日付の中の数字は ui の書体のまま */
+.mono,
+.head-en,
+.caps,
+.numeral,
+.mono-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  /* 読み込んでいない太さ（700 など）を端末が太らせると字がにじむので、太らせない */
+  font-synthesis-weight: none;
+}
+
+/* 領域の英語の見出し（Routine List・Task List など） */
+.head-en {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+}
+
+/* 見出しに添える日本語（「ルーチン」など） */
+.head-ja {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--text-faint);
+}
+
+/* 曜日・月の英字（SUN・NOV） */
+.caps {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* 操作の列の大きく淡い数字（L・M 44px、S 32px） */
+.numeral {
+  font-size: 44px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--numeral);
+}
+
+/* 時刻・日付（カード・行） */
+.mono-time {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+/* ===== レイアウト ===== */
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ヘッダー（docs/SPEC.md の 3.3）: 高さ 52px＋ノッチの分。地は --surface を 92% にして後ろをぼかす。下に 1px の --rule */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(var(--header-h) + var(--safe-top));
+  padding: var(--safe-top) max(var(--gutter), var(--safe-right)) 0 max(var(--gutter), var(--safe-left));
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(8px);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.app-header .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.app-header .brand img {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  filter: var(--brand-filter);
+}
+
+.app-header .spacer {
+  flex: 1;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px max(var(--gutter), var(--safe-right)) calc(40px + var(--safe-bottom)) max(var(--gutter), var(--safe-left));
+}
+
+.page-narrow {
+  max-width: 820px;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.page-head .grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.row.nowrap {
+  flex-wrap: nowrap;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+.small {
+  font-size: 13px;
+}
+
+.tiny {
+  font-size: 12px;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== ボタン（NS の .btn。高さ 36px・角丸 6px・14px・600。docs/SPEC.md の 4.11） ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    background var(--dur-hover),
+    border-color var(--dur-hover),
+    color var(--dur-hover);
+}
+
+.btn:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--surface-3);
+}
+
+/* aria-disabled は、処理中などでフォーカスを残したまま押せなくしているボタン */
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary-border);
+  color: var(--on-primary);
+}
+
+.btn-primary:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--primary-hover);
+  border-color: color-mix(in srgb, var(--primary-hover) 70%, var(--primary-border));
+}
+
+/* NS の「採用」のボタン。DS では主なボタンと同じくすんだ青（--active-fill は --primary） */
+.btn-active {
+  background: var(--active-fill);
+  border-color: var(--active-fill);
+  color: var(--on-active);
+}
+
+.btn-active:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+/* 削除のボタン。--danger は --surface の上でだけ使う（区分の色の地の上には置かない。docs/SPEC.md の 4.5） */
+.btn-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.btn-danger:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--danger-soft);
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn-ghost:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--surface-3);
+}
+
+.btn-sm {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+/* 線のアイコンだけのボタン（34px 四方。歯車・‹ ›・畳む山形など） */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: none;
+  transition:
+    background var(--dur-hover),
+    color var(--dur-hover);
+}
+
+.icon-btn:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.icon-btn:disabled,
+.icon-btn[aria-disabled='true'] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.icon-btn.sm {
+  width: 28px;
+  height: 28px;
+}
+
+/* 線のアイコン（src/ui/icons.tsx。24 四方・線 1.8・丸い端・文字と同じ色） */
+.icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* 14px より小さく出すアイコン（ロック・区分のかばん／家の 12px。線は 2.4。docs/SPEC.md の 4.10） */
+.icon.icon-sm {
+  width: 12px;
+  height: 12px;
+}
+
+/* ===== フォーム ===== */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field > span,
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* 入力欄: 高さ 36px・15px（指で操作する端末とスマホは 40px・16px。iOS のズームを防ぐ。docs/SPEC.md の 4.7・4.11） */
+.input,
+.select,
+.textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.textarea {
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.input-bare {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 2px 6px;
+  margin: 0 -6px;
+}
+
+.input-bare:hover {
+  border-color: var(--border);
+}
+
+.input-bare:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* スイッチ（ロック・起動アニメーションなど。オンの地は --switch-on） */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.switch .track {
+  width: 40px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--border-strong);
+  position: relative;
+  transition: background 0.15s;
+  flex: none;
+}
+
+.switch .track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--switch-knob);
+  box-shadow: var(--shadow-knob);
+  transition: transform 0.15s;
+}
+
+.switch input:checked + .track {
+  background: var(--switch-on);
+}
+
+.switch input:checked + .track::after {
+  transform: translateX(16px);
+}
+
+.switch input:focus-visible + .track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* セグメント（［年｜月｜週｜日］・外観の切り替えなど） */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 9px;
+  background: var(--surface-3);
+}
+
+.segmented button {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--dur-hover),
+    color var(--dur-hover);
+}
+
+.segmented button[aria-pressed='true'],
+.segmented button[aria-selected='true'] {
+  background: var(--segmented-on);
+  color: var(--text);
+  box-shadow: var(--shadow-segmented);
+}
+
+/* ===== カード・リスト =====
+   DS は「灰色と細い線」の静かな紙面なので、面は影を付けず 1px の枠だけにする（docs/SPEC.md の 4.4） */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.card-pad {
+  padding: 14px 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section + .section {
+  margin-top: 28px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.section-head h2 {
+  font-size: 17px;
+}
+
+.section-head .grow {
+  flex: 1;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.empty {
+  padding: 22px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 14px;
+}
+
+/* ===== DS の小さな部品（docs/SPEC.md の 4.3・4.4・4.11） ===== */
+
+/* 丸いラベル（ウィークリー・デイリーの曜日の見出し。中に .caps の英字3文字） */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  white-space: nowrap;
+}
+
+/* 今日の印と、押した状態（［MIM］・［休み］・今月の帯）: 地 --today-bg・字 --on-primary・1.5px の --today-ring の輪（7.3） */
+.today-mark,
+.pill.is-today {
+  background: var(--today-bg);
+  color: var(--on-primary);
+  box-shadow: 0 0 0 1.5px var(--today-ring);
+}
+
+/* 点線の丸のチェック（3つのリスト・カード・予定の完了）。中に DotCheckIcon（src/ui/icons.tsx）を置く。
+   見える丸は 18px（カード・予定は 16px）、押せる所は 40px 四方を目安に、枠の外にははみ出さない（--dot-hit で狭める） */
+.dot-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--dot-hit, 40px);
+  height: var(--dot-hit, 40px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.dot-check-icon {
+  display: block;
+  flex: none;
+}
+
+/* 済み・完了の✓は塗った丸の上で白く（ダーク・ディープダークは暗い面の色。どれも --surface） */
+.dot-check-mark {
+  stroke: var(--surface);
+}
+
+@media (hover: hover) {
+  /* 乗せると実線 */
+  .dot-check:hover .dot-check-ring {
+    stroke-dasharray: none;
+  }
+}
+
+/* 件名のハイライト（デイリーのタイムスケジュール・Task List。docs/SPEC.md の 4.3）。件名の字を包む inline の要素に付け、
+   data-kind の中で使う。字の高さの下 6割ほどの帯を字の幅だけに引く（折り返したら各行に）。帯の上の字は --text・--text-muted だけ。
+   完了・済みの物には付けない。ディープダークは --*-marker が transparent なので帯は出ない */
+.kind-marker {
+  display: inline;
+  background: linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ラベルの色の左の一辺（幅 4px。ウィークリーのカード・タイムスケジュールの予定）。ラベルが無ければ（data-label が無ければ）付けない */
+.label-edge[data-label] {
+  box-shadow: inset var(--edge-w) 0 0 var(--label);
+}
+
+/* ラベルの色の上の辺の帯（高さ 6px。予定・タスクの詳細と登録の画面）。小さな画面・シートの角丸に沿って切れる */
+.label-band[data-label] {
+  box-shadow: inset 0 var(--band-h) 0 var(--label);
+}
+
+.modal.label-band[data-label] {
+  box-shadow:
+    inset 0 var(--band-h) 0 var(--label),
+    var(--shadow-lg);
+}
+
+/* 畳む・開く（高さを 180ms で。docs/SPEC.md の 4.9）。.fold の中に1つだけ要素を置き、畳む時は .is-closed を付ける。
+   畳んでいる間は中身を見えなくし（visibility。フォーカス・読み上げからも外れる）、閉じる動きが終わってから隠す。
+   中身は overflow: hidden で切れるので、中の部品のフォーカスの枠は内側（outline-offset: -2px）にするか、左右に余白を取る */
+.fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--dur-fold) ease;
+}
+
+.fold > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fold.is-closed {
+  grid-template-rows: 0fr;
+}
+
+.fold.is-closed > * {
+  visibility: hidden;
+  transition: visibility 0s linear var(--dur-fold);
+}
+
+/* カードを掴んだ時に浮く（1.03倍・--shadow-lift・不透明度 0.95）。scale を使い、ドラッグの transform とぶつけない */
+.lift {
+  scale: 1.03;
+  box-shadow: var(--shadow-lift);
+  opacity: 0.95;
+  transition:
+    scale var(--dur-lift),
+    box-shadow var(--dur-lift),
+    opacity var(--dur-lift);
+}
+
+/* 移った先・押した区切りを目立たせる（地の色は変えず、2px の --accent の枠を 1.2秒。最後の 400ms で薄くして消す）。
+   付けた側（JS）が 1.2秒後に外す。視差効果を減らす設定では、薄くせずに 1.2秒出して消える（動きが止まるだけで枠は残るため） */
+.flash {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  animation: flash-out var(--dur-flash) linear forwards;
+}
+
+/* ロック中で掴めない時の揺れ（左右に 3px を3回）。視差効果を減らす設定では揺らさず、付けた側が LockIcon を 600ms だけ --accent にする */
+.shake {
+  animation: shake var(--dur-shake) ease-in-out;
+}
+
+/* 右の列の上に重ねるパネル（右から 180ms） */
+.panel-in {
+  animation: slide-in-right var(--dur-panel) ease-out;
+}
+
+/* ===== バッジ ===== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+
+.badge-active {
+  background: var(--active-soft);
+  color: var(--active);
+}
+
+.badge-missing {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge-accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.badge-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ===== タブ ===== */
+.tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs button,
+.tabs a {
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  margin-bottom: -1px;
+  transition:
+    background var(--dur-hover),
+    color var(--dur-hover),
+    border-color var(--dur-hover);
+}
+
+.tabs button:hover,
+.tabs a:hover {
+  color: var(--text);
+}
+
+.tabs [aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ===== 小さな画面（NS の Modal。L は真ん中の幅 520px・角丸 14px、S・M は下からのシート。docs/SPEC.md の 3.8） ===== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  /* iPhone ではキーボードの上に収める（--kb。docs/SPEC.md の 2.7） */
+  bottom: var(--kb, 0px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--backdrop);
+  animation: fade-in var(--dur-backdrop) ease-out;
+}
+
+.modal {
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 32px - var(--kb, 0px));
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop-in var(--dur-pop) ease-out;
+}
+
+.modal.wide {
+  width: min(760px, 100%);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 6px;
+}
+
+.modal-head h2 {
+  flex: 1;
+  font-size: 17px;
+}
+
+.modal-body {
+  padding: 8px 16px 16px;
+  overflow: auto;
+}
+
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px calc(12px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+
+/* 3つ以上の選択肢（choiceDialog）。主な選択肢を右端に置く。S・M では縦に並べ、主な選択肢を上にする */
+.dialog-choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+/* 大きな選択肢ボタン（追加種別の選択など） */
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice:hover {
+  border-color: var(--accent);
+}
+
+.choice[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.choice strong {
+  font-size: 15px;
+}
+
+.choice span {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ===== お知らせ（トースト。docs/SPEC.md の 3.9。下から 160ms） ===== */
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + var(--safe-bottom) + var(--kb, 0px));
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(480px, calc(100% - 24px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--toast-border);
+  border-radius: 10px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  box-shadow: var(--shadow-lg);
+  font-size: 14px;
+  pointer-events: auto;
+  animation: toast-in var(--dur-toast) ease-out;
+}
+
+/* 消える時（消す側が付けてから 160ms 後に取り除く） */
+.toast.is-leaving {
+  animation: toast-out var(--dur-toast) ease-in forwards;
+}
+
+.toast.error {
+  background: var(--toast-error-bg);
+  color: var(--toast-error-text);
+}
+
+.toast p {
+  margin: 0;
+  flex: 1;
+}
+
+.toast button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* ［元に戻す］などのボタン（docs/SPEC.md の 3.9） */
+.toast .toast-action {
+  opacity: 1;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ===== バナー ===== */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.banner-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* お知らせの帯（新しい版があります など） */
+.banner-info {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* ===== 保存状態 ===== */
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.save-status .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--active);
+}
+
+.save-status.pending .dot,
+.save-status.saving .dot {
+  background: var(--warn);
+}
+
+.save-status.error {
+  color: var(--danger);
+}
+
+.save-status.error .dot {
+  background: var(--danger);
+}
+
+/* ===== 設定の画面の区切りと行（aset-。NS の src/features/appSettings/appSettings.css から、
+   表示の設定（src/features/appSettings/DisplaySettings.tsx）が使う物だけ。設定の画面を作る段階で appSettings.css に移す） ===== */
+.card.aset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  min-width: 0;
+}
+
+.aset-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aset-card-head h2 {
+  font-size: 17px;
+}
+
+.aset-card-lead {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.aset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.aset-row-label {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.aset-row-desc {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.aset-row-control {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmented.aset-seg {
+  flex-wrap: wrap;
+}
+
+.segmented.aset-seg button {
+  min-height: var(--tap);
+}
+
+.switch.aset-switch {
+  min-height: var(--tap);
+}
+
+/* 折り返す時に切らずに保つ句（外観の「端末の設定に／合わせる」） */
+.aset-chunk {
+  display: inline-block;
+}
+
+.aset-switch-state {
+  min-width: 2.5em;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ===== 動き（docs/SPEC.md の 4.9） ===== */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    translate: 24px 0;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+/* 1,200ms のうち最後の 400ms で薄くする */
+@keyframes flash-out {
+  0%,
+  66.667% {
+    outline-color: var(--accent);
+  }
+
+  100% {
+    outline-color: transparent;
+  }
+}
+
+/* 左右に 3px を3回 */
+@keyframes shake {
+  0%,
+  100% {
+    translate: 0;
+  }
+
+  8.333%,
+  41.667%,
+  75% {
+    translate: -3px 0;
+  }
+
+  25%,
+  58.333%,
+  91.667% {
+    translate: 3px 0;
+  }
+}
+
+/* ===== 幅の区分（docs/SPEC.md の 3.2・4.11） =====
+   S は 599px まで、M は 600〜899px、L は 900px から。
+   スクリプトの側の同じ値は src/ui/hooks.ts の WIDTH_M・WIDTH_L（変える時は両方そろえる。src/styles.test.ts で確かめる） */
+.hide-mobile {
+}
+
+@media (max-width: 599px) {
+  .hide-mobile {
+    display: none !important;
+  }
+
+  .page {
+    padding-top: 14px;
+    padding-bottom: calc(32px + var(--safe-bottom));
+  }
+
+  .numeral {
+    font-size: 32px;
+  }
+
+  .card.aset-card {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .aset-row {
+    padding-top: 12px;
+  }
+
+  .aset-row-label {
+    flex-basis: 100%;
+  }
+
+  .aset-row-control {
+    flex: 1 1 100%;
+  }
+
+  /* 外観の4つの選択肢は2列に並べる（1つだけ次の行に残らないように。長い名前は折り返す） */
+  .segmented.aset-seg-theme {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .segmented.aset-seg-theme button {
+    padding: 4px 8px;
+    white-space: normal;
+    line-height: 1.3;
+  }
+}
+
+@media (min-width: 600px) {
+  .show-mobile {
+    display: none !important;
+  }
+}
+
+/* S・M では小さな画面を下からせり上がるシートにする（高さは最大 92dvh・上の角丸 16px。docs/SPEC.md の 3.8） */
+@media (max-width: 899px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    max-height: calc(92dvh - var(--kb, 0px));
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  }
+
+  .dialog-choices {
+    flex-direction: column-reverse;
+  }
+
+  .dialog-choices .btn {
+    width: 100%;
+  }
+}
+
+/* 指で操作する端末（スマホ・タブレット・横持ち含む）と S・M では、押せる所を 34px 以上にし、入力欄を 40px・16px にする */
+@media (max-width: 899px), (pointer: coarse) {
+  .btn-sm,
+  .segmented button,
+  .switch {
+    min-height: var(--tap);
+  }
+
+  .input,
+  .select,
+  .textarea {
+    min-height: 40px;
+    font-size: 16px; /* iOS のズームを防ぐ */
+  }
+}
+
+@media (pointer: coarse) {
+  .app-header .brand {
+    min-height: var(--tap);
+    min-width: var(--tap);
+  }
+
+  .toast button {
+    min-width: var(--tap);
+    min-height: var(--tap);
+  }
+
+  /* キーボードのショートカットの案内は、指で操作する端末では出さない */
+  .hint-keyboard {
+    display: none !important;
+  }
+}
+
+/* ダイアログ（S・M では下からのシート）を開いている間は、通知を上に出してボタンを隠さない */
+body:has(.modal-backdrop) .toasts {
+  top: calc(12px + var(--safe-top));
+  bottom: auto;
+}
+
+/* 端末の「視差効果を減らす」では CSS の動きを全部止める（NS と同じ）。知らせの役目がある物（.flash の枠・ロックの印）は、
+   動かさずに出す側（JS）が付け外しする（docs/SPEC.md の 4.9） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

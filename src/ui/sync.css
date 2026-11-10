@@ -1,0 +1,32 @@
+/* ===== 同期の状態（ヘッダー。docs/SPEC.md の 18.4。NS の src/ui/sync.css から） =====
+   色: 揃っている＝--text-faint、送っている・未送信・受け取り中＝--text-muted、オフライン・無料枠・要更新・送れない＝--overdue
+   （NS の緑 --active と黄土色 --warn をこの3つに置き換えた。--overdue が無い間は --danger） */
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-faint);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sync-indicator:hover {
+  background: var(--surface-3);
+}
+
+.sync-indicator .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.sync-indicator.busy {
+  color: var(--text-muted);
+}
+
+.sync-indicator.warn {
+  color: var(--overdue, var(--danger));
+}
