@@ -3,6 +3,7 @@
 // ログインした状態は、テストの時だけ効く印（localStorage の diary-studio:test-auth。src/features/login/testAuth.ts）で作る
 import { expect, test, type Page } from '@playwright/test'
 import { darkSurfaces, noHorizontalScroll, tapSize } from './helpers'
+import { firebaseConfigIsPlaceholder } from '../src/sync/firebaseConfig'
 
 const PREFS_KEY = 'diary-studio:prefs'
 
@@ -49,6 +50,9 @@ test.describe('ログインの画面（2.5）', () => {
   })
 
   test('Firebase の設定が仮の値の時は、押すと「まだ公開の準備ができていません（docs/DEPLOY.md）」と出す', async ({ page }) => {
+    // 本物の設定値（diary-studio-35f4e）に差し替えた後は、この場面は起きない。言葉と、ログインを始めないことは
+    // 単体テスト（src/features/login/LoginPage.test.tsx。設定値を仮の値にして確かめる）で確かめ続ける
+    test.skip(!firebaseConfigIsPlaceholder, '本物の設定値に差し替え済み（単体テストで確かめる）')
     await page.goto('/#/login')
     await page.getByRole('button', { name: 'Google でログイン' }).click()
     await expect(page.getByRole('alert')).toHaveText('まだ公開の準備ができていません（docs/DEPLOY.md）')

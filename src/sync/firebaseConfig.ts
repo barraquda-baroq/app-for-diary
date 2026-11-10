@@ -1,15 +1,14 @@
 // Firebase の Web アプリの設定値（公開してよい識別子。データはアクセスルールで本人だけに限る。docs/SPEC.md の 2.6）。
 //
-// いまは仮の値（差し替え用）。DS の Firebase のプロジェクト（NS とは別に新しく作る。例 diary-studio-xxxx）を作者が作ったら、
-// docs/DEPLOY.md の手順で、Firebase のコンソールの「プロジェクトの設定 → マイアプリ → SDK の設定と構成」の値に差し替える
-// （あわせて .firebaserc のプロジェクトも変える）。仮の値のままでは、ログインの画面の［Google でログイン］は失敗する
+// DS の Firebase のプロジェクト diary-studio-35f4e（NS とは別。2026-11-10 に作者が作った）の、Firebase のコンソールの
+// 「プロジェクトの設定 → マイアプリ → SDK の設定と構成」の値（docs/DEPLOY.md の 1 の 7）。変える時は .firebaserc のプロジェクトもそろえる
 export const firebaseConfig = {
-  apiKey: 'REPLACE_WITH_FIREBASE_API_KEY',
-  authDomain: 'diary-studio-xxxx.firebaseapp.com',
-  projectId: 'diary-studio-xxxx',
-  storageBucket: 'diary-studio-xxxx.firebasestorage.app',
-  messagingSenderId: '000000000000',
-  appId: '1:000000000000:web:0000000000000000000000',
+  apiKey: 'AIzaSyBjjPMhltGYCBezf8Ggos176Du0I_43wns',
+  authDomain: 'diary-studio-35f4e.firebaseapp.com',
+  projectId: 'diary-studio-35f4e',
+  storageBucket: 'diary-studio-35f4e.firebasestorage.app',
+  messagingSenderId: '232964262076',
+  appId: '1:232964262076:web:487c11c47d97fa623468b9',
 }
 
 /** 設定値がまだ仮の値のまま（docs/DEPLOY.md の手順で差し替える前） */
