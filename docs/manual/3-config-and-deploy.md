@@ -51,22 +51,29 @@ PowerShell を開いて、コマンドを1行ずつ打って Enter を押しま�
 NS の公開で Node.js と Git を入れてあれば、そのまま使えます（PowerShell で node -v と打って v22 以上なら OK）。
 
 ```
+cd ~
 git clone https://github.com/barraquda-baroq/app-for-diary.git
 cd app-for-diary
 git checkout claude/dreamy-davinci-mq4yxh
 npm ci
 ```
 
-- 3行目は、まだ main に取り込んでいない今の版を使うための行です。
+- 1行目の cd ~ は「自分のユーザーのフォルダ（C:\Users\あなたの名前）に移る」コマンドです。2行目で、その中に app-for-diary のフォルダができます。
+  NS のフォルダ（app-for-novel）と同じ場所に置きたい時は、cd ~ の代わりに、そのフォルダへ移ってから（例: cd ~\Documents）2行目を打つ。
+- 4行目は、まだ main に取り込んでいない今の版を使うための行です。
 - npm ci は数分かかります。
 
 ### 2回目から（設定値を入れてもらった後など）
 
 ```
-cd app-for-diary
+cd ~\app-for-diary
 git pull
 npm ci
 ```
+
+- 1行目は、どこにいても DS のフォルダに入れる打ち方です（Mac のターミナルでは cd ~/app-for-diary）。
+  NS と同じ場所に置いた時は、その場所に合わせる（例: cd ~\Documents\app-for-diary）。
+- この後のコマンドは、いつも DS のフォルダの中で打ちます。
 
 ### 設定値が入ったかを確かめる
 
