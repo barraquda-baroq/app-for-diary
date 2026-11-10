@@ -1,7 +1,17 @@
 // ルーチンの「戻る日」と済みの判定（docs/SPEC.md の 6.7・14.3）。チェックした日を全部記録し、0時に外す書き込みはしない。
 // 済み = いちばん新しいチェックの日が、いちばん新しい「戻る日」以後であること（見るたびに計算する。どの端末でも同じになる。D7）。
 // 日付はどれも端末の暦の 'YYYY-MM-DD'。
-import { addDaysYmd, addMonthsToMonth, dayInMonthClamped, daysInMonth, isYmd, monthOf, parseYmd, toYmd, weekdayOfYmd } from './dates'
+import {
+  addDaysYmd,
+  addMonthsToMonth,
+  dayInMonthClamped,
+  daysInMonth,
+  isYmd,
+  monthOf,
+  parseYmd,
+  toYmd,
+  weekdayOfYmd,
+} from './dates'
 import { LIMITS, ROUTINE_CYCLES, type AppData, type ID, type Routine, type RoutineCheck, type RoutineCycle } from './types'
 import { charCount } from './util'
 
@@ -182,7 +192,8 @@ export function routineProblems(r: Pick<Routine, 'title'> & Spec): RoutineProble
   if (!wdOk) out.push({ fields: ['weekdays'], message: '曜日は 0（日）〜6（土）を小さい順に重ねずに入れてください' })
   else if (r.cycle !== 'weekly' && wd.length > 0) out.push({ fields: ['cycle', 'weekdays'], message: '曜日の指定は毎週だけです' })
   if (r.monthDay !== null && !isInt(r.monthDay, 1, 31)) out.push({ fields: ['monthDay'], message: '毎月の日は 1〜31 です' })
-  else if (r.cycle !== 'monthly' && r.monthDay !== null) out.push({ fields: ['cycle', 'monthDay'], message: '日の指定は毎月だけです' })
+  else if (r.cycle !== 'monthly' && r.monthDay !== null)
+    out.push({ fields: ['cycle', 'monthDay'], message: '日の指定は毎月だけです' })
   const ym = r.yearMonth
   const yd = r.yearDay
   if ((ym === null) !== (yd === null)) {

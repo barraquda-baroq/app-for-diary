@@ -23,7 +23,14 @@ describe('予定・タスクの id（19.4）', () => {
   })
 
   it('材料は19.4 のとおりのオブジェクト（コネクタと同じ計算）', () => {
-    const material = { table: 'items', origin: 'calendar', from: '2026-12-03', to: '2026-12-03', startTime: '10:00', title: '打ち合わせ' }
+    const material = {
+      table: 'items',
+      origin: 'calendar',
+      from: '2026-12-03',
+      to: '2026-12-03',
+      startTime: '10:00',
+      title: '打ち合わせ',
+    }
     expect(derivedItemId({ origin: 'calendar', start: '2026-12-03', startTime: '10:00', title: '打ち合わせ' })).toBe(
       `ce-${hashJson(stableStringify(material))}`,
     )
@@ -35,7 +42,10 @@ describe('予定・タスクの id（19.4）', () => {
 
   it('同じメールで期間の違う物は別の id、同じ期間なら件名の書き方が変わっても同じ id（19.7）', () => {
     const a = derivedItemId({ origin: 'calendar', start: '2026-12-03', title: '打ち合わせ' }, MAIL_A)
-    const again = derivedItemId({ origin: 'calendar', start: '2026-12-03', startTime: '10:00', title: '山田さんと打ち合わせ' }, MAIL_A)
+    const again = derivedItemId(
+      { origin: 'calendar', start: '2026-12-03', startTime: '10:00', title: '山田さんと打ち合わせ' },
+      MAIL_A,
+    )
     const other = derivedItemId({ origin: 'calendar', start: '2026-12-10', title: '打ち合わせ' }, MAIL_A)
     expect(again).toBe(a)
     expect(other).not.toBe(a)
@@ -48,7 +58,17 @@ describe('予定・タスクの id（19.4）', () => {
   it('memo・requester・label・kind・endTime・listed・ai・via の違いは同じ id（材料に入れない）', () => {
     const base = { origin: 'calendar' as const, start: '2026-12-03', startTime: '10:00', title: '打ち合わせ' }
     const id = derivedItemId(base)
-    const noisy = { ...base, memo: '議題', requester: '山田', label: 'sky-l', kind: 'private', endTime: '11:00', listed: true, ai: 'claude', via: 'メール' }
+    const noisy = {
+      ...base,
+      memo: '議題',
+      requester: '山田',
+      label: 'sky-l',
+      kind: 'private',
+      endTime: '11:00',
+      listed: true,
+      ai: 'claude',
+      via: 'メール',
+    }
     expect(derivedItemId(noisy)).toBe(id)
     // 開始時刻・件名・期間・生まれは材料
     expect(derivedItemId({ ...base, startTime: '11:00' })).not.toBe(id)

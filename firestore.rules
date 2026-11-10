@@ -1,13 +1,14 @@
 rules_version = '2';
 
-// Diary Studio のアクセスルール（docs/SPEC.md の 2.4・2.5・2.6）。NS の firestore.rules から、小説の表と
-// Claude 用のコネクタの部分を外した、段階0（土台）の最小の形。
-// - 持ち主: 最初にログインして同期を始めたアカウント（config/owner に記録。後から変えられない）。
-//   持ち主を変えたい時は、Firebase コンソールの Firestore で config/owner を消してから、新しい持ち主でログインする（docs/DEPLOY.md の 3）。
+// Diary Studio のアクセスルール（docs/SPEC.md の 2.4・2.5・2.6・6.1）。NS の firestore.rules から、小説の表と
+// Claude 用のコネクタの部分を外した、段階1（データと同期）の形。
+// - 持ち主: config/owner（{ uid, createdAt }）に記録したアカウント。作者が段階1の版を公開する前に、Firebase の画面（管理者）で作る
+//   （手順書 docs/manual/5-owner-record.md・docs/DEPLOY.md の 3。形1）。アプリとコネクタからは作れない・書き換えられない。
+//   持ち主を変えたい時は、Firebase の画面で config/owner の uid を新しい持ち主のものに書き換える。
 // - 持ち主のデータは users/{uid}/records（1つの記録 = 1つの文書）と、データの形の版 users/{uid}/meta/app だけ。
 //   持ち主本人だけが読み書きでき、ほかの場所は誰も読み書きできない。
-// - 段階1（データと同期）で、記録の形（受け取り箱 inbox などの表・分けた文書の parentTable。6.14・2.4）に合わせて確かめを足す。
-// - 段階6で、Claude 用のコネクタの部分（読ませる表を並べる・受け取り箱に依頼を作るだけ。MIM とゴミ箱は読めない。19.6）を足す。
+// - 段階6で、Claude 用のコネクタの部分を足す: 読ませる表（と、その分けた文書。parentTable で決める）を並べて読ませ、MIM とゴミ箱は
+//   読ませない。受け取り箱（inbox:）は「新しく作るだけ」（xa-・xe-・xp- の id の頭で許可を分ける）。config/connector を作る・直す（19.6）。
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
@@ -22,35 +23,63 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid && ownerUid() == uid;
     }
 
-    // 1つの記録 = 1つの文書（NS の src/sync/codec.ts の RecordDoc / ChunkDoc に、分けた文書の親の表の名前 parentTable を足した形。2.4）
-    function validRecord() {
+    // 記録の表（6.1 の10の表と、月の束 itemPack。6.11）
+    function knownTable(t) {
+      return t in ['items', 'offDays', 'labelNames', 'routines', 'routineChecks', 'favorites', 'mimNotes', 'inbox', 'trashEntries', 'trashRecords', 'itemPack'];
+    }
+
+    // 1つの記録 = 1つの文書（NS の src/sync/codec.ts の RecordDoc / ChunkDoc に、分けた文書の親の表の名前 parentTable を足した形。2.4）。
+    // 文書の id と中身が合うこと（記録の文書は {table}:{id}、分けた文書は {parent}#{index} で、parent の頭が parentTable）も確かめる
+    // （段階6でコネクタに読ませる文書を中身の表の名前で決めるので、アプリの不具合で MIM の分けた文書に別の表の名前が付いても書き込めないように）
+    function validRecord(docId) {
       let d = request.resource.data;
       return d.keys().hasOnly(['table', 'id', 'json', 'chunks', 'deleted', 'hash', 'updated', 'device', 'parent', 'parentTable', 'index', 'reset'])
-        && d.table is string && d.table.size() <= 64
+        && d.table is string
         && (d.json == null || (d.json is string && d.json.size() <= 260000))
-        && d.updated == request.time;
+        && d.deleted is bool
+        && d.hash is string
+        && d.device is string
+        && (!('reset' in d) || d.reset is bool)
+        && d.updated == request.time
+        && (d.table == '_chunk' ? validChunk(docId, d) : validDoc(docId, d));
+    }
+
+    function validDoc(docId, d) {
+      return knownTable(d.table)
+        && d.id is string
+        && d.chunks is int && d.chunks >= 0
+        && docId == d.table + ':' + d.id
+        && !d.keys().hasAny(['parent', 'parentTable', 'index']);
+    }
+
+    function validChunk(docId, d) {
+      return d.parent is string
+        && d.parentTable is string
+        && knownTable(d.parentTable)
+        && d.index is int
+        && docId == d.parent + '#' + string(d.index)
+        && d.parent.split(':')[0] == d.parentTable;
     }
 
     match /config/owner {
+      // 持ち主の記録は読むだけ（作る・書き換えるのは Firebase の画面＝管理者だけ。形1）
       allow get: if signedIn();
-      // 段階0のアプリは持ち主を記録しない（docs/DEPLOY.md の 3）。公開したアプリの設定値（apiKey・projectId）は誰でも読めるので、
-      // 段階0を公開してから段階1を入れるまでの間に、ほかの人が先に自分を持ち主として書けないよう、段階0では作るのも閉じておく。
-      // 段階1（同期）で、エミュレーターのテストと一緒に次の形で開ける（NS と同じ形に、作った時刻がサーバーの時刻であることを足した物）:
-      //   allow create: if signedIn()
-      //     && request.auth.token.firebase.sign_in_provider != 'anonymous'  // 匿名のアカウント（段階6のコネクタ）は持ち主になれない
-      //     && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-      //     && request.resource.data.uid == request.auth.uid
-      //     && request.resource.data.createdAt == request.time;
-      allow create: if false;
+      allow create, update, delete: if false;
+    }
+
+    match /config/connector {
+      // Claude との連携と許可（段階6で作る・直すを足す。段階1〜5は持ち主が読めるだけ。無ければ連携していない。6.14）
+      allow get: if signedIn() && ownerUid() == request.auth.uid;
+      allow create, update, delete: if false;
     }
 
     match /users/{uid}/records/{docId} {
       allow read: if isOwner(uid);
-      allow create, update: if isOwner(uid) && validRecord();
+      allow create, update: if isOwner(uid) && validRecord(docId);
       allow delete: if isOwner(uid);
     }
 
-    // データの形の版（NS の src/sync/appModel.ts）: データを書いたアプリの形の版。古い版のアプリは、これが自分より高いと送らない。
+    // データの形の版（src/sync/appModel.ts）: データを書いたアプリの形の版。古い版のアプリは、これが自分より高いと送らない。
     // 持ち主だけが書け、下げることはできない（戻したい時は、コンソールでこの文書を消す）
     function validAppModel() {
       let d = request.resource.data;

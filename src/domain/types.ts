@@ -282,11 +282,11 @@ export type TrashKind = 'event' | 'task' | 'favorite' | 'favoritesDone' | 'routi
 
 /**
  * 削除した時点の場所（戻す時はここへ戻す）。NS の TrashOrigin の、並びの部分だけ。
- * index は order の値（無い・分からない時は -1）、prevId は並びの中で直前にあった記録の id（先頭なら null）
+ * index は order の値（分からない時は -1）、prevId は並びの中で直前にあった記録の id（先頭なら null、分からない時は無し）
  */
 export interface TrashOrigin {
   index: number
-  prevId: ID | null
+  prevId?: ID | null
 }
 
 /**

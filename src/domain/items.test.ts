@@ -196,7 +196,11 @@ describe('ラベル（4.6・19.4）', () => {
   })
 
   it('キーか設定で付けた呼び名で引ける（全角と半角・大文字と小文字は同じ）。見つからなければ null', () => {
-    const names = { 'sky-l': mkLabelName('sky-l', '会議'), 'rose-d': mkLabelName('rose-d', 'Ｐｒｉｖａｔｅ'), 'mint-l': mkLabelName('mint-l', '') }
+    const names = {
+      'sky-l': mkLabelName('sky-l', '会議'),
+      'rose-d': mkLabelName('rose-d', 'Ｐｒｉｖａｔｅ'),
+      'mint-l': mkLabelName('mint-l', ''),
+    }
     expect(labelKeyOf('sky-l', names)).toBe('sky-l')
     expect(labelKeyOf('ＳＫＹ-Ｌ', names)).toBe('sky-l')
     expect(labelKeyOf('会議', names)).toBe('sky-l')

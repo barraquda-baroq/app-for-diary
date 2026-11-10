@@ -2,7 +2,7 @@
 // 表示の設定は localStorage の diary-studio:prefs に保存する（同期しない。使えない環境でも既定値で動く。docs/SPEC.md の 4.2・6.13）。
 // NS の src/store/uiStore.ts の仕組み（resolveAppearance・migratePrefs・THEME_COLORS・トースト・attempt・アプリの更新）を写した物
 import { create } from 'zustand'
-import { DomainError } from '../domain/types'
+import { DomainError, ROUTINE_CYCLES, type RoutineCycle } from '../domain/types'
 
 /** 外観。ホワイト／ダーク／ディープダーク（区分の地の色も無くし、最小限の色だけ。docs/SPEC.md の 4.2） */
 export type Appearance = 'white' | 'dark' | 'deep-dark'
@@ -10,8 +10,9 @@ export type Appearance = 'white' | 'dark' | 'deep-dark'
 export type AppearanceMode = 'system' | Appearance
 /** カレンダーのモード（イヤー・マンスリー・ウィークリー・デイリー） */
 export type CalendarMode = 'year' | 'month' | 'week' | 'day'
-/** ルーチンの種類（docs/SPEC.md の 14.1） */
-export type RoutineCycle = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+/** ルーチンの種類（docs/SPEC.md の 14.1。データの型なので src/domain/types.ts に置き、ここから再び公開する） */
+export type { RoutineCycle }
+export { ROUTINE_CYCLES }
 
 export type RoutineFlags = Record<RoutineCycle, boolean>
 
@@ -53,7 +54,6 @@ export interface Prefs {
   collapsed: Collapsed
 }
 
-export const ROUTINE_CYCLES: readonly RoutineCycle[] = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly']
 const APPEARANCE_MODES: readonly AppearanceMode[] = ['system', 'white', 'dark', 'deep-dark']
 const CALENDAR_MODES: readonly CalendarMode[] = ['year', 'month', 'week', 'day']
 

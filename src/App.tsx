@@ -14,7 +14,7 @@ import { LoginPage } from './features/login/LoginPage'
 import { startTestAuth } from './features/login/testAuth'
 import { TopPage } from './features/top/TopPage'
 import { paths } from './routes'
-import { useSync } from './sync/controller'
+import { canShowData, useSync } from './sync/controller'
 import { ErrorBoundary, ErrorScreen } from './ui/ErrorBoundary'
 import { AppFrame } from './ui/Layout'
 import { NotFound } from './ui/NotFound'
@@ -31,15 +31,18 @@ function PageLoading() {
 }
 
 /**
- * ログインの関所（docs/SPEC.md の 2.5）: ログインしていない間は、ログインの画面だけを出す（トップ画面もデータも出さない）。
- * ログインしたらログインの画面からトップへ。ログインの状態を確かめている間は「読み込み中…」（起動アニメーションの下）
+ * ログインの関所（docs/SPEC.md の 2.5）: ログインしていない間と、持ち主だと確かめていない間は、ログインの画面だけを出す
+ * （トップ画面もデータも出さない）。確かめたらログインの画面からトップへ。ログインの状態を確かめている間は「読み込み中…」
  */
 function AuthGate({ children }: { children: React.ReactNode }) {
   const auth = useSync((s) => s.auth)
+  // データ（MIM を含む）を出すのは、この端末で持ち主だと確かめたアカウントの時だけ（2.5。まだ確かめていない・持ち主でない・
+  // 前に別のアカウントで使っていた時の確かめの間は、ログインの画面に文とボタンを出す）
+  const show = useSync(canShowData)
   const { pathname } = useLocation()
   if (auth === 'idle' || auth === 'checking') return <PageLoading />
-  if (auth === 'signedOut' && pathname !== paths.login()) return <Navigate to={paths.login()} replace />
-  if (auth === 'signedIn' && pathname === paths.login()) return <Navigate to={paths.top()} replace />
+  if (!show && pathname !== paths.login()) return <Navigate to={paths.login()} replace />
+  if (show && pathname === paths.login()) return <Navigate to={paths.top()} replace />
   return <>{children}</>
 }
 

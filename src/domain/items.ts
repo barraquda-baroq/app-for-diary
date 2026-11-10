@@ -153,7 +153,8 @@ export function itemProblems(item: Item): ItemProblem[] {
   const dueOk = item.due === null || isYmd(item.due)
   if (!startOk) out.push(P('start', ['start'], '開始日の形が正しくありません'))
   if (!dueOk) out.push(P('due', ['due'], '締め切り日の形が正しくありません'))
-  if (item.origin === 'calendar' && item.start === null) out.push(P('startRequired', ['start'], 'カレンダーの予定には開始日が要ります'))
+  if (item.origin === 'calendar' && item.start === null)
+    out.push(P('startRequired', ['start'], 'カレンダーの予定には開始日が要ります'))
   const stOk = item.startTime === null || isHm(item.startTime)
   const etOk = item.endTime === null || isHm(item.endTime, true)
   if (!stOk) out.push(P('startTime', ['startTime'], '開始時刻の形が正しくありません（00:00〜23:59）'))
@@ -168,7 +169,9 @@ export function itemProblems(item: Item): ItemProblem[] {
   if (startOk && dueOk && stOk && etOk && item.startTime !== null && item.endTime !== null && item.endTime !== '00:00') {
     const p = periodOf(item)
     if (p && p.from === p.to && hmToMinutes(item.endTime) <= hmToMinutes(item.startTime)) {
-      out.push(P('endBeforeStart', ['start', 'due', 'startTime', 'endTime'], '1日の予定で、終わりの時刻が始まりより早いか同じです'))
+      out.push(
+        P('endBeforeStart', ['start', 'due', 'startTime', 'endTime'], '1日の予定で、終わりの時刻が始まりより早いか同じです'),
+      )
     }
   }
   if (item.origin === 'list' && item.due === null && item.listed === false) {

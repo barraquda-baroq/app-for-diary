@@ -1,8 +1,8 @@
 name: CI
 
-# 型の確かめ・単体テスト・ビルド・E2E（docs/SPEC.md の 2.10・21. の段階0）。NS の .github/workflows/ci.yml から、
+# 型の確かめ・単体テスト・同期のテスト（Firebase エミュレーター）・ビルド・E2E（docs/SPEC.md の 2.10・21.）。NS の .github/workflows/ci.yml から、
 # iPhone・Android のアプリ（android・ios の仕事）・GitHub Pages の公開・Claude 用のコネクタの部分を外した物。
-# 同期のテスト（Firebase エミュレーター。Java 21 が要る）は段階1で足す（NS の test:sync・test:e2e:sync の段と同じ形）。
+# 2つのブラウザでの同期の E2E（NS の test:e2e:sync）は、画面ができる段階で足す。
 on:
   push:
     branches: [main, master, 'claude/**']
@@ -29,6 +29,20 @@ jobs:
       # src/ の単体テストと、scripts/ のテスト（vite.config.ts の埋め込み・manifest・アイコン・書体のライセンス、公開の前の確かめ）
       - name: 単体テスト
         run: npm test
+      # Firebase エミュレーター（firebase-tools 15）は Java 21 以上が要る（ランナーの既定は 17）。NS の ci.yml と同じ形
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Firebase エミュレーターのキャッシュ
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('package-lock.json') }}
+      # 端末2台の同期・月の束・受け取り箱・持ち主とアクセスルール（src/sync/sync.emu.test.ts）と、段階0でログインしたままの端末が
+      # 段階1の版に上がった時の持ち主の確かめ（src/sync/upgrade.emu.test.ts）。段階1
+      - name: 同期のテスト（Firebase エミュレーター）
+        run: npm run test:sync
       - name: ビルド
         run: npm run build
       # 公開するビルドに、テスト用の入口（ログインの印・開発用フック window.__ds・エミュレーターのプロジェクト名）が残っていない

@@ -1,14 +1,15 @@
-// 画面を閉じる・裏に回る・再読み込みする・アプリを更新する時の保存処理。NS の src/store/lifecycle.ts から。
-// 端末の中の保存（NS の appStore の writeRecoveryJournal・flushNow）は段階1で足す。それまでは入力欄の下書きを反映するだけ
+// 画面を閉じる・裏に回る・再読み込みする・アプリを更新する時の保存処理。NS の src/store/lifecycle.ts をそのまま写した。
+import { flushNow, writeRecoveryJournal } from './appStore'
 import { flushAllDrafts } from './draftRegistry'
 
 /**
- * 入力欄の下書きをすべてストアへ反映し、まだ保存できていない変更の保存を始める（終わったら true）。
+ * 入力欄の下書きをすべてストアへ反映し、まだ保存できていない変更を同期的に控えてから保存を始める（保存できたら true）。
  * pagehide / visibilitychange(hidden) / アプリ更新の前に呼ぶ。
  */
 export function saveBeforeLeave(): Promise<boolean> {
   flushAllDrafts()
-  return Promise.resolve(true)
+  writeRecoveryJournal()
+  return flushNow()
 }
 
 let installed = false

@@ -22,7 +22,7 @@ vi.mock('../../sync/controller', async (importOriginal) => ({
 
 const { routes } = await import('../../App')
 const { useSync } = await import('../../sync/controller')
-const { homeScreenMessage, NOT_READY_MESSAGE, OFFLINE_MESSAGE } = await import('./LoginPage')
+const { homeScreenMessage, NOT_READY_MESSAGE, OFFLINE_MESSAGE, OWNER_CHECKING_MESSAGE } = await import('./LoginPage')
 
 const IPHONE_CHROME_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0.7444.77 Mobile/15E148 Safari/604.1'
@@ -48,7 +48,15 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 10, 10, 9, 0))
   mocks.placeholder = true
   mocks.signIn.mockClear()
-  useSync.setState({ auth: 'signedOut', user: null, busy: false, error: null })
+  useSync.setState({
+    auth: 'signedOut',
+    user: null,
+    busy: false,
+    error: null,
+    owner: 'unknown',
+    ownerSeen: false,
+    accountMismatch: null,
+  })
 })
 
 afterEach(() => {
@@ -78,11 +86,63 @@ describe('ログインの関所', () => {
     expect(screen.getByRole('status').textContent).toBe('読み込み中…')
   })
 
-  it('ログインしたら、ログインの画面からトップへ', () => {
-    useSync.setState({ auth: 'signedIn', user: { uid: 'u1', name: '', email: 'a@example.com' } })
+  it('持ち主だと確かめたアカウントでログインしたら、ログインの画面からトップへ', () => {
+    useSync.setState({ auth: 'signedIn', user: { uid: 'u1', name: '', email: 'a@example.com' }, owner: 'ok', ownerSeen: true })
     const router = renderAt('/login')
     expect(router.state.location.pathname).toBe('/')
     expect(screen.getByTestId('top-page')).toBeTruthy()
+  })
+
+  it('まだ持ち主だと確かめていない間は、トップを出さずに「確かめています…」と［ログアウト］（形1）', () => {
+    useSync.setState({ auth: 'signedIn', user: { uid: 'u1', name: '', email: 'a@example.com' }, owner: 'checking' })
+    const router = renderAt('/')
+    expect(router.state.location.pathname).toBe('/login')
+    expect(screen.queryByTestId('top-page')).toBeNull()
+    expect(screen.getByTestId('login-owner-checking').textContent).toBe(OWNER_CHECKING_MESSAGE)
+    expect(screen.getByTestId('login-sign-out')).toBeTruthy()
+    expect(screen.queryByTestId('login-google')).toBeNull()
+  })
+
+  it('電波が無くて確かめられない時は、ネットにつなぐ案内', () => {
+    setNavigator('onLine', false)
+    useSync.setState({ auth: 'signedIn', user: { uid: 'u1', name: '', email: 'a@example.com' }, owner: 'checking' })
+    renderAt('/login')
+    expect(screen.getByTestId('login-owner-checking').textContent).toBe(OFFLINE_MESSAGE)
+  })
+
+  it('持ち主の記録が無い時は「持ち主の記録がまだありません（docs/manual/5-owner-record.md）」と［ログアウト］だけ', () => {
+    useSync.setState({ auth: 'signedIn', user: { uid: 'u1', name: '', email: 'a@example.com' }, owner: 'missing' })
+    renderAt('/')
+    expect(screen.getByTestId('login-owner').textContent).toBe('持ち主の記録がまだありません（docs/manual/5-owner-record.md）')
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['ログアウト'])
+    expect(screen.queryByTestId('top-page')).toBeNull()
+  })
+
+  it('ほかのアカウントの記録の時は「このアカウントは Diary Studio の持ち主ではありません」と［ログアウト］だけ（前に確かめていても）', () => {
+    useSync.setState({
+      auth: 'signedIn',
+      user: { uid: 'u2', name: '', email: 'b@example.com' },
+      owner: 'mismatch',
+      ownerSeen: true,
+    })
+    renderAt('/')
+    expect(screen.getByTestId('login-owner').textContent).toBe('このアカウントは Diary Studio の持ち主ではありません')
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['ログアウト'])
+    expect(screen.queryByTestId('top-page')).toBeNull()
+  })
+
+  it('前に別のアカウントで使っていた時は、確かめるまでトップを出さない（2.5 の 4）', () => {
+    useSync.setState({
+      auth: 'signedIn',
+      user: { uid: 'u1', name: '', email: 'a@example.com' },
+      owner: 'ok',
+      ownerSeen: true,
+      accountMismatch: { previousEmail: 'old@example.com' },
+    })
+    renderAt('/')
+    expect(screen.queryByTestId('top-page')).toBeNull()
+    expect(screen.getByTestId('login-account-switch').textContent).toContain('old@example.com')
+    expect(screen.getByTestId('login-confirm-account').textContent).toBe('このアカウントで同期する')
   })
 })
 

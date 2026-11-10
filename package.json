@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"e2e/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"e2e/**/*.ts\"",
+    "test:sync": "firebase emulators:exec --config firebase.emu.json --only auth,firestore --project demo-diary-studio \"vitest run --config vitest.emu.config.ts\"",
     "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {

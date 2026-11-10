@@ -99,7 +99,7 @@ export default defineConfig({
   // 相対パスで出力しておくと、静的ホスティングにそのまま載せられる（HashRouter。docs/SPEC.md の 2.1）
   base: './',
   // ログイン（Firebase）は使う時に読み込む。開発サーバーで途中に依存を最適化し直して再読み込みしないよう、先にまとめておく
-  optimizeDeps: { include: ['firebase/app', 'firebase/auth'] },
+  optimizeDeps: { include: ['firebase/app', 'firebase/auth', 'firebase/firestore'] },
   plugins: [
     react(),
     inlineLaunchScript(),

@@ -27,7 +27,15 @@ beforeEach(() => {
   usePrefs.setState(DEFAULT_PREFS)
   useStackedLists.setState({ collapsed: { routine: true, task: true, favorite: true } })
   useToasts.setState({ toasts: [] })
-  useSync.setState({ auth: 'signedIn', user: { uid: 'u1', name: 'テスト', email: 'test@example.com' }, busy: false, error: null })
+  useSync.setState({
+    auth: 'signedIn',
+    user: { uid: 'u1', name: 'テスト', email: 'test@example.com' },
+    busy: false,
+    error: null,
+    owner: 'ok',
+    ownerSeen: true,
+    accountMismatch: null,
+  })
   Element.prototype.scrollIntoView = vi.fn()
 })
 

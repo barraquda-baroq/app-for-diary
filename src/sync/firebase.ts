@@ -1,5 +1,6 @@
-// Firebase のログイン（Google）の初期化。NS の src/sync/firebase.ts から、iPhone / Android のアプリ（Capacitor）の分岐と
-// クラウドの保存先（Firestore）を外した物（docs/SPEC.md の 2.2・2.3・2.5）。Firestore は段階1（データと同期）で足す。
+// Firebase のログイン（Google）の初期化。NS の src/sync/firebase.ts から、iPhone / Android のアプリ（Capacitor）の分岐を外した物
+// （docs/SPEC.md の 2.2・2.3・2.5）。クラウドの保存先（Firestore）は src/sync/firestore.ts（同期を始める時に読み込む。起動の時に
+// ログインの状態を確かめるだけなら、Firestore の大きな部品を読み込まずに済むように分けた）。
 // PC はポップアップ、ホーム画面に追加した iPhone（navigator.standalone）とポップアップが塞がれた時はページを切り替える方式（リダイレクト）
 import { initializeApp, type FirebaseApp } from 'firebase/app'
 import {
@@ -24,7 +25,7 @@ import { EMULATOR_PROJECT_ID, firebaseConfig } from './firebaseConfig'
  * 開発・テスト用: エミュレーターのホスト（例: 127.0.0.1）。設定するとクラウドではなくエミュレーターにつなぐ。
  * 公開するビルドでは使わない（環境変数が残ったままビルドしても、公開したアプリがエミュレーターにつながらないように）
  */
-const emulatorHost = import.meta.env.DEV ? import.meta.env.VITE_FIREBASE_EMULATOR : undefined
+export const emulatorHost: string | undefined = import.meta.env.DEV ? import.meta.env.VITE_FIREBASE_EMULATOR : undefined
 // 公開するビルドでは false に決まり、エミュレーター用の分岐（プロジェクト名・テスト用のログイン）はビルドで消える
 export const usingEmulator = import.meta.env.DEV && Boolean(emulatorHost)
 

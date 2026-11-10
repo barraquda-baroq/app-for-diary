@@ -119,6 +119,8 @@ export function mkLabelName(key: string, name: string, p: Partial<LabelName> = {
 
 /** 受け取り箱の1件（コネクタが作った時の形。status は pending） */
 export function mkInbox(p: Partial<InboxRecord> & Pick<InboxRecord, 'id' | 'op' | 'table' | 'targetId'>): InboxRecord {
+  // コネクタが作る時は updatedAt = createdAt（6.14）
+  const createdAt = p.createdAt ?? T0
   return {
     v: 1,
     proposeOp: null,
@@ -131,8 +133,8 @@ export function mkInbox(p: Partial<InboxRecord> & Pick<InboxRecord, 'id' | 'op' 
     by: 'connector',
     ai: 'claude',
     via: null,
-    createdAt: T0,
-    updatedAt: T0,
+    createdAt,
+    updatedAt: createdAt,
     status: 'pending',
     reason: null,
     message: null,

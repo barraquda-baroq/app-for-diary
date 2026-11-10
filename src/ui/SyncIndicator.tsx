@@ -1,27 +1,17 @@
-// ヘッダーの同期の表示（docs/SPEC.md の 18.4）。押すと設定の「同期」へ。NS の src/ui/SyncIndicator.tsx から。
-// 段階0の仮: 同期のエンジン（NS の src/sync/engine.ts）と司令塔の同期の部分は段階1で写す。それまでは同期の状態（useSyncView）を
-// だれも入れないので、段階0ではどの画面にも何も出さない（段階0は同期しないので、出す状態が無い）。段階1でやること:
-// - 同期の司令塔（src/sync/controller.ts）が今の状態を useSyncView に入れる（8つの状態の言葉と色は下の syncBadge のまま使う）
-// - S は押すと小さな窓（PopupMenu）に詳しい字と［今すぐ同期］を出す（18.4）。今はどの幅も設定の「同期」へのリンク
-import { Link } from 'react-router-dom'
-import { create } from 'zustand'
+// ヘッダーの同期の表示（docs/SPEC.md の 18.4）。NS の src/ui/SyncIndicator.tsx から。
+// 状態は同期の司令塔（src/sync/controller.ts）が src/sync/syncView.ts の useSyncView に入れる（ログインしていない・持ち主だと確かめて
+// いない間は何も出さない）。L・M はアイコンと短い字で、押すと設定の「同期」へ。S はアイコンだけで、押すと小さな窓（PopupMenu）に
+// 詳しい字と［今すぐ同期］を出す。
+import { useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { syncNow } from '../sync/controller'
+import { OWNER_MISSING_MESSAGE, OWNER_MISSING_REASON, useSyncView, type SyncView } from '../sync/syncView'
+import { useWidthClass } from './hooks'
 import { CloudIcon, CloudOffIcon } from './icons'
+import { PopupMenu } from './PopupMenu'
 import './sync.css'
 
-/** 同期の状態（docs/SPEC.md の 18.4 の表の8つ） */
-export type SyncView =
-  | { kind: 'synced' }
-  | { kind: 'sending' }
-  | { kind: 'pending'; count: number }
-  | { kind: 'downloading' }
-  | { kind: 'offline' }
-  /** 今日の無料枠を使い切った。resumeAt は戻る時刻（端末の時刻で「17:00」。docs/SPEC.md の 2.8） */
-  | { kind: 'quota'; resumeAt: string }
-  | { kind: 'outdated' }
-  | { kind: 'error'; reason: string }
-
-/** 今の同期の状態（null は出さない。段階1で同期の司令塔が入れる） */
-export const useSyncView = create<{ view: SyncView | null }>(() => ({ view: null }))
+export { useSyncView, type SyncView }
 
 export interface SyncBadge {
   /** ok = 揃っている（--text-faint）、busy = 送っている・未送信・受け取り中（--text-muted）、warn = 止まっている（--overdue） */
@@ -53,10 +43,55 @@ export function syncBadge(view: SyncView): SyncBadge {
   }
 }
 
+/** S の小窓と設定の「同期」に出す詳しい字（持ち主の記録が無い時は手順書の場所も。18.4） */
+export function syncDetail(view: SyncView): string {
+  if (view.kind === 'error' && view.reason === OWNER_MISSING_REASON) return OWNER_MISSING_MESSAGE
+  return syncBadge(view).label
+}
+
 export function SyncIndicator() {
   const view = useSyncView((s) => s.view)
+  const width = useWidthClass()
+  const navigate = useNavigate()
+  const button = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
   if (!view) return null
   const badge = syncBadge(view)
+  const icon = badge.off ? <CloudOffIcon /> : <CloudIcon />
+  const style = view.kind === 'sending' ? { opacity: 0.6 } : undefined
+  if (width === 'S') {
+    return (
+      <>
+        <button
+          ref={button}
+          type="button"
+          className={`sync-indicator ${badge.tone}`}
+          title={badge.label}
+          aria-label={`同期: ${badge.label}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          data-testid="sync-indicator"
+          data-tone={badge.tone}
+          style={style}
+          onClick={() => setOpen(true)}
+        >
+          {icon}
+        </button>
+        {open && button.current ? (
+          <PopupMenu
+            label="同期"
+            placement={{ anchor: button.current }}
+            onClose={() => setOpen(false)}
+            testId="sync-popup"
+            items={[
+              { label: syncDetail(view), onSelect: () => navigate('/settings#sync'), testId: 'sync-popup-detail' },
+              { label: '今すぐ同期', onSelect: () => void syncNow(), testId: 'sync-now-popup' },
+            ]}
+          />
+        ) : null}
+      </>
+    )
+  }
   return (
     <Link
       to="/settings#sync"
@@ -65,10 +100,10 @@ export function SyncIndicator() {
       aria-label={`同期: ${badge.label}`}
       data-testid="sync-indicator"
       data-tone={badge.tone}
-      style={view.kind === 'sending' ? { opacity: 0.6 } : undefined}
+      style={style}
     >
-      {badge.off ? <CloudOffIcon /> : <CloudIcon />}
-      <span className="hide-mobile">{badge.label}</span>
+      {icon}
+      <span>{badge.label}</span>
     </Link>
   )
 }

@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { isCalendarPath, isMimPath, paths } from '../routes'
 import { saveBeforeLeave } from '../store/lifecycle'
-import { resolveAppearance, THEME_COLORS, useAppUpdate, usePrefs, useToasts } from '../store/uiStore'
+import { notifyError, resolveAppearance, THEME_COLORS, useAppUpdate, usePrefs, useToasts } from '../store/uiStore'
 import { DialogHost, cancelAllDialogs } from './dialogs'
 import { GearIcon, KeyIcon, XIcon } from './icons'
 import { SyncIndicator } from './SyncIndicator'
@@ -136,7 +136,11 @@ export function UpdateBanner() {
   const apply = useAppUpdate((s) => s.apply)
   if (!ready || !apply) return null
   const update = async () => {
-    await saveBeforeLeave()
+    // 端末に保存できなかった時（容量が足りない・閉じられた）は読み込み直さない（画面の編集が消えないように）
+    if (!(await saveBeforeLeave())) {
+      notifyError('この端末に保存できなかったため、更新をやめました。少し待ってからもう一度押してください。')
+      return
+    }
     await apply()
   }
   return (

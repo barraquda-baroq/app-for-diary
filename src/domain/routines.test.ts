@@ -149,7 +149,11 @@ describe('チェック・外す・記録の並び', () => {
 
   it('全部の月のチェックした日', () => {
     const data = dataWith({
-      routineChecks: [mkCheck('r1', '2026-10', ['2026-10-30']), mkCheck('r1', '2026-11', ['2026-11-02']), mkCheck('r2', '2026-11', ['2026-11-03'])],
+      routineChecks: [
+        mkCheck('r1', '2026-10', ['2026-10-30']),
+        mkCheck('r1', '2026-11', ['2026-11-02']),
+        mkCheck('r2', '2026-11', ['2026-11-03']),
+      ],
     })
     expect(checkDatesOf(data, 'r1')).toEqual(['2026-10-30', '2026-11-02'])
   })
@@ -162,7 +166,9 @@ describe('指定の確かめ（6.7）', () => {
     expect(routineProblems(feb29)).toEqual([])
     expect(routineProblems({ ...daily, weekdays: [1] }).map((p) => p.fields)).toEqual([['cycle', 'weekdays']])
     expect(routineProblems({ ...weekly, monthDay: 3 }).map((p) => p.fields)).toEqual([['cycle', 'monthDay']])
-    expect(routineProblems({ ...monthly, yearMonth: 3, yearDay: 1 }).map((p) => p.fields)).toEqual([['cycle', 'yearMonth', 'yearDay']])
+    expect(routineProblems({ ...monthly, yearMonth: 3, yearDay: 1 }).map((p) => p.fields)).toEqual([
+      ['cycle', 'yearMonth', 'yearDay'],
+    ])
   })
 
   it('範囲・並び・月日の片方だけ・知らない種類・件名', () => {
