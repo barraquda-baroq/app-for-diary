@@ -774,6 +774,11 @@ describe('提案（19.5 の提案・19.7 の例）', () => {
     expect(rep.data.inbox['xp-1']).toMatchObject({ status: 'superseded', reason: 'replaced', supersededBy: 'xp-3' })
     expect(rep.data.inbox['xp-3'].status).toBe('pending')
     expect(rep.touched.get('xp-1')).toEqual(['inbox/xp-1'])
+    // 置き換わった古い提案と同じ中身がもう一度来ても（同じメールの読み直し）、出し直さない。答え待ちは xp-3 のまま
+    const again = propose({ id: 'xp-4', createdAt: T0 + 1 })
+    const re = run({ ...rep.data, inbox: { ...rep.data.inbox, 'xp-4': again } }).data
+    expect(re.inbox['xp-4']).toMatchObject({ status: 'rejected', reason: 'duplicate' })
+    expect(re.inbox['xp-3'].status).toBe('pending')
   })
 
   it('項目が先に変わった: もうその内容 → already_done（19.7 の 6.）、ゴミ箱へ移った → in_trash、消えた → not_found', () => {
@@ -1260,7 +1265,7 @@ describe('掃除（6.14）', () => {
     expect(out.inbox['xe-1']).toMatchObject({ status: 'rejected', reason: 'expired' })
   })
 
-  it('declined・expired の提案は対象がある間は消さない。対象が消えたら気付いた時から 90日で消す', () => {
+  it('declined・expired の提案は対象がある間は消さない。対象が無くなったら、処理して 90日で消す', () => {
     const item = mkItem({ id: 'ce-x' })
     const declined = mkInbox({
       id: 'xp-1',
@@ -1277,12 +1282,10 @@ describe('掃除（6.14）', () => {
     // ゴミ箱にある間も残す
     const trashed = trashItem(dataWith({ items: [item], inbox: [declined] }), 'ce-x').data
     expect(cleanupInbox(trashed, ctx({ now: T0 + 400 * DAY })).data.inbox['xp-1']).toBe(declined)
-    // 対象が消えた
-    const t1 = T0 + 200 * DAY
-    const noticed = cleanupInbox(dataWith({ inbox: [declined] }), ctx({ now: t1 })).data
-    expect(noticed.inbox['xp-1'].updatedAt).toBe(t1)
-    expect(cleanupInbox(noticed, ctx({ now: t1 + INBOX_KEEP_MS - 1 })).data.inbox['xp-1']).toBeDefined()
-    expect(cleanupInbox(noticed, ctx({ now: t1 + INBOX_KEEP_MS })).data.inbox['xp-1']).toBeUndefined()
+    // 対象が無い: 処理して 90日たつまでは残し（書き直しもしない）、90日で消す
+    const gone = dataWith({ inbox: [declined] })
+    expect(cleanupInbox(gone, ctx({ now: T0 + INBOX_KEEP_MS - 1 })).data).toBe(gone)
+    expect(cleanupInbox(gone, ctx({ now: T0 + INBOX_KEEP_MS })).data.inbox['xp-1']).toBeUndefined()
   })
 
   it('accepted・superseded・rejected の提案は処理して 90日で消す', () => {

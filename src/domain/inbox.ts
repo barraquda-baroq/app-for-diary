@@ -968,6 +968,9 @@ function checkProposal(data: AppData, rec: InboxRecord, ctx: Ctx): Step {
   if (same.some((o) => o.status === 'declined' || o.status === 'expired')) {
     return put(reject(rec, { reason: 'previously_declined', message: MESSAGES.previously_declined! }, ctx))
   }
+  // 新しい提案に置き換わった提案と同じ中身なら、出し直さない（同じメールを読み直すたびに、提案が入れ替わらないように。19.7 の 7.）
+  if (same.some((o) => o.status === 'superseded' && o.reason === 'replaced'))
+    return put(reject(rec, { reason: 'duplicate', message: '前に新しい提案へ置き換わった提案と同じです' }, ctx))
   // 5. 当てると決まりに合わない（Claude が読んだ時のままの時だけ見る。読んだ後に直されていたら［承認］の時に確かめる。
   //    同期のたびに確かめ直しても、提案の後の作者の編集で取り下げにならないように）
   if (rec.proposeOp === 'update' && unchangedSinceRead(data, rec, target)) {
@@ -1355,8 +1358,8 @@ function targetExists(data: AppData, rec: InboxRecord): boolean {
  * 受け取り箱の掃除（6.14・19.5）。ストアが1日1回ほど呼ぶ。消した記録は削除の印として送る（6.11 で片付く）。
  * - 処理して 90日たった記録（依頼の applied・rejected、提案の accepted・superseded・rejected）は消す
  * - conflict は 90日たっても選ばれなければ当てずに rejected（expired）
- * - declined・expired の提案は、対象の記録がある間は消さない（同じ中身の提案をまた出さない控え）。対象が消えたのに気付いたら updatedAt を
- *   書き直し、そこから 90日で消す
+ * - declined・expired の提案は、対象の記録がある間は消さない（同じ中身の提案をまた出さない控え）。対象が無くなったら、ほかと同じく
+ *   処理して 90日たった時に消す
  * - pending は消さない（答えの無い提案は processInbox が 30日で expired にする）
  */
 export function cleanupInbox(data: AppData, context: InboxContext): { data: AppData; touched: Touched } {
@@ -1372,10 +1375,6 @@ export function cleanupInbox(data: AppData, context: InboxContext): { data: AppD
       }
       if (rec.op === 'propose' && (rec.status === 'declined' || rec.status === 'expired')) {
         if (targetExists(data, rec)) continue
-        const noticed = rec.updatedAt > rec.appliedAt
-        if (!noticed) tx.put('inbox', { ...rec, updatedAt: Math.max(ctx.now, rec.appliedAt + 1) })
-        else if (ctx.now - rec.updatedAt >= INBOX_KEEP_MS) tx.delete('inbox', rec.id)
-        continue
       }
       if (age >= INBOX_KEEP_MS) tx.delete('inbox', rec.id)
     }
