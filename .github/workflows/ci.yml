@@ -50,6 +50,7 @@ jobs:
       - name: ビルドにテスト用の入口が無いことの確かめ
         run: "! grep -rqE 'diary-studio:test-auth|fakeSignIn|showUpdateBanner|__ds|demo-diary-studio' dist/"
       - name: E2E テスト用ブラウザ
+        id: browsers
         run: npx playwright install --with-deps chromium webkit
       # PC 1400×900・Pixel 7（Chromium）。
       # E2E_PREVIEW: 上でビルドした dist/ を vite preview でも出し、オフラインで開けて書体も出ることを確かめる（e2e/offline.spec.ts）
@@ -58,9 +59,10 @@ jobs:
         env:
           E2E_PREVIEW: '1'
       # iPhone 14（WebKit。iOS の Chrome も Safari も中身は WebKit）。CI の WebKit はソフトウェアの描画でとても重く、
-      # 2つを同時に流すと CPU を取り合ってアプリの起動が大きく遅れることがあるので、1つずつ流す（playwright.config.ts の iphone）
+      # 2つを同時に流すと CPU を取り合ってアプリの起動が大きく遅れることがあるので、1つずつ流す（playwright.config.ts の iphone）。
+      # Chromium の E2E が落ちても流す。前の段で止まってブラウザを入れていない時は流さない（WebKit が無いという誤りで埋まらないように）
       - name: E2E テスト（iPhone の WebKit）
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
         run: npm run test:e2e -- --project=iphone --workers=1
         env:
           E2E_WEBKIT: '1'

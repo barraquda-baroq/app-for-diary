@@ -96,6 +96,9 @@ describe('復元', () => {
 describe('受け取り箱の依頼を2台で当てる（19.5）', () => {
   const patch = { origin: 'calendar', kind: 'work', title: '打ち合わせ', start: '2026-12-03' }
   const itemId = derivedItemId(patch as never, '<m@x>')
+  // createdAt と updatedAt は同じ値にする（pending の依頼で違うと invalid。19.5 の初めの確かめ）。Date.now() を2回呼ぶと、ミリ秒が
+  // 変わった時だけ食い違って落ちる
+  const now = Date.now()
   const req = mkInbox({
     id: 'xa-1',
     op: 'add',
@@ -104,8 +107,8 @@ describe('受け取り箱の依頼を2台で当てる（19.5）', () => {
     patch,
     sourceKey: '<m@x>',
     via: 'メール',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
   })
 
   it('同時に当てても予定は1件、依頼は applied（記録と依頼は1つのまとまりで届く）', async () => {
