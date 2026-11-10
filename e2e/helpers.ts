@@ -1,6 +1,46 @@
 // E2E テスト用のヘルパー。NS の e2e/helpers.ts から。開発サーバーでは window.__ds（src/main.tsx）からログインの状態などを操作できる。
 // データを用意する seed は、データのストアを作る段階1で足す
-import { expect, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+/**
+ * 落ちた時の手がかりを残す（CI の WebKit でだけ時々ログインの画面が出ないことがあり、その時に何が起きていたかを見るため）。
+ * テストの間、ブラウザの console・ページのエラー・失敗した通信・終わっていない通信を集め、落ちた時だけ
+ * 「page-diagnostics」として添付する（line reporter はこの文を CI のログにそのまま出す）。ファイルの先頭で1回呼ぶ
+ */
+export function collectDiagnosticsOnFailure(): void {
+  const logs = new WeakMap<Page, { lines: string[]; pending: Map<string, number>; t0: number }>()
+  test.beforeEach(async ({ page }) => {
+    const rec = { lines: [] as string[], pending: new Map<string, number>(), t0: Date.now() }
+    logs.set(page, rec)
+    const at = () => `@${Date.now() - rec.t0}`
+    page.on('console', (m) => rec.lines.push(`console.${m.type()}${at()}: ${m.text()}`))
+    page.on('pageerror', (e) => rec.lines.push(`pageerror${at()}: ${e.message}`))
+    page.on('request', (r) => rec.pending.set(r.url(), Date.now() - rec.t0))
+    page.on('requestfinished', (r) => rec.pending.delete(r.url()))
+    page.on('requestfailed', (r) => {
+      rec.pending.delete(r.url())
+      rec.lines.push(`requestfailed${at()}: ${r.url()} ${r.failure()?.errorText ?? ''}`)
+    })
+  })
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.status === testInfo.expectedStatus) return
+    const rec = logs.get(page)
+    if (!rec) return
+    const pending = [...rec.pending].map(([url, since]) => `pending(since @${since}): ${url}`)
+    const state = await page
+      .evaluate(() => {
+        const overlay = document.getElementById('ds-launch')
+        const attrs = overlay ? [...overlay.attributes].map((a) => `${a.name}=${a.value}`).join(' ') : 'none'
+        const text = (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 300)
+        return `url=${location.href}\noverlay=${attrs}\nbody=${text}`
+      })
+      .catch((e: unknown) => `evaluate failed: ${String(e)}`)
+    await testInfo.attach('page-diagnostics', {
+      body: [state, ...rec.lines, ...pending].join('\n'),
+      contentType: 'text/plain',
+    })
+  })
+}
 
 interface DevHook {
   /** エミュレーターにつないでいる時だけ: 仮のアカウントでログインする */

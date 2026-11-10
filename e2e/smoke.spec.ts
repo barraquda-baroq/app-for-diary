@@ -3,7 +3,9 @@
 // 書体（Roboto Mono）が読み込まれていること、スマホの縦の積みと3つのリストが畳んで始まること。
 // 細かい決まりは e2e/launch.spec.ts（起動アニメーション）と e2e/frame.spec.ts（ログインの画面・画面の枠）で確かめる
 import { expect, test, type Page } from '@playwright/test'
-import { luminance, noHorizontalScroll } from './helpers'
+import { collectDiagnosticsOnFailure, luminance, noHorizontalScroll } from './helpers'
+
+collectDiagnosticsOnFailure()
 
 const PREFS_KEY = 'diary-studio:prefs'
 const TEST_AUTH_KEY = 'diary-studio:test-auth'

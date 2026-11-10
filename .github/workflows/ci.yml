@@ -37,13 +37,19 @@ jobs:
         run: "! grep -rqE 'diary-studio:test-auth|fakeSignIn|showUpdateBanner|__ds|demo-diary-studio' dist/"
       - name: E2E テスト用ブラウザ
         run: npx playwright install --with-deps chromium webkit
-      # PC 1400×900・Pixel 7 に、E2E_WEBKIT で iPhone 14（WebKit）を足す（playwright.config.ts）。
+      # PC 1400×900・Pixel 7（Chromium）。
       # E2E_PREVIEW: 上でビルドした dist/ を vite preview でも出し、オフラインで開けて書体も出ることを確かめる（e2e/offline.spec.ts）
-      - name: E2E テスト
-        run: npm run test:e2e
+      - name: E2E テスト（PC・Android の Chromium）
+        run: npm run test:e2e -- --project=desktop --project=mobile
+        env:
+          E2E_PREVIEW: '1'
+      # iPhone 14（WebKit。iOS の Chrome も Safari も中身は WebKit）。CI の WebKit はソフトウェアの描画でとても重く、
+      # 2つを同時に流すと CPU を取り合ってアプリの起動が大きく遅れることがあるので、1つずつ流す（playwright.config.ts の iphone）
+      - name: E2E テスト（iPhone の WebKit）
+        if: ${{ !cancelled() }}
+        run: npm run test:e2e -- --project=iphone --workers=1
         env:
           E2E_WEBKIT: '1'
-          E2E_PREVIEW: '1'
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

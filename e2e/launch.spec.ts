@@ -3,7 +3,9 @@
 // テスト（navigator.webdriver）ではふだん出さないので、URL の launch=1（または localStorage の diary-studio:launch = 'force'）で出す。
 // ログインしていないので、重なりの下ではログインの画面が起動する（docs/SPEC.md の 2.5）
 import { expect, test, type Page } from '@playwright/test'
-import { noHorizontalScroll, openApp } from './helpers'
+import { collectDiagnosticsOnFailure, noHorizontalScroll, openApp } from './helpers'
+
+collectDiagnosticsOnFailure()
 
 const PREFS_KEY = 'diary-studio:prefs'
 const overlay = (page: Page) => page.getByTestId('launch-overlay')
