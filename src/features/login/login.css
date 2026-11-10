@@ -1,6 +1,7 @@
-/* ===== ログインの画面（docs/SPEC.md の 2.5）: 参考画像の表紙の見た目 =====
-   画面いっぱいに --cover（くすんだ青）の地。ボタンの外の字は --on-cover。ボタンは地 --surface・字 --text・枠 1px --border-strong
-   （src/styles.css の .btn。ホワイトでは白い地、ダーク・ディープダークでは暗い面の色になり、暗い表紙の上でボタンだけがギラつかない） */
+/* ===== ログインの画面（docs/SPEC.md の 2.5）: 参考画像の表紙の組み方（色はグレー） =====
+   画面いっぱいに --cover（外観ごとのグレー。ホワイトは明るいグレー、ダークは黒より少し明るいグレー、ディープダークはもっと暗いグレー）の地。
+   ボタンの外の字は --on-cover（地と 4.5:1 以上）。ボタンは地 --surface・字 --text（src/styles.css の .btn。ホワイトでは白い地、
+   ダーク・ディープダークでは表紙より暗い面の色になり、ボタンだけがギラつかない）で、枠だけ 1px の --cover-border（地と 3:1 以上）にする */
 .login {
   position: relative;
   display: flex;
@@ -50,6 +51,11 @@
   align-items: flex-start;
   gap: 14px;
   margin-top: 40px;
+}
+
+/* 表紙の上のボタン（［Google でログイン］・［追加の手順］）の枠。--border-strong はグレーの地の上では見えにくいので替える */
+.login .btn {
+  border-color: var(--cover-border);
 }
 
 /* 高さ 44px */

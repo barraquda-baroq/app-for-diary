@@ -30,7 +30,7 @@ interface PromptOptions {
 export interface Choice<T extends string> {
   value: T
   label: string
-  /** 主な選択肢（青いボタン。開いた時にここへフォーカスする） */
+  /** 主な選択肢（主なボタンの色 --primary。開いた時にここへフォーカスする） */
   primary?: boolean
   /** 取り消せない選択肢（赤い文字のボタン） */
   danger?: boolean

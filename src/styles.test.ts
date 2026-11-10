@@ -1,5 +1,5 @@
-// 色のトークン（src/styles.css）が仕様書の表のとおりか、字の色が地の上で読めるか、部品が色を直接書いていないか、
-// 幅の区分の値がスクリプトとそろっているかを確かめる（docs/SPEC.md の 4.3・4.5・4.6・4.11）
+// 色のトークン（src/styles.css）が仕様書の表のとおりか、字の色が地の上で読めるか、差し色とログインの画面の地がグレーか、
+// 部品が色を直接書いていないか、幅の区分の値がスクリプトとそろっているかを確かめる（docs/SPEC.md の 2.5・4.3・4.5・4.6・4.11）
 import { describe, expect, it } from 'vitest'
 import { WIDTH_L, WIDTH_M } from './ui/hooks'
 
@@ -14,6 +14,7 @@ const { readFileSync, readdirSync } = (await import(/* @vite-ignore */ NODE_FS))
 const read = (relative: string) => readFileSync(decodeURIComponent(new URL(relative, import.meta.url).pathname), 'utf8')
 const css = read('./styles.css')
 const menuCss = read('./ui/menu.css')
+const loginCss = read('./features/login/login.css')
 /** src/ の下のすべての CSS（画面ごとの CSS も。[src/ からの場所, 中身]）。段階2以降で画面の CSS が増えても確かめから漏れないように */
 // （new URL('.', import.meta.url) は Vite が開発サーバーの URL に書き換えるので、import.meta.url のファイルの場所から作る）
 const SRC_DIR = decodeURIComponent(new URL(import.meta.url).pathname).replace(/[^/]*$/, '')
@@ -37,19 +38,22 @@ const SPEC_TOKENS: Record<string, readonly [string, string, string]> = {
   '--text-muted': ['#5c6068', '#a8aab0', '#8a8984'],
   '--text-faint': ['#62666e', '#90939a', '#858480'],
   '--numeral': ['#858991', '#6b6e76', '#66676b'],
-  '--accent': ['#4a6c92', '#9fb9d6', '#8a96a8'],
-  '--accent-strong': ['#3b5a7e', '#c3d4e8', '#a3adbc'],
-  '--accent-soft': ['#e5ecf4', '#1f2a37', '#15181d'],
-  '--on-accent': ['#ffffff', '#10161e', '#0b0c0e'],
-  '--primary': ['#56789e', '#3d5675', '#1b1e24'],
-  '--primary-hover': ['#4a6c92', '#47628a', '#22262d'],
-  '--primary-border': ['var(--primary)', 'var(--primary)', '#2e333c'],
-  '--on-primary': ['#ffffff', '#eef3f9', '#b1bac7'],
-  '--today-bg': ['var(--primary)', 'var(--primary)', '#2c313a'],
-  '--today-ring': ['#4a6c92', '#9fb9d6', '#8a96a8'],
-  '--switch-on': ['var(--accent)', '#4d6a8f', '#4a5262'],
-  '--cover': ['#a3bbd3', '#2b3a4c', '#15181d'],
-  '--on-cover': ['#15202c', '#e6edf5', '#aeb4bd'],
+  // 差し色（グレーの濃淡。作者の指摘で青から替えた）
+  '--accent': ['#4f5259', '#bcbdc1', '#9b9993'],
+  '--accent-strong': ['#373a40', '#dcdcd9', '#b5b3ad'],
+  '--accent-soft': ['#e8e8e5', '#222428', '#17181b'],
+  '--on-accent': ['#ffffff', '#121316', '#0b0c0d'],
+  '--primary': ['#4f5259', '#4b4e55', '#2a2b2e'],
+  '--primary-hover': ['#3e4146', '#565960', '#323337'],
+  '--primary-border': ['var(--primary)', 'var(--primary)', '#45464a'],
+  '--on-primary': ['#ffffff', '#f1f0ec', '#bab8b2'],
+  '--today-bg': ['var(--primary)', 'var(--primary)', '#3f4044'],
+  '--today-ring': ['#3e4146', '#bcbdc1', '#8f8e89'],
+  '--switch-on': ['var(--accent)', '#8b8e95', '#616266'],
+  // ログインの画面（外観ごとのグレーの地。作者の指摘で表紙の青から替えた）
+  '--cover': ['#e0e0dd', '#2a2b2f', '#161719'],
+  '--on-cover': ['#25282e', '#e6e5e1', '#aeaca6'],
+  '--cover-border': ['#73767d', '#7b7e85', '#68696c'],
   '--sat': ['#3f69a3', '#8a9bb5', '#808b9b'],
   '--sun': ['#ac4257', '#c79199', '#a08589'],
   '--off-fill': ['#ebebee', '#272a30', '#1c1e22'],
@@ -75,7 +79,7 @@ const SPEC_TOKENS: Record<string, readonly [string, string, string]> = {
   '--toast-bg': ['#2b2f38', '#2a2c31', '#141518'],
   '--toast-text': ['#ffffff', '#e6e4de', '#aeaca6'],
   '--backdrop': ['rgb(15 17 22 / 45%)', 'rgb(0 0 0 / 62%)', 'rgb(0 0 0 / 70%)'],
-  '--selection': ['#cfdcec', '#2f4560', '#262c36'],
+  '--selection': ['#d6d7d9', '#43464d', '#2c2d30'],
   '--shadow-lift': ['0 6px 20px rgb(30 30 40 / 18%)', '0 6px 20px rgb(0 0 0 / 55%)', '0 6px 20px rgb(0 0 0 / 70%)'],
   '--brand-filter': ['none', 'brightness(0.95)', 'grayscale(0.85) brightness(0.6)'],
   '--qr-bg': ['#ffffff', '#ffffff', '#ffffff'],
@@ -255,7 +259,7 @@ describe('色のトークン（docs/SPEC.md の 4.5）', () => {
     }
   })
 
-  it('NS の緑の --active* は、くすんだ青に置き換えている', () => {
+  it('NS の緑の --active* は、差し色のグレーに置き換えている', () => {
     for (const theme of THEMES) {
       expect(VARS[theme].get('--active')).toBe('var(--accent)')
       expect(VARS[theme].get('--active-soft')).toBe('var(--accent-soft)')
@@ -358,7 +362,7 @@ describe('字の色が地の上で読める（docs/SPEC.md の 4.5 の WCAG の�
     expect(own.get('--work-soft')).toBe(own.get('--private-soft'))
   })
 
-  it.each(THEMES)('%s: 主なボタン・今日の印・表紙・お知らせ・注意の字も 4.5:1 以上', (theme) => {
+  it.each(THEMES)('%s: 主なボタン・今日の印・ログインの画面・選んだ文字・お知らせ・注意の字も 4.5:1 以上', (theme) => {
     const pairs: [string, string][] = [
       ['--on-primary', '--primary'],
       ['--on-primary', '--primary-hover'],
@@ -366,6 +370,7 @@ describe('字の色が地の上で読める（docs/SPEC.md の 4.5 の WCAG の�
       ['--on-accent', '--accent'],
       ['--accent-strong', '--accent-soft'],
       ['--on-cover', '--cover'],
+      ['--text', '--selection'],
       ['--toast-text', '--toast-bg'],
       ['--overdue', '--surface'],
       ['--danger', '--surface'],
@@ -389,6 +394,109 @@ describe('字の色が地の上で読める（docs/SPEC.md の 4.5 の WCAG の�
       ).toBeGreaterThanOrEqual(3)
     }
   })
+})
+
+describe('差し色とログインの画面はグレー（作者の指摘。docs/SPEC.md の 2.5・4.5・7.3）', () => {
+  /** 今まで DS の青で出していた所のトークン（差し色）と、ログインの画面の地・字・ボタンの枠 */
+  const GRAY_TOKENS = [
+    '--accent',
+    '--accent-strong',
+    '--accent-soft',
+    '--on-accent',
+    '--primary',
+    '--primary-hover',
+    '--primary-border',
+    '--on-primary',
+    '--today-bg',
+    '--today-ring',
+    '--switch-on',
+    '--selection',
+    '--cover',
+    '--on-cover',
+    '--cover-border',
+  ]
+  /** OKLab の彩度（灰色の軸からの離れ。前の青は 0.03〜0.07、面・線・字のグレーは 0.014 まで） */
+  const chroma = (hex: string) => Math.hypot(oklab(hex)[1], oklab(hex)[2])
+  const lightness = (hex: string) => oklab(hex)[0]
+
+  it.each(THEMES)('%s: 差し色とログインの画面の色は、OKLab の彩度 0.015 未満のグレー', (theme) => {
+    for (const name of GRAY_TOKENS) {
+      expect(chroma(color(theme, name)), `${theme}: ${name}`).toBeLessThan(0.015)
+    }
+  })
+
+  it('ログインの画面の地: ホワイトは明るいグレー、ダークは黒より少し明るいグレー、ディープダークはそれより暗いグレー', () => {
+    // ホワイト: ページの地（--bg）より暗く、白に見えない。それでも明るい（OKLab の明るさ 0.85 以上）
+    expect(lightness(color('white', '--cover'))).toBeLessThan(lightness(color('white', '--bg')) - 0.04)
+    expect(lightness(color('white', '--cover'))).toBeGreaterThanOrEqual(0.85)
+    // ダーク: 面（--surface）より明るく、まだ暗い（0.4 未満）
+    expect(lightness(color('dark', '--cover'))).toBeGreaterThan(lightness(color('dark', '--surface')) + 0.04)
+    expect(lightness(color('dark', '--cover'))).toBeLessThan(0.4)
+    // ディープダーク: ダークより暗く、ページの地（--bg）よりは明るい
+    expect(lightness(color('deep-dark', '--cover'))).toBeLessThan(lightness(color('dark', '--cover')) - 0.04)
+    expect(lightness(color('deep-dark', '--cover'))).toBeGreaterThan(lightness(color('deep-dark', '--bg')))
+  })
+
+  it.each(THEMES)('%s: ログインの画面の字は地と 4.5:1 以上、ボタンの字は 4.5:1 以上、ボタンの枠は地と 3:1 以上', (theme) => {
+    const cover = color(theme, '--cover')
+    expect(contrast(color(theme, '--on-cover'), cover), `${theme}: --on-cover / --cover`).toBeGreaterThanOrEqual(4.5)
+    // ボタン（.btn）は地 --surface・字 --text
+    expect(contrast(color(theme, '--text'), color(theme, '--surface')), `${theme}: --text / --surface`).toBeGreaterThanOrEqual(
+      4.5,
+    )
+    expect(contrast(color(theme, '--cover-border'), cover), `${theme}: --cover-border / --cover`).toBeGreaterThanOrEqual(3)
+  })
+
+  it('ログインの画面のボタンの枠は --cover-border、フォーカスの輪は --on-cover（src/features/login/login.css）', () => {
+    const src = stripComments(loginCss)
+    expect(src).toMatch(/\.login \.btn \{\s*border-color: var\(--cover-border\);\s*\}/)
+    expect(src).toMatch(/\.login \.btn:focus-visible,\s*\.login-link:focus-visible \{\s*outline-color: var\(--on-cover\);/)
+  })
+
+  it.each(THEMES)('%s: フォーカスの輪・選んでいる所の下線と枠（--accent）は、周りの地と 3:1 以上', (theme) => {
+    for (const ground of [
+      '--bg',
+      '--surface',
+      '--surface-2',
+      '--surface-3',
+      '--off-fill',
+      '--accent-soft',
+      '--work-soft',
+      '--private-soft',
+      '--work-area',
+      '--private-area',
+      '--work-sheet',
+      '--private-sheet',
+    ]) {
+      expect(contrast(color(theme, '--accent'), color(theme, ground)), `${theme}: --accent / ${ground}`).toBeGreaterThanOrEqual(3)
+    }
+    // ログインの画面のフォーカスの輪
+    expect(contrast(color(theme, '--on-cover'), color(theme, '--cover'))).toBeGreaterThanOrEqual(3)
+  })
+
+  it.each(THEMES)('%s: 今日の丸（押した状態も）は地で分かる: 地は周りと 1.5:1 以上、輪は 3:1 以上', (theme) => {
+    // --surface-3 は押していない［MIM］の地
+    for (const ground of ['--bg', '--surface', '--surface-3']) {
+      expect(
+        contrast(color(theme, '--today-bg'), color(theme, ground)),
+        `${theme}: --today-bg / ${ground}`,
+      ).toBeGreaterThanOrEqual(1.5)
+    }
+    for (const ground of ['--bg', '--surface']) {
+      expect(
+        contrast(color(theme, '--today-ring'), color(theme, ground)),
+        `${theme}: --today-ring / ${ground}`,
+      ).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it.each(THEMES)(
+    '%s: 切り替えのオンの地は、明るさでオフの地と見分けられる（オフ --border-strong と 2:1・面と 3:1 以上）',
+    (theme) => {
+      expect(contrast(color(theme, '--switch-on'), color(theme, '--border-strong'))).toBeGreaterThanOrEqual(2)
+      expect(contrast(color(theme, '--switch-on'), color(theme, '--surface'))).toBeGreaterThanOrEqual(3)
+    },
+  )
 })
 
 describe('区分の色とラベルの色の見分け（docs/SPEC.md の 4.3・4.5）', () => {

@@ -70,7 +70,143 @@ async function withPrefs(page: Page, prefs: Record<string, unknown>) {
   await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [PREFS_KEY, JSON.stringify(prefs)])
 }
 
+/** 起動アニメーションの流れ（ページを開いてからの時刻。ミリ秒。最初の1回だけ） */
+interface Timeline {
+  /** 重なりを出した・取り除いた */
+  shown?: number
+  gone?: number
+  /** 下のログインの画面ができた・アプリが知らせてきた（appReady） */
+  login?: number
+  ready?: number
+  /** 描いた所（'worker' | 'page'）と、canvas の実ピクセルの大きさ（'幅x高さ'） */
+  renderer?: string
+  canvas?: string
+  /** ページの中で描いていて重いので、動きをやめて最後の絵に飛んだ理由（'setup' | 'frame' | 'gaps'）と時刻 */
+  slow?: string
+  slowAt?: number
+  /** 消え始めた理由（'done' | 'skip' | 'cap'）と時刻 */
+  end?: string
+  endAt?: number
+  /** メインのスレッドの詰まり（250ミリ秒おきのタイマーが遅れた、いちばん長い時間） */
+  lagMax?: number
+}
+
+/**
+ * 起動アニメーションの流れを控える（readTimeline で読む）。同じことを console.debug にも出して、テストの側で lines に集める
+ * （ページが固まっても、それまでの流れが残る）。失敗した時は afterEach が lines を添える。CI の WebKit（iPhone）でしか起きない
+ * 失敗で、どちらで描いたか・いつ何が起きたか・メインのスレッドがどれだけ詰まったかを見るため。
+ * DiaryStudioLaunch と Worker を包むので、keepOverlayUntilPressed などと一緒には使わない
+ */
+async function recordTimeline(page: Page): Promise<string[]> {
+  const lines: string[] = []
+  page.on('console', (m) => {
+    const text = m.text()
+    if (text.startsWith('[launch] ')) lines.push(text.slice(9))
+    else if (m.type() === 'warning' || m.type() === 'error') lines.push(`${m.type()}:${text.slice(0, 80)}`)
+  })
+  page.on('pageerror', (e) => lines.push(`pageerror:${e.message.slice(0, 80)}`))
+  await page.addInitScript(() => {
+    const t: Timeline = {}
+    ;(window as unknown as { __timeline: Timeline }).__timeline = t
+    const now = () => Math.round(performance.now())
+    const log = (s: string) => console.debug(`[launch] ${s}@${now()}`)
+    let seen = false
+    new MutationObserver(() => {
+      const el = document.getElementById('ds-launch')
+      if (el) {
+        if (!seen) {
+          seen = true
+          t.shown = now()
+          log('shown')
+        }
+        const renderer = el.getAttribute('data-launch-renderer')
+        if (renderer && renderer !== t.renderer) {
+          t.renderer = renderer
+          log(`renderer=${renderer}`)
+        }
+        const cv = el.querySelector('canvas')
+        if (cv && cv.width && t.canvas == null) t.canvas = `${cv.width}x${cv.height}`
+        const slow = el.getAttribute('data-launch-slow')
+        if (slow && t.slow == null) {
+          t.slow = slow
+          t.slowAt = now()
+          log(`slow=${slow}`)
+        }
+        const end = el.getAttribute('data-launch-end')
+        if (end && t.end == null) {
+          t.end = end
+          t.endAt = now()
+          log(`end=${end}`)
+        }
+      } else if (seen && t.gone == null) {
+        t.gone = now()
+        log(`gone(lagMax=${t.lagMax ?? 0})`)
+      }
+      if (t.login == null && document.querySelector('[data-testid="login-page"]')) {
+        t.login = now()
+        log('login')
+      }
+    }).observe(document, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-launch-renderer', 'data-launch-slow', 'data-launch-end'],
+    })
+    // Worker の知らせ（'started'・'end'）と、Worker で描けなかった時
+    const Base = window.Worker
+    if (Base) {
+      window.Worker = class extends Base {
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options)
+          this.addEventListener('message', (e) => log(`w:${(e.data as { type?: string })?.type}`))
+          this.addEventListener('error', () => log('w:error'))
+        }
+      }
+    }
+    // アプリの知らせ（DiaryStudioLaunch.appReady）
+    let api: { appReady: () => void } | undefined
+    Object.defineProperty(window, 'DiaryStudioLaunch', {
+      configurable: true,
+      get: () => api,
+      set(v: { appReady: () => void }) {
+        const appReady = v.appReady
+        v.appReady = () => {
+          if (t.ready == null) {
+            t.ready = now()
+            log('ready')
+          }
+          appReady()
+        }
+        api = v
+      },
+    })
+    // メインのスレッドの詰まり。0.25秒より長く遅れるたびに出す
+    let last = performance.now()
+    window.setInterval(() => {
+      const at = performance.now()
+      const lag = Math.round(at - last - 250)
+      last = at
+      if (lag > (t.lagMax ?? 0)) {
+        t.lagMax = lag
+        if (lag > 250) log(`lag=${lag}`)
+      }
+    }, 250)
+  })
+  return lines
+}
+const readTimeline = (page: Page) => page.evaluate(() => (window as unknown as { __timeline: Timeline }).__timeline)
+
+/** 今のテストの流れ（recordTimeline の lines）。失敗した時に afterEach が添える */
+let timeline: string[] | null = null
+
 test.describe('起動アニメーション', () => {
+  test.afterEach(async ({}, testInfo) => {
+    if (timeline && testInfo.status !== testInfo.expectedStatus) {
+      await testInfo.attach('launch-timeline', { body: timeline.join(' '), contentType: 'text/plain' })
+    }
+    timeline = null
+  })
+
   // ほかのテストは「テストではふだん出さない」を前提にしている（出ると最初に押した物を重なりが飲み込む。5.2）。
   // ブラウザ（WebKit など）が navigator.webdriver を true にしないと全部のテストが崩れるので、原因が分かるようにここで確かめる
   test('テストのブラウザでは navigator.webdriver が true で、強制しなければ出さない', async ({ page }) => {
@@ -81,6 +217,7 @@ test.describe('起動アニメーション', () => {
   })
 
   test('強制すると最初に出て、アニメーションが終わりアプリの画面ができたら消えて取り除かれる', async ({ page }) => {
+    timeline = await recordTimeline(page)
     await recordLaunchEnd(page)
     await recordAppClicks(page)
     await page.goto('/?launch=1#/', { waitUntil: 'commit' })
@@ -351,13 +488,64 @@ test.describe('起動アニメーション', () => {
     expect(a.equals(b)).toBe(false)
   })
 
+  test.describe('ページの中で描く時（Worker に canvas を渡せないブラウザ）', () => {
+    // iPhone 14 と同じ大きさ・細かさ（dpr 3）
+    test.use({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 3 })
+
+    test('メインのスレッドが遅い時は、動きをやめてロゴに飛び（倍率も 2 まで）、ログインの画面ができてから数秒で消える', async ({
+      page,
+      browserName,
+    }) => {
+      test.skip(
+        browserName !== 'chromium',
+        'メインのスレッドを遅くする（CDP の Emulation.setCPUThrottlingRate）のは Chromium だけ',
+      )
+      test.slow()
+      timeline = await recordTimeline(page)
+      // OffscreenCanvas の無いブラウザ（Safari 16.3 まで など）にして、ページの中で描かせる
+      await page.addInitScript(() => {
+        delete (window as { OffscreenCanvas?: unknown }).OffscreenCanvas
+        Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', { value: undefined, configurable: true })
+      })
+      // 遅い端末: メインのスレッドを 10 倍遅くする（下ごしらえと最初の絵が、この環境で 0.4秒ほどになる）
+      const cdp = await page.context().newCDPSession(page)
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 10 })
+      await page.goto('/?launch=1#/', { waitUntil: 'commit' })
+      await expect(overlay(page)).toHaveCount(0, { timeout: 20_000 })
+      await expect(loginButton(page)).toBeAttached({ timeout: 20_000 })
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+      const t = await readTimeline(page)
+      expect(t.renderer).toBe('page')
+      // 描く大きさの倍率は 2 まで（dpr 3 の画面でも、canvas は CSS の大きさの2倍）
+      expect(t.canvas).toBe(`${390 * 2}x${664 * 2}`)
+      // 下ごしらえか1コマが重いので、動きをやめて最後の絵（ロゴ）に飛んだ
+      expect(['setup', 'frame', 'gaps']).toContain(t.slow)
+      // 消え始めたのは、ロゴを0.5秒出してアプリの知らせもそろった時（done）か、アプリの起動がとても遅い時の5秒の期限（cap）
+      expect(['done', 'cap']).toContain(t.end)
+      // ログインの画面ができてから数秒で消える（ログインの画面より先に、5秒の期限で消えていることもある）
+      expect(t.gone! - t.login!).toBeLessThan(3000)
+      // 5秒の期限が重い1コマで遅れない（期限＋消える 0.25秒＋アプリの起動で遅れるタイマーの分まで）
+      expect(t.gone! - t.shown!).toBeLessThan(5000 + 250 + 2000)
+    })
+  })
+
   test('外観ごとの地の色（白・黒・もっと暗い黒）と 360px の見え方', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', '画面の写しはスマホの幅だけで撮る')
     await page.setViewportSize({ width: 360, height: 760 })
     // 決まった瞬間の絵を撮るため、ページの中で描かせ（Worker を使わせない）、requestAnimationFrame をテストから進める
-    // （アプリの知らせは requestAnimationFrame が来なくても届く）
+    // （アプリの知らせは requestAnimationFrame が来なくても届く）。ページの中で描く時の見張り（重い時はロゴに飛ぶ）は、
+    // テストを動かす機械が混んでいても全部の場面を撮れるよう止める
     await page.context().addInitScript(() => {
       Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', { value: undefined, configurable: true })
+      let api: { PAGE_DRAW: { setupMs: number; frameMs: number } } | undefined
+      Object.defineProperty(window, 'DiaryStudioLaunch', {
+        configurable: true,
+        get: () => api,
+        set(v: { PAGE_DRAW: { setupMs: number; frameMs: number } }) {
+          v.PAGE_DRAW.setupMs = v.PAGE_DRAW.frameMs = Infinity
+          api = v
+        },
+      })
       const w = window as unknown as { __step: (to: number) => void }
       let queue: FrameRequestCallback[] = []
       let now = 0

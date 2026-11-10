@@ -16,16 +16,29 @@ interface ControllerOptions {
   still?: boolean
   setTimeout: (fn: () => void, ms: number) => number
   clearTimeout: (id: number) => void
+  now?: () => number
   onFadeOut: (reason: string) => void
   onRemove: () => void
 }
 interface Controller {
   start(): void
+  tick(): void
   animationEnded(): void
   stillShown(): void
+  fallback(): void
   appReady(): void
   skip(): void
   state(): string
+}
+interface FrameLimits {
+  maxDpr: number
+  setupMs: number
+  frameMs: number
+  frames: number
+}
+interface FrameWatch {
+  setup(ms: number): string
+  frame(ts: number, ms: number): string
 }
 interface Palette {
   bg: string
@@ -70,6 +83,8 @@ interface LaunchApi {
   animationTheme(appearance: string): string
   decide(env: Env): 'none' | 'play' | 'still'
   createController(o: ControllerOptions): Controller
+  createFrameWatch(limits: FrameLimits): FrameWatch
+  PAGE_DRAW: FrameLimits
   play(stage: HTMLElement, theme: string, opts?: { still?: boolean; at?: number }): Player
   workerSource(): string
   TIMING: { stillMs: number; capMs: number; fadeMs: number }
@@ -95,9 +110,14 @@ function load(): LaunchApi {
   return w.DiaryStudioLaunch!
 }
 
-/** canvas の偽物（描く命令の数を数え、描いた絵（drawImage の1つ目）を控える） */
+/**
+ * canvas の偽物（描く命令の数を数え、描いた絵（drawImage の1つ目）を控える）。
+ * drawCost を入れると、drawImage 1回ごとに時計（performance.now）がその分進む（重い端末で描いたことにする。clockOffset）
+ */
 let draws = 0
 let drawn: { width: number; height: number }[] = []
+let drawCost = 0
+let clockOffset = 0
 function fakeContext(): CanvasRenderingContext2D {
   const gradient = { addColorStop() {} }
   const props: Record<string, unknown> = {}
@@ -109,6 +129,7 @@ function fakeContext(): CanvasRenderingContext2D {
         return (img: { width: number; height: number }) => {
           draws++
           drawn.push(img)
+          clockOffset += drawCost
         }
       return () => undefined
     },
@@ -137,6 +158,8 @@ const t = (ms: number) => vi.advanceTimersByTime(ms)
 beforeEach(() => {
   draws = 0
   drawn = []
+  drawCost = 0
+  clockOffset = 0
   localStorage.clear()
   sessionStorage.clear()
   media()
@@ -146,6 +169,9 @@ beforeEach(() => {
   document.documentElement.removeAttribute('data-theme')
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(fakeContext as never)
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+  // 時計（performance.now）は偽の時計に clockOffset を足した物（重い1コマの分だけ、タイマーより先に進むことがある）
+  const fakeNow = window.performance.now.bind(window.performance)
+  vi.spyOn(window.performance, 'now').mockImplementation(() => fakeNow() + clockOffset)
 })
 
 afterEach(() => {
@@ -393,6 +419,138 @@ describe('消すまでの流れ（createController）', () => {
     c.appReady()
     vi.advanceTimersByTime(10_000)
     expect(events).toEqual(['fade:skip@0', 'remove@250'])
+  })
+
+  it('動かしていて重いので最後の絵に飛んだ（fallback）ら、そこから0.5秒出して（アプリの知らせも待って）消す', () => {
+    const { c, events } = setup()
+    c.start()
+    vi.advanceTimersByTime(300)
+    c.fallback()
+    // 0.5秒たってアニメーションの終わりになっても、アプリの知らせはまだ
+    vi.advanceTimersByTime(500)
+    expect(events).toEqual([])
+    vi.advanceTimersByTime(200)
+    c.appReady()
+    expect(events).toEqual(['fade:done@1000'])
+  })
+
+  it('fallback は、動かさない時・アニメーションが終わった後・2度目は何もしない', () => {
+    const still = setup(true)
+    still.c.start()
+    still.c.appReady()
+    still.c.fallback()
+    vi.advanceTimersByTime(4999)
+    expect(still.events).toEqual([])
+
+    const ended = setup()
+    ended.c.start()
+    ended.c.animationEnded()
+    ended.c.fallback()
+    vi.advanceTimersByTime(1000)
+    ended.c.appReady()
+    expect(ended.events).toEqual(['fade:done@1000'])
+
+    const twice = setup()
+    twice.c.start()
+    twice.c.appReady()
+    twice.c.fallback()
+    vi.advanceTimersByTime(400)
+    twice.c.fallback()
+    vi.advanceTimersByTime(100)
+    expect(twice.events).toEqual(['fade:done@500'])
+  })
+
+  describe('時計（now）を渡した時: タイマーが遅れても、出し始めからの実際の経過時間で5秒を確かめる', () => {
+    /** タイマーが重い処理で lateMs 遅れる（時計は進む） */
+    function lateSetup(lateMs: number) {
+      const events: string[] = []
+      const t0 = Date.now()
+      const c = load().createController({
+        setTimeout: (fn, ms) => window.setTimeout(fn, ms + lateMs),
+        clearTimeout: (id) => window.clearTimeout(id),
+        now: () => Date.now(),
+        onFadeOut: (reason) => events.push(`fade:${reason}@${Date.now() - t0}`),
+        onRemove: () => events.push(`remove@${Date.now() - t0}`),
+      })
+      return { c, events }
+    }
+
+    it('5秒たってからの tick（ページの中で描く1コマごと）で消し始める。その前の tick は何もしない', () => {
+      const { c, events } = lateSetup(3000)
+      c.start()
+      vi.advanceTimersByTime(4999)
+      c.tick()
+      expect(events).toEqual([])
+      vi.advanceTimersByTime(1)
+      c.tick()
+      expect(events).toEqual(['fade:cap@5000'])
+      // 消し始めた後の tick・遅れたタイマーは何もしない
+      c.tick()
+      vi.advanceTimersByTime(10_000)
+      expect(events).toEqual(['fade:cap@5000', 'remove@8250'])
+    })
+
+    it('5秒たってからの知らせでも消し始める（両方そろっていれば done）', () => {
+      const late = lateSetup(3000)
+      late.c.start()
+      vi.advanceTimersByTime(6000)
+      late.c.appReady()
+      expect(late.events).toEqual(['fade:cap@6000'])
+
+      const both = lateSetup(3000)
+      both.c.start()
+      both.c.appReady()
+      vi.advanceTimersByTime(6000)
+      both.c.animationEnded()
+      expect(both.events).toEqual(['fade:done@6000'])
+    })
+
+    it('時計を渡さない時は、tick は何もしない（タイマーだけで5秒）', () => {
+      const { c, events } = setup()
+      c.start()
+      vi.advanceTimersByTime(4999)
+      c.tick()
+      expect(events).toEqual([])
+      vi.advanceTimersByTime(1)
+      expect(events).toEqual(['fade:cap@5000'])
+    })
+  })
+})
+
+describe('ページの中で描く時の、1コマの時間の見張り（createFrameWatch）', () => {
+  it('決まり: 倍率は 2 まで、下ごしらえと最初の絵は 0.25秒、1コマは 0.05秒まで。コマの間隔は最初の5コマの真ん中の値で見る', () => {
+    expect(load().PAGE_DRAW).toEqual({ maxDpr: 2, setupMs: 250, frameMs: 50, frames: 5 })
+  })
+
+  it('下ごしらえと最初の絵が 0.25秒を超えたら setup', () => {
+    const { createFrameWatch, PAGE_DRAW } = load()
+    const w = createFrameWatch(PAGE_DRAW)
+    expect(w.setup(250)).toBe('')
+    expect(w.setup(251)).toBe('setup')
+  })
+
+  it('1コマを描くのに 0.05秒を超えたら、そのコマで frame', () => {
+    const { createFrameWatch, PAGE_DRAW } = load()
+    const w = createFrameWatch(PAGE_DRAW)
+    expect(w.frame(16, 50)).toBe('')
+    expect(w.frame(33, 51)).toBe('frame')
+  })
+
+  it('最初の5コマの間隔の真ん中の値が 0.05秒を超えたら gaps（6コマ目で分かる）', () => {
+    const { createFrameWatch, PAGE_DRAW } = load()
+    const w = createFrameWatch(PAGE_DRAW)
+    const ts = [0, 80, 150, 240, 300, 400]
+    expect(ts.map((t) => w.frame(t, 2))).toEqual(['', '', '', '', '', 'gaps'])
+  })
+
+  it('アプリの起動の重い処理で1・2コマだけ遅れたのは数えない。6コマ目より後の間隔は見ない', () => {
+    const { createFrameWatch, PAGE_DRAW } = load()
+    const w = createFrameWatch(PAGE_DRAW)
+    // 間隔 16・300・16・250・16（真ん中の値は 16）
+    const ts = [0, 16, 316, 332, 582, 598]
+    expect(ts.map((t) => w.frame(t, 2))).toEqual(['', '', '', '', '', ''])
+    expect(w.frame(2000, 2)).toBe('')
+    expect(w.frame(4000, 2)).toBe('')
   })
 })
 
@@ -985,6 +1143,137 @@ describe('起動アニメーション（boot）', () => {
   })
 })
 
+describe('ページの中で描く時（Worker を使えない古い・遅い端末）の見張り', () => {
+  // requestAnimationFrame はテストから好きな時刻で進める（コマの間隔を決めるため）
+  let queue: FrameRequestCallback[]
+  /** 次の描画を ts の時刻で呼ぶ */
+  const frameAt = (ts: number) => {
+    const q = queue
+    queue = []
+    q.forEach((cb) => cb(ts))
+  }
+  /** 開いて、描く準備（HTML を読み終えた後）までにする。次の frameAt で下ごしらえと最初の絵を描く */
+  function open() {
+    const api = load()
+    api.boot()
+    t(0)
+    expect(overlay()!.getAttribute('data-launch-renderer')).toBe('page')
+    return api
+  }
+  beforeEach(() => {
+    queue = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => queue.push(cb))
+  })
+
+  it('ふつうの速さなら最後まで動かす（見張りは何もしない）', () => {
+    const api = open()
+    api.appReady()
+    for (let ts = 16; ts <= 2400; ts += 16) frameAt(ts)
+    expect(overlay()!.getAttribute('data-launch-slow')).toBeNull()
+    expect(overlay()!.getAttribute('data-launch-end')).toBe('done')
+  })
+
+  it('下ごしらえと最初の絵が重い（0.25秒を超える）と、動かさずにロゴを描き、0.5秒出して（アプリの知らせも待って）消える', () => {
+    const api = open()
+    drawCost = 0.5
+    frameAt(16)
+    expect(clockOffset).toBeGreaterThan(250)
+    const el = overlay()!
+    expect(el.getAttribute('data-launch-slow')).toBe('setup')
+    // 最後の絵（ロゴ）を描いた後は、次の描画を頼まない（アプリの起動にスレッドを空ける）
+    expect(queue).toHaveLength(0)
+    // 最後に描いたのは、視差効果を減らす時と同じ最後の絵（ロゴ・走査線の重ね）
+    const last = drawn.slice(-2).map((c) => [c.width, c.height])
+    drawCost = 0
+    const still = api.play(document.createElement('div'), 'light', { still: true })
+    expect(last).toEqual(drawn.slice(-2).map((c) => [c.width, c.height]))
+    still.dispose()
+    const before = draws
+    api.appReady()
+    t(499)
+    expect(el.getAttribute('data-launch-end')).toBeNull()
+    t(1)
+    expect(el.getAttribute('data-launch-end')).toBe('done')
+    expect(draws).toBe(before)
+    t(250)
+    expect(overlay()).toBeNull()
+  })
+
+  it('1コマが重い（0.05秒を超える）と、そのコマで動きをやめてロゴを描く', () => {
+    const api = open()
+    frameAt(16)
+    expect(queue).toHaveLength(1)
+    frameAt(32)
+    frameAt(48)
+    expect(overlay()!.getAttribute('data-launch-slow')).toBeNull()
+    drawCost = 30
+    frameAt(64)
+    expect(overlay()!.getAttribute('data-launch-slow')).toBe('frame')
+    expect(queue).toHaveLength(0)
+    api.appReady()
+    t(500)
+    expect(overlay()!.getAttribute('data-launch-end')).toBe('done')
+  })
+
+  it('コマの間隔が長い（最初の5コマの真ん中の値が 0.05秒を超える）とロゴに飛ぶ。1・2コマだけ遅れたのは数えない', () => {
+    open()
+    frameAt(16)
+    // 間隔 80・90・70・100・60
+    for (const ts of [32, 112, 202, 272, 372]) frameAt(ts)
+    expect(overlay()!.getAttribute('data-launch-slow')).toBeNull()
+    frameAt(432)
+    expect(overlay()!.getAttribute('data-launch-slow')).toBe('gaps')
+    expect(queue).toHaveLength(0)
+
+    overlay()!.remove()
+    sessionStorage.clear()
+    open()
+    frameAt(16)
+    // 間隔 16・300・16・250・16
+    for (const ts of [32, 48, 348, 364, 614, 630]) frameAt(ts)
+    expect(overlay()!.getAttribute('data-launch-slow')).toBeNull()
+    expect(queue).toHaveLength(1)
+  })
+
+  it('重い1コマでタイマーが遅れても、出し始めから5秒を過ぎたコマで消し始め、もう描かない', () => {
+    open()
+    frameAt(16)
+    frameAt(32)
+    // タイマー（偽の時計）は 0.03秒しか進んでいないが、本当は5秒たった
+    clockOffset += 5000
+    const before = draws
+    frameAt(48)
+    expect(overlay()!.getAttribute('data-launch-end')).toBe('cap')
+    expect(queue).toHaveLength(0)
+    frameAt(64)
+    expect(draws - before).toBeLessThan(40)
+  })
+
+  it('描く大きさの倍率は 2 まで（devicePixelRatio 3 の画面でも、canvas は CSS の大きさの2倍）', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { value: 3, configurable: true })
+    try {
+      open()
+      frameAt(16)
+      // jsdom の大きさ 240×520
+      const cv = overlay()!.querySelector('canvas')!
+      expect([cv.width, cv.height]).toEqual([480, 1040])
+    } finally {
+      delete (window as { devicePixelRatio?: number }).devicePixelRatio
+    }
+  })
+
+  it('視差効果を減らす設定では見張らない（最後の絵を1回描くだけ）', () => {
+    media({ reduced: true })
+    const api = open()
+    drawCost = 0.5
+    frameAt(16)
+    expect(overlay()!.getAttribute('data-launch-slow')).toBeNull()
+    api.appReady()
+    t(500)
+    expect(overlay()!.getAttribute('data-launch-end')).toBe('done')
+  })
+})
+
 describe('Worker（別のスレッド）で描く', () => {
   interface Posted {
     type: string
@@ -1042,6 +1331,17 @@ describe('Worker（別のスレッド）で描く', () => {
     expect(worker.transfers[0]).toEqual([offscreen])
     t(100)
     expect(draws).toBe(0)
+  })
+
+  it('Worker で描く時は、描く大きさの倍率を 3 まで使う（ページの中で描く時の上限 2 は使わない）', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { value: 4, configurable: true })
+    try {
+      load().boot()
+      t(0)
+      expect(FakeWorker.last!.posted[0].size).toMatchObject({ dpr: 3 })
+    } finally {
+      delete (window as { devicePixelRatio?: number }).devicePixelRatio
+    }
   })
 
   it('Worker が描き終わり、アプリが知らせたら消える。取り除く時に Worker を止める', () => {

@@ -8,6 +8,8 @@
    - white（ホワイト）: 白い地。ダークで決めたパステルの色合いを保ったまま、白い地で見えるよう濃くした物
    - dark（ダーク）: 黒い地。色の基準。カードや領域の地は暗く沈め、明るいパステルは細い所（左の一辺・帯・●・線）だけに使う
    - deep-dark（ディープダーク）: さらに暗く、区分の色分けをすべて無くす（区分は位置とかばん／家のアイコンで見分ける）
+   差し色（--accent・--primary・--today-*・--switch-on・--selection）とログインの画面の地（--cover）は、3つの外観ともグレーの濃淡
+   （作者の指摘。色を持つのは区分・ラベル・土日祝・エラーと注意だけ。起動アニメーションとアプリのアイコンの青は別の物で、ここでは使わない）。
    色の値は docs/SPEC.md の 4.5（色のトークン）と 4.6（ラベルの24色）の表のとおり（src/styles.test.ts で表と同じか確かめる）。
    部品はこの変数だけを使い、#fff などの色を直接書かない。字の色は、置く地の上で 4.5:1 以上（4.5 の例外を除く）。
 
@@ -75,7 +77,7 @@
   --safe-right: env(safe-area-inset-right, 0px);
   /* iPhone のキーボードの高さ --kb は、入力欄の処理が visualViewport で測って <html> に入れる（無い間は 0。docs/SPEC.md の 2.7） */
 
-  /* NS の部品に残る緑の「採用」の色は使わず、くすんだ青にする（docs/SPEC.md の 4.5） */
+  /* NS の部品に残る緑の「採用」の色は使わず、差し色のグレーにする（docs/SPEC.md の 4.5） */
   --active: var(--accent);
   --active-soft: var(--accent-soft);
   --active-fill: var(--primary);
@@ -108,21 +110,22 @@
   --text-muted: #5c6068;
   --text-faint: #62666e;
   --numeral: #858991;
-  /* くすんだ青（今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ） */
-  --accent: #4a6c92;
-  --accent-strong: #3b5a7e;
-  --accent-soft: #e5ecf4;
+  /* 差し色（グレーの濃淡。今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ）。ホワイトは濃いグレー */
+  --accent: #4f5259;
+  --accent-strong: #373a40;
+  --accent-soft: #e8e8e5;
   --on-accent: #ffffff;
-  --primary: #56789e;
-  --primary-hover: #4a6c92;
+  --primary: #4f5259;
+  --primary-hover: #3e4146;
   --primary-border: var(--primary);
   --on-primary: #ffffff;
   --today-bg: var(--primary);
-  --today-ring: #4a6c92;
+  --today-ring: #3e4146;
   --switch-on: var(--accent);
-  /* ログインの画面（表紙の青） */
-  --cover: #a3bbd3;
-  --on-cover: #15202c;
+  /* ログインの画面（明るいグレーの地。ボタンの枠は地と 3:1 以上） */
+  --cover: #e0e0dd;
+  --on-cover: #25282e;
+  --cover-border: #73767d;
   /* 土日祝・休み */
   --sat: #3f69a3;
   --sun: #ac4257;
@@ -152,7 +155,7 @@
   --toast-bg: #2b2f38;
   --toast-text: #ffffff;
   --backdrop: rgb(15 17 22 / 45%);
-  --selection: #cfdcec;
+  --selection: #d6d7d9;
   --shadow-lift: 0 6px 20px rgb(30 30 40 / 18%);
   --brand-filter: none;
   --qr-bg: #ffffff;
@@ -213,21 +216,22 @@
   --text-muted: #a8aab0;
   --text-faint: #90939a;
   --numeral: #6b6e76;
-  /* くすんだ青（今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ） */
-  --accent: #9fb9d6;
-  --accent-strong: #c3d4e8;
-  --accent-soft: #1f2a37;
-  --on-accent: #10161e;
-  --primary: #3d5675;
-  --primary-hover: #47628a;
+  /* 差し色（グレーの濃淡。今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ）。字・輪は明るいグレー、地は中くらいのグレー */
+  --accent: #bcbdc1;
+  --accent-strong: #dcdcd9;
+  --accent-soft: #222428;
+  --on-accent: #121316;
+  --primary: #4b4e55;
+  --primary-hover: #565960;
   --primary-border: var(--primary);
-  --on-primary: #eef3f9;
+  --on-primary: #f1f0ec;
   --today-bg: var(--primary);
-  --today-ring: #9fb9d6;
-  --switch-on: #4d6a8f;
-  /* ログインの画面（表紙の青） */
-  --cover: #2b3a4c;
-  --on-cover: #e6edf5;
+  --today-ring: #bcbdc1;
+  --switch-on: #8b8e95;
+  /* ログインの画面（黒より少し明るいグレーの地。ボタンの枠は地と 3:1 以上） */
+  --cover: #2a2b2f;
+  --on-cover: #e6e5e1;
+  --cover-border: #7b7e85;
   /* 土日祝・休み */
   --sat: #8a9bb5;
   --sun: #c79199;
@@ -257,7 +261,7 @@
   --toast-bg: #2a2c31;
   --toast-text: #e6e4de;
   --backdrop: rgb(0 0 0 / 62%);
-  --selection: #2f4560;
+  --selection: #43464d;
   --shadow-lift: 0 6px 20px rgb(0 0 0 / 55%);
   --brand-filter: brightness(0.95);
   --qr-bg: #ffffff;
@@ -301,7 +305,7 @@
   color-scheme: dark;
 }
 
-/* ===== 色: ディープダーク（区分の色分けを無くし、ラベル・差し色もほぼ灰色） ===== */
+/* ===== 色: ディープダーク（区分の色分けを無くし、ラベルもほぼ灰色。差し色はグレー） ===== */
 :root[data-theme='deep-dark'] {
   /* 面と線 */
   --bg: #08090a;
@@ -318,21 +322,22 @@
   --text-muted: #8a8984;
   --text-faint: #858480;
   --numeral: #66676b;
-  /* くすんだ青（今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ） */
-  --accent: #8a96a8;
-  --accent-strong: #a3adbc;
-  --accent-soft: #15181d;
-  --on-accent: #0b0c0e;
-  --primary: #1b1e24;
-  --primary-hover: #22262d;
-  --primary-border: #2e333c;
-  --on-primary: #b1bac7;
-  --today-bg: #2c313a;
-  --today-ring: #8a96a8;
-  --switch-on: #4a5262;
-  /* ログインの画面（表紙の青） */
-  --cover: #15181d;
-  --on-cover: #aeb4bd;
+  /* 差し色（グレーの濃淡。今日の印・主なボタン・選んでいる所・リンク・フォーカスの枠だけ）。主なボタンは暗く沈め、今日の印は輪で示す */
+  --accent: #9b9993;
+  --accent-strong: #b5b3ad;
+  --accent-soft: #17181b;
+  --on-accent: #0b0c0d;
+  --primary: #2a2b2e;
+  --primary-hover: #323337;
+  --primary-border: #45464a;
+  --on-primary: #bab8b2;
+  --today-bg: #3f4044;
+  --today-ring: #8f8e89;
+  --switch-on: #616266;
+  /* ログインの画面（ダークよりもっと暗いグレーの地。ボタンの枠は地と 3:1 以上） */
+  --cover: #161719;
+  --on-cover: #aeaca6;
+  --cover-border: #68696c;
   /* 土日祝・休み */
   --sat: #808b9b;
   --sun: #a08589;
@@ -362,7 +367,7 @@
   --toast-bg: #141518;
   --toast-text: #aeaca6;
   --backdrop: rgb(0 0 0 / 70%);
-  --selection: #262c36;
+  --selection: #2c2d30;
   --shadow-lift: 0 6px 20px rgb(0 0 0 / 70%);
   --brand-filter: grayscale(0.85) brightness(0.6);
   --qr-bg: #ffffff;

@@ -10,13 +10,16 @@
 //   ブラウザの枠の色にする。起動後は src/ui/Layout.tsx の PrefsEffect が同じ規則で反映する
 // - 起動アニメーション: 画面いっぱいの重なり（<html> の直下。<body> はまだ無い）を置き、地の色だけをその場で出す。絵は HTML を
 //   読み終えた後、ふだんは Worker（OffscreenCanvas。別のスレッド）が canvas に描く（アプリの起動と取り合わない）。Worker を使えない
-//   時はページの中で描く（下ごしらえは最初の描画の時）。出すのは、ウインドウ・タブを開いた最初の1回（再読み込みでは出さない）。
+//   時はページの中で描く（下ごしらえは最初の描画の時。描く大きさの倍率は 2 まで。下ごしらえ・1コマが重い端末では、アプリの起動を
+//   遅らせないよう動きをやめて最後の絵（ロゴ）に飛ぶ。PAGE_DRAW）。出すのは、ウインドウ・タブを開いた最初の1回（再読み込みでは出さない）。
 //   設定の「起動アニメーション」をオフにすると出さない。テスト（navigator.webdriver）では、localStorage の diary-studio:launch を
 //   'force' にするか URL に launch=1 を付けた時だけ出す（e2e/launch.spec.ts）
 // - 消える時: アニメーションが終わり（約2.27秒）、アプリが最初の画面を出せた（src/main.tsx が DiaryStudioLaunch.appReady() を呼ぶ）
 //   の両方がそろったら、0.25秒で消える。押す・キーを押すとすぐ消える（押した時は、離すまで見えない重なりが残って押す操作の
-//   続きを受け止めるので、下のアプリは押されない）。アプリが知らせてこなくても5秒で消える。
-//   端末の「視差効果を減らす」では動かさず、最後の絵（ロゴ）を描いてから0.5秒ほど出して消える
+//   続きを受け止めるので、下のアプリは押されない）。アプリが知らせてこなくても5秒で消える（重い処理でタイマーが遅れても、
+//   出し始めからの実際の経過時間で確かめる）。
+//   端末の「視差効果を減らす」では動かさず、最後の絵（ロゴ）を描いてから0.5秒ほど出して消える。ページの中で描いていて重いので
+//   ロゴに飛んだ時も同じ
 //
 // 仕様は docs/SPEC.md の「起動アニメーション」。単体テストは src/launch/launch.test.ts
 ;(function (window, document) {
@@ -141,13 +144,65 @@
   }
 
   /**
+   * ページの中で描く時（Worker を使えない古い・遅い端末）の見張り。ページの中で描くと、1コマごとにアプリの起動と同じスレッドを
+   * 使うので、重い時は動きをやめて最後の絵（ロゴ）に飛び、視差効果を減らす時と同じく stillMs 出して終わる（createFrameWatch）。
+   * Worker で描く時は使わない（別のスレッドなのでアプリの起動と取り合わない。見た目も時間も変えない）
+   */
+  var PAGE_DRAW = {
+    /** 描く大きさの倍率（devicePixelRatio）の上限。Worker で描く時は WORKER_MAX_DPR */
+    maxDpr: 2,
+    /** 下ごしらえ（点の絵・字の絵を作る）と最初の絵にかけてよい時間（ミリ秒） */
+    setupMs: 250,
+    /** 1コマを描くのにかけてよい時間。コマの間隔もこれで見る（20コマ／秒） */
+    frameMs: 50,
+    /** コマの間隔は、最初のこのコマ数の真ん中の値で見る（アプリの起動の重い処理で、1・2コマだけ遅れたのは数えない） */
+    frames: 5,
+  }
+  /** Worker で描く時の、描く大きさの倍率の上限 */
+  var WORKER_MAX_DPR = 3
+
+  /**
+   * ページの中で描く時の、1コマの時間の見張り（画面には触らない）。戻り値の関数は、重い時に理由を返す（重くなければ ''）。
+   *   setup(ms): 下ごしらえと最初の絵にかかった時間。limits.setupMs を超えたら 'setup'
+   *   frame(ts, ms): コマ（ts は requestAnimationFrame の時刻）を描くのにかかった時間 ms。limits.frameMs を超えたら 'frame'。
+   *     最初の limits.frames コマの間隔（ほかの処理の時間も入る）の真ん中の値が limits.frameMs を超えたら 'gaps'
+   */
+  function createFrameWatch(limits) {
+    var last = -1
+    var gaps = []
+    return {
+      setup: function (ms) {
+        return ms > limits.setupMs ? 'setup' : ''
+      },
+      frame: function (ts, ms) {
+        if (ms > limits.frameMs) return 'frame'
+        var reason = ''
+        if (last >= 0 && gaps.length < limits.frames) {
+          gaps.push(ts - last)
+          if (gaps.length === limits.frames) {
+            var sorted = gaps.slice().sort(function (a, b) {
+              return a - b
+            })
+            if (sorted[(sorted.length - 1) >> 1] > limits.frameMs) reason = 'gaps'
+          }
+        }
+        last = ts
+        return reason
+      },
+    }
+  }
+
+  /**
    * いつ消すかを決める（画面には触らない。時計と、消す・取り除く処理を受け取る）。
    * アニメーションの終わり（animationEnded）とアプリの知らせ（appReady）の両方がそろったら消し始める（onFadeOut）。
    * 押した・キーを押した（skip）時と、出し始めてから capMs たった時は、そろっていなくても消し始める。
+   * capMs は setTimeout で待つほか、時計（now）を渡すと、知らせ・tick() のたびに出し始めからの実際の経過時間でも確かめる
+   * （重い処理でタイマーが遅れても、5秒を過ぎて出し続けない）。
    * 消し始めてから fadeMs たったら取り除く（onRemove）。
    * 動かさない時（still）は、最後の絵を描いた（stillShown）時から stillMs たったら、アニメーションの終わりとする
-   * （描く準備・Worker の立ち上がりに時間がかかっても、ロゴを stillMs は出す）。
-   *   o: { still, setTimeout, clearTimeout, onFadeOut(reason), onRemove(), timing }
+   * （描く準備・Worker の立ち上がりに時間がかかっても、ロゴを stillMs は出す）。動かしていて重いので最後の絵に飛んだ
+   * （fallback）時も、そこから stillMs で終わりとする。
+   *   o: { still, setTimeout, clearTimeout, now（省くと経過時間では確かめない）, onFadeOut(reason), onRemove(), timing }
    *   reason: 'done'（両方そろった）・'skip'・'cap'
    */
   function createController(o) {
@@ -156,6 +211,7 @@
     var ended = false
     var ready = false
     var shown = false
+    var startedAt = 0
     var timers = []
 
     function later(fn, ms) {
@@ -176,16 +232,22 @@
 
     function check() {
       if (ended && ready) fadeOut('done')
+      else if (o.now && o.now() - startedAt >= timing.capMs) fadeOut('cap')
     }
 
     var controller = {
       start: function () {
         if (state !== 'idle') return
         state = 'playing'
+        if (o.now) startedAt = o.now()
         later(function () {
           fadeOut('cap')
         }, timing.capMs)
         check()
+      },
+      /** 出し始めから capMs たっていたら消し始める（タイマーが遅れている時のため。ページの中で描く1コマごとに呼ぶ） */
+      tick: function () {
+        if (state === 'playing') check()
       },
       /** アニメーションが終わった（動かさない時は、最後の絵を描いてから stillMs たった） */
       animationEnded: function () {
@@ -195,6 +257,15 @@
       /** 最後の絵を描いた（動かさない時は、ここから最後の絵を stillMs 出して、アニメーションの終わりとする） */
       stillShown: function () {
         if (!o.still || state !== 'playing' || shown) return
+        shown = true
+        later(controller.animationEnded, timing.stillMs)
+      },
+      /**
+       * 動かしていたが、重いので動きをやめて最後の絵を描いた（ページの中で描く遅い端末）。視差効果を減らす時と同じく、
+       * ここから最後の絵を stillMs 出して、アニメーションの終わりとする
+       */
+      fallback: function () {
+        if (o.still || state !== 'playing' || shown || ended) return
         shown = true
         later(controller.animationEnded, timing.stillMs)
       },
@@ -473,10 +544,15 @@
      *   theme: 'light' | 'dark' | 'deep'
      *   opts.still: 動かさずに最後の絵だけ描く。opts.at: その秒の絵だけ描く（確かめ用）
      *   opts.onEnd(): 動かした時に、最後まで描いたら呼ぶ
+     *   opts.watch: 1コマの時間の見張り（ページの中で描く時だけ。Worker では渡さない）。
+     *     { now()（ミリ秒の時計）, setup(ms), frame(ts, ms) }。setup・frame は下ごしらえと最初の絵・1コマにかかった時間を受け取り、
+     *     重い時に理由（'' 以外）を返す。返したら動きをやめて最後の絵を描き、opts.onSlow(理由) を呼ぶ
      * 戻り値: { stop()（止める）, dispose()（止めて、作った canvas の中身を手放す）, drawAt(t) }
      */
     function start(cv, size, theme, opts) {
       opts = opts || {}
+      var watch = opts.watch
+      var setupStart = watch ? watch.now() : 0
       var pal = PALETTES[theme] || PALETTES.dark
       var light = pal.blend !== 'lighter'
       var G = pal.glow
@@ -1041,6 +1117,12 @@
       var startTs = -1
       var raf = 0
       var stopped = false
+      /** 重いので動きをやめ、最後の絵（ロゴ）を描く（opts.watch が重いと言った時） */
+      function slow(reason) {
+        stopped = true
+        draw(DURATION)
+        if (opts.onSlow) opts.onSlow(reason)
+      }
       function frame(ts) {
         raf = 0
         if (stopped) return
@@ -1052,8 +1134,13 @@
           if (opts.onEnd) opts.onEnd()
           return
         }
+        var t0 = watch ? watch.now() : 0
         draw(t)
-        raf = env.requestFrame(frame)
+        var reason = watch ? watch.frame(ts, watch.now() - t0) : ''
+        // 見張りの中で止められた（出し始めから5秒たっていて、消し始めた）
+        if (stopped) return
+        if (reason) slow(reason)
+        else raf = env.requestFrame(frame)
       }
 
       if (typeof opts.at === 'number') {
@@ -1064,7 +1151,9 @@
         stopped = true
       } else {
         draw(0)
-        raf = env.requestFrame(frame)
+        var setupReason = watch ? watch.setup(watch.now() - setupStart) : ''
+        if (setupReason) slow(setupReason)
+        else raf = env.requestFrame(frame)
       }
 
       var player = {
@@ -1136,12 +1225,12 @@
   var DURATION = renderer.DURATION
   var PALETTES = renderer.PALETTES
 
-  /** stage の大きさ（CSS ピクセル）と画素の細かさ */
-  function stageSize(stage, safe) {
+  /** stage の大きさ（CSS ピクセル）と画素の細かさ（maxDpr まで） */
+  function stageSize(stage, safe, maxDpr) {
     return {
       width: stage.clientWidth || 240,
       height: stage.clientHeight || 520,
-      dpr: Math.min(window.devicePixelRatio || 1, 3),
+      dpr: Math.min(window.devicePixelRatio || 1, maxDpr),
       safe: safe || {},
     }
   }
@@ -1156,11 +1245,12 @@
 
   /**
    * ページの中で描く（stage の中に canvas を作る）。Worker を使えない時と、テスト・確かめ用。
+   * 1コマを軽くするため、描く大きさの倍率は PAGE_DRAW.maxDpr まで（それより細かい画面では、少しにじむのを受け入れる）。
    * opts は start と同じ（opts.safe も）。戻り値は start と同じ
    */
   function play(stage, theme, opts) {
     opts = opts || {}
-    return renderer.start(stageCanvas(stage), stageSize(stage, opts.safe), theme, opts)
+    return renderer.start(stageCanvas(stage), stageSize(stage, opts.safe, PAGE_DRAW.maxDpr), theme, opts)
   }
 
   /** Worker の中で動かす部分（これも文字列にして渡す。外にあるものは使わない） */
@@ -1224,7 +1314,14 @@
       worker = new window.Worker(url)
       var offscreen = cv.transferControlToOffscreen()
       worker.postMessage(
-        { type: 'start', canvas: offscreen, size: stageSize(stage, opts.safe), theme: theme, still: !!opts.still, at: opts.at },
+        {
+          type: 'start',
+          canvas: offscreen,
+          size: stageSize(stage, opts.safe, WORKER_MAX_DPR),
+          theme: theme,
+          still: !!opts.still,
+          at: opts.at,
+        },
         [offscreen],
       )
     } catch (e) {
@@ -1262,6 +1359,11 @@
   // ================================================================ 起動
 
   var current = null
+
+  /** 時計（ミリ秒）。5秒の期限と、ページの中で描く1コマの時間の見張りに使う */
+  function now() {
+    return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now()
+  }
 
   /** 重なりの要素の、ノッチ・ホームバーの分の余白（CSS ピクセル） */
   function safeInsets(el) {
@@ -1406,6 +1508,7 @@
       clearTimeout: function (id) {
         window.clearTimeout(id)
       },
+      now: now,
       onFadeOut: function (reason) {
         unlisten()
         if (player) player.stop()
@@ -1438,6 +1541,27 @@
         playInPage()
       },
     }
+    // ページの中で描く時だけの見張り（Worker には渡らない）。1コマが重い・コマの間隔が長い端末では、アプリの起動を遅らせないよう
+    // 動きをやめて最後の絵（ロゴ）に飛び、視差効果を減らす時と同じく0.5秒出して終わる。1コマごとに、タイマーが遅れていても
+    // 出し始めからの実際の経過時間で5秒の期限も確かめる
+    var frameWatch = createFrameWatch(PAGE_DRAW)
+    var pageOpts = {
+      still: opts.still,
+      safe: opts.safe,
+      onEnd: opts.onEnd,
+      watch: {
+        now: now,
+        setup: frameWatch.setup,
+        frame: function (ts, ms) {
+          controller.tick()
+          return frameWatch.frame(ts, ms)
+        },
+      },
+      onSlow: function (reason) {
+        el.setAttribute('data-launch-slow', reason)
+        controller.fallback()
+      },
+    }
     // ページの中で描く（Worker を使えない時）。下ごしらえ（数十ミリ秒）は最初の描画の時にして、HTML を読むのを止めない。
     // それまでは重なりの地の色だけ（アニメーションの最初の絵とほぼ同じ）
     function playInPage() {
@@ -1445,7 +1569,7 @@
       window.requestAnimationFrame(function () {
         if (controller.state() !== 'playing') return
         try {
-          player = play(el, theme, opts)
+          player = play(el, theme, pageOpts)
           controller.stillShown()
         } catch (e) {
           if (window.console) window.console.warn('起動アニメーションを描けませんでした', e)
@@ -1501,6 +1625,8 @@
     animationTheme: animationTheme,
     decide: decide,
     createController: createController,
+    createFrameWatch: createFrameWatch,
+    PAGE_DRAW: PAGE_DRAW,
     play: play,
     playInWorker: playInWorker,
     workerSource: workerSource,

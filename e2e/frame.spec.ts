@@ -27,7 +27,7 @@ async function tokenColor(page: Page, token: string): Promise<string> {
 }
 
 test.describe('ログインの画面（2.5）', () => {
-  test('ログインしていなければログインの画面だけを出す（表紙の青の地・等幅の名前・今日の日付・［Google でログイン］）', async ({
+  test('ログインしていなければログインの画面だけを出す（グレーの地・等幅の名前・今日の日付・［Google でログイン］）', async ({
     page,
   }) => {
     await page.goto('/#/')
@@ -46,6 +46,9 @@ test.describe('ログインの画面（2.5）', () => {
     const button = page.getByRole('button', { name: 'Google でログイン' })
     const box = await button.boundingBox()
     expect(box?.height).toBeGreaterThanOrEqual(44)
+    // 字は --on-cover、ボタンの枠はグレーの地と 3:1 以上の --cover-border（2.5。比は src/styles.test.ts で確かめる）
+    expect(await login.evaluate((e) => getComputedStyle(e).color)).toBe(await tokenColor(page, '--on-cover'))
+    expect(await button.evaluate((e) => getComputedStyle(e).borderTopColor)).toBe(await tokenColor(page, '--cover-border'))
     await noHorizontalScroll(page)
   })
 
