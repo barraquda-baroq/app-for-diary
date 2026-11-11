@@ -1,6 +1,6 @@
 // 複数日の予定のレーン（docs/SPEC.md の 7.8・10.4・2.10）: レーンの割り付け（週の中に切り詰めた期間・3つの並び・前から順にいちばん上の
-// レーン）・週ごと・区分ごと・完了した物もレーンに残る・週の中で月や年が変わっても線は切らない・日ごとに描く物（6つの場合）・
-// 縦の並びのレール（0 から数えて 4・14・24px、最大3本、4本目のレーンからの物）
+// レーン）・週ごと・区分ごと・完了した物もレーンに残る・週の中で月や年が変わっても（うるう年の 2/29 も）線は切らない・
+// 日ごとに描く物（6つの場合）・縦の並びのレール（0 から数えて 4・14・24px、最大3本、4本目のレーンからの物）
 import { describe, expect, it } from 'vitest'
 import { calendarItems } from './calendar'
 import { T0, mkItem } from './testData'
@@ -98,10 +98,12 @@ describe('レーンの割り付け（7.8。CALENDAR-125）', () => {
       y: 0,
       x: 1,
     })
-    // 11/9〜11/20 と 11/9〜11/30 は切り詰めると同じ 11/9〜11/14: 作った順
-    expect(
-      laneOf(assignLanes([li('late', '2026-11-09', '2026-11-30', 5), li('early', '2026-11-09', '2026-11-20', 2)], SUN)),
-    ).toEqual({ early: 0, late: 1 })
+    // 11/9〜11/20 と 11/9〜11/30 は切り詰めると同じ 11/9〜11/14: 作った順（order の小さい z が先。id の順とは逆にして、
+    // order を見ずに id で並べた時・切り詰める前の終わりで並べた時に違いが出るようにする）
+    expect(laneOf(assignLanes([li('a', '2026-11-09', '2026-11-30', 5), li('z', '2026-11-09', '2026-11-20', 2)], SUN))).toEqual({
+      z: 0,
+      a: 1,
+    })
     // 期間も order も同じなら id の順
     expect(laneOf(assignLanes([li('b', '2026-11-09', '2026-11-11', 1), li('a', '2026-11-09', '2026-11-11', 1)], SUN))).toEqual({
       a: 0,
@@ -149,6 +151,24 @@ describe('週ごと・区分ごと・完了した物（7.8・7.5。CALENDAR-126�
     expect(weekLaneItems(list, SUN, 'work')).toEqual([{ id: 'multi', from: '2026-11-09', to: '2026-11-11', order: T0 }])
   })
 
+  it('週の端の日に掛かる物（日曜に終わる・土曜に始まる）は入れ、前の土曜に終わる物・次の日曜に始まる物は入れない', () => {
+    const list = cal(
+      m({ id: 'endsSun', start: '2026-11-05', due: '2026-11-08' }),
+      m({ id: 'startsSat', start: '2026-11-14', due: '2026-11-16' }),
+      m({ id: 'endsPrevSat', start: '2026-11-04', due: '2026-11-07' }),
+      m({ id: 'startsNextSun', start: '2026-11-15', due: '2026-11-17' }),
+    )
+    expect(weekLaneItems(list, SUN, 'work').map((l) => l.id)).toEqual(['endsSun', 'startsSat'])
+    // 割り付けまで通すと、日曜に終わる物は受けた表示の中の●、土曜に始まる物は縮めたカードと＞
+    const r = assignLanes(weekLaneItems(list, SUN, 'work'), SUN)
+    expect(r.lanes.map((l) => [l.id, laneParts(l, SUN).map(brief)])).toEqual([
+      ['endsSun', ['11-08 received dot:inCard']],
+      ['startsSat', ['11-14 start shrink out arrow']],
+    ])
+    // 日曜に終わる物の後の土曜に始まる物は、同じレーン（終わり 11/8 < 始まり 11/14）
+    expect(r.count).toBe(1)
+  })
+
   it('時刻のある複数日の予定もレーンに入れる（期間の表記に時刻を出す。7.8）', () => {
     const list = cal(m({ id: 'timed', startTime: '10:00', endTime: '18:00' }))
     expect(weekLaneItems(list, SUN, 'work').map((l) => l.id)).toEqual(['timed'])
@@ -178,43 +198,56 @@ describe('週ごと・区分ごと・完了した物（7.8・7.5。CALENDAR-126�
 })
 
 describe('日ごとに描く物（7.8・10.4。6つの場合）', () => {
-  it('週の中で始まって終わる: 開始日に始点のカード、間の日は線、締め切り日に●', () => {
-    expect(partsOf('2026-11-09', '2026-11-12')).toEqual([
-      '11-09 start out',
-      '11-10 in out',
-      '11-11 in out',
-      '11-12 in dot:center',
-    ])
-    expect(partsOf('2026-11-09', '2026-11-10')).toEqual(['11-09 start out', '11-10 in dot:center'])
-  })
-
-  it('前の週から続く: 日曜に受けた表示を出し、そこから線を引く（CALENDAR-119）', () => {
-    expect(partsOf('2026-11-05', '2026-11-10')).toEqual(['11-08 received out', '11-09 in out', '11-10 in dot:center'])
-  })
-
-  it('次の週へ続く: 線を土曜の端まで延ばし、端に＞（CALENDAR-120）', () => {
-    expect(partsOf('2026-11-12', '2026-11-17')).toEqual(['11-12 start out', '11-13 in out', '11-14 in out arrow'])
-  })
-
-  it('前の週から続いて次の週へ続く: 日曜の受けた表示から土曜の端の＞まで', () => {
-    expect(partsOf('2026-11-01', '2026-11-30')).toEqual([
-      '11-08 received out',
-      '11-09 in out',
-      '11-10 in out',
-      '11-11 in out',
-      '11-12 in out',
-      '11-13 in out',
-      '11-14 in out arrow',
-    ])
-  })
-
-  it('土曜に始まって次の週へ続く: カードを縮めて＞（横は線の長さ 0。CALENDAR-121）', () => {
-    expect(partsOf('2026-11-14', '2026-11-16')).toEqual(['11-14 start shrink out arrow'])
-  })
-
-  it('前の週から続いて日曜に終わる: 受けた表示の右端の中に●（線は引かない。CALENDAR-122）', () => {
-    expect(partsOf('2026-11-05', '2026-11-08')).toEqual(['11-08 received dot:inCard'])
-    expect(partsOf('2026-11-07', '2026-11-08')).toEqual(['11-08 received dot:inCard'])
+  // 2026-11-08（日）〜11-14（土）の週。[場合, 開始日, 締め切り日, 日ごとの部分]
+  it.each<[string, string, string, string[]]>([
+    [
+      '週の中で始まって終わる: 開始日に始点のカード、間の日は線、締め切り日に●',
+      '2026-11-09',
+      '2026-11-12',
+      ['11-09 start out', '11-10 in out', '11-11 in out', '11-12 in dot:center'],
+    ],
+    ['週の中で始まって次の日に終わる', '2026-11-09', '2026-11-10', ['11-09 start out', '11-10 in dot:center']],
+    [
+      '前の週から続く: 日曜に受けた表示を出し、そこから線を引く（CALENDAR-119）',
+      '2026-11-05',
+      '2026-11-10',
+      ['11-08 received out', '11-09 in out', '11-10 in dot:center'],
+    ],
+    [
+      '次の週へ続く: 線を土曜の端まで延ばし、端に＞（CALENDAR-120）',
+      '2026-11-12',
+      '2026-11-17',
+      ['11-12 start out', '11-13 in out', '11-14 in out arrow'],
+    ],
+    [
+      '前の週から続いて次の週へ続く: 日曜の受けた表示から土曜の端の＞まで',
+      '2026-11-01',
+      '2026-11-30',
+      [
+        '11-08 received out',
+        '11-09 in out',
+        '11-10 in out',
+        '11-11 in out',
+        '11-12 in out',
+        '11-13 in out',
+        '11-14 in out arrow',
+      ],
+    ],
+    [
+      '土曜に始まって次の週へ続く: カードを縮めて＞（横は線の長さ 0。CALENDAR-121）',
+      '2026-11-14',
+      '2026-11-16',
+      ['11-14 start shrink out arrow'],
+    ],
+    [
+      '前の週から続いて日曜に終わる: 受けた表示の右端の中に●（線は引かない。CALENDAR-122）',
+      '2026-11-05',
+      '2026-11-08',
+      ['11-08 received dot:inCard'],
+    ],
+    ['前の週の土曜から日曜まで: 同じく受けた表示の中の●', '2026-11-07', '2026-11-08', ['11-08 received dot:inCard']],
+  ])('%s', (_, from, to, expected) => {
+    expect(partsOf(from, to)).toEqual(expected)
   })
 
   it('週の端の日でも、続かない物はふつうに描く（日曜に始まる・土曜に終わる・前の週から土曜まで）', () => {
@@ -251,6 +284,37 @@ describe('日ごとに描く物（7.8・10.4。6つの場合）', () => {
     expect(lanes[0]).toMatchObject({ from: '2026-12-30', to: '2027-01-02', endsAfter: true })
     expect(laneParts(lanes[0], sun).map((p) => p.date)).toEqual(['2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02'])
     expect(laneParts(lanes[0], sun).map(brief)).toEqual(['12-30 start out', '12-31 in out', '01-01 in out', '01-02 in out arrow'])
+    // 次の週（2027-01-03〜01-09）では、前の年から続く物として日曜に受けた表示
+    const next = '2027-01-03'
+    expect(assignLanes([li('a', '2026-12-30', '2027-01-05')], next).lanes[0]).toMatchObject({
+      from: '2027-01-03',
+      to: '2027-01-05',
+      startsBefore: true,
+      endsAfter: false,
+    })
+    expect(partsOf('2026-12-30', '2027-01-05', next)).toEqual(['01-03 received out', '01-04 in out', '01-05 in dot:center'])
+  })
+
+  it('うるう年の 2/29 も暦どおりに続く（2028-02-27〜03-04 の週）。うるう年でない年は 2/28 → 3/1', () => {
+    const leap = '2028-02-27'
+    expect(partsOf('2028-02-28', '2028-03-01', leap)).toEqual(['02-28 start out', '02-29 in out', '03-01 in dot:center'])
+    const { lanes } = assignLanes([li('a', '2028-02-20', '2028-03-10')], leap)
+    expect(lanes[0]).toMatchObject({ from: '2028-02-27', to: '2028-03-04', startsBefore: true, endsAfter: true })
+    expect(laneParts(lanes[0], leap).map((p) => p.date.slice(5))).toEqual([
+      '02-27',
+      '02-28',
+      '02-29',
+      '03-01',
+      '03-02',
+      '03-03',
+      '03-04',
+    ])
+    // 2027-02-28（日）〜03-06 の週: 2/26 からの物は日曜の受けた表示から 3/1 へ続く
+    expect(partsOf('2027-02-26', '2027-03-02', '2027-02-28')).toEqual([
+      '02-28 received out',
+      '03-01 in out',
+      '03-02 in dot:center',
+    ])
   })
 
   it('週の外の日は出さない（切り詰めていないレーンを渡しても、日曜〜土曜の分だけ）', () => {
