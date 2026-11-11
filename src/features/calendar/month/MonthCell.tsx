@@ -3,6 +3,8 @@
 // 数字のボタン（押せる所は 34px 四方を目安に。押すとその区分を目立たせてデイリーへ）。S と休みを付ける状態の間は、数字はボタンにせず、
 // マスのどこを押してもマスのボタン（S はデイリーへ、休みを付ける状態はその日の休みを付ける・外す）。
 // 中身（日付・「休」・祝日名・件数）はマスのボタンの上に重ね、押すのはその下のボタンが受ける（数字のボタンだけが自分で受ける）。
+// キーボード: Tab で止まるのはマス目の中の1つのマス（tabbable）のボタンだけ。マスの間は矢印キーで動く（決めるのは MonthView と
+// monthModel.ts の rovingIndex）。どのボタンにフォーカスが来ても、そのマスを Tab で止まるマスにする（onFocusCell）。
 // マスごとに React.memo（中身の印が同じなら描き直さない）
 import { memo } from 'react'
 import type { ItemKind } from '../../../domain/types'
@@ -21,20 +23,27 @@ export interface MonthCellProps {
   onCell: (cell: MonthCellVM) => void
   /** L・M で数字を押した（その区分を目立たせてデイリーへ） */
   onCount: (date: string, kind: ItemKind) => void
+  /** Tab で止まるマス（マス目の中で1つだけ。ほかのマスのボタンは tabIndex -1。矢印キーで動かす） */
+  tabbable: boolean
+  /** このマスのボタンにフォーカスが来た（そのマスを Tab で止まるマスにする） */
+  onFocusCell: (date: string) => void
 }
 
-function MonthCellImpl({ cell, compact, offMode, onCell, onCount }: MonthCellProps) {
+function MonthCellImpl({ cell, compact, offMode, onCell, onCount, tabbable, onFocusCell }: MonthCellProps) {
   const { date, day, outside, tone, isToday, off, holiday, counts, wide, label } = cell
   // 数字を別のボタンにするのは L・M の、休みを付ける状態でない時だけ（D19・9.5）
   const countButtons = !compact && !offMode
+  const tabIndex = tabbable ? 0 : -1
   return (
     <div
       className={cls('cal-cell', 'mo-cell', off && 'cp-offday')}
       data-testid={testIds.monthCell(date)}
+      data-date={date}
       data-outside={outside || undefined}
       data-tone={tone ?? undefined}
       data-off={off || undefined}
       data-today={isToday || undefined}
+      onFocus={() => onFocusCell(date)}
     >
       <button
         type="button"
@@ -43,6 +52,7 @@ function MonthCellImpl({ cell, compact, offMode, onCell, onCount }: MonthCellPro
         // 休みを付ける状態の間は、押すと休みが付いたり外れたりするボタン（今付いているかを伝える）
         aria-pressed={offMode ? off : undefined}
         aria-current={isToday ? 'date' : undefined}
+        tabIndex={tabIndex}
         onClick={() => onCell(cell)}
       />
       <div className="mo-top" aria-hidden="true">
@@ -55,11 +65,11 @@ function MonthCellImpl({ cell, compact, offMode, onCell, onCount }: MonthCellPro
           className={cls('mono', 'mo-counts', countButtons && 'is-buttons', wide && 'is-wide')}
           aria-hidden={countButtons ? undefined : true}
         >
-          <Count date={date} kind="work" count={counts.work} button={countButtons} onCount={onCount} />
+          <Count date={date} kind="work" count={counts.work} button={countButtons} tabIndex={tabIndex} onCount={onCount} />
           <span className="mo-sep" aria-hidden="true">
             /
           </span>
-          <Count date={date} kind="private" count={counts.private} button={countButtons} onCount={onCount} />
+          <Count date={date} kind="private" count={counts.private} button={countButtons} tabIndex={tabIndex} onCount={onCount} />
         </div>
       )}
     </div>
@@ -72,12 +82,15 @@ function Count({
   kind,
   count,
   button,
+  tabIndex,
   onCount,
 }: {
   date: string
   kind: ItemKind
   count: MonthCountVM
   button: boolean
+  /** マスのボタンと同じ（Tab で止まるマスの数字だけが 0） */
+  tabIndex: number
   onCount: (date: string, kind: ItemKind) => void
 }) {
   const className = cls('mo-count', `is-${kind}`, count.zero && 'is-zero')
@@ -90,7 +103,14 @@ function Count({
     )
   }
   return (
-    <button type="button" className={className} aria-label={count.label} onClick={() => onCount(date, kind)} data-testid={testId}>
+    <button
+      type="button"
+      className={className}
+      aria-label={count.label}
+      tabIndex={tabIndex}
+      onClick={() => onCount(date, kind)}
+      data-testid={testId}
+    >
       {count.text}
     </button>
   )
@@ -98,7 +118,15 @@ function Count({
 
 /** 中身の印（マスの VM の値）と押した時の動きが同じなら描き直さない（VM は描き直すたびに作り直されるので、値で比べる） */
 function sameCell(a: MonthCellProps, b: MonthCellProps): boolean {
-  if (a.compact !== b.compact || a.offMode !== b.offMode || a.onCell !== b.onCell || a.onCount !== b.onCount) return false
+  if (
+    a.compact !== b.compact ||
+    a.offMode !== b.offMode ||
+    a.tabbable !== b.tabbable ||
+    a.onCell !== b.onCell ||
+    a.onCount !== b.onCount ||
+    a.onFocusCell !== b.onFocusCell
+  )
+    return false
   const x = a.cell
   const y = b.cell
   return (

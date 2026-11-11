@@ -122,14 +122,18 @@ describe('マス目と中身（9.1・9.2）', () => {
 })
 
 describe('押した時（7.12・9.3）', () => {
-  it('L・M: 数字はその日のデイリーへ（積む）、押した区分の区切りと予定を目立たせる（CALENDAR-188・247）', async () => {
-    const user = userEvent.setup()
-    const { router } = await renderAt('/month/2026-11', { data: sample() })
-    await user.click(count('2026-11-10', 'private'))
-    expect(router.state.location.pathname).toBe('/day/2026-11-10')
-    expect(router.state.historyAction).toBe('PUSH')
-    expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
-  })
+  it.each(['L', 'M'] as const)(
+    '%s: 数字はその日のデイリーへ（積む）、押した区分の区切りと予定を目立たせる（CALENDAR-188・247）',
+    async (width) => {
+      const user = userEvent.setup()
+      const { router } = await renderAt('/month/2026-11', { data: sample(), width })
+      await user.click(count('2026-11-10', 'private'))
+      expect(router.state.location.pathname).toBe('/day/2026-11-10')
+      expect(router.state.historyAction).toBe('PUSH')
+      expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
+      expect(useCalendarUi.getState().viewed).toBe('2026-11-10')
+    },
+  )
 
   it('飾りの「0」も同じ（その区分を目立たせる。D29）', async () => {
     const user = userEvent.setup()
@@ -146,6 +150,27 @@ describe('押した時（7.12・9.3）', () => {
     expect(router.state.location.pathname).toBe('/day/2026-11-12')
     expect(router.state.historyAction).toBe('PUSH')
     expect(useCalendarUi.getState().flash).toBeNull()
+  })
+
+  it('数字からデイリーへ移って、目立たせるキーが消える前に「戻る」でマスを押しても、前の数字の区分は目立たせない（CALENDAR-189）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderAt('/month/2026-11', { data: sample() })
+    await user.click(count('2026-11-10', 'private'))
+    expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    await user.click(hit('2026-11-12'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
+    expect(useCalendarUi.getState().flash).toBeNull()
+  })
+
+  it('マスから移る時に消すのはデイリーの区切り・予定のキーだけ（登録した予定などのキーは残す）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderAt('/month/2026-11', { data: sample() })
+    act(() => useCalendarUi.getState().flashTarget('item:w3'))
+    await user.click(hit('2026-11-12'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
+    expect(useCalendarUi.getState().flash?.keys).toEqual(['item:w3'])
   })
 
   it('S: マスのどこを押してもその日のデイリーへ（目立たせない。D32・CALENDAR-190・250）', async () => {
@@ -291,5 +316,141 @@ describe('休みを付ける状態（9.5・D30）', () => {
     await act(() => router.navigate('/settings'))
     await screen.findByTestId('app-settings')
     expect(useCalendarUi.getState().offMode).toBe(false)
+  })
+})
+
+describe('キーボード（PC。マスの間は矢印キー。4.12・開発）', () => {
+  /** Tab で止まるマス（tabIndex 0 のマスのボタン）の日付 */
+  const tabbable = () =>
+    [...screen.getByTestId('calendar-month').querySelectorAll<HTMLButtonElement>('.mo-hit')]
+      .filter((b) => b.tabIndex === 0)
+      .map((b) => b.closest<HTMLElement>('[data-date]')?.dataset.date)
+  /** フォーカスのあるボタンのマスの日付 */
+  const focusedDate = () => (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-date]')?.dataset.date
+  const key = (k: string, init: KeyboardEventInit = {}) =>
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: k, ...init })
+
+  it('Tab で止まるのは見ている日（今日）のマスのボタンと、その数字のボタンだけ（ほかのマスは tabIndex -1）', async () => {
+    await renderAt('/month/2026-11', { data: sample() })
+    expect(tabbable()).toEqual(['2026-11-10'])
+    expect(count('2026-11-10', 'work').tabIndex).toBe(0)
+    expect(count('2026-11-10', 'private').tabIndex).toBe(0)
+    expect(count('2026-11-12', 'work').tabIndex).toBe(-1)
+    expect(count('2026-11-12', 'private').tabIndex).toBe(-1)
+  })
+
+  it('← → ↑ ↓・Home・End でマスからマスへフォーカスが動き、Tab で止まるマスも移る。端では動かない（ページもスクロールしない）', async () => {
+    await renderAt('/month/2026-11', { data: sample() })
+    act(() => hit('2026-11-10').focus())
+    // 受け持ったキーは preventDefault（fireEvent は止められた時に false を返す）
+    expect(key('ArrowRight')).toBe(false)
+    expect(focusedDate()).toBe('2026-11-11')
+    expect(tabbable()).toEqual(['2026-11-11'])
+    key('ArrowDown')
+    expect(focusedDate()).toBe('2026-11-18')
+    key('Home')
+    expect(focusedDate()).toBe('2026-11-15')
+    key('End')
+    expect(focusedDate()).toBe('2026-11-21')
+    key('ArrowUp')
+    key('ArrowUp')
+    key('ArrowUp')
+    expect(focusedDate()).toBe('2026-11-07')
+    expect(key('ArrowUp')).toBe(false)
+    expect(focusedDate()).toBe('2026-11-07')
+    // 土曜の → は次の週の日曜へ
+    key('ArrowRight')
+    expect(focusedDate()).toBe('2026-11-08')
+    // 前後の月の日へも動ける（マス目の外へは出ない）
+    act(() => hit('2026-11-01').focus())
+    key('ArrowLeft')
+    expect(focusedDate()).toBe('2026-11-01')
+    act(() => hit('2026-12-04').focus())
+    key('ArrowRight')
+    key('ArrowRight')
+    expect(focusedDate()).toBe('2026-12-05')
+    expect(tabbable()).toEqual(['2026-12-05'])
+  })
+
+  it('数字のボタンから矢印キーを押すと、隣のマスのボタンへ。Shift・Alt・Ctrl・⌘ と一緒の矢印キーは受け持たない', async () => {
+    await renderAt('/month/2026-11', { data: sample() })
+    act(() => count('2026-11-10', 'private').focus())
+    expect(tabbable()).toEqual(['2026-11-10'])
+    key('ArrowDown')
+    expect(document.activeElement).toBe(hit('2026-11-17'))
+    for (const mod of [{ shiftKey: true }, { altKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+      expect(key('ArrowRight', mod)).toBe(true)
+      expect(focusedDate()).toBe('2026-11-17')
+    }
+    // Tab・Enter などは受け持たない
+    expect(key('Tab')).toBe(true)
+  })
+
+  it('Enter でフォーカスのあるマスのデイリーへ。前後の月の日ならその月へ移り、フォーカスはその日のマスに残る', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderAt('/month/2026-11', { data: sample() })
+    act(() => hit('2026-12-01').focus())
+    key('ArrowRight')
+    await user.keyboard('{Enter}')
+    expect(router.state.location.pathname).toBe('/month/2026-12')
+    expect(cell('2026-12-02').getAttribute('data-outside')).toBeNull()
+    expect(document.activeElement).toBe(hit('2026-12-02'))
+    expect(tabbable()).toEqual(['2026-12-02'])
+    key('ArrowRight')
+    await user.keyboard('{Enter}')
+    expect(router.state.location.pathname).toBe('/day/2026-12-03')
+  })
+
+  it('‹ › で月を移ると、Tab で止まるのはその月の見ている日（今のマス目に無いマスは使わない）', async () => {
+    const user = userEvent.setup()
+    await renderAt('/month/2026-11', { data: sample() })
+    act(() => hit('2026-11-03').focus())
+    expect(tabbable()).toEqual(['2026-11-03'])
+    await user.click(screen.getByTestId(testIds.calNext))
+    // 11/10 を見ていた 11月の次は 12/10
+    expect(tabbable()).toEqual(['2026-12-10'])
+  })
+
+  it('前に動いた先が次の月のマス目にもある日でも、‹ ›・［今日］で見ている日が替わった後は見ている日が Tab で止まるマス', async () => {
+    const user = userEvent.setup()
+    await renderAt('/month/2026-11', { data: sample() })
+    // 12/3（11月のマス目の前後の月の日。12月のマス目にもある）へ動いてから ›
+    act(() => hit('2026-12-03').focus())
+    expect(tabbable()).toEqual(['2026-12-03'])
+    await user.click(screen.getByTestId(testIds.calNext))
+    expect(tabbable()).toEqual(['2026-12-10'])
+    // 12月のマス目の 11/30（11月にもある）へ動いてから ‹
+    act(() => hit('2026-11-30').focus())
+    await user.click(screen.getByTestId(testIds.calPrev))
+    expect(tabbable()).toEqual(['2026-11-10'])
+    // 11/20 へ動いて › → ［今日］
+    act(() => hit('2026-11-20').focus())
+    await user.click(screen.getByTestId(testIds.calNext))
+    await user.click(screen.getByTestId(testIds.calToday))
+    expect(tabbable()).toEqual(['2026-11-10'])
+  })
+
+  it('休みを付ける状態でも矢印キーで動き、Space・Enter でフォーカスのあるマスの休みが付いたり外れたりする', async () => {
+    const user = userEvent.setup()
+    await renderAt('/month/2026-11', { data: sample() })
+    await user.click(screen.getByTestId(testIds.calOff))
+    act(() => hit('2026-11-10').focus())
+    key('ArrowRight')
+    key('ArrowRight')
+    await user.keyboard(' ')
+    expect(offOn('2026-11-12')).toBe(true)
+    expect(document.activeElement).toBe(hit('2026-11-12'))
+    expect(hit('2026-11-12').getAttribute('aria-pressed')).toBe('true')
+    key('ArrowLeft')
+    await user.keyboard('{Enter}')
+    expect(offOn('2026-11-11')).toBe(false)
+  })
+
+  it('マウスで押したマスも Tab で止まるマスになる', async () => {
+    const user = userEvent.setup()
+    await renderAt('/month/2026-11', { data: sample() })
+    await user.click(screen.getByTestId(testIds.calOff))
+    await user.click(hit('2026-11-20'))
+    expect(tabbable()).toEqual(['2026-11-20'])
   })
 })

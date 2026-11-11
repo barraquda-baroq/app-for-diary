@@ -1,12 +1,14 @@
-// マンスリーの E2E（docs/SPEC.md の 9.・7.1〜7.4・7.12・3.10・4.5・4.7・4.11）: マス目の形と色（L・M・S）、件数の字の大きさ
-// （狭い S でも「12/10」が入る。D27）、押した時の行き先、休みを付ける状態（［休み］・帯・点線・付ける／外す・Esc・［終わる］・
-// 月をまたぐ・読み込み直し）、端末の時差。データは作り物の e2e/fixtures/demoData.ts（今日は 2026年11月10日（火）9:00）。
+// マンスリーの E2E（docs/SPEC.md の 9.・7.1〜7.4・7.6・7.12・3.10・4.5・4.7・4.11・4.12）: マス目の形と色（L・M・S）、件数の字の
+// 大きさ（狭い S でも「12/10」が入る。D27）、完了にした・戻した時の件数、押した時の行き先（S は目立たせずにいちばん上から。D32）、
+// キーボードでマスの間を動く、休みを付ける状態（［休み］・帯・点線・付ける／外す・Esc・［終わる］・もう一度［休み］・モードの切り替え・
+// 月をまたぐ・［今日］・［＋ 登録］・スワイプ・読み込み直し。D30）、端末の時差。データは作り物の e2e/fixtures/demoData.ts
+// （今日は 2026年11月10日（火）9:00）。
 // 11月の見本: 11/10 は仕事 8・プライベート 2、11/19 は 12/10、11/3 文化の日・11/23 勤労感謝の日、休みは 11/11・11/14・11/23・12/2
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkItem } from '../src/domain/testData'
 import type { Item } from '../src/domain/types'
-import { demoData } from './fixtures/demoData'
-import { centerOf, collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, tapSize, touchSwipe } from './helpers'
+import { DEMO_IDS, demoData } from './fixtures/demoData'
+import { centerOf, collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, seed, tapSize, touchSwipe } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -19,6 +21,42 @@ async function at(page: Page, path: string) {
 
 const cell = (page: Page, date: string) => page.getByTestId(`month-cell-${date}`)
 const count = (page: Page, date: string, kind: 'work' | 'private') => page.getByTestId(`month-count-${date}-${kind}`)
+/** マスいっぱいのボタン */
+const hitOf = (page: Page, date: string) => cell(page, date).locator('.mo-hit')
+
+/** 予定を完了にする・完了を外す（画面を通さずにストアの操作で。ウィークリー・デイリーの丸は別の担当が作る） */
+async function setDone(page: Page, id: string, done: boolean) {
+  await seed(page, ({ actions }, a) => actions.setItemDone(a.id, a.done), { id, done })
+}
+
+/** その日の仕事の件数（数字） */
+async function workCount(page: Page, date: string): Promise<number> {
+  return Number(await count(page, date, 'work').textContent())
+}
+
+/**
+ * 目立たせる枠（.flash。src/ui/motion.ts）が付いた要素を、この後ずっと覚えておく（目立たせないことの確かめ。読むのは flashed）。
+ * 行き先を移ってもページは同じなので続く
+ */
+async function watchFlash(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __flashed: string[] }
+    w.__flashed = []
+    const note = (el: Element) => w.__flashed.push(el.getAttribute('data-testid') ?? el.className)
+    new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === 'attributes' && (r.target as Element).classList.contains('flash')) note(r.target as Element)
+        for (const n of r.addedNodes) {
+          if (!(n instanceof Element)) continue
+          if (n.classList.contains('flash')) note(n)
+          n.querySelectorAll('.flash').forEach(note)
+        }
+      }
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] })
+  })
+}
+
+const flashed = (page: Page) => page.evaluate(() => (window as unknown as { __flashed: string[] }).__flashed)
 
 /** 要素の真ん中へマウスを動かす・そこを押す（上に重なった物が受ける。休みを付ける状態の数字の上など） */
 async function hover(page: Page, target: Locator) {
@@ -164,7 +202,79 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId('cal-numeral')).toHaveText('12')
   })
 
-  test('休みを付ける状態: ［休み］で帯と点線の枠。数字の上を押してもその日の休みが付き、月をまたいで続け、読み込み直しても残る。Esc・［終わる］で終わる（9.5）', async ({
+  test('予定を完了にするとその期間の毎日の件数が減り、完了を外すと戻る。全部完了した日は何も書かない（7.6・9.2）', async ({
+    page,
+  }) => {
+    await openCalendar(page, MONTH, { data: demoData() })
+    // 資料づくり（11/9〜11/12 の仕事）を完了にすると、4日とも仕事の数が1つ減る
+    const days = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12']
+    const before = await Promise.all(days.map((d) => workCount(page, d)))
+    expect(before[1]).toBe(8)
+    await setDone(page, DEMO_IDS.materials, true)
+    for (const [i, d] of days.entries()) await expect(count(page, d, 'work')).toHaveText(String(before[i] - 1))
+    await expect(count(page, '2026-11-13', 'work')).toHaveText('7')
+    // 11/3 は祝日の当番（仕事 1件）だけの日。完了にすると何も書かない
+    await expect(cell(page, '2026-11-03').locator('.mo-counts')).toHaveText('1/0')
+    await setDone(page, 'demo-w-holiday-duty', true)
+    await expect(cell(page, '2026-11-03').locator('.mo-counts')).toHaveCount(0)
+    // 数字でない所からデイリーへ移って戻っても、完了にした物は数えない
+    await pressCell(page, '2026-11-12')
+    await at(page, '/day/2026-11-12')
+    await page.goBack()
+    await at(page, MONTH)
+    await expect(count(page, '2026-11-10', 'work')).toHaveText('7')
+    await expect(cell(page, '2026-11-03').locator('.mo-counts')).toHaveCount(0)
+    // 完了を外すと戻る（ウィークリー・デイリーの［元に戻す］と同じ操作 setItemDone(id, false)）。初めから完了だった物も数える
+    await setDone(page, DEMO_IDS.materials, false)
+    for (const [i, d] of days.entries()) await expect(count(page, d, 'work')).toHaveText(String(before[i]))
+    await setDone(page, 'demo-w-holiday-duty', false)
+    await expect(cell(page, '2026-11-03').locator('.mo-counts')).toHaveText('1/0')
+    await expect(cell(page, '2026-11-02').locator('.mo-counts')).toHaveCount(0)
+    await setDone(page, 'demo-w-month-start', false)
+    await expect(cell(page, '2026-11-02').locator('.mo-counts')).toHaveText('1/0')
+    await expect(count(page, '2026-11-02', 'private')).toHaveClass(/is-zero/)
+  })
+
+  test('キーボード: Tab でマス目に入ると今日のマス、その数字へ続いてマス目を出る。矢印キー・Home・End でマスの間を動き、Enter でその日のデイリー（4.12）', async ({
+    page,
+  }) => {
+    await openCalendar(page, MONTH, { data: demoData() })
+    const month = page.getByTestId('calendar-month')
+    // 操作の列の最後のボタンから Tab で入る。止まるのは今日のマスのボタンと、その数字のボタンだけ
+    await page.getByTestId('cal-taskview').focus()
+    await page.keyboard.press('Tab')
+    await expect(hitOf(page, '2026-11-10')).toBeFocused()
+    // キーボードで来たフォーカスには枠（:focus-visible。2px の --accent）
+    expect(await hitOf(page, '2026-11-10').evaluate((e) => getComputedStyle(e).outlineStyle)).toBe('solid')
+    await page.keyboard.press('Tab')
+    await expect(count(page, '2026-11-10', 'work')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(count(page, '2026-11-10', 'private')).toBeFocused()
+    await page.keyboard.press('Tab')
+    expect(await month.evaluate((m) => m.contains(document.activeElement))).toBe(false)
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Shift+Tab')
+    await expect(hitOf(page, '2026-11-10')).toBeFocused()
+    // ← → は前・次の日、↑ ↓ は前・次の週、Home・End はその週の日曜・土曜。ページはスクロールしない
+    await page.keyboard.press('ArrowRight')
+    await expect(hitOf(page, '2026-11-11')).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(hitOf(page, '2026-11-18')).toBeFocused()
+    await page.keyboard.press('End')
+    await expect(hitOf(page, '2026-11-21')).toBeFocused()
+    await page.keyboard.press('Home')
+    await expect(hitOf(page, '2026-11-15')).toBeFocused()
+    await page.keyboard.press('ArrowLeft')
+    await expect(hitOf(page, '2026-11-14')).toBeFocused()
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+    // 動いた先が Tab で止まるマスになる（マス目の中で1つだけ）
+    await expect(month.locator('.mo-hit[tabindex="0"]')).toHaveCount(1)
+    await page.keyboard.press('Enter')
+    await at(page, '/day/2026-11-14')
+  })
+
+  test('休みを付ける状態: ［休み］で帯と点線の枠。数字の上を押してもその日の休みが付き、月をまたいで・［今日］・［＋ 登録］の後も続き、読み込み直しても付けた休みが残る（9.5・D30）', async ({
     page,
   }) => {
     await openCalendar(page, MONTH, { data: demoData() })
@@ -183,9 +293,10 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
       return `${s.borderTopWidth} ${s.borderTopStyle}`
     })
     expect(frame).toBe('1px dotted')
-    // 数字の上を押しても、デイリーへ移らずに休みが付く（CALENDAR-254）。休みの日を押すと外れる
+    // 数字の上を押しても、デイリーへ移らずに休みが付く（CALENDAR-254）。休みの日を押すと外れる。地は 120ms で変わるので待つ
     await clickAt(page, count(page, '2026-11-12', 'work'))
     await expect(cell(page, '2026-11-12')).toHaveClass(/cp-offday/)
+    await expect.poll(() => groundOf(cell(page, '2026-11-12'))).toBe(await token(page, '--off-fill'))
     await pressCell(page, '2026-11-14')
     await expect(cell(page, '2026-11-14')).not.toHaveClass(/cp-offday/)
     await at(page, MONTH)
@@ -197,6 +308,20 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     await pressCell(page, '2027-01-02')
     await expect(cell(page, '2026-12-24')).toHaveClass(/cp-offday/)
     await expect(cell(page, '2027-01-02')).toHaveClass(/cp-offday/)
+    // ［今日］で今月へ戻っても、［＋ 登録］を開いて閉じても続く（登録の画面の Esc はその画面だけを閉じる。D30）
+    await page.getByTestId('cal-today').click()
+    await at(page, MONTH)
+    await expect(banner).toBeVisible()
+    await page.getByTestId('cal-add').click()
+    const sheet = page.getByTestId('item-sheet')
+    await expect(sheet).toBeVisible()
+    // 小さな画面が Esc を聞き始めるのは、中の欄へフォーカスを移した時（src/ui/Modal.tsx の useEffect。描いた直後の Esc は帯が受ける）
+    await expect.poll(() => sheet.evaluate((e) => e.contains(document.activeElement))).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(sheet).toHaveCount(0)
+    await expect(banner).toBeVisible()
+    await pressCell(page, '2026-11-26')
+    await expect(cell(page, '2026-11-26')).toHaveClass(/cp-offday/)
     // Esc で終わる（CALENDAR-256・268）
     await page.keyboard.press('Escape')
     await expect(banner).toHaveCount(0)
@@ -204,16 +329,43 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     // 付けた・外した休みは端末に保存され、読み込み直しても残る（休みを付ける状態は終わっている。CALENDAR-259）
     await page.evaluate(() => window.__ds.flushNow())
     await page.reload()
-    await page.getByTestId('cal-prev').click()
+    await expect(page.getByTestId('calendar-month')).toBeVisible()
     await at(page, MONTH)
-    await expect(cell(page, '2026-11-12')).toHaveClass(/cp-offday/)
+    for (const d of ['2026-11-12', '2026-11-26', '2026-12-02']) await expect(cell(page, d)).toHaveClass(/cp-offday/)
     await expect(cell(page, '2026-11-14')).not.toHaveClass(/cp-offday/)
     await expect(banner).toHaveCount(0)
-    // ［終わる］でも終わる
+    await page.getByTestId('cal-next').click()
+    await at(page, '/month/2026-12')
+    await expect(cell(page, '2026-12-24')).toHaveClass(/cp-offday/)
+    await expect(cell(page, '2027-01-02')).toHaveClass(/cp-offday/)
+  })
+
+  test('休みを付ける状態は［終わる］・もう一度［休み］・モードの切り替えでも終わる（9.5・CALENDAR-256）', async ({ page }) => {
+    await openCalendar(page, MONTH, { data: demoData() })
+    const off = page.getByTestId('cal-off')
+    const banner = page.getByTestId('off-banner')
+    // ［終わる］（フォーカスは［休み］へ）
     await off.click()
     await page.getByTestId('off-end').click()
     await expect(banner).toHaveCount(0)
     await expect(off).toBeFocused()
+    // もう一度［休み］
+    await off.click()
+    await expect(banner).toBeVisible()
+    await off.click()
+    await expect(banner).toHaveCount(0)
+    await expect(off).toHaveAttribute('aria-pressed', 'false')
+    // モードを替える（週へ移って月へ戻ると、終わっている。マスを押すとデイリーへ）
+    await off.click()
+    await expect(banner).toBeVisible()
+    await page.getByTestId('cal-mode-week').click()
+    await at(page, '/week/2026-11-08')
+    await page.getByTestId('cal-mode-month').click()
+    await at(page, MONTH)
+    await expect(banner).toHaveCount(0)
+    await expect(off).toHaveAttribute('aria-pressed', 'false')
+    await pressCell(page, '2026-11-12')
+    await at(page, '/day/2026-11-12')
   })
 })
 
@@ -232,10 +384,11 @@ test.describe('マンスリー（端末の時差）', { tag: ['@pc'] }, () => {
 })
 
 test.describe('マンスリー（S）', { tag: ['@s'] }, () => {
-  test('S: 56px の行、件数は「12/10」（14px・空白なし）でマスに収まり、祝日名は出さない。横にスクロールしない。マスを押すとその日のデイリー（9.2・D32）', async ({
+  test('S（Pixel 7・幅 412px）: 56px の行、件数は「12/10」（14px・空白なし）でマスに収まり、祝日名は出さない。横にスクロールしない（9.2・D27）', async ({
     page,
   }) => {
     await openCalendar(page, MONTH, { data: demoData() })
+    expect(page.viewportSize()?.width).toBe(412)
     await expect(page.getByTestId('calendar-month')).toHaveClass(/is-compact/)
     expect(Math.round((await cell(page, '2026-11-02').boundingBox())!.height)).toBe(56)
     await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('12/10')
@@ -244,39 +397,86 @@ test.describe('マンスリー（S）', { tag: ['@s'] }, () => {
     await expect(page.locator('.cp-holiday')).toHaveCount(0)
     expect(await colorOf(cell(page, '2026-11-03').locator('.mo-date'))).toBe(await token(page, '--sun'))
     await noHorizontalScroll(page)
-    // 数字の上を押しても、その日のデイリー（S の数字はボタンにしない。CALENDAR-190・250）
-    await count(page, '2026-11-10', 'work').tap({ force: true })
-    await at(page, '/day/2026-11-10')
   })
 
-  test('マスの上から横になぞると次の月（デイリーへ移らない）。休みを付ける状態ではマスを押すと休みが付く（9.4・9.5）', async ({
+  test('S: マスのどこを押しても（数字の上でも）その日のデイリーへ。目立たせず、ページのいちばん上から出す（D32・CALENDAR-190・250）', async ({
+    page,
+  }) => {
+    // 低い画面（マンスリーがページに収まらず、ページがスクロールする）
+    await page.setViewportSize({ width: 412, height: 460 })
+    await openCalendar(page, MONTH, { data: demoData() })
+    // ページを下へスクロールしてから、下の行のマスの数字の上を押す（S の数字はボタンにしない）
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+    await expect(cell(page, '2026-11-26')).toBeInViewport()
+    await watchFlash(page)
+    await count(page, '2026-11-26', 'work').tap({ force: true })
+    await at(page, '/day/2026-11-26')
+    const day = page.getByTestId('view-day')
+    await expect(day).toBeVisible()
+    // 目立たせる枠は付かない（L・M の数字から来た時だけ。目立たせる時間 1.2秒の半分ほど待って確かめる）。ページも、時刻の無い物の
+    // リストも、いちばん上のまま（スクロールしているのは、初めの時刻へ動かすタイムスケジュールだけ）
+    await page.waitForTimeout(600)
+    expect(await flashed(page)).toEqual([])
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+    const scrolledInside = await day.evaluate((root) => {
+      const timeline = root.querySelector('[data-testid="day-timeline"]')
+      return [...root.querySelectorAll<HTMLElement>('*')]
+        .filter((e) => e.scrollTop > 0 && !(timeline && (timeline === e || timeline.contains(e) || e.contains(timeline))))
+        .map((e) => e.className)
+    })
+    expect(scrolledInside).toEqual([])
+  })
+
+  test('マスの上から横になぞると次・前の月（デイリーへ移らない）。休みを付ける状態はなぞっても続き、マスを押すと休みが付く（9.4・9.5・D30）', async ({
     page,
   }) => {
     await openCalendar(page, MONTH, { data: demoData() })
+    const banner = page.getByTestId('off-banner')
     await touchSwipe(page, cell(page, '2026-11-17'), -120, 4)
     await at(page, '/month/2026-12')
     // なぞった直後のタップは、ブラウザが動きを止めるタップとして捨てることがあるので、少し待つ
     await page.waitForTimeout(300)
     await page.getByTestId('cal-off').tap()
-    await expect(page.getByTestId('off-banner')).toBeVisible()
+    await expect(banner).toBeVisible()
     // 帯の文は S では2行に折り返すが、高さは 36px のまま（［終わる］も 34px 四方）
     expect(await bannerHeight(page)).toBe(36)
     await tapSize(page.getByTestId('off-end'), '［終わる］')
     await cell(page, '2026-12-09').tap()
     await expect(cell(page, '2026-12-09')).toHaveClass(/cp-offday/)
     await at(page, '/month/2026-12')
+    // 休みを付ける状態のまま、なぞって次の月へ（なぞり始めたマスの休みは変わらない）
+    await touchSwipe(page, cell(page, '2026-12-16'), -120, 4)
+    await at(page, '/month/2027-01')
+    await expect(banner).toBeVisible()
+    await page.waitForTimeout(300)
+    await cell(page, '2027-01-13').tap()
+    await expect(cell(page, '2027-01-13')).toHaveClass(/cp-offday/)
+    // 右へなぞると前の月へ
+    await touchSwipe(page, cell(page, '2027-01-20'), 120, -4)
+    await at(page, '/month/2026-12')
+    await expect(banner).toBeVisible()
+    await expect(cell(page, '2026-12-09')).toHaveClass(/cp-offday/)
+    await expect(cell(page, '2026-12-16')).not.toHaveClass(/cp-offday/)
+    await expect(cell(page, '2027-01-02')).not.toHaveClass(/cp-offday/)
+    await page.waitForTimeout(300)
+    await page.getByTestId('off-end').tap()
+    await expect(banner).toHaveCount(0)
   })
 })
 
 test.describe('マンスリー（S・幅 360px）', { tag: ['@s'] }, () => {
   test.use({ viewport: { width: 360, height: 780 } })
 
-  test('幅 360px でも横にスクロールせず、「12/10」がマスに収まる（D27・CALENDAR-226）', async ({ page }) => {
+  test('幅 360px でも横にスクロールせず、「12/10」がマスに収まる。マスは指で押せる大きさ（34px 以上）のまま（D27・CALENDAR-226・FRAME-244）', async ({
+    page,
+  }) => {
     await openCalendar(page, MONTH, { data: demoData() })
     await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('12/10')
     await countsFit(page, '2026-11-19')
     await countsFit(page, '2026-11-15')
     await noHorizontalScroll(page)
+    await tapSize(hitOf(page, '2026-11-19'), 'マス')
   })
 
   test('「99+」の日も件数がマスに収まる（「/」はマスの真ん中のまま、字を小さくする。7.6・D27）', async ({ page }) => {

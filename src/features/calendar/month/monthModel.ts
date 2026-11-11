@@ -121,3 +121,41 @@ function countsOf(n: Record<ItemKind, number>): Record<ItemKind, MonthCountVM> {
 function outsideLabel(date: string, off: boolean): string {
   return off ? `${jaDateLabel(date)}、休み` : jaDateLabel(date)
 }
+
+/** マス目の列の数（日曜〜土曜） */
+const COLUMNS = 7
+
+/**
+ * キーボードでマスの間を動く時の行き先（マス目の左上から数えた番号。PC のキーボード。4.12・開発）。マス目の中は1つのマスだけが
+ * Tab で入れる所になり（ほかのマスは Tab で止まらない。NS の作品の画面のタブ src/features/title/TitlePage.tsx と同じ作り）、
+ * 矢印キーでマスからマスへ動かす: ← → は前・次の日（行の端では前・次の行へ続く）、↑ ↓ は前・次の週の同じ曜日、
+ * Home・End はその週の日曜・土曜。
+ * マス目の外へは出ない（端では動かずにそのまま。前後の月へ移るのは ‹ ›・前後の月の日を押した時だけ）。
+ * 受け持たないキーは null（そのキーはほかの部品に任せる）
+ */
+export function rovingIndex(index: number, key: string, count: number): number | null {
+  let next: number
+  switch (key) {
+    case 'ArrowLeft':
+      next = index - 1
+      break
+    case 'ArrowRight':
+      next = index + 1
+      break
+    case 'ArrowUp':
+      next = index - COLUMNS
+      break
+    case 'ArrowDown':
+      next = index + COLUMNS
+      break
+    case 'Home':
+      next = index - (index % COLUMNS)
+      break
+    case 'End':
+      next = Math.min(index - (index % COLUMNS) + COLUMNS - 1, count - 1)
+      break
+    default:
+      return null
+  }
+  return next >= 0 && next < count ? next : index
+}
