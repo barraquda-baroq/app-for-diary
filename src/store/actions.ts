@@ -13,7 +13,7 @@ import * as I from '../domain/inbox'
 import * as O from '../domain/ops'
 import { untitledByRepair } from '../domain/repair'
 import * as T from '../domain/trash'
-import type { AppData, ID } from '../domain/types'
+import type { AppData, ID, Item } from '../domain/types'
 import { commit, commitRaw, getData, getStoredRecord, loadFromDisk, replaceAllData } from './appStore'
 
 function apply(fn: (d: AppData) => AppData): void {
@@ -35,9 +35,9 @@ function duplicate(id: ID, dates: { start: string | null; due: string | null }):
   const data = getData()
   const r = O.duplicateItem(data, id, dates)
   const src = data.items[id]
-  const copy = r.data.items[r.result]
   const blank = src !== undefined && untitledByRepair(src, getStoredRecord('items', id))
-  commit(r.data, blank ? { stored: [{ table: 'items', id: copy.id, record: { ...copy, title: '' } }] } : {})
+  const stored: Item = { ...r.data.items[r.result], title: '' }
+  commit(r.data, blank ? { stored: [{ table: 'items', id: stored.id, record: stored }] } : {})
   return r.result
 }
 
