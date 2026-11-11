@@ -81,8 +81,10 @@ test.describe('イヤー（PC）', { tag: ['@pc'] }, () => {
     expect(await style(band, 'background-color')).toBe(await tokenColor(page, '--today-bg'))
     expect(await style(band, 'color')).toBe(await tokenColor(page, '--on-primary'))
     expect(await style(page.getByTestId(testIds.yearMonth(10)), 'background-color')).toBe(await tokenColor(page, '--surface-3'))
-    // 休みの日の地、日曜・祝日・土曜の日付の色。祝日名は出さない（CALENDAR-216）
-    expect(await style(cell(page, '2026-11-11'), 'background-color')).toBe(await tokenColor(page, '--off-fill'))
+    // 休みの日の地、日曜・祝日・土曜の日付の色。祝日名は出さない（CALENDAR-216）。休みの地は、開いた後にデータを置くので
+    // 地の移り変わり（--dur-hover）の途中のことがある。移り終わるまで待つ
+    const offFill = await tokenColor(page, '--off-fill')
+    await expect.poll(() => style(cell(page, '2026-11-11'), 'background-color')).toBe(offFill)
     expect(await style(cell(page, '2026-11-03').locator('.yr-date'), 'color')).toBe(await tokenColor(page, '--sun'))
     expect(await style(cell(page, '2026-11-07').locator('.yr-wd'), 'color')).toBe(await tokenColor(page, '--sat'))
     await expect(view(page)).not.toContainText('文化の日')
