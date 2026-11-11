@@ -76,3 +76,31 @@ jobs:
           name: e2e-results
           path: e2e/artifacts
           retention-days: 7
+
+  # CI の WebKit で、起動アニメーションの途中にページが落ちる（Target crashed）原因を調べる時だけ流す（コミットの文に [webkit-diag]
+  # を入れた時）。起動アニメーションを Worker で描く時（worker）とページの中で描く時（page）で、同じテストを何回も流して落ち方を比べる。
+  # アプリの描き方は変えない（page はテストの中だけ。e2e/helpers.ts の collectDiagnosticsOnFailure）。落ちてもほかの確かめは止めない
+  webkit-diag:
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[webkit-diag]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        renderer: [worker, page]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps webkit
+      - name: 起動アニメーションのテストを 12回ずつ（${{ matrix.renderer }}）
+        run: >-
+          npx playwright test --project=iphone --workers=1 --retries=0 --repeat-each=12
+          -g "強制すると最初に出て|テスト用のログインで空のトップ画面"
+        env:
+          E2E_WEBKIT: '1'
+          E2E_LAUNCH_RENDERER: ${{ matrix.renderer }}

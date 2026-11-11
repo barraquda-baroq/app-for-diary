@@ -22,6 +22,17 @@ export function collectDiagnosticsOnFailure(): void {
   }
   const logs = new WeakMap<Page, Rec>()
   test.beforeEach(async ({ page }) => {
+    // CI の WebKit の落ち方を調べる時だけ（.github/workflows/ci.yml の webkit-diag。E2E_LAUNCH_RENDERER=page）: 起動アニメーションを
+    // Worker ではなくページの中で描かせる（OffscreenCanvas の無いブラウザと同じにする。e2e/launch.spec.ts の「ページの中で描く時」と同じ）
+    if (process.env.E2E_LAUNCH_RENDERER === 'page') {
+      await page.addInitScript(() => {
+        delete (window as { OffscreenCanvas?: unknown }).OffscreenCanvas
+        Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', {
+          value: undefined,
+          configurable: true,
+        })
+      })
+    }
     const rec: Rec = { nav: [], errors: [], beats: [], other: [], pending: new Map(), t0: Date.now() }
     logs.set(page, rec)
     const at = () => `@${Date.now() - rec.t0}`
