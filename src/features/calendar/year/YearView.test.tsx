@@ -164,6 +164,36 @@ describe('マスの中身（8.2・8.3・7.1〜7.4・7.9）', () => {
     expect(cell('2026-11-10').getAttribute('aria-label')).toBe('11月10日（火）、仕事の予定あり、プライベートの予定（すべて完了）')
     // 地の上書き（.yr-cell の地なし）より休みの地が強い・日のマスの上の線は 2px の --rule-strong
   })
+
+  it('データが変わると、そのマスの●と読み上げを描き直す（マスごとの React.memo が古い印を残さない。7.9）', async () => {
+    await renderView(YearView, props(), { data: sample() })
+    expect(dots('2026-11-10')).toEqual(['work:open', 'private:allDone'])
+    await act(async () => {
+      const { actions } = await import('../../../store/actions')
+      actions.setItemDone('w1', true)
+    })
+    expect(dots('2026-11-10')).toEqual(['work:allDone', 'private:allDone'])
+    expect(cell('2026-11-10').getAttribute('aria-label')).toBe(
+      '11月10日（火）、仕事の予定（すべて完了）、プライベートの予定（すべて完了）',
+    )
+    await act(async () => {
+      const { actions } = await import('../../../store/actions')
+      actions.setItemDone('w1', false)
+    })
+    expect(dots('2026-11-10')).toEqual(['work:open', 'private:allDone'])
+  })
+
+  it('日付が変わると（0時を過ぎる）、今日の枠を次の日のマスへ移す（7.3）', async () => {
+    const { setProps } = await renderView(YearView, props(), { data: sample() })
+    expect(view().querySelectorAll('.yr-cell.is-today')).toHaveLength(1)
+    setProps(props({ today: '2026-11-11' }))
+    expect([...view().querySelectorAll('.yr-cell.is-today')].map((c) => c.getAttribute('data-date'))).toEqual(['2026-11-11'])
+    expect(cell('2026-11-10').hasAttribute('aria-current')).toBe(false)
+    // 月が替わると今月の帯も移る
+    setProps(props({ today: '2026-12-01' }))
+    expect(screen.getByTestId(testIds.yearMonth(12)).classList.contains('today-mark')).toBe(true)
+    expect(screen.getByTestId(testIds.yearMonth(11)).classList.contains('today-mark')).toBe(false)
+  })
 })
 
 describe('押した時（7.12・8.4。CALENDAR-186・187・223・224）', () => {
@@ -236,5 +266,22 @@ describe('キーボード（4.12）', () => {
     setProps(props({ viewed: '2027-11-10' }))
     expect(cell('2027-11-10').tabIndex).toBe(0)
     expect(view().querySelectorAll('.yr-cell[tabindex="0"]')).toHaveLength(1)
+  })
+
+  it('同じ年の中で見ている日が替わっても（マンスリーから来た年で［今日］など）、Tab で止まるマスは見ている日に戻る', async () => {
+    const { setProps } = await renderView(YearView, props({ viewed: '2026-03-15' }), { path: '/year/2026' })
+    expect(cell('2026-03-15').tabIndex).toBe(0)
+    act(() => cell('2026-03-03').focus())
+    expect(cell('2026-03-03').tabIndex).toBe(0)
+    setProps(props({ viewed: '2026-11-10' }))
+    expect([...view().querySelectorAll('.yr-cell[tabindex="0"]')].map((c) => c.getAttribute('data-date'))).toEqual(['2026-11-10'])
+  })
+
+  it('並べ方が替わっても（窓の幅を変えた時）、Tab で止まるマスはフォーカスの来たマスのまま', async () => {
+    const { setProps } = await renderView(YearView, props(), { path: '/year/2026' })
+    act(() => cell('2026-03-03').focus())
+    setProps(props({ area: { width: 794, height: 700 } }))
+    expect(view().getAttribute('data-layout')).toBe('mini')
+    expect([...view().querySelectorAll('.yr-cell[tabindex="0"]')].map((c) => c.getAttribute('data-date'))).toEqual(['2026-03-03'])
   })
 })

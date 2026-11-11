@@ -110,14 +110,17 @@ test.describe('イヤー（PC）', { tag: ['@pc'] }, () => {
     await expect(view(page).locator('.yr-minis')).toHaveAttribute('data-cols', '4')
     await page.setViewportSize({ width: 1400, height: 900 })
     await expect(view(page)).toHaveAttribute('data-layout', 'rows')
-    // 領域がちょうど 870px なら行（マスは 24px）、869px なら小さな月
+    // 領域が 869px なら小さな月、ちょうど 870px なら行（マスは 24px）。小さな月から行へ替わるのを待つ（行のままの所で 870px に
+    // しても、並べ方が替わらないのか、まだ測り直していないのかが分からないので、先に 869px で小さな月にしておく）
     const { offset } = await areaWidth(page)
+    await page.setViewportSize({ width: 869 + offset, height: 900 })
+    await expect(view(page)).toHaveAttribute('data-layout', 'mini')
+    expect((await areaWidth(page)).area).toBe(869)
+    await noHorizontalScroll(page)
     await page.setViewportSize({ width: 870 + offset, height: 900 })
     await expect(view(page)).toHaveAttribute('data-layout', 'rows')
     expect((await areaWidth(page)).area).toBe(870)
     expect(Math.round((await cell(page, '2026-11-10').boundingBox())!.width)).toBe(24)
-    await page.setViewportSize({ width: 869 + offset, height: 900 })
-    await expect(view(page)).toHaveAttribute('data-layout', 'mini')
     await noHorizontalScroll(page)
   })
 
@@ -267,10 +270,13 @@ test.describe('イヤー（スマホ）', { tag: ['@s'] }, () => {
     await page.goBack()
     await at(page, YEAR)
     // なぞるのは押すのの後にする（速くなぞった直後の指の押し下げは、ブラウザが慣性のスクロールを止める物として扱い、押したことに
-    // しないことがある。人がなぞった後に次の年を見てから押すのと違い、テストではすぐに押すので）
-    await touchSwipe(page, cell(page, '2026-03-11'), -150, 0)
+    // しないことがある。人がなぞった後に次の年を見てから押すのと違い、テストではすぐに押すので）。なぞり始めは右の列の小さな月
+    // （4月）のマスにして、左へ 150px なぞっても指が画面の外へ出ないようにする
+    const from = (await cell(page, '2026-04-16').boundingBox())!
+    expect(from.x + from.width / 2 - 150).toBeGreaterThan(0)
+    await touchSwipe(page, cell(page, '2026-04-16'), -150, 0)
     await at(page, '/year/2027')
-    await expect(cell(page, '2027-03-11')).toBeVisible()
+    await expect(cell(page, '2027-04-16')).toBeVisible()
   })
 })
 
