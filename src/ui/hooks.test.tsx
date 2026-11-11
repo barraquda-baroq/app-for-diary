@@ -145,4 +145,21 @@ describe('useElementSize（D53）', () => {
     unmount()
     expect(() => resizeObserved(100, 100)).not.toThrow()
   })
+
+  it('描く前の1回目も、ResizeObserver と同じ中身の箱（枠線・内側の余白を除く）で測る', () => {
+    // 外の箱 920×640、枠線 2px・内側の余白 上下 10px・左右 20px → 中身 876×616
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 920, 640))
+    function Padded() {
+      const ref = useRef<HTMLDivElement>(null)
+      const { width, height } = useElementSize(ref)
+      return (
+        <div ref={ref} data-testid="padded" style={{ padding: '10px 20px', borderWidth: 2, borderStyle: 'solid' }}>
+          {width}x{height}
+        </div>
+      )
+    }
+    render(<Padded />)
+    expect(screen.getByTestId('padded').textContent).toBe('876x616')
+    spy.mockRestore()
+  })
 })

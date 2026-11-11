@@ -4,6 +4,7 @@
 // 合成した PointerEvent（pointerType: 'touch'）で送る（longPressDrag・touchSwipe）。データは作り物だけを使う（個人の情報を入れない）
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { AppData, Item } from '../src/domain/types'
+import type { Prefs } from '../src/store/uiStore'
 
 /**
  * 落ちた時の手がかりを残す（CI の WebKit でだけ時々ログインの画面が出ないことがあり、その時に何が起きていたかを見るため）。
@@ -221,28 +222,39 @@ export interface OpenCalendarOptions {
   /** 外観（white・dark・deep-dark・system） */
   appearance?: 'system' | 'white' | 'dark' | 'deep-dark'
   /** 端末ごとの表示の設定（lastMode・detailsOpen など。src/store/uiStore.ts の Prefs） */
-  prefs?: Record<string, unknown>
+  prefs?: Partial<Prefs>
   /** 開いた後に置くデータ */
   data?: Partial<AppData>
 }
 
+/** openCalendar を呼んだ回の番号（表示の設定を置いたかの印を、呼んだ回ごとに分ける） */
+let openCount = 0
+
 /**
  * ログインした状態（テスト用の印 diary-studio:test-auth。Firebase は使わない）で、決めた時刻・外観・表示の設定でカレンダーを開く。
- * 表示の設定は最初に開いた時だけ置く（読み込み直しても、アプリが覚えた設定が残る）。起動アニメーションは出さない（強制しない）。
+ * 表示の設定は、その回に開いた時だけ置く（読み込み直しても、アプリが覚えた設定が残る）。起動アニメーションは出さない（強制しない）。
+ * 同じページでもう一度呼ぶと、その回の設定で読み込み直す（行き先の # だけが違う時もページを開き直す）。
  *   await openCalendar(page, '/week/2026-11-08', { data: { items } })
  */
 export async function openCalendar(page: Page, hash = '/', opts: OpenCalendarOptions = {}): Promise<void> {
   const { now = E2E_NOW, appearance, prefs, data } = opts
   if (now !== false) await page.clock.setFixedTime(new Date(now))
   const stored = appearance || prefs ? { v: 1, ...(appearance ? { appearance } : {}), ...prefs } : null
-  await page.addInitScript((p) => {
-    localStorage.setItem('diary-studio:test-auth', '1')
-    if (p && !sessionStorage.getItem('e2e:prefs-set')) {
-      localStorage.setItem('diary-studio:prefs', JSON.stringify(p))
-      sessionStorage.setItem('e2e:prefs-set', '1')
-    }
-  }, stored)
+  // 2回目からは、# だけが違う行き先へ移ってもページを読み込み直さない（初めに置いた物が効かない）ので、読み込み直す
+  const opened = page.url() !== 'about:blank'
+  const mark = `e2e:prefs-set:${++openCount}`
+  await page.addInitScript(
+    ({ p, mark }) => {
+      localStorage.setItem('diary-studio:test-auth', '1')
+      if (p && !sessionStorage.getItem(mark)) {
+        localStorage.setItem('diary-studio:prefs', JSON.stringify(p))
+        sessionStorage.setItem(mark, '1')
+      }
+    },
+    { p: stored, mark },
+  )
   await page.goto(`/#${hash}`)
+  if (opened) await page.reload()
   await page.waitForFunction(() => Boolean(window.__ds))
   await expect(page.getByTestId('top-page')).toBeVisible()
   if (data) await seedData(page, data)
@@ -285,7 +297,8 @@ const touchVia = (page: Page, via?: TouchVia): TouchVia => via ?? (isChromium(pa
 
 /**
  * 合成した指の PointerEvent（pointerType: 'touch'）を送る（WebKit 用）。押した所の要素に pointerdown を送り、その後の動きと離す
- * のも同じ要素に送る（指の pointer は押した要素に捕まる。document まで伝わる）。holdMs は押してから動かし始めるまで
+ * のも同じ要素に送る（指の pointer は押した要素に捕まる。document まで伝わる。押した要素が外れた後は指の下の要素へ）。
+ * holdMs は押してから動かし始めるまで
  */
 async function syntheticTouch(page: Page, points: Point[], holdMs: number, stepMs: number): Promise<void> {
   await page.evaluate(
@@ -293,8 +306,9 @@ async function syntheticTouch(page: Page, points: Point[], holdMs: number, stepM
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
       const [first] = points
       const target = document.elementFromPoint(first.x, first.y) ?? document.body
+      // 押した要素が描き直しで外れた時は、本物の指と同じく、その時に指の下にある要素へ送る（外れた要素からは document まで伝わらない）
       const fire = (type: string, p: { x: number; y: number }, buttons: number) =>
-        target.dispatchEvent(
+        (target.isConnected ? target : (document.elementFromPoint(p.x, p.y) ?? document.body)).dispatchEvent(
           new PointerEvent(type, {
             bubbles: true,
             cancelable: true,

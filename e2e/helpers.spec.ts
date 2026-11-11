@@ -117,11 +117,22 @@ test.describe('開く・データを置く（e2e/helpers.ts）', { tag: ['@pc'] 
     expect((await rawItem(page, id))?.title).toBe('メールの返信')
   })
 
-  test('seedData は端末の中のデータを丸ごと置き換える（前に置いた物は残らない）', async ({ page }) => {
-    await openCalendar(page, '/', { data: { items: { a: item({ id: 'a' }) } } })
-    await openCalendar(page, '/', { data: { items: { b: item({ id: 'b', title: '見積もりの提出' }) } } })
+  test('seedData は端末の中のデータを丸ごと置き換える（前に置いた物は残らない）。2回目に開いた時の表示の設定も効く', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/', { prefs: { lastMode: 'week' }, data: { items: { a: item({ id: 'a' }) } } })
+    await openCalendar(page, '/', {
+      prefs: { lastMode: 'day' },
+      data: { items: { b: item({ id: 'b', title: '見積もりの提出' }) } },
+    })
     expect(await rawItem(page, 'a')).toBeNull()
     expect((await rawItem(page, 'b'))?.title).toBe('見積もりの提出')
+    const lastMode = () => page.evaluate(() => JSON.parse(localStorage.getItem('diary-studio:prefs') ?? '{}').lastMode)
+    expect(await lastMode()).toBe('day')
+    // 読み込み直しても、2回目の設定のまま（1回目の設定に戻らない）
+    await page.reload()
+    await expect(page.getByTestId('top-page')).toBeVisible()
+    expect(await lastMode()).toBe('day')
   })
 
   test('mouseDrag: 押して、5px 以上動かして掴み、落とす所の真ん中で離す', async ({ page }) => {
@@ -168,6 +179,33 @@ test.describe('指の操作（e2e/helpers.ts）', { tag: ['@s'] }, () => {
       const toBox = (await to.boundingBox())!
       expect(up.type).toBe('pointerup')
       expect(Math.abs(up.x - (toBox.x + toBox.width / 2))).toBeLessThanOrEqual(1)
+    })
+
+    test(`longPressDrag（${via}）: 押した要素が描き直しで外れても、その後の動きと離すのは document まで届く`, async ({
+      page,
+    }) => {
+      await openCalendar(page, '/', { now: false })
+      await noTouchScroll(page)
+      // 押すと外れる要素（掴んだカードを描き直す時と同じ）
+      await page.evaluate(() => {
+        const el = document.createElement('div')
+        el.dataset.testid = 'e2e-vanish'
+        Object.assign(el.style, { position: 'fixed', left: '40px', top: '200px', width: '80px', height: '80px', zIndex: '999' })
+        el.addEventListener('pointerdown', () => setTimeout(() => el.remove(), 0))
+        document.body.appendChild(el)
+      })
+      await recordPointers(page)
+      await longPressDrag(page, page.getByTestId('e2e-vanish'), { x: 200, y: 300 }, { via, holdMs: 100, steps: 4 })
+      const events = (await recorded(page)).filter((e) => e.pointerType === 'touch')
+      expect(events.map((e) => e.type)).toEqual([
+        'pointerdown',
+        'pointermove',
+        'pointermove',
+        'pointermove',
+        'pointermove',
+        'pointerup',
+      ])
+      expect(events[events.length - 1]).toMatchObject({ x: 200, y: 300 })
     })
 
     test(`touchSwipe（${via}）: 指ですばやく横に払う`, async ({ page }) => {

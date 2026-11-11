@@ -1,14 +1,14 @@
 // アプリの外枠（AppFrame）の新しい版の帯（docs/SPEC.md の 2.8）: 新しい版を受け取った時だけ「新しい版があります ［更新する］」を出し、
 // 押すと入力中の下書きを保存してから新しい版に切り替える（保存は帯の1か所だけ。src/main.tsx の apply は切り替えるだけ）。
-// 段階2: 左のアイコンと名前の行き先（積むか置き換えるか。D05）、カレンダーの中の置き換えでスクロールを戻さないこと（D54）、
-// iPhone のキーボードの高さ --kb
+// 段階2: 左のアイコンと名前の行き先（積むか置き換えるか。D05）、カレンダーの4つのモードから開いた MIM の戻り先（FRAME-007）、
+// カレンダーの中の置き換えでスクロールを戻さないこと（D54）、iPhone のキーボードの高さ --kb
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { markDraftClean, markDraftDirty } from '../store/draftRegistry'
 import { DEFAULT_PREFS, initialCalendarUi, useAppUpdate, useCalendarUi, usePrefs } from '../store/uiStore'
-import { AppFrame, AppHeader, brandReplaces, scrollsToTop } from './Layout'
+import { AppFrame, AppHeader, brandReplaces, scrollsToTop, useMim } from './Layout'
 
 function renderFrame() {
   const router = createMemoryRouter(
@@ -135,6 +135,55 @@ describe('左のアイコンと名前（3.3・FRAME-029・D05）', () => {
     expect(router.state.location.pathname).toBe('/')
     expect(router.state.historyAction).toBe(action)
     expect(useCalendarUi.getState().viewed).toBe('2026-11-10')
+  })
+})
+
+describe('カレンダーの4つのモードから開いた MIM（3.1・FRAME-007）', () => {
+  /** MIM の上の列の［‹ カレンダーに戻る］（src/features/top/MimPlaceholder.tsx と同じ呼び方） */
+  function MimBack() {
+    const { backToCalendar } = useMim()
+    return (
+      <button type="button" onClick={backToCalendar} data-testid="mim-back">
+        ‹ カレンダーに戻る
+      </button>
+    )
+  }
+
+  function renderMimAt(path: string) {
+    const page = (
+      <AppFrame>
+        <AppHeader />
+        <MimBack />
+      </AppFrame>
+    )
+    const router = createMemoryRouter([{ path: '*', element: page }], { initialEntries: ['/settings', path], initialIndex: 1 })
+    render(<RouterProvider router={router} />)
+    return router
+  }
+
+  it.each(['/', '/year/2026', '/month/2026-11', '/week/2026-11-08', '/day/2026-11-10'])(
+    '%s から［MIM］を開くと、［‹ カレンダーに戻る］で1つ前（開いたモードの画面）へ戻る',
+    async (path) => {
+      const router = renderMimAt(path)
+      const user = userEvent.setup()
+      await user.click(screen.getByTestId('open-mim'))
+      expect(router.state.location.pathname).toBe('/mim')
+      await user.click(screen.getByTestId('mim-back'))
+      expect(router.state.location.pathname).toBe(path)
+      expect(router.state.historyAction).toBe('POP')
+    },
+  )
+
+  it('カレンダーでない画面（設定・行き先の無い #/month）から開いた時は、トップ（#/）へ置き換える', async () => {
+    for (const path of ['/settings', '/month']) {
+      const router = renderMimAt(path)
+      const user = userEvent.setup()
+      await user.click(screen.getByTestId('open-mim'))
+      await user.click(screen.getByTestId('mim-back'))
+      expect(router.state.location.pathname).toBe('/')
+      expect(router.state.historyAction).toBe('REPLACE')
+      cleanup()
+    }
   })
 })
 

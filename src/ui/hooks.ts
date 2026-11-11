@@ -124,8 +124,29 @@ export interface ElementSize {
 }
 
 /**
- * 要素の大きさ（ResizeObserver で測る。要素が無い間は 0×0）。CSS の幅の区分（599/600/899/900px）とは別に、領域の幅で決める所
- * （イヤーの 870px・ウィークリーの列の 120px。D53）に使う。大きさが変わった時だけ描き直す
+ * 要素の中身の箱の大きさ（ResizeObserver の contentRect と同じ物: 枠線・内側の余白・スクロールバーを除く）。
+ * 描く前に1回測る時に使い、その後に ResizeObserver が知らせる値と食い違わないようにする（870px などの境で、最初の1回だけ
+ * 別の並べ方になって切り替わるのを防ぐ）
+ */
+export function contentBoxOf(el: Element): ElementSize {
+  const rect = el.getBoundingClientRect()
+  const cs = getComputedStyle(el)
+  const n = (v: string) => parseFloat(v) || 0
+  const borderX = n(cs.borderLeftWidth) + n(cs.borderRightWidth)
+  const borderY = n(cs.borderTopWidth) + n(cs.borderBottomWidth)
+  let width = rect.width - borderX - n(cs.paddingLeft) - n(cs.paddingRight)
+  let height = rect.height - borderY - n(cs.paddingTop) - n(cs.paddingBottom)
+  if (el instanceof HTMLElement) {
+    // スクロールバーの分（contentRect に入らない）
+    width -= Math.max(0, el.offsetWidth - el.clientWidth - borderX)
+    height -= Math.max(0, el.offsetHeight - el.clientHeight - borderY)
+  }
+  return { width: Math.max(0, width), height: Math.max(0, height) }
+}
+
+/**
+ * 要素の大きさ（ResizeObserver で測る中身の箱 contentRect。要素が無い間は 0×0）。CSS の幅の区分（599/600/899/900px）とは別に、
+ * 領域の幅で決める所（イヤーの 870px・ウィークリーの列の 120px。D53）に使う。大きさが変わった時だけ描き直す
  */
 export function useElementSize(ref: RefObject<Element | null>): ElementSize {
   const [size, setSize] = useState<ElementSize>({ width: 0, height: 0 })
@@ -134,8 +155,8 @@ export function useElementSize(ref: RefObject<Element | null>): ElementSize {
     if (!el) return
     const update = (width: number, height: number) =>
       setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }))
-    const rect = el.getBoundingClientRect()
-    update(rect.width, rect.height)
+    const box = contentBoxOf(el)
+    update(box.width, box.height)
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver((entries) => {
       const box = entries[entries.length - 1]?.contentRect

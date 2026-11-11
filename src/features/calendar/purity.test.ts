@@ -1,13 +1,14 @@
 // 決まりの部分が画面・保存の仕組みに頼らないこと（docs/SPEC.md の 2.9。段階6のコネクタが src/domain をそのまま使う）。
-// src/domain の下と、カレンダーの画面の形を決める純粋な関数（*Model.ts・行き先・期間の表記・スワイプ・ロック中の掴み方）は、
-// React・状態の入れ物（zustand・src/store）・同期（src/sync・Firebase）・端末の保存（src/db・Dexie）・dnd-kit を読み込まない
+// src/domain の下と、画面の形を決める純粋な関数（src/features の *Model.ts・行き先・期間の表記・スワイプ・ロック中の掴み方）は、
+// React・画面の部品（src/ui。どれも React か画面に頼る）・状態の入れ物（zustand・src/store）・同期（src/sync・Firebase）・
+// 端末の保存（src/db・Dexie）・dnd-kit を読み込まない（型だけの読み込みも。モードや幅の区分の型は common/types.ts から読む）
 import { describe, expect, it } from 'vitest'
 
 /** 確かめるファイル（[src/ からの場所, 中身]）。まだ無いファイルは読まれないだけ */
 const PURE = import.meta.glob(
   [
     '../../domain/**/*.ts',
-    './**/*Model.ts',
+    '../**/*Model.ts',
     './common/calendarRoute.ts',
     './common/calendarHeading.ts',
     './common/swipe.ts',
@@ -37,6 +38,7 @@ export function impurity(specifier: string, inDomain: boolean): string | null {
   if (specifier.startsWith('.')) {
     const segments = specifier.split('/')
     if (segments.some((s) => s === 'store' || s === 'sync' || s === 'db')) return 'src/store・src/sync・src/db'
+    if (segments.includes('ui')) return 'src/ui'
     if (inDomain && specifier.startsWith('../')) return 'src/domain の外'
   }
   return null
@@ -67,8 +69,11 @@ describe('確かめる道具', () => {
     ['../../../store/appStore', false, 'src/store・src/sync・src/db'],
     ['../sync/controller', false, 'src/store・src/sync・src/db'],
     ['../../domain/dates', false, null],
+    ['../../../ui/hooks', false, 'src/ui'],
+    ['../common/types', false, null],
     ['./types', true, null],
-    ['../ui/hooks', true, 'src/domain の外'],
+    ['../ui/hooks', true, 'src/ui'],
+    ['../routes', true, 'src/domain の外'],
     ['@holiday-jp/holiday_jp', true, null],
   ] as const)('%s（domain の中 %s）→ %s', (specifier, inDomain, reason) => {
     expect(impurity(specifier, inDomain)).toBe(reason)

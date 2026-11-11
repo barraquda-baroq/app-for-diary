@@ -123,6 +123,17 @@ function tooBold(value: string): boolean {
   return Number.isFinite(n) && n > 600
 }
 
+/** 規則の中の太さの指定（font-weight と、まとめて書く font の中の太さ。[名前, 太さ]） */
+export function weightsOf(body: string): [string, string][] {
+  return declarationsOf(body).flatMap(([name, value]): [string, string][] => {
+    if (name === 'font-weight') return [[name, value]]
+    if (name !== 'font') return []
+    return splitTop(value, /\s/)
+      .filter((t) => /^(?:\d{1,4}|bold|bolder|lighter|normal)$/.test(t))
+      .map((t): [string, string] => [name, t])
+  })
+}
+
 describe('確かめる道具', () => {
   it('@media の中の規則も読み、@keyframes の中は読まない', () => {
     const rules = flatRules(`
@@ -133,6 +144,12 @@ describe('確かめる道具', () => {
     `)
     expect(rules.map((r) => r.selector)).toEqual(['.a', '.b'])
     expect(declarationsOf(rules[1].body)).toEqual([['font-weight', '700']])
+  })
+
+  it('太さは font-weight と、まとめて書く font の中から読む', () => {
+    expect(weightsOf('font-weight: 700; color: var(--text);')).toEqual([['font-weight', '700']])
+    expect(weightsOf('font: 700 12px/1 var(--font-mono);')).toEqual([['font', '700']])
+    expect(weightsOf('font: 12px var(--font-mono);')).toEqual([])
   })
 
   it.each([
@@ -189,9 +206,9 @@ describe('等幅の字は 600 より太くしない（FRAME-196・CALENDAR-262�
     const bold = flatRules(source)
       .filter(isMonoRule)
       .flatMap((r) =>
-        declarationsOf(r.body)
-          .filter(([name, value]) => name === 'font-weight' && tooBold(value))
-          .map(([, value]) => `${r.selector} { font-weight: ${value} }`),
+        weightsOf(r.body)
+          .filter(([, value]) => tooBold(value))
+          .map(([name, value]) => `${r.selector} { ${name}: ${value} }`),
       )
     expect(bold).toEqual([])
   })
@@ -216,6 +233,14 @@ describe('カレンダーには影を付けない（ドラッグ中の --shadow-
       }
     }
     expect(found).toEqual([])
+  })
+})
+
+describe('視差効果を減らす設定の知らせの印（FRAME-235）', () => {
+  it('ロックの印の色 .lock-accent は、カード・行の CSS の色の指定より必ず強い（600ms だけ --accent）', () => {
+    const common = ALL_CSS.find(([name]) => name === 'styles.css')?.[1] ?? ''
+    const own = flatRules(common).filter((r) => r.selector === '.lock-accent')
+    expect(own.flatMap((r) => declarationsOf(r.body))).toEqual([['color', 'var(--accent) !important']])
   })
 })
 

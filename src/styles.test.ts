@@ -561,6 +561,12 @@ describe('段階2のカレンダーの字と地（docs/SPEC.md の 4.5・FRAME-1
     ['--text', '--private-sheet', THEMES],
   ]
 
+  it('ダークの土日の色は、仕様の表の比（面 6.29:1・6.71:1、休みの地 5.09:1・5.44:1。CALENDAR-056）', () => {
+    const ratio = (fg: string, bg: string) => Number(contrast(color('dark', fg), color('dark', bg)).toFixed(2))
+    expect([ratio('--sat', '--surface'), ratio('--sun', '--surface')]).toEqual([6.29, 6.71])
+    expect([ratio('--sat', '--off-fill'), ratio('--sun', '--off-fill')]).toEqual([5.09, 5.44])
+  })
+
   it.each(TEXT_PAIRS.flatMap(([fg, bg, themes]) => themes.map((t) => [t, fg, bg] as const)))(
     '%s: %s / %s は 4.5:1 以上',
     (theme, fg, bg) => {

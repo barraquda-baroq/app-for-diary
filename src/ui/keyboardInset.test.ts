@@ -58,6 +58,43 @@ describe('useKeyboardInset', () => {
     expect(document.documentElement.style.getPropertyValue('--kb')).toBe('0px')
   })
 
+  it('欄にフォーカスしたままキーボードが出た時・出たまま別の欄へ移った時に、その欄をキーボードの上 16px まで送る（ITEMS-191）', () => {
+    const vv = fakeViewport(844)
+    const scrollBy = vi.fn()
+    document.documentElement.scrollBy = scrollBy as unknown as typeof document.documentElement.scrollBy
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.documentElement })
+    const first = document.createElement('input')
+    const second = document.createElement('textarea')
+    const button = document.createElement('button')
+    document.body.append(first, second, button)
+    vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 560, 300, 40))
+    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 700, 300, 80))
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 700, 300, 80))
+    render(createElement(Inset))
+    first.focus()
+    // キーボードが出る（見えている高さ 508px）→ 高さを入れた後に、隠れた欄を送る
+    vv.height = 508
+    act(() => {
+      vv.dispatchEvent(new Event('resize'))
+      vi.runOnlyPendingTimers()
+    })
+    expect(scrollBy).not.toHaveBeenCalled()
+    act(() => {
+      vi.runOnlyPendingTimers()
+    })
+    expect(scrollBy).toHaveBeenCalledTimes(1)
+    expect(scrollBy).toHaveBeenLastCalledWith(expect.objectContaining({ top: 600 - (508 - KEYBOARD_GAP) }))
+    // 出たまま別の欄へ（すぐ送る）。ボタンは文字を打つ欄ではないので送らない
+    act(() => second.focus())
+    expect(scrollBy).toHaveBeenCalledTimes(2)
+    expect(scrollBy).toHaveBeenLastCalledWith(expect.objectContaining({ top: 780 - (508 - KEYBOARD_GAP) }))
+    act(() => button.focus())
+    expect(scrollBy).toHaveBeenCalledTimes(2)
+    first.remove()
+    second.remove()
+    button.remove()
+  })
+
   it('打っている欄がキーボードに隠れたら、キーボードの上 16px まで送る', () => {
     fakeViewport(508)
     const scroller = document.createElement('div')
