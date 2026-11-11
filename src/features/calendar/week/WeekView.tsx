@@ -2,7 +2,7 @@
 // （WeekHorizontal）、S は7日を縦（WeekVertical）（10.1。カレンダーの領域の幅では決めない）。領域の幅は、7日を横の列の幅
 // （見出しを2行にするか・始点のカードの期間が入るか）と、7日を縦の半分の幅だけに使う（D53）。
 // データは useCalendarData() の一覧から weekModel.ts の buildWeek で週の形を作る（表が変わった時だけ作り直す）。カード・●・＞は
-// 記録ごとの React.memo。ドラッグ（WeekDnd・useItemDrag・useDayDrop。week/dnd）は WP11 が中身を作るまで何もしない。
+// 記録ごとの React.memo。ドラッグは week/dnd（WeekDnd・useItemDrag・useDayDrop）。
 // スクロールする要素は WeekScrollerContext で WeekDnd に渡す（自動のスクロールをウィークリーの中だけにする。weekScroller.ts）。
 // 見出し → デイリー・休みのチェック・「＋」→ すばやく足すは useWeekActions（weekActions.ts）。ウィークリーは指でなぞっても週を
 // 移らない（［‹］［›］だけ。カードの操作とぶつかるため。3.7。CalendarView の swipeEnabled が週を外す）

@@ -158,7 +158,7 @@ function limitAutoScroll(manager: DragDropManager, week: RefObject<HTMLElement |
 /**
  * 掴んだ時に、文字を打っている欄（すばやく足すの入力欄など）からフォーカスを外す。指で掴むとフォーカスは欄に残ったままで、Chromium は
  * 指を動かし始めた時に、その欄を見える所へ出そうと週をスクロールする（欄が見えていない時は、掴んだカードの下の日が飛ぶ）。マウスは
- * 押した時にフォーカスがカードへ移るので同じになる。欄は閉じない（すばやく足すは、押し終わってから閉じる。useCloseAfterPress）
+ * 押した時にフォーカスがカードへ移るので同じになる。欄は閉じない（すばやく足すは、押し終わってから閉じる。QuickAdd）
  */
 function blurTextField(): void {
   const el = document.activeElement

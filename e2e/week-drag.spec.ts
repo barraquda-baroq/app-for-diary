@@ -326,7 +326,7 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     page,
   }) => {
     await openWeek(page)
-    // すばやく足すを開いている間に掴んでも、離すまで入力欄は閉じない（並びが動かない。useCloseAfterPress）。離した後に閉じる
+    // すばやく足すを開いている間に掴んでも、離すまで入力欄は閉じない（並びが動かない。QuickAdd）。離した後に閉じる
     await page.getByTestId('week-add-2026-11-12-work').click()
     const input = page.getByTestId('quick-add-input')
     await expect(input).toBeVisible()
