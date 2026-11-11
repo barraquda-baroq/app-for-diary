@@ -1,0 +1,995 @@
+/* ===== ウィークリー（src/features/calendar/week/*。docs/SPEC.md の 10.・7.7〜7.10・4.3〜4.11） =====
+   クラスは .wk- で始める。色は src/styles.css の変数だけ。大きさは weekModel.ts の WEEK_PX と同じ値。
+   カード・始点のカード・●とその上の要素には transform・filter・contain・will-change を付けない（ドラッグで持ち上げたカードが
+   ずれて切れる。WP11s の G9）。目立たせる所（カード・始点のカード・受けた表示）には outline・animation を付けない（.flash が隠れる）。
+   カレンダーには影を付けない（ラベルの一辺・ディープダークの枠は、ぼかしの無い inset の box-shadow） */
+
+/* ---------- いちばん外（WeekView。スクロールする要素。weekScroller.ts）。中の日のかたまり・帯の offsetTop・offsetLeft は
+   この要素からの位置になる（スクロールする位置を決める時に使える） ---------- */
+.wk {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 線・●・＞の色（7.8・4.3）: ラベルの色、無ければ土台の色（--work-line／--private-line）、完了したら --done-text */
+.wk-lane,
+.wk-recv,
+.wk-end,
+.wk-edge,
+.wk-rail,
+.wk-over {
+  --wk-line: var(--kind-line);
+}
+
+.wk-lane[data-label],
+.wk-recv[data-label],
+.wk-end[data-label],
+.wk-edge[data-label],
+.wk-rail[data-label],
+.wk-over[data-label] {
+  --wk-line: var(--label);
+}
+
+.wk-lane.is-done,
+.wk-recv.is-done,
+.wk-end.is-done,
+.wk-edge.is-done,
+.wk-rail.is-done,
+.wk-over.is-done {
+  --wk-line: var(--done-text);
+}
+
+/* ===================== 7日を横（L・M。10.2） ===================== */
+
+/* 領域が 504px（72px × 7）より狭い時は、見出しと段がいっしょに横にスクロールする（ページは横にスクロールしない。10.1） */
+.wk-h {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.wk-h-inner {
+  position: relative;
+  display: grid;
+  /* 見出し・仕事の段・段の間（8px あけて 1px の線）・プライベートの段。段の高さは半分ずつ */
+  grid-template-rows: auto minmax(0, 1fr) 9px minmax(0, 1fr);
+  min-width: calc(7 * 72px);
+  height: 100%;
+}
+
+/* 帯・見出し・段の中の列は、同じ7列（段の中のスクロールバーは出さない: 出すと段の中の列だけが狭くなり、見出し・帯とずれる。
+   段の中はホイール・指・キーボードのフォーカスでスクロールし、下の端で切れたカードがその印になる。開発） */
+.wk-strips,
+.wk-heads,
+.wk-cells {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+/* 列（日）の帯: 見出しから下の端まで。上に 2px の --rule-strong、列の間に 1px の --rule。休みの日は --off-fill（.cp-offday） */
+.wk-strips {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.wk-strip {
+  border-top: 2px solid var(--rule-strong);
+}
+
+.wk-strip + .wk-strip {
+  border-left: 1px solid var(--rule);
+}
+
+/* 帯の上に重ねる物（帯より前に描かない。どれも地は透き通る） */
+.wk-heads,
+.wk-tier,
+.wk-divider {
+  position: relative;
+}
+
+/* 見出し・列は帯の 1px の線の分をあけて、帯の中と同じ幅にする */
+.wk-heads > .wk-head + .wk-head,
+.wk-cells > .wk-cell + .wk-cell {
+  border-left: 1px solid transparent;
+}
+
+/* 段の間: 8px あけて 1px の --rule（10.2） */
+.wk-divider {
+  border-bottom: 1px solid var(--rule);
+}
+
+/* ---------- 日の見出し（10.2・10.4） ---------- */
+.wk-heads {
+  overflow: hidden;
+}
+
+.wk-head {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  column-gap: 4px;
+}
+
+/* 1行（52px）: 1行目に丸いラベルと日付・右に休みのチェック、下に祝日名。120px の列に入るよう、左右の余白とすき間は小さめ
+   （左右 4px・丸いラベル 38px＋4px＋「11/10」39px＋2px＋休みのチェック 28px ＝ 119px。帯の線の 1px を足して 120px） */
+.wk-head.is-rows-1 {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'day off'
+    'hol hol';
+  grid-template-rows: 24px 14px;
+  align-content: center;
+  column-gap: 2px;
+  height: 52px;
+  padding: 6px 4px 4px;
+}
+
+/* 2行（列が 120px より狭い時。64px）: 1行目に丸いラベルと日付、2行目に休みのチェックと祝日名。列が 90px ほどより狭くて
+   丸いラベルと日付が横に並ばない時は、日付を丸いラベルの下へ折り返す（64px の中に3段で収める。開発） */
+.wk-head.is-rows-2 {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'day day'
+    'off hol';
+  row-gap: 4px;
+  column-gap: 4px;
+  align-content: center;
+  height: 64px;
+  padding: 6px 4px 4px 6px;
+}
+
+.wk-head.is-rows-2 .wk-day {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+.wk-head .wk-day {
+  grid-area: day;
+}
+
+.wk-head .wk-off {
+  grid-area: off;
+}
+
+.wk-head .wk-holiday-slot {
+  grid-area: hol;
+}
+
+/* 押すとその日のデイリー（丸いラベル＋「11/8」） */
+.wk-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.wk-day .pill {
+  flex: none;
+}
+
+/* 等幅の「11/8」（13px・月日は 0 で埋めない。土曜 --sat、日曜・祝日 --sun。今日は太さ 600。7.1・7.3） */
+.wk-md {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.wk-md.cp-sun {
+  color: var(--sun);
+}
+
+.wk-md.cp-sat {
+  color: var(--sat);
+}
+
+.wk-md.is-today {
+  font-weight: 600;
+}
+
+.wk-holiday-slot {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ---------- 休みのチェック（16px の四角＋「休」10px。押せる所は周りに広げる。7.4・10.2） ---------- */
+.wk-off {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: end;
+  flex: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wk-head.is-rows-2 .wk-off {
+  justify-self: start;
+}
+
+/* 本物のチェックの欄は見えなくして、四角と「休」の上に重ねる（押せる所。マウスは 24px ほど、指は 34px 四方） */
+.wk-off-input {
+  position: absolute;
+  inset: -4px;
+  width: auto;
+  height: auto;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-off-input {
+    inset: -9px -4px;
+    min-width: var(--tap);
+    min-height: var(--tap);
+  }
+}
+
+.wk-off-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--on-accent);
+  transition:
+    background var(--dur-hover),
+    border-color var(--dur-hover);
+}
+
+.wk-off.is-on .wk-off-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.wk-off-box .wk-off-check {
+  width: 12px;
+  height: 12px;
+}
+
+.wk-off-input:focus-visible + .wk-off-box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.wk-off-text {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--off-text);
+}
+
+/* ---------- 段（10.2）: 名札と、段の中だけで縦にスクロールする7列 ---------- */
+.wk-tier {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 段の名札（24px）: 線のアイコン＋等幅の英語 11px＋日本語 11px（どれも --text-muted。休みの帯の上でも読める） */
+.wk-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.wk-tag-en {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.wk-tag-ja {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* 7日を横の段の名札は、列の帯（縦の 1px の線・休みの地）の上に重なり、日曜の列より広い（「PRIVATE プライベート」は 142px の列にも
+   入らない）。列の線が字を横切らないよう、名札の字の幅だけに --surface の地を敷く（休みの日の上でも、丸いラベルと同じく --surface。
+   領域の地も --surface なので、線と休みの地の上でだけ見える。開発） */
+.wk-tier > .wk-tag {
+  align-self: flex-start;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.wk-tier-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.wk-tier-body::-webkit-scrollbar {
+  display: none;
+}
+
+.wk-cells {
+  min-height: 100%;
+}
+
+/* 1日の列（落とせる所。上からレーン → 1日のカード → 「＋」） */
+.wk-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-bottom: 4px;
+}
+
+/* ディープダークで休みの地の上に淡い字（--text-faint）を出す所は --text-muted で（4.5。帯の地の上に重ねて描くので、ここでも） */
+:root[data-theme='deep-dark'] .wk-cell.is-off,
+:root[data-theme='deep-dark'] .wk-head.is-off {
+  --text-faint: var(--text-muted);
+}
+
+/* レーン（7.8）: レーンの数 × 40px（高さは WeekHorizontal が style で入れる。どの列も同じ） */
+.wk-lanes {
+  position: relative;
+  flex: none;
+}
+
+.wk-lane {
+  position: relative;
+  height: 40px;
+}
+
+/* 1日のカードの並び（7.5 の順・間 4px）。カードの幅は列の幅 − 8px */
+.wk-singles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+/* 落とせる日（ドラッグの間。地を --accent-soft にして 1px の --accent の点線の枠、今その上にある日は線の枠。7.11・D25） */
+.wk-cell[data-drop='ok'],
+.wk-cell[data-drop='hover'],
+.wk-half[data-drop='ok'],
+.wk-half[data-drop='hover'] {
+  background: var(--accent-soft);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.wk-cell[data-drop='hover'],
+.wk-half[data-drop='hover'] {
+  outline-style: solid;
+}
+
+/* ---------- 線（2px・レーンのカードの高さの真ん中 18px。7.8・D42） ---------- */
+.wk-line {
+  position: absolute;
+  top: 17px;
+  height: var(--span-w);
+  background: var(--wk-line);
+  pointer-events: none;
+}
+
+/* 始点のカード・受けた表示の右の端（列の幅 − 4px）から列の右の端まで */
+.wk-line.is-from-card {
+  left: calc(100% - 4px);
+  right: 0;
+}
+
+/* 間の日: 列の左の端（帯の 1px の線の上も）から右の端まで */
+.wk-line.is-through {
+  left: -1px;
+  right: 0;
+}
+
+/* 締め切り日: 列の左の端から真ん中の●まで */
+.wk-line.is-to-dot {
+  left: -1px;
+  right: 50%;
+}
+
+/* 次の週へ続く土曜: 列の左の端から右の端の「>」まで */
+.wk-line.is-to-arrow {
+  left: -1px;
+  right: 12px;
+}
+
+/* ===================== 予定の部品（WeekCard.tsx） ===================== */
+
+/* カード（10.2）: 幅は列の幅 − 8px、高さ 44px 以上、角丸 6px、余白 上下 6px・左 12px（点線の丸 16px と間 6px を足して 34px）・右 8px、
+   地は土台の色、ラベルの左の一辺 4px。文字の選択と iPhone の長押しのメニューを止める（7.11） */
+.wk-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'open marks';
+  align-items: start;
+  column-gap: 4px;
+  min-height: 44px;
+  padding: 6px 8px 6px 34px;
+  border-radius: var(--radius-sm);
+  background: var(--kind-soft);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.wk-card[data-label] {
+  box-shadow: inset var(--edge-w) 0 0 var(--label);
+}
+
+/* ディープダークのカードは地が面とほぼ同じなので 1px の --border の枠も（ラベルの一辺はその上。4.5・10.2） */
+:root[data-theme='deep-dark'] .wk-card {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+:root[data-theme='deep-dark'] .wk-card[data-label] {
+  box-shadow:
+    inset var(--edge-w) 0 0 var(--label),
+    inset 0 0 0 1px var(--border);
+}
+
+/* 完了（7.9）: 地を --surface にして 1px の --border の枠、字は --done-text、ラベルの一辺は残す。ディープダークは地を --done-bg */
+.wk-card.is-done {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.wk-card.is-done[data-label] {
+  box-shadow:
+    inset var(--edge-w) 0 0 var(--label),
+    inset 0 0 0 1px var(--border);
+}
+
+:root[data-theme='deep-dark'] .wk-card.is-done {
+  background: var(--done-bg);
+}
+
+.wk-card.is-done .cp-time,
+.wk-card.is-done .cp-marks {
+  color: var(--done-text);
+}
+
+/* 点線の丸（16px）: 左上。押せる所は丸の周りに、カードの枠の中だけ（32 × 28px。4.11・D08） */
+.wk-card .wk-done {
+  position: absolute;
+  z-index: 1;
+  left: 4px;
+  top: 0;
+  width: 32px;
+  height: 28px;
+}
+
+/* 押すと詳細（12.3）: 件名と時刻を包むボタン。::after でカード全体に広げる（点線の丸・AI の札はその上の別のボタン。D19） */
+.wk-open {
+  grid-area: open;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wk-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+}
+
+.wk-open:focus-visible {
+  outline: none;
+}
+
+.wk-open:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 件名（13px・500・行の高さ 1.35・2行まで。4.7・10.2） */
+.wk-card .cp-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* 時刻（7.7）: 列が狭くて「10:00–11:30」が入らない時は「–」の後で折り返す（切らない） */
+.wk-card .wk-time {
+  white-space: normal;
+}
+
+/* 印（右上。〆・ロック・AI の札。7.7）: 押すと詳細（〆・ロックは押せない字なので下のボタンへ通す）。AI の札だけは自分のボタン */
+.wk-marks {
+  grid-area: marks;
+  position: relative;
+  z-index: 1;
+  margin-top: 2px;
+  pointer-events: none;
+}
+
+.wk-marks .cp-ai {
+  pointer-events: auto;
+}
+
+/* 指の端末では AI の札の押せる所を、カードの枠の中で 34px ほどまで広げる（カードどうしの 4px のすき間には少し掛かるが、隣のカード
+   には掛からない。始点のカード・受けた表示は 36px の中に収める。AMB-CAL-15・D08） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-card .wk-marks .cp-ai::after,
+  .wk-recv .wk-marks .cp-ai::after {
+    inset: -10px -6px;
+  }
+
+  /* 始点のカードは札が上の端の近くにあるので、上はカードの上の端まで・下へ広げる */
+  .wk-card.is-start .wk-marks .cp-ai::after {
+    inset: -5px -6px -13px;
+  }
+
+  /* 印を下の行に置いた始点のカード・受けた表示（is-marks-low）は、札が下の端の近くにあるので上へ広げる（36px の中に収める） */
+  .wk-card.is-start.is-marks-low .wk-marks .cp-ai::after {
+    inset: -13px -6px -4px;
+  }
+
+  .wk-recv.is-marks-low .wk-marks .cp-ai::after {
+    inset: -14px -6px -2px;
+  }
+}
+
+/* 列が狭くて件名が細くなりすぎる時（weekModel.ts の cardLayout が stacked・marks-below）: 印は点線の丸の行の右の端に、件名と
+   時刻はその下の行に、カードの左の余白 12px から（右上の印・左上の丸はそのまま） */
+.wk-card.is-stacked {
+  grid-template-areas:
+    '. marks'
+    'open open';
+  row-gap: 2px;
+  padding-left: 12px;
+}
+
+.wk-card.is-stacked::before {
+  content: '';
+  grid-column: 1;
+  grid-row: 1;
+  height: 16px;
+}
+
+.wk-card.is-stacked .wk-marks {
+  display: flex;
+  align-items: center;
+  height: 16px;
+  margin-top: 0;
+}
+
+/* 丸の行にも印が入らない時（AI の札の付いたカードで列がとても狭い時）は、印をいちばん下の右に */
+.wk-card.is-marks-below {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    '.'
+    'open'
+    'marks';
+}
+
+.wk-card.is-marks-below .wk-marks {
+  justify-self: end;
+}
+
+/* ---------- 始点のカード（7.8・10.2）: 高さ 36px・上下の余白 3px・件名 12px（1.2・1行）・期間 10px（等幅・1.2） ---------- */
+.wk-card.is-start {
+  align-items: center;
+  height: 36px;
+  min-height: 0;
+  margin: 0 4px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+/* 土曜に始まって次の週へ続く時は 14px 縮めて、あいた所に「>」（線は引かない） */
+.wk-card.is-start.is-shrink {
+  margin-right: 18px;
+}
+
+.wk-card.is-start .wk-done {
+  height: 36px;
+}
+
+.wk-card.is-start .wk-open {
+  gap: 0;
+}
+
+.wk-card.is-start .cp-title {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.wk-card.is-start .wk-marks {
+  align-self: start;
+  margin-top: 2px;
+}
+
+.wk-period {
+  font-size: 10px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 列が狭くて、印を件名の横に置くと件名が細くなりすぎる時（weekModel.ts の laneMarksBelow）: 件名は横の幅を全部使い、印は期間の行の
+   右の端に（期間はその分だけ右をあける。幅は WeekCard.tsx が --wk-marks-w に入れる。開発） */
+.wk-card.is-start.is-marks-low {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'open';
+}
+
+.wk-card.is-start.is-marks-low .wk-marks {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  margin: 0;
+}
+
+.wk-card.is-start.is-marks-low .wk-period {
+  padding-right: var(--wk-marks-w, 0px);
+}
+
+/* ---------- 受けた表示（7.8）: カードと同じ大きさ・地は透き通る・1px の点線の枠（線と同じ色）・「‹ 件名」12px・--text-muted・1行 ---------- */
+.wk-recv {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  margin: 0 4px;
+  padding: 0 8px;
+  border: 1px dashed var(--wk-line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.wk-recv .cp-title {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.wk-recv .wk-marks {
+  margin-top: 0;
+}
+
+/* 列が狭くて、印を件名の横に置くと件名が細くなりすぎる時（laneMarksBelow）: 「‹ 件名」の下の行の右の端に印（開発） */
+.wk-recv.is-marks-low {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+}
+
+.wk-recv.is-marks-low .wk-open {
+  flex: none;
+}
+
+.wk-recv.is-marks-low .wk-marks {
+  align-self: flex-end;
+}
+
+/* 日曜に終わる時は右の端の中に●（線は引かない） */
+.wk-recv.has-dot {
+  padding-right: 22px;
+}
+
+.wk-recv > .wk-end {
+  right: 0;
+  top: 3px;
+  width: 22px;
+  height: 28px;
+}
+
+/* 完了: 点線の枠と字を --done-text（7.9） */
+.wk-recv.is-done .cp-marks {
+  color: var(--done-text);
+}
+
+/* ---------- 終点の●（7.8）: 直径 10px・色は線と同じ・押せる所 28px 四方（列の横の真ん中、線の高さ） ---------- */
+.wk-end {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.wk-lane > .wk-end {
+  left: calc(50% - 14px);
+  top: 4px;
+}
+
+.wk-end .cp-dot,
+.wk-end .cp-dot[data-label],
+.wk-over .cp-dot,
+.wk-over .cp-dot[data-label] {
+  background: var(--wk-line);
+}
+
+@media (hover: hover) {
+  .wk-end:hover .cp-dot {
+    box-shadow: 0 0 0 1.5px var(--wk-line);
+  }
+}
+
+.wk-end:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---------- 次の週へ続く「>」（等幅 12px・線と同じ色。7.8） ---------- */
+.wk-edge {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--wk-line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wk-lane > .wk-edge {
+  right: 0;
+  top: 4px;
+}
+
+.wk-edge-glyph {
+  display: block;
+}
+
+.wk-edge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---------- 「＋」の行（28px。押すとすばやく足す。12.1） ---------- */
+.wk-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 28px;
+  margin: 4px 4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    background var(--dur-hover),
+    color var(--dur-hover),
+    opacity var(--dur-hover);
+}
+
+.wk-add .wk-add-icon {
+  width: 14px;
+  height: 14px;
+}
+
+@media (hover: hover) {
+  .wk-add:hover {
+    background: var(--surface-3);
+    color: var(--text-muted);
+  }
+}
+
+.wk-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 7日を横の PC（上に載せられる端末）では、列に乗せた時（・中にフォーカスがある時）だけ出す。指の端末ではいつも（D43） */
+@media (hover: hover) and (pointer: fine) {
+  .wk-h .wk-cell .wk-add {
+    opacity: 0;
+  }
+
+  .wk-h .wk-cell:hover .wk-add,
+  .wk-h .wk-cell:focus-within .wk-add {
+    opacity: 1;
+  }
+}
+
+/* ===================== 7日を縦（S。10.4） ===================== */
+.wk-v {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* いちばん上の段の名札の行（24px・上に固定）: 左半分「WORK 仕事」、右半分「PRIVATE プライベート」 */
+.wk-vtags {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 24px;
+  background: var(--surface);
+}
+
+.wk-vtags .wk-tag {
+  padding: 0 4px;
+}
+
+.wk-vtags .wk-tag + .wk-tag {
+  padding-left: 8px;
+}
+
+/* 日のかたまり（上に 2px の --rule-strong。休みの日はかたまりの地を --off-fill（.cp-offday）） */
+.wk-block {
+  border-top: 2px solid var(--rule-strong);
+  /* 見出しへ移った時に、上に固定した名札の行の下に隠れないように */
+  scroll-margin-top: 24px;
+}
+
+/* かたまりの見出し（32px）: 丸いラベル＋「11/8」＋祝日名、右の端に休みのチェック */
+.wk-head.is-block {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'day hol off';
+  height: 32px;
+  padding: 0 8px 0 4px;
+  column-gap: 8px;
+  /* 見出しへ移った時に、上に固定した名札の行（24px）とかたまりの上の線（2px）の下に出す */
+  scroll-margin-top: 26px;
+}
+
+.wk-head.is-block .wk-holiday-slot {
+  align-items: center;
+}
+
+/* かたまりの中: 左が仕事・右がプライベート（各 50%・間に 1px の --rule） */
+.wk-block-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* その日・その区分の半分（落とせる所。余白も含めて全体）。左にレール（10px × レーンの数）。上から並べる物の大きさとすき間は
+   weekModel.ts の WEEK_PX（レールの線の位置をそこから決めるので、ここと同じ値にする） */
+.wk-half {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 4px 4px 4px;
+}
+
+.wk-half + .wk-half {
+  border-left: 1px solid var(--rule);
+}
+
+.wk-v .wk-card.is-start,
+.wk-v .wk-recv {
+  margin: 0;
+  flex: none;
+}
+
+.wk-v .wk-add {
+  margin: 0;
+}
+
+/* レールの縦の線（2px。左から 4・14・24px。位置と長さは WeekVertical が style で入れる） */
+.wk-rail {
+  position: absolute;
+  width: var(--span-w);
+  background: var(--wk-line);
+  pointer-events: none;
+}
+
+/* レールの中の締め切り日の●（押せる所は 18 × 28px。隣の半分・カードに掛からない大きさ） */
+.wk-end.is-rail {
+  width: 18px;
+  height: 28px;
+}
+
+/* 土曜の下の端の下向きの矢印（「>」を 90度回した物） */
+.wk-edge.is-down {
+  bottom: 0;
+  width: 18px;
+  height: 20px;
+}
+
+.wk-edge.is-down .wk-edge-glyph {
+  rotate: 90deg;
+}
+
+/* 4本目のレーンからの予定の「● 件名」の行（12px・--text-muted・20px。終点の●と同じく押すと詳細） */
+.wk-over {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 20px;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.wk-over.is-done {
+  color: var(--done-text);
+}
+
+.wk-over-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wk-over:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
