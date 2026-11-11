@@ -3,7 +3,8 @@
 // - 日の見出し（日付・休み・今日・祝日）、区分ごとの複数日の予定のレーン（src/domain/tracks.ts）と日ごとの部分、1日の予定（7.5 の順）
 // - 7日を横（L・M）: 1日の列の中のレーンの行（高さ 40px。どの列も同じ高さ）と、その行の線の引き方（カード・●・＞との位置）
 // - 7日を縦（S）: 日のかたまりのその半分の、上に並べる物（「● 件名」の行・始点のカード・受けた表示）とレールの縦の線の位置（px）
-// - 見出しの行の数（列が 120px より狭いと2行）、始点のカードの期間が入るか（入らなければ日付だけ）
+// - 見出しの行の数（列が 120px より狭いと2行）、始点のカードの期間が入るか（入らなければ日付だけ）、列が狭くて始点のカード・
+//   受けた表示の件名が1行に4字も入らない時は件名を2行にするか
 // 日付は 'YYYY-MM-DD' の文字のまま比べる（端末の時差で動かない。6.4）
 import { weekSingles, type CalItem } from '../../../domain/calendar'
 import { addDaysYmd, mdLabel, weekDates } from '../../../domain/dates'
@@ -12,6 +13,7 @@ import { hasDueMark } from '../../../domain/items'
 import { timeLabel } from '../../../domain/itemText'
 import { assignLanes, laneParts, RAIL_MAX, RAIL_PX, railX, weekLaneItems, type DayPart, type Lane } from '../../../domain/tracks'
 import { ITEM_KINDS, type ID, type Item, type ItemKind } from '../../../domain/types'
+import { displayTitle } from '../common/parts/itemLook'
 
 /** ウィークリーの大きさ（px。docs/SPEC.md の 7.8・10.2・10.4。CSS の week.css と同じ値） */
 export const WEEK_PX = {
@@ -169,6 +171,105 @@ export function laneMarksBelow(textPx: number, item: Pick<Item, 'origin' | 'star
 export function receivedTextPx(cardTextPx: number, dotIn = false): number {
   if (!(cardTextPx > 0)) return 0
   return cardTextPx + CARD_CHROME - 2 * 1 - 2 * 8 - (dotIn ? 22 - 8 : 0)
+}
+
+// ---------- 列が狭い時の始点のカード・受けた表示（件名を2行に。開発） ----------
+
+/**
+ * 始点のカード・受けた表示（高さ 36px）の件名（12px）を1行に置く時に、残したい幅（px。4字と「…」）。これより狭い時（L の
+ * 900〜1200px ほどのウインドウ・M の、列が 110px ほどより狭い時）は件名を2行にする（開発。1行では1〜2字しか見えないため）
+ */
+export const MIN_LANE_TITLE_PX = 60
+/** 件名を2行にした時の2行目に残したい幅（px。2字）。2行目の右の端に印を置くと、これだけ残らない時は件名を1行目だけにする */
+export const MIN_SECOND_LINE_PX = 24
+/** 受けた表示の頭の「‹ 」の幅のおおよそ（px） */
+const RECEIVED_PREFIX_PX = 8
+/**
+ * 件名を2行にした始点のカードの余白と、1行目の頭の下げ（px。week.css と同じ値）: 点線の丸はカードの左の端から 8px（ラベルの
+ * 一辺 4px の右に 4px あけて）、右の余白 6px。1行目は丸（16px）とすき間 4px の分だけ下げ、2行目は丸の下へ回り込んで左の余白から
+ */
+export const TWO_LINES = { padLeft: 8, padRight: 6, indent: 16 + 4 } as const
+
+/** 件名を2行にした始点のカードの、件名の幅（2行目の幅。1行目は TWO_LINES.indent だけ狭い。textPx は丸の横の字の幅） */
+export function twoLineTitlePx(textPx: number): number {
+  return textPx + CARD_CHROME - TWO_LINES.padLeft - TWO_LINES.padRight
+}
+
+/**
+ * 始点のカードを2行の並べ方にするか（開発）: 点線の丸の横の1行に4字と「…」が入らない時（textPx < MIN_LANE_TITLE_PX）。
+ * textPx は horizontalCardTextPx・verticalCardTextPx（測れていない 0 の時は 10.2 のとおり）
+ */
+export function startTwoLines(textPx: number): boolean {
+  return textPx > 0 && textPx < MIN_LANE_TITLE_PX
+}
+
+/**
+ * 件名の字の幅のおおよそ（px）。かな・漢字・全角の字は字の大きさの 1 倍（日本語の書体はどれもちょうど 1em）、それ以外（英数字・
+ * 記号）は多めに見て 0.7 倍。2行にした始点のカードで、件名が1行目に入るかを決めるのに使う（入れる所は TITLE_FIT_MARGIN だけ狭く
+ * 見る。多めに見て外れても、件名を2行にするだけで切れない）
+ */
+export function titleTextPx(text: string, fontPx = 12): number {
+  let w = 0
+  for (const ch of text) w += (ch.codePointAt(0) ?? 0) >= 0x2e80 ? fontPx : 0.7 * fontPx
+  return w
+}
+
+/** 件名が1行目に入るかを決める時に、入れる所から引いておく分（2列目からの列は、帯の 1px の線の分だけ狭い） */
+const TITLE_FIT_MARGIN = 1
+
+/**
+ * 始点のカードの並べ方（7.8・10.2。CSS のクラス is-two-lines・has-period・has-marks・is-marks-low）:
+ * - layout 'side': 10.2 のとおり（丸の右に件名 1行、下の行に期間。期間が入らない時は日付だけ。印が件名を細くしすぎる時は、印を
+ *   期間の行の右の端へ。その時に期間の行に2字も残らない時は期間を出さない）
+ * - layout 'wrap': 列が狭い時（startTwoLines。開発）。点線の丸はカードの左上、件名の1行目は丸の右から、2行目は丸の下へ回り込んで
+ *   左の余白から。印は2行目の右の端（2行目はその分だけ短い）。期間は出さない（線と●で見え、時刻は詳細で見る。読み上げには残す）が、
+ *   件名が1行目に入り、期間（日付だけでも）が2行目にそのまま入る時（短い件名）は2行目に期間。印が広くて2行目に2字も残らない時
+ *   （AI の札「Claude」の付いた物の、とても狭い列）は、件名を1行目だけにして2行目は印だけ
+ */
+export interface StartCardLook {
+  layout: 'side' | 'wrap'
+  /** 件名の行の数 */
+  titleLines: 1 | 2
+  /** 期間: そのまま・日付だけ・出さない（読み上げだけ） */
+  period: 'full' | 'dates' | 'hidden'
+  /** 印を期間の行（2行目）の右の端に置く */
+  marksLow: boolean
+}
+
+/** 始点のカードの並べ方（c はその予定、date はカードを出す日、textPx は丸の横の字の幅。測れていない 0 の時は 10.2 のとおり） */
+export function startCardLook(c: CalItem, date: string, textPx: number): StartCardLook {
+  const item = c.item
+  const marks = marksPx(item)
+  if (!startTwoLines(textPx)) {
+    const marksLow = laneMarksBelow(textPx, item)
+    const room = marksLow ? textPx - marks : textPx
+    const period = marksLow && room < MIN_SECOND_LINE_PX ? 'hidden' : periodDatesOnly(c, date, textPx) ? 'dates' : 'full'
+    return { layout: 'side', titleLines: 1, period, marksLow }
+  }
+  const full = twoLineTitlePx(textPx)
+  const line2 = full - marks
+  const wrap = (titleLines: 1 | 2, period: StartCardLook['period']): StartCardLook => ({
+    layout: 'wrap',
+    titleLines,
+    period,
+    marksLow: marks > 0,
+  })
+  if (line2 < MIN_SECOND_LINE_PX) return wrap(1, 'hidden')
+  if (titleTextPx(displayTitle(item)) <= full - TWO_LINES.indent - TITLE_FIT_MARGIN) {
+    const fits = (datesOnly: boolean) => monoTextPx(timeLabel(c, { on: date, datesOnly })) <= line2 - FIT_MARGIN
+    if (fits(false)) return wrap(1, 'full')
+    if (item.startTime && fits(true)) return wrap(1, 'dates')
+  }
+  return wrap(2, 'hidden')
+}
+
+/**
+ * 受けた表示の「‹ 件名」を2行にするか（開発）: 「‹ 」の後に4字と「…」が入らない時。印は2行目の右の端（2行目はその分だけ短い。
+ * 2字も残らない時は2行にせず、印を件名の下の行に置く laneMarksBelow のまま）。textPx は receivedTextPx（測れていない 0 の時は1行）
+ */
+export function receivedTwoLines(textPx: number, item: Pick<Item, 'origin' | 'start' | 'due' | 'locked' | 'by' | 'ai'>): boolean {
+  if (!(textPx > 0) || textPx - RECEIVED_PREFIX_PX >= MIN_LANE_TITLE_PX) return false
+  return textPx - marksPx(item) >= MIN_SECOND_LINE_PX
 }
 
 // ---------- 週の形 ----------

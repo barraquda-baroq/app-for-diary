@@ -1,15 +1,17 @@
 // ウィークリーの予定の部品（docs/SPEC.md の 7.7〜7.11・10.2・10.4・12.3・12.5・4.3・4.9・4.11）。どれも記録ごとの React.memo で、
 // 受け取るのは予定（CalItem）と、その時の数や真偽だけ（見た目の計算の入れ物は渡さない。FRAME-284）。
 // - WeekCard: 1日の予定のカード（点線の丸・件名 2行まで・時刻・右上の印）
-// - StartCard: 複数日の始点のカード（36px・件名 1行・期間。土曜に始まって次の週へ続く時は 14px 縮める）
-// - ReceivedCard: 前の週から続く物の受けた表示（地は透き通り・点線の枠・「‹ 件名」。日曜に終わる時は右の端の中に●）
+// - StartCard: 複数日の始点のカード（36px・件名 1行・期間。土曜に始まって次の週へ続く時は 14px 縮める。列が狭い時は期間を出さずに
+//   件名を2行。weekModel.ts の startCardLook）
+// - ReceivedCard: 前の週から続く物の受けた表示（地は透き通り・点線の枠・「‹ 件名」。日曜に終わる時は右の端の中に●。列が狭い時は
+//   件名を2行。receivedTwoLines）
 // - EndDot: 終点の●（10px・押せる所 28px）。OverflowRow: S の4本目のレーンからの「● 件名」の行（●と同じ働き）
-// - EdgeArrow: 次の週へ続く「>」（等幅 12px。S は下向き）。AddRow: いちばん下の「＋」の行
+// - EdgeArrow: 次の週へ続く「>」（等幅 12px。S は下向き）。AddRow: いちばん下の「＋」の行（押すとその場ですばやく足すに替わる）
 // カードの形（D19・WP11s）: 入れ物（div）に掴む所（useItemDrag の ref・grabProps）と目立たせる所（useFlashTarget）を付け、中に
 // 「押すと詳細」のボタン（字を包み、::after でカード全体に広げる）と、その上に重ねた点線の丸・AI の札（別のボタン）を並べる
 // （ボタンの中にボタンを入れない）。入れ物とその上の要素には transform・filter・contain を付けない（掴んだカードがずれる。G9）。
 // 受けた表示と＞は掴めない（押すと詳細だけ。CALENDAR-176）
-import { memo, useCallback, type CSSProperties } from 'react'
+import { memo, useCallback, useLayoutEffect, useRef, type CSSProperties } from 'react'
 import type { CalItem } from '../../../domain/calendar'
 import { jaDateLabel, mdLabel } from '../../../domain/dates'
 import { ITEM_KIND_LABELS } from '../../../domain/trash'
@@ -25,12 +27,13 @@ import {
   ItemTitle,
   itemAttrs,
   LabelDot,
+  QuickAdd,
   useFlashTarget,
 } from '../common/parts'
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import { useItemDrag, type DragHandle, type WeekCtx } from './dnd'
-import { cardLayout, laneMarksBelow, marksPx, periodDatesOnly } from './weekModel'
+import { cardLayout, laneMarksBelow, marksPx, receivedTwoLines, startCardLook } from './weekModel'
 import './week.css'
 
 /** 掴む所と目立たせる所を1つの要素に付ける ref（目立たせるのは登録・ドラッグで移った予定。4.9） */
@@ -103,17 +106,22 @@ export interface StartCardProps {
   shrink?: boolean
   /**
    * 点線の丸の横の字の幅（px。縮める時はその分も引いた幅）。期間を日付だけにするか（入らない時。10.2）と、印を件名の横に置くか
-   * 期間の行の右に置くかを決める（weekModel.ts の periodDatesOnly・laneMarksBelow）。測れていない時は 0
+   * 期間の行の右に置くか、列が狭くて件名を2行にするかを決める（weekModel.ts の startCardLook）。測れていない時は 0
    */
   textPx?: number
 }
 
-/** 複数日の始点のカード（7.8・10.2。36px・件名 1行・下の行に期間。左の点線の丸で予定全体を完了） */
+/**
+ * 複数日の始点のカード（7.8・10.2。36px・件名 1行・下の行に期間。左の点線の丸で予定全体を完了）。列が狭くて丸の横に4字も入らない時は
+ * 件名を2行（1行目は丸の右から、2行目は丸の下へ回り込む。印は2行目の右の端）。期間は、件名が1行目に入って期間が2行目に入る時だけ
+ * 2行目に出し、ほかは読み上げにだけ残す（weekModel.ts の startCardLook。開発）
+ */
 export const StartCard = memo(function StartCard({ c, week, date, shrink = false, textPx = 0 }: StartCardProps) {
   const item = c.item
   const open = useOpenDetail(item.id)
   const { ref, drag } = useItemRef(item, 'start', week, true)
-  const low = laneMarksBelow(textPx, item)
+  const look = startCardLook(c, date, textPx)
+  const two = look.layout === 'wrap'
   return (
     <div
       {...drag.grabProps}
@@ -122,18 +130,26 @@ export const StartCard = memo(function StartCard({ c, week, date, shrink = false
         'wk-card',
         'is-start',
         shrink && 'is-shrink',
-        low && 'is-marks-low',
+        two && 'is-two-lines',
+        two && look.period !== 'hidden' && 'has-period',
+        two && marksPx(item) > 0 && 'has-marks',
+        look.marksLow && 'is-marks-low',
         item.done && 'is-done',
         drag.isDragging && 'is-dragging',
       )}
-      style={low ? marksGap(item) : undefined}
+      style={look.marksLow ? marksGap(item) : undefined}
       {...itemAttrs(item)}
       data-testid={testIds.weekStart(item.id)}
     >
       <DoneToggle item={item} className="wk-done" />
       <button type="button" className="wk-open" onClick={open}>
-        <ItemTitle item={item} lines={1} />
-        <ItemTime c={c} on={date} datesOnly={periodDatesOnly(c, date, textPx)} className="wk-period" />
+        <ItemTitle item={item} lines={look.titleLines} />
+        <ItemTime
+          c={c}
+          on={date}
+          datesOnly={look.period === 'dates'}
+          className={look.period === 'hidden' ? 'visually-hidden' : 'wk-period'}
+        />
       </button>
       <ItemMarks item={item} className="wk-marks" />
     </div>
@@ -149,20 +165,33 @@ export interface ReceivedCardProps {
   textPx?: number
 }
 
-/** 前の週から続いている物の受けた表示（7.8。地は透き通り・1px の点線の枠・「‹ 件名」12px・完了の丸なし。掴めない） */
+/**
+ * 前の週から続いている物の受けた表示（7.8。地は透き通り・1px の点線の枠・「‹ 件名」12px・完了の丸なし。掴めない）。列が狭くて
+ * 「‹ 」の後に4字も入らない時は件名を2行（印は2行目の右の端。開発）
+ */
 export const ReceivedCard = memo(function ReceivedCard({ c, week, dotIn = false, textPx = 0 }: ReceivedCardProps) {
   const item = c.item
   const open = useOpenDetail(item.id)
   const flashRef = useFlashTarget<HTMLDivElement>(flashKey.item(item.id))
+  const two = receivedTwoLines(textPx, item)
+  const marks = marksPx(item) > 0
   return (
     <div
       ref={flashRef}
-      className={cls('wk-recv', dotIn && 'has-dot', laneMarksBelow(textPx, item) && 'is-marks-low', item.done && 'is-done')}
+      className={cls(
+        'wk-recv',
+        dotIn && 'has-dot',
+        two && 'is-two-lines',
+        two && marks && 'has-marks',
+        !two && laneMarksBelow(textPx, item) && 'is-marks-low',
+        item.done && 'is-done',
+      )}
+      style={two && marks ? marksGap(item) : undefined}
       {...itemAttrs(item)}
       data-testid={testIds.weekReceived(item.id)}
     >
       <button type="button" className="wk-open" onClick={open} aria-label={`${displayTitle(item)}（前の週から続く予定）`}>
-        <ItemTitle item={item} received muted lines={1} />
+        <ItemTitle item={item} received muted lines={two ? 2 : 1} />
       </button>
       <ItemMarks item={item} className="wk-marks" />
       {dotIn ? <EndDot c={c} week={week} /> : null}
@@ -262,13 +291,45 @@ export const EdgeArrow = memo(function EdgeArrow({ item, down = false, className
 export interface AddRowProps {
   date: string
   kind: ItemKind
+  /** この「＋」の行の所に、すばやく足すの入力欄を開いている（12.1・D44） */
+  open?: boolean
+  /** 「＋」を押した（すばやく足すを開く） */
   onAdd?: (date: string, kind: ItemKind) => void
+  /** すばやく足すを閉じた（Esc・入力欄の外を押した） */
+  onClose?: () => void
 }
 
-/** いちばん下の「＋」の行（28px。押すとその日・その段のすばやく足す。7日を横の PC では列に乗せた時だけ出す。10.2・D43） */
-export function AddRow({ date, kind, onAdd }: AddRowProps) {
+/**
+ * いちばん下の「＋」の行（28px。7日を横の PC では列に乗せた時だけ出す。10.2・D43）。押すと、その場でその日・その段のすばやく足す
+ * （1行の入力欄。12.1）に替わる（D44）。Esc で閉じた時は「＋」にフォーカスを戻す（キーボードで続けて操作できるように）。
+ * 外を押して閉じた時は戻さない（押した所の操作のまま）
+ */
+export function AddRow({ date, kind, open = false, onAdd, onClose }: AddRowProps) {
+  const button = useRef<HTMLButtonElement>(null)
+  /** Esc で閉じた（入力欄の Esc は下へ渡らないので、先に捕まえて覚える） */
+  const byEsc = useRef(false)
+  const wasOpen = useRef(open)
+  useLayoutEffect(() => {
+    if (wasOpen.current && !open && byEsc.current) button.current?.focus({ preventScroll: true })
+    wasOpen.current = open
+    byEsc.current = false
+  }, [open])
+
+  if (open) {
+    return (
+      <div
+        className="wk-quick"
+        onKeyDownCapture={(e) => {
+          byEsc.current = e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229
+        }}
+      >
+        <QuickAdd date={date} kind={kind} onClose={() => onClose?.()} />
+      </div>
+    )
+  }
   return (
     <button
+      ref={button}
       type="button"
       className="wk-add"
       onClick={() => onAdd?.(date, kind)}

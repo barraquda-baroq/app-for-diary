@@ -13,6 +13,18 @@
   min-width: 0;
 }
 
+/* 指で押した時にブラウザが重ねる青い地（Android の Chrome）を出さない（押すとすぐ詳細・完了・入力欄に替わる。マンスリーと同じ） */
+.wk-card,
+.wk-recv,
+.wk-end,
+.wk-edge,
+.wk-over,
+.wk-add,
+.wk-day,
+.wk-off {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* 線・●・＞の色（7.8・4.3）: ラベルの色、無ければ土台の色（--work-line／--private-line）、完了したら --done-text */
 .wk-lane,
 .wk-recv,
@@ -521,11 +533,13 @@
   outline-offset: 2px;
 }
 
-/* 件名（13px・500・行の高さ 1.35・2行まで。4.7・10.2） */
+/* 件名（13px・500・行の高さ 1.35・2行まで。4.7・10.2）。2行目に1字だけ残さない（pretty。狭い列の「買い出／し」を「買い／出し」に。
+   効かないブラウザはふつうの折り返し。開発） */
 .wk-card .cp-title {
   font-size: 13px;
   font-weight: 500;
   line-height: 1.35;
+  text-wrap: pretty;
 }
 
 /* 時刻（7.7）: 列が狭くて「10:00–11:30」が入らない時は「–」の後で折り返す（切らない） */
@@ -559,12 +573,15 @@
     inset: -5px -6px -13px;
   }
 
-  /* 印を下の行に置いた始点のカード・受けた表示（is-marks-low）は、札が下の端の近くにあるので上へ広げる（36px の中に収める） */
-  .wk-card.is-start.is-marks-low .wk-marks .cp-ai::after {
+  /* 印を下の行に置いた始点のカード・受けた表示（is-marks-low・is-two-lines）は、札が下の端の近くにあるので上へ広げる
+     （36px の中に収める） */
+  .wk-card.is-start.is-marks-low .wk-marks .cp-ai::after,
+  .wk-card.is-start.is-two-lines .wk-marks .cp-ai::after {
     inset: -13px -6px -4px;
   }
 
-  .wk-recv.is-marks-low .wk-marks .cp-ai::after {
+  .wk-recv.is-marks-low .wk-marks .cp-ai::after,
+  .wk-recv.is-two-lines .wk-marks .cp-ai::after {
     inset: -14px -6px -2px;
   }
 }
@@ -664,6 +681,73 @@
   padding-right: var(--wk-marks-w, 0px);
 }
 
+/* 列が狭くて、丸の横の1行に件名が4字も入らない時（weekModel.ts の startCardLook の 'wrap'。L の 900〜1200px ほどのウインドウ・M）:
+   件名を2行に。点線の丸はカードの左の端から 8px・1行目の高さに、1行目は丸の右から（text-indent 20px）、2行目は丸の下へ回り込んで
+   左の余白 8px から。中身はいつも2行の高さ（28.8px）を取り、丸と1行目の高さをそろえる。期間は出さない（読み上げだけ）が、件名が
+   1行目に入って期間が2行目に入る時（has-period）は2行目に期間。印は2行目の右の端（is-marks-low と同じ。下の浮かせた物で2行目だけを
+   その分短くする）。2行目に1字だけ残さない（pretty。.wk-card .cp-title）。高さ 36px・線の高さ 18px（D42）は変えない（開発） */
+.wk-card.is-start.is-two-lines {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'open';
+  padding-left: 8px;
+  padding-right: 6px;
+}
+
+.wk-card.is-start.is-two-lines .wk-done {
+  left: 2px;
+  top: 1px;
+  width: 28px;
+  height: 20px;
+}
+
+.wk-card.is-start.is-two-lines .cp-title {
+  text-indent: 20px;
+}
+
+.wk-card.is-start.is-two-lines .cp-lines-2 {
+  min-height: 2.4em;
+}
+
+/* 件名が1行目だけの時（2行目は期間、または印だけ）。印だけの時も2行目の高さ（14.4px）をあけて、丸と1行目の高さをそろえる
+   （件名の箱を2行の高さにすると、1行で切った件名の続きが2行目に見えてしまうので、箱の外の余白で） */
+.wk-card.is-start.is-two-lines:not(.has-period) .cp-lines-1 {
+  margin-bottom: 1.2em;
+}
+
+.wk-card.is-start.is-two-lines.has-period .wk-period {
+  line-height: 14.4px;
+}
+
+/* 印は2行目の右の端（高さ 14px の行の真ん中を2行目の真ん中に） */
+.wk-card.is-start.is-two-lines .wk-marks,
+.wk-recv.is-two-lines .wk-marks {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  height: 14px;
+  margin: 0;
+}
+
+/* 2行の件名の2行目だけを印の幅（--wk-marks-w）だけ短くする: 1行目の高さの幅 0 の浮かせた物の下に、印の幅の浮かせた物を置く */
+.wk-card.is-two-lines.has-marks .cp-lines-2::before,
+.wk-recv.is-two-lines.has-marks .cp-lines-2::before {
+  content: '';
+  float: right;
+  width: 0;
+  height: 1.2em;
+}
+
+.wk-card.is-two-lines.has-marks .cp-lines-2 .cp-title-text::before,
+.wk-recv.is-two-lines.has-marks .cp-lines-2 .cp-title-text::before {
+  content: '';
+  float: right;
+  clear: right;
+  width: var(--wk-marks-w, 0px);
+  height: 1.2em;
+}
+
 /* ---------- 受けた表示（7.8）: カードと同じ大きさ・地は透き通る・1px の点線の枠（線と同じ色）・「‹ 件名」12px・--text-muted・1行 ---------- */
 .wk-recv {
   position: relative;
@@ -688,6 +772,10 @@
   line-height: 1.2;
 }
 
+.wk-recv.is-two-lines .cp-title {
+  text-wrap: pretty;
+}
+
 .wk-recv .wk-marks {
   margin-top: 0;
 }
@@ -706,6 +794,15 @@
 
 .wk-recv.is-marks-low .wk-marks {
   align-self: flex-end;
+}
+
+/* 列が狭くて「‹ 」の後に4字も入らない時（receivedTwoLines）: 「‹ 件名」を2行に（印は2行目の右の端。上の .is-two-lines） */
+.wk-recv.is-two-lines .wk-marks {
+  right: 8px;
+}
+
+.wk-recv.is-two-lines.has-dot .wk-marks {
+  right: 22px;
 }
 
 /* 日曜に終わる時は右の端の中に●（線は引かない） */
@@ -837,6 +934,25 @@
 .wk-add:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* すばやく足す（12.1）: 押した「＋」の行が、その場で1行の入力欄に替わる（D44。共通の部品 QuickAdd）。PC の L は字を 13px・
+   高さ 30px に（狭い列でも打った字が見えるように）。指の端末・S・M は入力欄の決まりのまま（40px・16px。iOS のズームを防ぐ） */
+.wk-quick {
+  flex: none;
+  margin: 4px 4px 0;
+}
+
+.wk-v .wk-quick {
+  margin: 0;
+}
+
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
+  .wk-quick .input {
+    min-height: 30px;
+    padding: 4px 6px;
+    font-size: 13px;
+  }
 }
 
 /* 7日を横の PC（上に載せられる端末）では、列に乗せた時（・中にフォーカスがある時）だけ出す。指の端末ではいつも（D43） */

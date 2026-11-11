@@ -1,6 +1,6 @@
 // ウィークリーの見た目の計算（docs/SPEC.md の 7.5・7.7・7.8・10.1〜10.4）: 日の見出し・区分ごとのレーン（どの列も同じ数の行）・
 // 1日の予定の並び・見出しの行の数（119/120px）・線の引き方（6つの場合）・縦の並びのレールの線と「● 件名」の行・期間の表記の縮め方・
-// カードの並べ方（狭い列）
+// カードの並べ方（狭い列）・列が狭い時の始点のカード・受けた表示の件名の2行
 import { describe, expect, it } from 'vitest'
 import { calendarItems, type CalItem } from '../../../domain/calendar'
 import { T0, mkItem, mkTask } from '../../../domain/testData'
@@ -14,12 +14,18 @@ import {
   laneMarksBelow,
   laneTop,
   marksPx,
+  MIN_LANE_TITLE_PX,
   MIN_TITLE_PX,
   monoTextPx,
   periodDatesOnly,
   railSegment,
   railsPx,
   receivedTextPx,
+  receivedTwoLines,
+  startCardLook,
+  startTwoLines,
+  titleTextPx,
+  twoLineTitlePx,
   verticalCardTextPx,
   verticalCardTop,
   WEEK_PX,
@@ -362,5 +368,137 @@ describe('カードの並べ方（狭い列。開発）', () => {
     ['幅が測れていない・AI の札', 0, false, ai],
   ])('始点のカード・受けた表示の印を下の行に置くか: %s（字の幅 %spx）→ %s', (_, textPx, expected, item) => {
     expect(laneMarksBelow(textPx, item)).toBe(expected)
+  })
+})
+
+describe('列が狭い時の始点のカード・受けた表示（件名を2行に。開発。L の 960px ほどのウインドウ・M）', () => {
+  const plain = mkItem()
+  const ai = mkItem({ by: 'connector', ai: 'claude', via: 'メール' })
+  /** 列の幅（px）→ 始点のカードの丸の横の字の幅 */
+  const text = (col: number, shrink = false) => horizontalCardTextPx(col, shrink)
+
+  it('件名の字の幅: かな・漢字は 1 字、英数字は多めに 0.7 字', () => {
+    expect(titleTextPx('資料づくり')).toBe(60)
+    expect(titleTextPx('MTG')).toBeCloseTo(3 * 8.4)
+  })
+
+  it('2行の件名の幅: 丸の横の字の幅 + 丸と余白 42px − 左右の余白 8・6px（1行目はさらに丸の分 20px 狭い）', () => {
+    // 960px のウインドウ（列 79px）: 丸の横は 29px しか無い（1行では「資…」）が、2行目は 57px・1行目は 37px
+    expect(text(79)).toBe(29)
+    expect(twoLineTitlePx(text(79))).toBe(57)
+  })
+
+  it.each<[string, number, boolean]>([
+    ['L 1400px（列 142px）', text(142), false],
+    ['L 1200px（列 113px）: 丸の横に 4字と「…」が入る', text(113), false],
+    ['M 768px（列 105px）', text(105), true],
+    ['L 960px（列 79px）', text(79), true],
+    ['L 900px（列 72px）・土曜で縮む', text(72, true), true],
+    ['幅が測れていない', 0, false],
+  ])('始点のカードを2行の並べ方に: %s → %s', (_, textPx, expected) => {
+    expect(startTwoLines(textPx)).toBe(expected)
+  })
+
+  it('丸の横の1行に「4字と…」（MIN_LANE_TITLE_PX）が入るかが境', () => {
+    expect(startTwoLines(MIN_LANE_TITLE_PX)).toBe(false)
+    expect(startTwoLines(MIN_LANE_TITLE_PX - 1)).toBe(true)
+  })
+
+  const multi = cal(span('m', '2026-11-09', '2026-11-12', { title: '資料づくり', startTime: '10:00', endTime: '18:00' }))[0]
+  const withMarks = (p: Partial<Item>) => cal(span('m', '2026-11-09', '2026-11-12', { title: '資料づくり', ...p }))[0]
+
+  it('広い列は 10.2 のとおり（期間は入らなければ日付だけ・印は件名を細くしすぎるなら期間の行の右）', () => {
+    expect(startCardLook(multi, '2026-11-09', text(142))).toEqual({
+      layout: 'side',
+      titleLines: 1,
+      period: 'dates',
+      marksLow: false,
+    })
+    expect(startCardLook(multi, '2026-11-09', 0)).toEqual({ layout: 'side', titleLines: 1, period: 'full', marksLow: false })
+    // 列 113px・AI の札: 印は期間の行の右。期間の行に 17px しか残らないので期間は出さない（札と重ねない）
+    expect(startCardLook(withMarks({ by: 'connector', ai: 'claude' }), '2026-11-09', text(113))).toEqual({
+      layout: 'side',
+      titleLines: 1,
+      period: 'hidden',
+      marksLow: true,
+    })
+    // 列 113px・ロック: 期間の行に 47px 残るので期間（〜11/12）を出す
+    expect(startCardLook(withMarks({ locked: true }), '2026-11-09', text(113))).toEqual({
+      layout: 'side',
+      titleLines: 1,
+      period: 'full',
+      marksLow: true,
+    })
+  })
+
+  it('狭い列で件名が丸の右の1行に入らない時は、件名を2行（期間は出さない）。印は2行目の右の端', () => {
+    expect(startCardLook(multi, '2026-11-09', text(79))).toEqual({
+      layout: 'wrap',
+      titleLines: 2,
+      period: 'hidden',
+      marksLow: false,
+    })
+    expect(startCardLook(withMarks({ locked: true }), '2026-11-09', text(79))).toEqual({
+      layout: 'wrap',
+      titleLines: 2,
+      period: 'hidden',
+      marksLow: true,
+    })
+  })
+
+  it('狭い列で印が広くて2行目に2字も残らない時（AI の札・列 79px）は、件名を1行目だけにして2行目は印だけ', () => {
+    // 2行目は 57px − 札 46px = 11px
+    expect(startCardLook(withMarks({ by: 'connector', ai: 'claude' }), '2026-11-09', text(79))).toEqual({
+      layout: 'wrap',
+      titleLines: 1,
+      period: 'hidden',
+      marksLow: true,
+    })
+    // M の列（105px）なら2行目に 37px 残るので2行
+    expect(startCardLook(withMarks({ by: 'connector', ai: 'claude' }), '2026-11-09', text(105)).titleLines).toBe(2)
+  })
+
+  it('狭い列でも件名が丸の右の1行に入る短い件名は、2行目に期間（入らなければ日付だけ、日付だけも入らなければ出さずに件名を2行の枠で）', () => {
+    const short = cal(span('s', '2026-11-13', '2026-11-15', { title: '旅行' }))[0]
+    expect(startCardLook(short, '2026-11-13', text(79))).toEqual({
+      layout: 'wrap',
+      titleLines: 1,
+      period: 'full',
+      marksLow: false,
+    })
+    // 時刻のある物: 「11/11 22:00〜11/12 02:00」は入らないので日付だけ「11/11〜11/12」（70px）。列 105px の2行目（83px）には入る
+    const bus = cal(span('b', '2026-11-11', '2026-11-12', { title: '夜行バス', startTime: '22:00', endTime: '02:00' }))[0]
+    expect(startCardLook(bus, '2026-11-11', text(105))).toEqual({
+      layout: 'wrap',
+      titleLines: 1,
+      period: 'dates',
+      marksLow: false,
+    })
+    // 列 79px の2行目（57px）には日付だけも入らない（件名も1行目の 37px に入らない）
+    expect(startCardLook(bus, '2026-11-11', text(79))).toEqual({
+      layout: 'wrap',
+      titleLines: 2,
+      period: 'hidden',
+      marksLow: false,
+    })
+    const tiny = cal(span('t', '2026-11-11', '2026-11-12', { title: '旅', startTime: '22:00', endTime: '02:00' }))[0]
+    expect(startCardLook(tiny, '2026-11-11', text(79))).toEqual({
+      layout: 'wrap',
+      titleLines: 2,
+      period: 'hidden',
+      marksLow: false,
+    })
+  })
+
+  it.each<[string, number, Item, boolean]>([
+    ['L 1400px（列 142px）', receivedTextPx(text(142)), plain, false],
+    ['L 960px（列 79px）', receivedTextPx(text(79)), plain, true],
+    ['L 960px・中に●（日曜に終わる）', receivedTextPx(text(79), true), plain, true],
+    ['L 1100px（列 99px）・中に●なし（「‹ 」の後に 65px）', receivedTextPx(text(99)), plain, false],
+    ['L 1100px・中に●', receivedTextPx(text(99), true), plain, true],
+    ['L 960px・AI の札（2行目に 7px しか残らない）→ 1行のまま', receivedTextPx(text(79)), ai, false],
+    ['幅が測れていない', 0, plain, false],
+  ])('受けた表示: %s → %s', (_, textPx, item, expected) => {
+    expect(receivedTwoLines(textPx, item)).toBe(expected)
   })
 })
