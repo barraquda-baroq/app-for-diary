@@ -90,6 +90,8 @@ test.describe('行き先と履歴（PC）', { tag: ['@pc'] }, () => {
     await openCalendar(page, '/month/2026-12')
     await page.getByTestId('cal-mode-week').click()
     await at(page, '/week/2026-11-29')
+    // 週を描き終える（前回のモードを書く）まで待ってから #/ へ（描いている途中で移ると、その描画ごと捨てられる）
+    await expect(page.getByTestId('view-week')).toBeVisible()
     await page.goto('/#/')
     await at(page, '/week/2026-11-08')
     await page.reload()
