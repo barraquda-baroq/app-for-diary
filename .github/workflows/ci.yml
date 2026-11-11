@@ -53,9 +53,18 @@ jobs:
       # （docs/SPEC.md の 2.10。ビルドした物で印を置いても効かないことは e2e/offline.spec.ts でも確かめる）
       - name: ビルドにテスト用の入口が無いことの確かめ
         run: "! grep -rqE 'diary-studio:test-auth|fakeSignIn|showUpdateBanner|__ds|demo-diary-studio' dist/"
+      # ふだんは1分半ほど。GitHub の機械が Ubuntu の置き場（archive.ubuntu.com）の名前を引けない時、apt が1つずつ待ち続けて
+      # 30分の期限まで止まったことがある（2026-11-11）。1回を8分で打ち切り、1分おいてもう1回だけやり直す
       - name: E2E テスト用ブラウザ
         id: browsers
-        run: npx playwright install --with-deps chromium webkit
+        timeout-minutes: 18
+        run: |
+          for attempt in 1 2; do
+            if timeout 480 npx playwright install --with-deps chromium webkit; then exit 0; fi
+            echo "ブラウザを入れられなかった（${attempt}回目）"
+            [ "$attempt" = 2 ] || sleep 60
+          done
+          exit 1
       # PC 1400×900・Pixel 7（Chromium）。
       # E2E_PREVIEW: 上でビルドした dist/ を vite preview でも出し、オフラインで開けて書体も出ることを確かめる（e2e/offline.spec.ts）
       - name: E2E テスト（PC・Android の Chromium）
