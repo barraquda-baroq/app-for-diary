@@ -139,6 +139,9 @@ describe('指紋（hash）', () => {
   })
 })
 
+/** src/domain の外から import してよい物（ファイル → 部品）。祝日の表は部品の中の表だけで、ネットにつながない（7.2） */
+const OUTSIDE_IMPORTS: Record<string, readonly string[]> = { './holidays.ts': ['@holiday-jp/holiday_jp'] }
+
 describe('import の向き', () => {
   it('src/domain は sync・store・db・ui・features・Firebase・React を import しない（段階6のコネクタが同じ計算を使うため）', () => {
     const sources = import.meta.glob(['./*.ts', '!./*.test.ts'], { query: '?raw', import: 'default', eager: true }) as Record<
@@ -149,7 +152,8 @@ describe('import の向き', () => {
     for (const [name, src] of Object.entries(sources)) {
       const imports = [...src.matchAll(/from '([^']+)'/g)].map((m) => m[1])
       for (const spec of imports) {
-        expect(spec.startsWith('./') && !spec.includes('/', 2), `${name}: ${spec}`).toBe(true)
+        const local = spec.startsWith('./') && !spec.includes('/', 2)
+        expect(local || (OUTSIDE_IMPORTS[name] ?? []).includes(spec), `${name}: ${spec}`).toBe(true)
       }
     }
   })
