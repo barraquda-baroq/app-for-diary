@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mkItem, mkOffDay, mkTask, T0 } from '../../../domain/testData'
 import type { AppData, Item } from '../../../domain/types'
+import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
 import { renderView, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
 import { testIds } from '../common/testIds'
@@ -344,8 +345,13 @@ describe('開いた時の位置（ITEMS-132・AMB-ITEMS-31）', () => {
   it('今日は今の時刻の 60分前（9:00 → 8:00）、ほかの日は 7:00。日が替わった時だけ当て直す', async () => {
     const r = await renderDay(itemsOf(timed('a', '10:00', '11:00')))
     expect(scroller().scrollTop).toBe(8 * 48)
-    // 中で動かした後、予定が変わっても位置はそのまま
+    // 中で動かした後、予定が変わっても（描き直しても）、領域の大きさが変わっても位置はそのまま
     scroller().scrollTop = 100
+    act(() => {
+      actions.setItemDone('a', true)
+    })
+    expect(screen.getByTestId(testIds.dayEvent('a')).classList.contains('is-done')).toBe(true)
+    expect(scroller().scrollTop).toBe(100)
     r.setProps(dayProps({ area: { width: 1000, height: 600 } }))
     expect(scroller().scrollTop).toBe(100)
     r.setProps(dayProps({ viewed: '2026-11-11' }))

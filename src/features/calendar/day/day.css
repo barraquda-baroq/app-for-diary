@@ -224,6 +224,12 @@
   color: var(--text-muted);
 }
 
+/* 完了した行は字を --done-text に（件名は部品が付ける。右の端の期間・印も件名と同じ色にし、件名より濃く残さない。7.9） */
+.dy-row.is-done .dy-tail-range,
+.dy-row.is-done .cp-marks {
+  color: var(--done-text);
+}
+
 /* 「＋ 予定を足す」の行（各区切りのいちばん下。押すとすばやく足す。12.1） */
 .dy-add {
   display: flex;
@@ -371,9 +377,15 @@
   padding-left: 10px;
 }
 
-/* 完了（7.9）: 地 --done-bg（ハイライトは部品が付けない・斜線・字 --done-text・ラベルの一辺は残す） */
+/* 完了（7.9）: 地 --done-bg（ハイライトは部品が付けない・斜線・字 --done-text・ラベルの一辺は残す）。時刻・印の字も件名と同じ
+   --done-text にする（--text-muted のままだと、斜線の件名より時刻の方が濃く見える。ウィークリーのカードと同じ） */
 .dy-box.is-done {
   background: var(--done-bg);
+}
+
+.dy-box.is-done .cp-time,
+.dy-box.is-done .cp-marks {
+  color: var(--done-text);
 }
 
 /* 左上の点線の丸（16px。押せる所 24px。押すと完了） */

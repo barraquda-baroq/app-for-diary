@@ -37,7 +37,7 @@ const tokenColor = (page: Page, name: string) =>
   }, name)
 
 test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
-  test('開いた時の位置は今日なら今の 60分前（9:00 → 8:00）、今の時刻の線は 1分たつと動く。ほかの日は 7:00 で線は無い（ITEMS-131・132）', async ({
+  test('開いた時の位置は今日なら今の 60分前（9:00 → 8:00）、今の時刻の線は 1分たつと動く。詳細を閉じても位置はそのまま、ほかの日は 7:00 で線は無い（ITEMS-131・132）', async ({
     page,
   }) => {
     await page.clock.install({ time: new Date(DEMO_NOW) })
@@ -52,6 +52,13 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     await page.clock.runFor(60_000)
     await expect(now).toHaveAttribute('data-minute', String(9 * 60 + 1))
     expect((await box(now)).y).toBeCloseTo(top.y + px / 60, 0)
+    // 中を動かしてから詳細を開いて閉じても、位置はそのまま（開いた時の位置は当て直さない。AMB-ITEMS-31）
+    await scroller(page).evaluate((e, y) => e.scrollTo(0, y), 6 * px)
+    await page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly)).locator('.dy-ev-open').click()
+    await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId(testIds.itemSheet)).toHaveCount(0)
+    expect(await scroller(page).evaluate((e) => e.scrollTop)).toBe(6 * px)
     // 中を動かしてから次の日へ: 7:00 を上に出し直し、線は出さない
     await scroller(page).evaluate((e) => e.scrollTo(0, 0))
     await page.getByTestId(testIds.calNext).click()
@@ -60,7 +67,9 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     await expect(now).toHaveCount(0)
   })
 
-  test('区切りの地は見出しから下の端まで、行の無い所も --work-area／--private-area（FRAME-126・127）', async ({ page }) => {
+  test('区切りの地は見出しから下の端まで、行の無い所も --work-area／--private-area。ディープダークは --surface と間の線（FRAME-126・127・ITEMS-110）', async ({
+    page,
+  }) => {
     await openCalendar(page, '/day/2026-11-12', { data: demoData() })
     for (const kind of ['work', 'private'] as const) {
       const area = page.getByTestId(testIds.dayArea(kind))
@@ -83,6 +92,15 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
       expect(seen, kind).toBe(ground)
     }
     expect(await tokenColor(page, '--work-area')).not.toBe(await tokenColor(page, '--private-area'))
+    // ディープダーク: 区切りの地は区分で変えずに両方 --surface、2つの区切りの間に 1px の --rule-strong（ITEMS-110・FRAME-119・143）
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'deep-dark'))
+    const surface = await tokenColor(page, '--surface')
+    for (const kind of ['work', 'private'] as const) {
+      await expect(page.getByTestId(testIds.dayArea(kind))).toHaveCSS('background-color', surface)
+    }
+    const lower = page.getByTestId(testIds.dayArea('private'))
+    await expect(lower).toHaveCSS('border-top-width', '1px')
+    await expect(lower).toHaveCSS('border-top-color', await tokenColor(page, '--rule-strong'))
   })
 
   test('日をまたぐ予定の開始のカードは、部分が見えている間は上の端に貼り付き、部分が終わると上へ流れる（ITEMS-144）', async ({
