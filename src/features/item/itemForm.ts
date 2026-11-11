@@ -1,7 +1,7 @@
 // 登録・詳細の画面の欄の値（docs/SPEC.md の 6.2・6.12・12.2・12.3）。画面の中で持つ値の形と、開いた時の初めの値、「詳しく」を
 // 開いて出すかの決め方。React・ストアを読まない純粋な関数だけ（DetailForm は登録・詳細・段階3の右の列のパネルのどれにも入る）。
 // 欄を直した時の決まり（日付のそろえ方・翌日にする・00:00 を 24:00 に。12.4）は src/domain/itemInput.ts の editDates・editTimes が
-// 持つ（ここでは当てない）
+// 持つ（ここでは当てない）。ほかに、詳細の画面で保存する日付・時刻の差分、書きかけか、メモの URL の切り出し
 import { registerDefaults, type RegisterInit, type When } from '../../domain/itemInput'
 import type { LabelKey } from '../../domain/labels'
 import type { Item, ItemKind } from '../../domain/types'
@@ -81,4 +81,67 @@ export function hasDetails(f: Pick<ItemForm, 'origin' | 'label' | 'requester' | 
 /** 件名の欄に入れられる字（改行は入れない: 貼った改行は空白にする。200字まではコードポイントで数えて src/domain の limitChars） */
 export function oneLine(text: string): string {
   return text.replace(/\r\n?|\n/g, ' ')
+}
+
+/** 日付と時刻の欄の値（予定の記録から。editDates・editTimes に渡す形） */
+export function whenOf(item: When): When {
+  return { origin: item.origin, start: item.start, due: item.due, startTime: item.startTime, endTime: item.endTime }
+}
+
+/** 日付と時刻のうち、決まりを当てた後に変わった物だけ（詳細の画面で保存する物。変わっていなければ空） */
+export function whenChanges(cur: When, next: When): Partial<Pick<When, 'start' | 'due' | 'startTime' | 'endTime'>> {
+  const out: Partial<Pick<When, 'start' | 'due' | 'startTime' | 'endTime'>> = {}
+  for (const k of ['start', 'due', 'startTime', 'endTime'] as const) if (next[k] !== cur[k]) out[k] = next[k]
+  return out
+}
+
+/** 登録の画面が書きかけか（件名かメモに字がある。閉じる前に「書きかけを捨てますか？」と確かめる。12.2・ITEMS-186） */
+export function hasDraftText(f: Pick<ItemForm, 'title' | 'memo'>): boolean {
+  return f.title.trim() !== '' || f.memo.trim() !== ''
+}
+
+/**
+ * list 生まれのタスクが今カレンダーに出ていないか（①④。締め切り日が無い）。時刻の欄と「Task List にも出す」を押せなくする
+ * （12.3・D37・6.3。ITEMS-212・214）
+ */
+export function offCalendarTask(f: Pick<When, 'origin' | 'due'>): boolean {
+  return f.origin === 'list' && f.due === null
+}
+
+/** 時刻の欄を押せない時に添える字（12.3・ITEMS-212） */
+export const TIMES_NEED_DUE = '締め切り日を入れると時刻を入れられます'
+
+/** メモの文章の切れ目（字か、押せるリンクにする URL） */
+export type MemoPart = { text: string } | { url: string }
+
+/** URL（http・https）。日本語の文の中の括弧・句読点・空白で切る */
+const URL_RE = /https?:\/\/[^\s<>"'`「」『』（）()［］[\]{}、。，]+/gu
+/** URL の終わりに付いた句読点は URL に入れない（「…を見てください https://example.com/a.」） */
+const URL_TRAILING = /[.,;:!?．，：；！？]+$/u
+
+/**
+ * メモの文章を、字と URL に分ける（詳細の画面で、入力欄から離れている間は文章として出し、URL は押せるリンクにする。12.3・ITEMS-216）。
+ * 書式は付けない（改行・空白はそのまま字に残す）
+ */
+export function memoParts(text: string): MemoPart[] {
+  const out: MemoPart[] = []
+  let last = 0
+  const push = (t: string) => {
+    if (!t) return
+    const prev = out[out.length - 1]
+    if (prev && 'text' in prev) prev.text += t
+    else out.push({ text: t })
+  }
+  for (const m of text.matchAll(URL_RE)) {
+    const raw = m[0]
+    const url = raw.replace(URL_TRAILING, '')
+    const at = m.index ?? 0
+    push(text.slice(last, at))
+    if (/^https?:\/\/./u.test(url)) out.push({ url })
+    else push(url)
+    push(raw.slice(url.length))
+    last = at + raw.length
+  }
+  push(text.slice(last))
+  return out
 }

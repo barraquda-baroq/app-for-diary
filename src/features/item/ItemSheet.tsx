@@ -5,12 +5,14 @@
 //   ラベルが無い・知らないキーなら帯を付けない（6.12）
 // - ディープダークでは地が --surface になり区分の色で見分けられないので、題の左に区分のアイコン（かばん・家。14px）を出す
 //   （ほかの外観では出さない。item.css）
-// 区分・ラベルを中で選び替えると、地と帯の色もその場で替わる（包む画面が今の値を kind・label に渡す）
+// 区分・ラベルを中で選び替えると、地と帯の色もその場で替わる（包む画面が今の値を kind・label に渡す）。
+// 印はカード・行と同じ決め方（common/parts の itemAttrs。知らない区分は仕事、知らないラベルは帯なし。6.12）
 import type { ReactNode } from 'react'
 import type { LabelKey } from '../../domain/labels'
 import type { ItemKind } from '../../domain/types'
 import { KindIcon } from '../../ui/icons'
 import { Modal } from '../../ui/Modal'
+import { itemAttrs } from '../calendar/common/parts/itemLook'
 import { testIds } from '../calendar/common/testIds'
 import './item.css'
 
@@ -28,6 +30,7 @@ export interface ItemSheetProps {
 }
 
 export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, children }: ItemSheetProps) {
+  const attrs = itemAttrs({ kind, label })
   return (
     <Modal
       title={title}
@@ -36,9 +39,9 @@ export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, c
       initialFocus={initialFocus}
       className="it-sheet"
       testId={testIds.itemSheet}
-      dataKind={kind}
-      dataLabel={label}
-      titleIcon={<KindIcon kind={kind} />}
+      dataKind={attrs['data-kind']}
+      dataLabel={attrs['data-label'] ?? null}
+      titleIcon={<KindIcon kind={attrs['data-kind']} />}
     >
       {children}
     </Modal>

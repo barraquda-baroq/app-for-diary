@@ -140,6 +140,9 @@
 
 .it-pair > .it-wide {
   grid-column: 1 / -1;
+  /* 長い理由の文の終わりの1〜2字だけを次の行に送らない（日本語は文節の切れ目で折り返す。対応していない端末はふつうの折り返し） */
+  text-wrap: pretty;
+  word-break: auto-phrase;
 }
 
 /* 日付の欄（押すと小さな月のカレンダー）。入力欄と同じ形で、日付は日本語の「11月10日（火）」（ui の書体・桁をそろえる。4.4） */
@@ -479,6 +482,225 @@
   align-self: center;
   font-size: 12px;
   color: var(--text-faint);
+}
+
+/* ===== メモ（詳細の画面で、入力欄から離れている間の文章。URL は押せるリンク・下線。12.3・ITEMS-216・FRAME-254） =====
+   入力欄と同じ枠と地（押すと入力欄になる）。右上にキーボードで届く［書き換える］ */
+.it-memo-view {
+  position: relative;
+  min-height: 36px;
+  padding: 6px 36px 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: text;
+}
+
+.it-memo-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.it-memo-text a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.it-memo-edit {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+}
+
+/* ===== 欄の下に開く小窓（fields/Popover.tsx。日付の小さな月のカレンダー・時刻の一覧・依頼者の候補） =====
+   登録・詳細の小さな画面（.modal-backdrop の z-index 100）より前に出す。地は --surface（メニューと同じ。4.5）、出る時は pop-in 120ms */
+.it-pop {
+  position: fixed;
+  z-index: 110;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--dur-menu) ease-out;
+}
+
+/* 詳細の「…」のメニュー（src/ui/PopupMenu）も、小さな画面の上に出す */
+body:has(.modal.it-sheet) .pm-menu {
+  z-index: 110;
+}
+
+/* 時刻の一覧・依頼者の候補（入力欄と同じ幅から。中でスクロール） */
+.it-options {
+  max-height: min(240px, 40dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+
+.it-option {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .it-option:hover {
+    background: var(--surface-3);
+  }
+}
+
+/* 今の値（地と太さ）・↑↓で移った所（枠。色に頼らずに分かる。4.12） */
+.it-option.is-current {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.it-option.is-active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+@media (pointer: coarse) {
+  .it-option {
+    min-height: 40px;
+  }
+}
+
+/* ===== 小さな月のカレンダー（fields/MiniMonth.tsx。日曜始まり・今日の印・土日祝の色。12.2・ITEMS-170） ===== */
+.it-mm-pop {
+  padding: 6px 8px 8px;
+}
+
+.it-mm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.it-mm-title {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.it-mm-row {
+  display: grid;
+  grid-template-columns: repeat(7, 36px);
+  justify-content: center;
+}
+
+.it-mm-wd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.it-mm-wd[data-tone='sun'] {
+  color: var(--sun);
+}
+
+.it-mm-wd[data-tone='sat'] {
+  color: var(--sat);
+}
+
+.it-mm-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+}
+
+.it-mm-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .it-mm-day:hover {
+    background: var(--surface-3);
+  }
+}
+
+.it-mm-day[data-tone='sun'] {
+  color: var(--sun);
+}
+
+.it-mm-day[data-tone='sat'] {
+  color: var(--sat);
+}
+
+/* 前後の月の日（日付だけを --numeral で。マンスリーと同じ） */
+.it-mm-day[data-outside] {
+  color: var(--numeral);
+}
+
+/* 今日（src/styles.css の .today-mark と同じ地・字・輪に太さ 600。7.3。.it-mm-day の透明な地より強くする） */
+.it-mm-day.today-mark {
+  background: var(--today-bg);
+  box-shadow: 0 0 0 1.5px var(--today-ring);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+/* 選んでいる日: 地と --accent の輪（色に頼らずに分かる。4.12）。今日なら今日の地のまま、外に輪 */
+.it-mm-day.is-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  font-weight: 600;
+}
+
+.it-mm-day.is-selected:not(.today-mark) {
+  color: var(--text);
+}
+
+.it-mm-day.today-mark.is-selected {
+  background: var(--today-bg);
+  box-shadow:
+    0 0 0 1.5px var(--today-ring),
+    0 0 0 3.5px var(--accent);
+}
+
+/* S のシート（下からせり上がる）: 幅いっぱいに広げ、押す所を大きく */
+.it-mm-sheet .it-mm-row {
+  grid-template-columns: repeat(7, minmax(40px, 1fr));
+}
+
+.it-mm-sheet .it-mm-cell {
+  height: 44px;
+}
+
+.it-mm-sheet .it-mm-day {
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
 }
 
 /* ===== S（599px まで）: ラベルの丸を 24px にし、「なし」を別の行に（360px でも入るように。AMB-ITEMS-01） ===== */

@@ -6,25 +6,53 @@
 // - 「詳しく」: ラベル・依頼者・ロック・メモ（と生まれの初めと違う Task List にも出す）のどれかが入っていれば開いて出し、どれも
 //   無ければ端末ごとに覚えた detailsOpen に従う。ここで開け閉めしても detailsOpen に書く（D11）
 // - 下の行: 作った・完了・Claude が追加（DetailFooter。D47）
+// - 直したそばから自動で保存する（保存のボタンは無い。12.3・FRAME-054）: 文字の欄（件名・依頼者・メモ）は 0.6秒止まった時・離れた時
+//   （閉じる前にも。fields/useAutosave.ts）、日付・時刻・区分・ラベル・切り替えはすぐ。件名は空にできない（空のまま離れると元に戻し、
+//   書かない。D48）。知らない区分・ラベルの記録は、選んだ時だけ書く（ITEMS-039）。ロック中でもどの欄も直せる（ITEMS-224）
+// - 日付の欄は editDates（そろえる。1日の予定で終了 < 開始になる日付にはできず、日付の欄の下に理由を出して元の値のまま。6.4・ITEMS-222）、
+//   時刻の欄は editTimes（翌日までにして保存し、「翌日 02:00 まで」を閉じるか日付・時刻を直すまで出す。D37・AMB-ITEMS-05）。
+//   決まりを当てた後に変わった物だけを保存する
+// - list 生まれ: 日付の欄の下に今どう出るかの1行（listStatusLine）。カレンダーに出ていない時（①④）は時刻の欄と「Task List にも出す」を
+//   押せない。締め切り日を消して Task List に戻した時は「カレンダーから外れたので Task List に戻しました」（4秒。6.3）
+// - ［複製］で「複製する日を選ぶ」（DuplicateDialog）、「…」→［削除］（deleteItem.ts）。消したら閉じる。重なった小さな画面は、Esc で
+//   上の物だけが閉じる（AMB-ITEMS-32）
 // 予定が無い時（ほかの端末で消した・ゴミ箱へ移した・消した後に「進む」で戻った）は閉じる（onClose。履歴を1つ戻す）。
-// 直したそばから自動で保存する所（文字の欄は 0.6秒止まった時・離れた時、ほかはすぐ。12.3）・日付と時刻の決まり（12.4）・複製（12.7）・
-// 削除（12.8）は WP9 の後半。今は欄を直してもこの画面の中の値だけが変わる
-import { useEffect, useRef, useState } from 'react'
-import type { Item } from '../../domain/types'
-import { getRaw, useApp, useRecord } from '../../store/appStore'
-import { usePrefs } from '../../store/uiStore'
-import { CopyIcon, DotCheckIcon, MoreIcon } from '../../ui/icons'
-import { toggleDone } from '../calendar/common/parts'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { editDates, editTimes } from '../../domain/itemInput'
+import { listStatusLine, toastText } from '../../domain/itemText'
+import type { ItemPatch } from '../../domain/ops'
 import { UNTITLED } from '../../domain/repair'
+import type { Item } from '../../domain/types'
+import { actions } from '../../store/actions'
+import { getData, getRaw, useApp, useRecord } from '../../store/appStore'
+import { attempt, notify, notifyError, usePrefs } from '../../store/uiStore'
+import { CopyIcon, DotCheckIcon, MoreIcon, TrashIcon } from '../../ui/icons'
+import { PopupMenu } from '../../ui/PopupMenu'
+import { toggleDone } from '../calendar/common/parts'
 import { testIds } from '../calendar/common/testIds'
 import type { DetailSheetProps } from '../calendar/common/types'
+import { deleteItem } from './deleteItem'
 import { DetailFooter } from './DetailFooter'
 import { DetailForm } from './DetailForm'
-import { detailForm, hasDetails, rawTitleOf, type ItemForm } from './itemForm'
+import { DuplicateDialog } from './DuplicateDialog'
+import {
+  detailForm,
+  hasDetails,
+  offCalendarTask,
+  rawTitleOf,
+  TIMES_NEED_DUE,
+  whenChanges,
+  whenOf,
+  type DatePatch,
+  type FieldPatch,
+  type TimePatch,
+} from './itemForm'
 import { ItemSheet } from './ItemSheet'
 
 /** 詳細の画面の題（カレンダーから開いた時。Task List から開いた時の「タスク」は段階3。D46・D48） */
 const TITLE = '予定'
+/** 「…」のメニューの data-testid */
+export const MORE_MENU_TEST_ID = 'item-more-menu'
 
 export function DetailSheet({ id, onClose }: DetailSheetProps) {
   const item = useRecord('items', id)
@@ -50,21 +78,73 @@ export function DetailSheet({ id, onClose }: DetailSheetProps) {
 }
 
 function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
+  const id = item.id
   const labelNames = useApp((s) => s.data.labelNames)
   const detailsPref = usePrefs((s) => s.detailsOpen)
   const setPrefs = usePrefs((s) => s.setPrefs)
-  const [form, setForm] = useState<ItemForm>(() => detailForm(item, rawTitleOf(getRaw().items[item.id])))
+  // 欄の値は保存した記録から（直すとすぐ保存し、保存した値がここに戻る。文字の欄は打っている間の下書きを欄の中に持つ）
+  const form = useMemo(() => detailForm(item, rawTitleOf(getRaw().items[item.id])), [item])
   const [open, setOpen] = useState(() => hasDetails(form) || detailsPref)
-  const change = (patch: Partial<ItemForm>) => setForm((f) => ({ ...f, ...patch }))
+  /** 日付にできなかった理由（6.4。次に日付・時刻を決めるまで） */
+  const [dateError, setDateError] = useState<string | null>(null)
+  /** 翌日までにした時の「翌日 02:00 まで」（閉じるか、日付・時刻を直すまで。AMB-ITEMS-05） */
+  const [timeHint, setTimeHint] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
+  /** 「…」のメニューを開いたボタン（閉じていれば null） */
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const offCalendar = offCalendarTask(form)
+
   const toggleDetails = () => {
     setOpen(!open)
     setPrefs({ detailsOpen: !open })
   }
 
-  /** ［複製］（複製する日を選ぶ小さな画面。12.7）は WP9 の後半 */
-  const duplicate = () => {}
-  /** 「…」（［削除］のメニュー。12.8）は WP9 の後半 */
-  const more = () => {}
+  /** 直した物を保存する（予定が無くなった後は書かない）。list 生まれの締め切り日を消して Task List に戻した時は知らせる（6.3） */
+  const save = (patch: ItemPatch) => {
+    if (!getData().items[id]) return
+    const r = attempt(() => actions.updateItem(id, patch))
+    if (r?.relisted) notify(toastText.relisted)
+  }
+
+  const onChange = (patch: FieldPatch) => {
+    // 件名は空にできない（空のまま離れると欄が元に戻る。D48・ITEMS-004）
+    if (patch.title !== undefined && patch.title.trim() === '') return
+    save(patch)
+  }
+
+  /** 今の記録の日付と時刻（保存した直後でも最新の値で決まりを当てる） */
+  const currentWhen = () => whenOf(getData().items[id] ?? item)
+
+  const onDates = (patch: DatePatch) => {
+    const cur = currentWhen()
+    const r = editDates(cur, patch)
+    if (!r.ok) {
+      setDateError(r.message)
+      return
+    }
+    setDateError(null)
+    setTimeHint(null)
+    const changes = whenChanges(cur, r.when)
+    if (Object.keys(changes).length > 0) save(changes)
+  }
+
+  const onTimes = (patch: TimePatch) => {
+    const cur = currentWhen()
+    const r = editTimes(cur, patch)
+    if (!r.ok) {
+      notifyError(r.message)
+      return
+    }
+    setDateError(null)
+    setTimeHint(r.hint)
+    const changes = whenChanges(cur, r.when)
+    if (Object.keys(changes).length > 0) save(changes)
+  }
+
+  const remove = async () => {
+    const latest = getData().items[id]
+    if (latest && (await deleteItem(latest))) onClose()
+  }
 
   return (
     <ItemSheet
@@ -87,7 +167,13 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
           {item.done ? '完了' : '完了にする'}
         </button>
         <span className="it-spacer" />
-        <button type="button" className="btn btn-sm" onClick={duplicate} data-testid={testIds.itemDuplicate}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          aria-haspopup="dialog"
+          onClick={() => setDuplicating(true)}
+          data-testid={testIds.itemDuplicate}
+        >
           <CopyIcon />
           複製
         </button>
@@ -96,7 +182,12 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
           className="icon-btn"
           aria-label="ほかの操作"
           title="ほかの操作"
-          onClick={more}
+          aria-haspopup="menu"
+          aria-expanded={menuAnchor !== null}
+          onClick={(e) => {
+            const anchor = e.currentTarget
+            setMenuAnchor((a) => (a ? null : anchor))
+          }}
           data-testid={testIds.itemMore}
         >
           <MoreIcon />
@@ -108,12 +199,35 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
         labelNames={labelNames}
         detailsOpen={open}
         onToggleDetails={toggleDetails}
-        onChange={change}
-        onDates={change}
-        onTimes={change}
+        onChange={onChange}
+        onDates={onDates}
+        onTimes={onTimes}
         titlePlaceholder={UNTITLED}
+        dateError={dateError}
+        statusLine={form.origin === 'list' ? listStatusLine(form) : null}
+        timeHint={timeHint}
+        timesDisabledNote={offCalendar ? TIMES_NEED_DUE : null}
+        listedDisabled={offCalendar}
       />
       <DetailFooter item={item} />
+      {menuAnchor ? (
+        <PopupMenu
+          label="ほかの操作"
+          items={[
+            {
+              label: '削除',
+              icon: <TrashIcon />,
+              danger: true,
+              onSelect: () => void remove(),
+              testId: testIds.itemDelete,
+            },
+          ]}
+          placement={{ anchor: menuAnchor }}
+          onClose={() => setMenuAnchor(null)}
+          testId={MORE_MENU_TEST_ID}
+        />
+      ) : null}
+      {duplicating ? <DuplicateDialog item={item} onClose={() => setDuplicating(false)} /> : null}
     </ItemSheet>
   )
 }

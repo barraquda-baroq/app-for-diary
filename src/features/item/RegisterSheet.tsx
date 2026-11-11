@@ -3,43 +3,183 @@
 // 「予定にする」から件名・メモも）。欄は 件名 → 区分 → 日付 → 時刻 → 詳しく（DetailForm）。開くと件名にフォーカスする。
 // 画面の地は選んでいる区分の色、上の辺は選んでいるラベルの色の帯で、選び替えるとその場で替わる（ItemSheet。X2・4.3）。
 // 「詳しく」の開閉は端末ごとに覚える（diary-studio:prefs の detailsOpen。6.13）。
-// ボタンは［やめる］［登録］（件名が空・空白だけの間は［登録］を押せない）。Ctrl+Enter・⌘+Enter でも登録（3.10）。
-// 登録（入力の決まり 12.4 を当ててから足す・閉じて新しいカードを 1.2秒目立たせる）と、書きかけのまま閉じる時の確かめ（［やめる］・
-// ［×］・Esc・背景・「戻る」）は WP9 の後半（submit・onClose を包む所）
-import { useState } from 'react'
+// - 日付の欄は決めた時に editDates でそろえる（そろえると 1日の予定で終了 < 開始になる日付にはできない。6.3・6.4）
+// - 時刻の欄は決めた時に editTimes を当てる。ただし翌日までにする時刻（22:00〜02:00）は［登録］まで2日の予定にせず、時刻の欄の下に
+//   「翌日 02:00 まで」を出しておき、［登録］で2日の予定にして足す（D37・AMB-ITEMS-05）。その後に日付を動かして 1日の予定で
+//   終了 < 開始になる時は、その日付にはできない（最後に直した欄の決まり。AMB-ITEMS-29）
+// - ボタンは［やめる］［登録］（件名が空・空白だけの間は［登録］を押せない）。Ctrl+Enter・⌘+Enter でも登録（3.10。どの欄の中でも。
+//   打ちかけの時刻は先に決める）。登録すると 12.4 の決まりを当ててから足し（ITEMS-194）、閉じて、新しいカード（見えていれば）を
+//   1.2秒目立たせる（4.9。お知らせは出さない）
+// - 書きかけ（件名かメモに字がある）のまま閉じようとした時（［やめる］・［×］・Esc・背景・「戻る」）は「書きかけを捨てますか？
+//   ［捨てる］［戻る］」と確かめる。「戻る」は履歴を戻すのを止めて（useBlocker）確かめ、［戻る］なら画面を開いたままにする（D03・
+//   AMB-ITEMS-10）。閉じる（onClose = common/sheets.ts の closeSheet）のは確かめが終わってから
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useBlocker, type BlockerFunction } from 'react-router-dom'
+import { editDates, editTimes } from '../../domain/itemInput'
+import { actions } from '../../store/actions'
 import { useApp } from '../../store/appStore'
-import { usePrefs } from '../../store/uiStore'
+import { attempt, notifyError, useCalendarUi, usePrefs } from '../../store/uiStore'
+import { choiceDialog } from '../../ui/dialogs'
 import { isSubmitShortcut, submitShortcutLabel } from '../../ui/keys'
+import { flashKey } from '../calendar/common/parts/useFlashTarget'
 import { testIds } from '../calendar/common/testIds'
 import type { RegisterSheetProps } from '../calendar/common/types'
 import { DetailForm } from './DetailForm'
-import { registerForm, type ItemForm } from './itemForm'
+import { hasDraftText, registerForm, type DatePatch, type ItemForm, type TimePatch } from './itemForm'
 import { ItemSheet } from './ItemSheet'
+
+/** 書きかけを捨てるかの確かめのボタンの data-testid */
+export const DISCARD_TEST_IDS = { discard: 'item-discard', keep: 'item-discard-keep' } as const
+
+/** 書きかけを捨てるかの確かめの文（NS の書きかけの確かめと同じく、捨てると何が起きるかを1文で添える） */
+export const DISCARD_MESSAGE = '入力した予定は登録されません。'
+
+/** 「書きかけを捨てますか？［捨てる］［戻る］」（［戻る］が主な選択肢。開いた時はここにフォーカス）。捨てる時 true */
+async function confirmDiscard(): Promise<boolean> {
+  const choice = await choiceDialog({
+    title: '書きかけを捨てますか？',
+    message: DISCARD_MESSAGE,
+    choices: [
+      { value: 'discard', label: '捨てる', danger: true, testId: DISCARD_TEST_IDS.discard },
+      { value: 'keep', label: '戻る', primary: true, testId: DISCARD_TEST_IDS.keep },
+    ],
+  })
+  return choice === 'discard'
+}
 
 export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
   const [form, setForm] = useState<ItemForm>(() => registerForm(init))
+  /**
+   * 今の欄の値。描き直しを待たずに持つ（Ctrl/⌘+Enter で、打ちかけの時刻を決めた直後に、その値で登録する。閉じる時の書きかけの確かめも
+   * これを見る）
+   */
+  const current = useRef(form)
+  const update = (patch: Partial<ItemForm>) => {
+    current.current = { ...current.current, ...patch }
+    setForm(current.current)
+  }
+  const [dateError, setDateError] = useState<string | null>(null)
   const detailsOpen = usePrefs((s) => s.detailsOpen)
   const setPrefs = usePrefs((s) => s.setPrefs)
   const labelNames = useApp((s) => s.data.labelNames)
   const canRegister = form.title.trim() !== ''
-  const change = (patch: Partial<ItemForm>) => setForm((f) => ({ ...f, ...patch }))
+  /** 翌日までにする時刻の時の「翌日 02:00 まで」（［登録］で2日の予定にする。入れた時から出す） */
+  const timeHint = useMemo(() => {
+    const r = editTimes(form, {})
+    return r.ok ? r.hint : null
+  }, [form])
 
-  /** ［登録］・Ctrl/⌘+Enter。件名が空の間は何もしない（足して閉じるのは WP9 の後半） */
-  const submit = () => {
-    if (!canRegister) return
+  /** 閉じてよい（登録した・捨てると決めた。「戻る」を止めない） */
+  const leaving = useRef(false)
+  /** 確かめを出している間（同じ確かめを重ねて出さない。close = ［×］など、back = 「戻る」） */
+  const asking = useRef<'close' | 'back' | null>(null)
+
+  const onDates = (patch: DatePatch) => {
+    const r = editDates(current.current, patch)
+    if (!r.ok) {
+      setDateError(r.message)
+      return
+    }
+    setDateError(null)
+    update(r.when)
   }
+
+  const onTimes = (patch: TimePatch) => {
+    const r = editTimes(current.current, patch)
+    if (!r.ok) {
+      notifyError(r.message)
+      return
+    }
+    setDateError(null)
+    // 翌日までにする時刻は、打った値のまま持つ（［登録］で2日の予定にする）。ほかの決まり（00:00 → 24:00・終了 = 開始で空に・
+    // 開始を空にすると終了も消す）はすぐ当てる
+    update(r.hint ? patch : r.when)
+  }
+
+  /** ［登録］・Ctrl/⌘+Enter。件名が空の間は何もしない */
+  const submit = () => {
+    const f = current.current
+    if (f.title.trim() === '') return
+    const r = editTimes(f, {})
+    if (!r.ok) {
+      notifyError(r.message)
+      return
+    }
+    const w = r.when
+    const id = attempt(() =>
+      actions.addItem({
+        origin: 'calendar',
+        title: f.title,
+        kind: f.kind,
+        start: w.start,
+        due: w.due,
+        startTime: w.startTime,
+        endTime: w.endTime,
+        label: f.label,
+        requester: f.requester,
+        locked: f.locked,
+        listed: f.listed,
+        memo: f.memo,
+      }),
+    )
+    if (id === undefined) return
+    leaving.current = true
+    useCalendarUi.getState().flashTarget(flashKey.item(id))
+    onClose()
+  }
+
+  /** ［やめる］・［×］・Esc・背景: 書きかけなら確かめてから閉じる */
+  const requestClose = () => {
+    if (asking.current) return
+    if (!hasDraftText(current.current)) {
+      leaving.current = true
+      onClose()
+      return
+    }
+    asking.current = 'close'
+    void confirmDiscard().then((discard) => {
+      asking.current = null
+      if (!discard) return
+      leaving.current = true
+      onClose()
+    })
+  }
+
+  // 「戻る」: 書きかけの間は履歴を戻すのを止めて確かめる（［捨てる］で戻る、［戻る］・Esc なら開いたまま）
+  const shouldBlock = useCallback<BlockerFunction>(
+    ({ historyAction }) => historyAction === 'POP' && !leaving.current && hasDraftText(current.current),
+    [],
+  )
+  const blocker = useBlocker(shouldBlock)
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    if (asking.current === 'back') return
+    // ［×］などの確かめを出している間の「戻る」は、何もしない
+    if (asking.current === 'close') {
+      blocker.reset()
+      return
+    }
+    asking.current = 'back'
+    void confirmDiscard().then((discard) => {
+      asking.current = null
+      if (discard) {
+        leaving.current = true
+        blocker.proceed()
+      } else blocker.reset()
+    })
+  }, [blocker])
 
   return (
     <ItemSheet
       title="予定を登録"
       kind={form.kind}
       label={form.label}
-      onClose={onClose}
+      onClose={requestClose}
       initialFocus={`[data-testid="${testIds.itemTitle}"]`}
       footer={
         <>
           <span className="it-hint hide-mobile hint-keyboard">{submitShortcutLabel()} でも登録</span>
-          <button type="button" className="btn" onClick={onClose} data-testid={testIds.itemCancel}>
+          <button type="button" className="btn" onClick={requestClose} data-testid={testIds.itemCancel}>
             やめる
           </button>
           <button
@@ -68,9 +208,11 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
           labelNames={labelNames}
           detailsOpen={detailsOpen}
           onToggleDetails={() => setPrefs({ detailsOpen: !detailsOpen })}
-          onChange={change}
-          onDates={change}
-          onTimes={change}
+          onChange={update}
+          onDates={onDates}
+          onTimes={onTimes}
+          dateError={dateError}
+          timeHint={timeHint}
         />
       </div>
     </ItemSheet>
