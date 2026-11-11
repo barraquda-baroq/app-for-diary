@@ -1,6 +1,7 @@
 // 暦の日付の計算（docs/SPEC.md の 2.9・2.10・6.4）: 月の日数（うるう年）・週の初め（日曜）・月を移る（その月に無い日は最終日）・
-// 次の 0時まで・マンスリーのマス目の行の数（9.1）・ログインの画面の日付（2.5）・文字の日付（段階1）・無料枠の戻る時刻（2.8）
-import { describe, expect, it } from 'vitest'
+// 次の 0時まで・マンスリーのマス目の行の数（9.1）・ログインの画面の日付（2.5）・文字の日付（段階1）・無料枠の戻る時刻（2.8）・
+// カレンダーの日付の範囲と表記（段階2。3.1・7.1・7.7・11.1）
+import { describe, expect, it, vi } from 'vitest'
 import {
   addDays,
   addDaysYmd,
@@ -9,12 +10,20 @@ import {
   compareYmd,
   coverDateLabel,
   dayInMonthClamped,
+  daysBetween,
   daysInMonth,
+  displayHm,
+  dottedDate,
+  eachDate,
   hmToMinutes,
   isHm,
   isMonth,
   isYmd,
+  jaDateLabel,
+  mdLabel,
+  minutesToHm,
   monthOf,
+  monthRange,
   monthWeeks,
   monthsBefore,
   msUntilNextDay,
@@ -24,8 +33,13 @@ import {
   shortDateLabel,
   todayYmd,
   toYmd,
+  ROUTE_YEARS,
+  weekDates,
   weekStart,
+  weekStartOf,
   weekdayOfYmd,
+  WEEKDAYS_JA_LONG,
+  yearRange,
   ymdOfMs,
   type Ymd,
 } from './dates'
@@ -185,5 +199,172 @@ describe('無料枠の戻る時刻（2.8。米国太平洋時間の 0時を端�
   it('ちょうど 0時なら次の日の 0時', () => {
     expect(nextQuotaResetMs(Date.UTC(2026, 10, 11, 8, 0))).toBe(Date.UTC(2026, 10, 12, 8, 0))
     expect(nextQuotaResetMs(Date.UTC(2026, 10, 11, 7, 59))).toBe(Date.UTC(2026, 10, 11, 8, 0))
+  })
+})
+
+describe('カレンダーの日付の範囲（段階2。7.1: 週は日曜始まり）', () => {
+  it('週の日曜と7日（年をまたぐ週 2026-12-27〜2027-01-02）', () => {
+    expect(weekStartOf('2026-11-10')).toBe('2026-11-08')
+    expect(weekStartOf('2026-11-08')).toBe('2026-11-08')
+    expect(weekStartOf('2026-11-14')).toBe('2026-11-08')
+    expect(weekStartOf('2027-01-01')).toBe('2026-12-27')
+    expect(weekDates('2026-12-27')).toEqual([
+      '2026-12-27',
+      '2026-12-28',
+      '2026-12-29',
+      '2026-12-30',
+      '2026-12-31',
+      '2027-01-01',
+      '2027-01-02',
+    ])
+    expect(weekDates('2026-11-08')).toHaveLength(7)
+  })
+
+  it('うるう年の 2月末（2028-02-29）をまたぐ週・日数', () => {
+    expect(weekStartOf('2028-02-29')).toBe('2028-02-27')
+    expect(weekDates('2028-02-27')).toEqual([
+      '2028-02-27',
+      '2028-02-28',
+      '2028-02-29',
+      '2028-03-01',
+      '2028-03-02',
+      '2028-03-03',
+      '2028-03-04',
+    ])
+    expect(daysBetween('2028-02-28', '2028-03-01')).toBe(2)
+    expect(daysBetween('2026-02-28', '2026-03-01')).toBe(1)
+  })
+
+  it('日数と毎日（両端を含む。逆なら空）', () => {
+    expect(daysBetween('2026-11-10', '2026-11-10')).toBe(0)
+    expect(daysBetween('2026-11-09', '2026-11-11')).toBe(2)
+    expect(daysBetween('2026-11-11', '2026-11-09')).toBe(-2)
+    expect(daysBetween('2026-12-31', '2027-01-01')).toBe(1)
+    expect(daysBetween('2026-01-01', '2027-01-01')).toBe(365)
+    expect(daysBetween('2028-01-01', '2029-01-01')).toBe(366)
+    expect(eachDate('2026-11-29', '2026-12-02')).toEqual(['2026-11-29', '2026-11-30', '2026-12-01', '2026-12-02'])
+    expect(eachDate('2026-11-10', '2026-11-10')).toEqual(['2026-11-10'])
+    expect(eachDate('2026-11-11', '2026-11-10')).toEqual([])
+    expect(() => daysBetween('2026-02-30', '2026-03-01')).toThrow()
+  })
+
+  it('夏時間のある時差でも日数・週はずれない（暦の日付だけで数える。6.4）', () => {
+    // 米国の夏時間は 2026-03-08 に始まり 11-01 に終わる（その日は 23時間・25時間）
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    try {
+      expect(new Date(2026, 2, 8).getTimezoneOffset()).toBe(480)
+      expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2)
+      expect(daysBetween('2026-10-31', '2026-11-02')).toBe(2)
+      expect(eachDate('2026-10-31', '2026-11-02')).toEqual(['2026-10-31', '2026-11-01', '2026-11-02'])
+      expect(weekStartOf('2026-11-03')).toBe('2026-11-01')
+      expect(weekDates('2026-03-08')[6]).toBe('2026-03-14')
+      expect(jaDateLabel('2026-11-03')).toBe('11月3日（火）')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('日付変更線をまたいで暦の日が飛んだ時差でも、暦の計算はずれない（壁時計の値。6.4）', () => {
+    // Pacific/Kiritimati は 1994-12-31 が、Pacific/Apia は 2011-12-30 が無い（端末の暦の Date ではその日を作れない）
+    vi.stubEnv('TZ', 'Pacific/Kiritimati')
+    try {
+      expect(new Date(1994, 11, 31).getDate()).toBe(1)
+      expect(daysInMonth(1994, 12)).toBe(31)
+      expect(isYmd('1994-12-31')).toBe(true)
+      expect(weekdayOfYmd('1994-12-31')).toBe(6)
+      expect(addDaysYmd('1994-12-30', 1)).toBe('1994-12-31')
+      expect(eachDate('1994-12-30', '1995-01-01')).toEqual(['1994-12-30', '1994-12-31', '1995-01-01'])
+      expect(monthRange('1994-12')).toEqual({ from: '1994-12-01', to: '1994-12-31' })
+      expect(jaDateLabel('1994-12-31')).toBe('12月31日（土）')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    vi.stubEnv('TZ', 'Pacific/Apia')
+    try {
+      expect(new Date(2011, 11, 30).getDate()).toBe(31)
+      expect(weekdayOfYmd('2011-12-30')).toBe(5)
+      expect(weekStartOf('2011-12-31')).toBe('2011-12-25')
+      expect(weekDates('2011-12-25')).toEqual([
+        '2011-12-25',
+        '2011-12-26',
+        '2011-12-27',
+        '2011-12-28',
+        '2011-12-29',
+        '2011-12-30',
+        '2011-12-31',
+      ])
+      expect(
+        monthWeeks(2011, 12)
+          .flat()
+          .filter((c) => !c.outside),
+      ).toHaveLength(31)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('0〜99年も西暦のまま数える（Date.UTC の 1900年代への読み替えをしない）', () => {
+    expect(daysBetween('0099-12-31', '0100-01-01')).toBe(1)
+    expect(daysInMonth(4, 2)).toBe(29)
+    expect(weekdayOfYmd('0001-01-01')).toBe(1)
+    expect(addDaysYmd('0099-12-31', 1)).toBe('0100-01-01')
+  })
+
+  it('月と年の範囲（月の日数・うるう年）', () => {
+    expect(monthRange('2026-11')).toEqual({ from: '2026-11-01', to: '2026-11-30' })
+    expect(monthRange('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
+    expect(monthRange('2028-02')).toEqual({ from: '2028-02-01', to: '2028-02-29' })
+    expect(monthRange('2026-12')).toEqual({ from: '2026-12-01', to: '2026-12-31' })
+    expect(() => monthRange('2026-13')).toThrow()
+    expect(yearRange(2026)).toEqual({ from: '2026-01-01', to: '2026-12-31' })
+  })
+
+  it('行き先の年（3.1）は 1900〜2199', () => {
+    expect(ROUTE_YEARS).toEqual({ from: 1900, to: 2199 })
+  })
+})
+
+describe('カレンダーの表記（段階2。4.4・7.1・7.7・11.1）', () => {
+  it('月日「11/9」（0 で埋めない）', () => {
+    expect(mdLabel('2026-11-09')).toBe('11/9')
+    expect(mdLabel('2027-01-02')).toBe('1/2')
+    expect(mdLabel('2026-12-31')).toBe('12/31')
+  })
+
+  it('日本語の文の中の日付「11月10日（火）」', () => {
+    expect(jaDateLabel('2026-11-10')).toBe('11月10日（火）')
+    expect(jaDateLabel('2027-01-03')).toBe('1月3日（日）')
+    expect(jaDateLabel('2028-02-29')).toBe('2月29日（火）')
+  })
+
+  it('点で区切った日付「2026.11.10」', () => {
+    expect(dottedDate('2026-11-10')).toBe('2026.11.10')
+    expect(dottedDate('2027-01-03')).toBe('2027.01.03')
+  })
+
+  it('曜日の読み上げは「日曜日」〜「土曜日」（日曜始まり）', () => {
+    expect(WEEKDAYS_JA_LONG).toHaveLength(7)
+    expect(WEEKDAYS_JA_LONG[0]).toBe('日曜日')
+    expect(WEEKDAYS_JA_LONG[weekdayOfYmd('2026-11-10')]).toBe('火曜日')
+    expect(WEEKDAYS_JA_LONG[6]).toBe('土曜日')
+  })
+
+  it('画面の時刻は時の頭の 0 を落とす（保存は HH:MM のまま。24:00 はそのまま）', () => {
+    expect(displayHm('09:05')).toBe('9:05')
+    expect(displayHm('00:30')).toBe('0:30')
+    expect(displayHm('10:00')).toBe('10:00')
+    expect(displayHm('23:55')).toBe('23:55')
+    expect(displayHm('24:00')).toBe('24:00')
+  })
+
+  it('分を HH:MM に（1440 は 24:00。外の値は端にそろえる）', () => {
+    expect(minutesToHm(0)).toBe('00:00')
+    expect(minutesToHm(547)).toBe('09:07')
+    expect(minutesToHm(1439)).toBe('23:59')
+    expect(minutesToHm(1440)).toBe('24:00')
+    expect(minutesToHm(1500)).toBe('24:00')
+    expect(minutesToHm(-5)).toBe('00:00')
+    expect(minutesToHm(90.9)).toBe('01:30')
+    for (const hm of ['00:00', '09:07', '12:30', '23:59', '24:00']) expect(minutesToHm(hmToMinutes(hm))).toBe(hm)
   })
 })
