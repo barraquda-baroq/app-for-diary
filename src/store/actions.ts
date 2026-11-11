@@ -1,13 +1,14 @@
 // 画面から呼ぶ操作（docs/SPEC.md の 2.9 の「画面の書き方の約束」: attempt(() => actions.xxx(...))）。ドメインの純粋関数を今のデータに
 // 当てて保存する。決まりの上でできない操作は DomainError を投げるので、画面では attempt() で受けてお知らせにする。
 // NS の src/store/actions.ts の apply・run の形だけを写した。段階1は、データの読み書きに要る操作（手の操作・ゴミ箱・バックアップ・
-// 受け取り箱の当て方と答え）だけを置く。画面の操作は段階2〜5で足す。
+// 受け取り箱の当て方と答え）だけを置く。画面の操作は段階2〜5で足す（段階2: ドラッグで日を動かす・その［元に戻す］・複製）。
 // 受け取り箱の当て方（src/domain/inbox.ts）は、端末の raw の記録に当てる（指紋と patch は修復の前の記録に。19.5）ので commitRaw で書き
 // （commitRaw は、このタブの変更を保存してから端末の中を読み直して当てる）、
 // 依頼ごとのまとまり（touched）を保存に渡す。アプリを開いた時に自動で当てる所は段階5（形5）。
 // ゴミ箱の出し入れも raw の記録に当てる（ゴミ箱の中身に、表示用に直す前の記録を知らない値ごと控え、戻した時もそのまま戻す。
 // 表示用のデータに当てると、新しい版が足した kind などが、ゴミ箱を通るだけで既定値に変わってしまう。6.12・形3）。
 import { backupJson, parseBackup, restoreData, type BackupOptions } from '../domain/backup'
+import type { DatePatch } from '../domain/drag'
 import * as I from '../domain/inbox'
 import * as O from '../domain/ops'
 import * as T from '../domain/trash'
@@ -38,11 +39,17 @@ function runInbox<R>(fn: (raw: AppData) => { data: AppData; touched: I.Touched; 
 }
 
 export const actions = {
-  // 予定・タスク（6.2・6.3）
+  // 予定・タスク（6.2・6.3）。登録・詳細の入力は src/domain/itemInput.ts でそろえてから渡す
   addItem: (input: O.ItemInput) => run((d) => O.addItem(d, input)),
   updateItem: (id: ID, patch: O.ItemPatch) => run((d) => O.updateItem(d, id, patch)),
   setItemDone: (id: ID, done: boolean) => apply((d) => O.setItemDone(d, id, done)),
   trashItem: (id: ID) => runRaw((d) => T.trashItem(d, id)),
+  /** ウィークリーのドラッグで日を動かす（7.11。値は src/domain/drag.ts の dropPatch）。戻り値は動かす前の値（［元に戻す］で渡す） */
+  moveItemDates: (id: ID, p: DatePatch) => run((d) => O.moveItemDates(d, id, p)),
+  /** ドラッグの［元に戻す］（開始日・締め切り日・終了時刻だけ。戻せない時は DomainError の O.UNDO_REFUSED。D25） */
+  restoreItemDates: (id: ID, prev: O.ItemDates) => apply((d) => O.restoreItemDates(d, id, prev)),
+  /** 複製する（12.7。日付は複製する日を選ぶ小さな画面で決めた値）。戻り値は新しい id（［開く］で詳細へ） */
+  duplicateItem: (id: ID, dates: { start: string | null; due: string | null }) => run((d) => O.duplicateItem(d, id, dates)),
 
   // 休み・ラベルの呼び名（6.5・6.6）
   setOffDay: (date: string, off: boolean) => apply((d) => O.setOffDay(d, date, off)),
@@ -96,3 +103,6 @@ export const actions = {
     runInbox((raw) => I.undoRequest(raw, id, ctx, opts)),
   cleanupInbox: (ctx: I.InboxContext) => runInbox((raw) => ({ ...I.cleanupInbox(raw, ctx), result: undefined })),
 }
+
+/** 画面から呼ぶ操作の型（E2E の window.__ds.actions の型にも使う） */
+export type Actions = typeof actions
