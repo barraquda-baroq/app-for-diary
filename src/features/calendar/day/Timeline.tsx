@@ -7,25 +7,43 @@
 //   予定を押すと詳細（ITEMS-148）
 // - 今の時刻の線（今日だけ。2px の --accent と、時刻の欄の端に直径 8px の丸。60秒ごとに動かす。useNow）
 // - 開いた時の位置: 今日は今の時刻の 60分前、ほかの日は 7:00 を上の端に。画面を開いた時と見ている日が替わった時だけ当てる
-//   （詳細などの小さな画面を閉じた時・予定が変わった時は今の位置のまま。AMB-ITEMS-31）
+//   （詳細などの小さな画面を閉じた時・予定が変わった時は今の位置のまま。AMB-ITEMS-31）。マンスリーの数字から来た時（その区分の
+//   予定を目立たせる時）は、目立たせる予定が見えるように動かす（今の位置でみな見えていれば動かさない。dayModel.ts の arrivalScrollPx）
+// - 予定を置ける所の幅を測り、枠ごとに中の出し方を決める（狭い枠は印を時刻の行へ下ろす・入らない時刻は短くする。fitBox）
 // - 空いた所を押すと onSlot に押した所の 0:00 からの分を渡す（DayView が登録の画面を開く。ITEMS-149）
 // タイムスケジュールはその中だけでスクロールする（11.1）。予定はドラッグできない（ITEMS-150）
 import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
-import type { CalItem } from '../../../domain/calendar'
 import { timeLabel } from '../../../domain/itemText'
 import { ITEM_KIND_LABELS } from '../../../domain/trash'
-import { useNow } from '../../../ui/hooks'
+import { ITEM_KINDS, type ItemKind } from '../../../domain/types'
+import { flashMatches, useCalendarUi, type FlashTarget } from '../../../store/uiStore'
+import { useElementWidth, useNow } from '../../../ui/hooks'
 import { KindIcon } from '../../../ui/icons'
 import { PopupMenu, type PopupMenuItem } from '../../../ui/PopupMenu'
-import { cls, displayTitle, kindOf } from '../common/parts'
+import { cls, displayTitle, flashKey, kindOf } from '../common/parts'
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
-import { initialScrollPx, minuteOfDay, minuteToPx, pxToMinute, type MoreChipVM, type TimelineVM } from './dayModel'
+import {
+  arrivalScrollPx,
+  fitBox,
+  initialScrollPx,
+  minuteOfDay,
+  minuteToPx,
+  pxToMinute,
+  type MoreChipVM,
+  type TimelineVM,
+} from './dayModel'
 import { MultiDayPiece, TimedEvent } from './TimedEvent'
 import './day.css'
 
 /** 0〜23 時 */
 const HOURS = Array.from({ length: 24 }, (_, h) => h)
+
+/** タイムスケジュールのその区分の予定を目立たせている時（マンスリーの数字から来た時）の「区分:seq」（無ければ ''） */
+function arrivalOf(f: FlashTarget | null): string {
+  const kind = ITEM_KINDS.find((k) => flashMatches(f, flashKey.dayEvents(k)))
+  return kind && f ? `${kind}:${f.seq}` : ''
+}
 
 export interface TimelineProps {
   date: string
@@ -39,6 +57,9 @@ export function Timeline({ date, today, timeline, onSlot }: TimelineProps) {
   const { boxes, more, hourPx, dayPx, tailPx } = timeline
   const isToday = date === today
   const scroller = useRef<HTMLDivElement>(null)
+  /** 予定を置ける所（幅を測って、枠ごとの中の出し方を決める。測れていない間は 0） */
+  const events = useRef<HTMLDivElement>(null)
+  const eventsPx = useElementWidth(events)
 
   // 開いた時の位置（画面を開いた時と、見ている日・1時間の高さが替わった時だけ。今日かどうかは、その時に見る。
   // 開いたまま 0時を過ぎて今日が替わっても、位置は動かさない）
@@ -48,6 +69,19 @@ export function Timeline({ date, today, timeline, onSlot }: TimelineProps) {
     const el = scroller.current
     if (el) el.scrollTop = initialScrollPx(date === todayRef.current, minuteOfDay(Date.now()), hourPx)
   }, [date, hourPx])
+
+  // マンスリーの数字から来た時は、目立たせる予定が見える所まで動かす（キーが置かれた時だけ。開いた時の位置を当てた後に見る）
+  const arrival = useCalendarUi((s) => arrivalOf(s.flash))
+  const boxesRef = useRef(boxes)
+  boxesRef.current = boxes
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (!el || !arrival) return
+    const kind = arrival.slice(0, arrival.indexOf(':')) as ItemKind
+    const view = { top: el.scrollTop, height: el.clientHeight, max: el.scrollHeight - el.clientHeight }
+    const top = arrivalScrollPx(boxesRef.current, kind, view, hourPx)
+    if (top !== null) el.scrollTop = top
+  }, [arrival, hourPx])
 
   const onGridClick = onSlot
     ? (e: MouseEvent<HTMLDivElement>) => {
@@ -68,7 +102,7 @@ export function Timeline({ date, today, timeline, onSlot }: TimelineProps) {
               </span>
             ))}
           </div>
-          <div className="dy-events">
+          <div ref={events} className="dy-events">
             <div className="dy-grid" onClick={onGridClick} aria-hidden="true">
               {HOURS.map((h) => (
                 <div
@@ -79,9 +113,14 @@ export function Timeline({ date, today, timeline, onSlot }: TimelineProps) {
                 />
               ))}
             </div>
-            {boxes.map((b) =>
-              b.part === 'single' ? <TimedEvent key={b.c.item.id} {...b} /> : <MultiDayPiece key={b.c.item.id} {...b} />,
-            )}
+            {boxes.map((b) => {
+              const fit = fitBox(b, eventsPx, date)
+              return b.part === 'single' ? (
+                <TimedEvent key={b.c.item.id} {...b} {...fit} />
+              ) : (
+                <MultiDayPiece key={b.c.item.id} {...b} {...fit} />
+              )
+            })}
             {more.map((m) => (
               <MoreChip key={m.at} chip={m} date={date} />
             ))}
@@ -93,33 +132,24 @@ export function Timeline({ date, today, timeline, onSlot }: TimelineProps) {
   )
 }
 
-/** 一覧の名前（同じ件名が並ぶ時は、押した所を見分けられるよう後ろに番号を付ける。項目の名前は一覧の中で1つずつ） */
-function uniqueLabels(items: readonly CalItem[]): string[] {
-  const used = new Map<string, number>()
-  return items.map((c) => {
-    const title = displayTitle(c.item)
-    const n = (used.get(title) ?? 0) + 1
-    used.set(title, n)
-    return n === 1 ? title : `${title}（${n}）`
-  })
-}
-
 /**
  * 列に入らなかった予定の「+n」の札（等幅 11px。まとまりの右の端に空けた札の所に、隠れた予定のいちばん早い時刻の高さで。
- * AMB-ITEMS-13）。押すと札の下に隠れた予定の一覧（区分のアイコン・件名・時刻）を小さく開き、一覧の予定を押すと詳細（ITEMS-148）。
- * 一覧は外を押す・Esc・スクロールで閉じ、閉じたら札へフォーカスを戻す（PopupMenu）
+ * AMB-ITEMS-13）。押すと札の下に隠れた予定の一覧（区分のアイコン・件名・等幅の時刻）を小さく開き、一覧の予定を押すと詳細
+ * （ITEMS-148）。同じ件名が並んでもそのまま出す（読み上げは件名と時刻）。一覧は外を押す・Esc・スクロールで閉じ、閉じたら札へ
+ * フォーカスを戻す（PopupMenu）
  */
 function MoreChip({ chip, date }: { chip: MoreChipVM; date: string }) {
   const n = chip.ids.length
   const { openDetail } = useItemSheets()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  const labels = uniqueLabels(chip.items)
-  const items: PopupMenuItem[] = chip.items.map((c, i) => {
+  const items: PopupMenuItem[] = chip.items.map((c) => {
+    const title = displayTitle(c.item)
     const time = timeLabel(c, { on: date })
     return {
-      label: labels[i],
-      ariaLabel: `${labels[i]}、${time}`,
+      label: title,
+      ariaLabel: `${title}、${time}`,
       hint: time,
+      monoHint: true,
       icon: <KindIcon kind={kindOf(c.item)} title={ITEM_KIND_LABELS[kindOf(c.item)]} className="icon" />,
       onSelect: () => openDetail(c.item.id),
     }

@@ -269,11 +269,12 @@
   outline-offset: -2px;
 }
 
-/* すばやく足す（「＋ 予定を足す」の行がその場でこの1行の入力欄に替わる。行と同じ 40px に収める。12.1・D44） */
+/* すばやく足す（「＋ 予定を足す」の行がその場でこの1行の入力欄に替わる。12.1・D44）。行と同じ高さ 40px にそろえ、開いた・閉じた
+   時に下の物が動かないようにする（S・M・指の端末の入力欄は 40px なので、上下の余白は付けない） */
 .dy-quick {
   align-items: center;
-  min-height: 40px;
-  padding: 2px 8px 2px 4px;
+  height: 40px;
+  padding: 0 8px 0 4px;
 }
 
 /* ===== タイムスケジュール（右。11.3）: その中だけでスクロールする。0:00〜24:00（1時間 --hour-px） ===== */
@@ -370,11 +371,15 @@
 }
 
 /* 予定の枠（1日の予定・日をまたぐ予定の開始のカード）: 地は --surface（区分で変えない）、1px の --border、ラベルの左の一辺 4px
-   （.label-edge）、角丸 6px、余白 上下 4px・左 10px（左上の点線の丸の分を足す）・右 6px */
+   （.label-edge）、角丸 6px、余白 上下 4px・左 10px（左上の点線の丸の分を足す）・右 6px。
+   中の並び: 1行目に件名（「押すと詳細」のボタン。残りの幅いっぱい）と右上の印、2行目に時刻（幅いっぱい）。狭い枠（.is-narrow）と
+   1行にまとめた枠（.is-compact）は下で並べ替える */
 .dy-box {
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: flex-start;
-  gap: 4px;
+  column-gap: 4px;
   min-width: 0;
   padding: 4px 6px 4px 30px;
   border: 1px solid var(--border);
@@ -411,7 +416,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  flex: 1 1 auto;
+  flex: 1 1 0;
 }
 
 /* 件名（12px・500。入るだけの行。後ろに区分の色のハイライト .kind-marker） */
@@ -427,7 +432,11 @@
   line-height: 16px;
 }
 
+/* 時刻（等幅 11px）。入る表記だけを出す（dayModel.ts の fitBox。途中で切らない）。読み上げはボタンの中の長い表記 */
 .dy-ev-time {
+  flex: 0 0 100%;
+  min-width: 0;
+  overflow: hidden;
   line-height: 14px;
 }
 
@@ -448,6 +457,11 @@
     inset: -5px -6px -15px;
   }
 
+  /* 狭い枠では AI の札が2行目（時刻の行）にあるので、上の件名には広げない（下と左右だけ。枠の外は枠の overflow で切れる） */
+  .dy-box.is-narrow .dy-ev-marks .cp-ai::after {
+    inset: 0 -6px -15px;
+  }
+
   .dy-row-marks .cp-ai::after {
     inset: -10px -6px;
   }
@@ -466,30 +480,50 @@
   pointer-events: none;
 }
 
-/* 低い枠（2行が入らない）: 件名（1行）と時刻を横に並べる */
+/* 狭い枠（印を件名の横に置くと件名が5字ほども入らない2行の枠。dayModel.ts の fitBox）: 件名は1行目の幅いっぱい、印は2行目の
+   時刻の右へ下ろす */
+.dy-box.is-narrow .dy-ev-open {
+  flex-basis: 100%;
+}
+
+.dy-box.is-narrow .dy-ev-time {
+  flex: 1 1 0;
+}
+
+.dy-box.is-narrow .dy-ev-marks,
+.dy-box.is-compact .dy-ev-marks {
+  order: 1;
+  height: 14px;
+  margin-left: auto;
+}
+
+/* 低い枠（2行が入らない）: 件名（1行）・時刻・印を1行に並べる。件名と時刻は字の下の線をそろえ、間は 6px */
+.dy-box.is-compact {
+  flex-wrap: nowrap;
+}
+
 .dy-box.is-compact .dy-ev-open {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 6px;
+  flex: 0 1 auto;
+  align-self: baseline;
 }
 
 .dy-box.is-compact .dy-ev-title {
   -webkit-line-clamp: 1;
   line-clamp: 1;
-  flex: 0 1 auto;
   min-width: 0;
   line-height: 14px;
 }
 
-/* 幅が足りない時は時刻の方から切る（件名を先に見せる） */
+/* 幅が足りない時は時刻の方から縮める（件名を先に見せる。入らない表記は fitBox が短くするか出さない） */
 .dy-box.is-compact .dy-ev-time {
   flex: 0 100 auto;
-  min-width: 0;
-  overflow: hidden;
+  align-self: baseline;
+  margin-left: 2px;
 }
 
-.dy-box.is-compact .dy-ev-marks {
-  height: 14px;
+/* とても狭い枠: 印を区分のアイコン（と●・矢印）だけにする（〆・ロック・AI の札は詳細で見る） */
+.dy-box.is-marks-thin .dy-ev-marks :is([data-mark='due'], [data-mark='lock'], .cp-ai) {
+  display: none;
 }
 
 /* ===== 日をまたぐ予定のその日の部分（11.3・7.8）: 部分の入れ物は押せない（線の横の空いた時間を押せるように）。

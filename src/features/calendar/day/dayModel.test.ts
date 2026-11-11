@@ -4,15 +4,25 @@ import { calendarItems } from '../../../domain/calendar'
 import { mkItem, mkTask } from '../../../domain/testData'
 import type { Item } from '../../../domain/types'
 import {
+  arrivalScrollPx,
+  boxMarksPx,
+  boxPx,
+  boxTextPx,
   buildDay,
   buildSection,
   buildTimeline,
+  fitBox,
   hourPxOf,
   initialScrollPx,
   maxColsOf,
   minuteOfDay,
   minuteToPx,
+  monoPx,
   pxToMinute,
+  timeChoices,
+  titleLineCount,
+  titlePx,
+  type TimedBoxVM,
 } from './dayModel'
 
 const D = '2026-11-10'
@@ -312,5 +322,174 @@ describe('タイムスケジュール（11.3・ITEMS-133・142〜147）', () => 
   it('完了した予定・ゴミ箱の物・時刻の無い物', () => {
     const tl = buildTimeline(listOf(timed('done', '10:00', '11:00', { done: true }), mkItem({ id: 'untimed' })), D, 'L')
     expect(tl.boxes.map((b) => b.c.item.id)).toEqual(['done'])
+  })
+})
+
+describe('狭い枠の中の出し方（fitBox。11.3・D39。見本の「‹ 資料づ…」「レ…」の直し）', () => {
+  /** その日のタイムスケジュールの、その予定の枠 */
+  const boxOf = (items: Item[], id: string, width: 'L' | 'M' | 'S', date = D): TimedBoxVM => {
+    const b = buildTimeline(listOf(...items), date, width).boxes.find((x) => x.c.item.id === id)
+    if (!b) throw new Error(id)
+    return b
+  }
+  // 見本の 11/10: 資料づくり（11/9 10:00〜11/12 18:00 の間の日）・定例・レビュー（ロック）・面談
+  const sample = [
+    mkItem({
+      id: 'materials',
+      title: '資料づくり',
+      start: '2026-11-09',
+      due: '2026-11-12',
+      startTime: '10:00',
+      endTime: '18:00',
+    }),
+    timed('weekly', '10:00', '11:30', { title: '定例ミーティング' }),
+    timed('review', '15:00', '16:00', { title: 'レビュー', locked: true }),
+    timed('interview', '15:30', '17:00', { title: '面談' }),
+  ]
+  /** S 390px の予定を置ける所の幅（タイムスケジュール 338px − 時刻の欄 48px） */
+  const S390 = 290
+
+  it('枠の幅と字の所の幅は day.css と同じ式（(置ける幅 − 8) × w − 札の所 24 × wRoom − 2。丸あり 30px・無し 10px と右 6px・線 2px を引く）', () => {
+    const third = { w: 1 / 3, wRoom: 0 }
+    expect(boxPx(third, S390)).toBeCloseTo(92)
+    expect(boxTextPx({ ...third, ring: true }, S390)).toBeCloseTo(54)
+    expect(boxTextPx({ ...third, ring: false }, S390)).toBeCloseTo(74)
+    expect(boxPx({ w: 1 / 4, wRoom: 1 / 4 }, 536)).toBeCloseTo(124)
+  })
+
+  it('印の幅: 区分のアイコン 12px と、〆 11・ロック 12・AI の札（Claude 44・AI 20）・線の無いカードの●10・矢印12、間 4px。thin はアイコンと●・矢印だけ', () => {
+    expect(boxMarksPx(mkItem({}), null)).toBe(12)
+    expect(boxMarksPx(mkItem({ locked: true }), null)).toBe(28)
+    expect(boxMarksPx(mkItem({ locked: true, by: 'connector', ai: 'claude' }), null)).toBe(12 + 12 + 44 + 2 * 4)
+    expect(boxMarksPx(mkItem({ by: 'connector', ai: null }), null)).toBe(12 + 20 + 4)
+    expect(boxMarksPx(mkTask({ due: D }), 'dot')).toBe(12 + 11 + 10 + 2 * 4)
+    expect(boxMarksPx(mkItem({ locked: true, by: 'connector', ai: 'claude' }), 'arrow', true)).toBe(12 + 12 + 4)
+  })
+
+  it('字の幅のおおよそ: 等幅 11px は英数字 0.6 倍・〜 は 1 倍、件名 12px は全角 1.02 倍・英数字 0.6 倍。行の数は1字ずつ詰めて数える', () => {
+    expect(monoPx('10:00–11:30')).toBeCloseTo(11 * 6.6)
+    expect(monoPx('〜11/12')).toBeCloseTo(11 + 5 * 6.6)
+    expect(titlePx('レビュー')).toBeCloseTo(4 * 12.24)
+    expect(titleLineCount('見積もりの確認', 76)).toBe(2)
+    expect(titleLineCount('見積もりの確認', 92)).toBe(1)
+    expect(titleLineCount('レビュー', 5)).toBe(Infinity)
+  })
+
+  it('時刻・期間の候補は長い順: 「10:00–11:30」→「10:00」、日をまたぐ予定は「11/9 10:00〜11/12 18:00」→「11/9〜11/12」→「〜11/12」（最終日は「11/9〜」）', () => {
+    const [m] = listOf(sample[0])
+    const [w] = listOf(sample[1])
+    const [s] = listOf(timed('s', '13:00', null))
+    expect(timeChoices(w, D)).toEqual(['10:00–11:30', '10:00'])
+    expect(timeChoices(s, D)).toEqual(['13:00'])
+    expect(timeChoices(m, D)).toEqual(['11/9 10:00〜11/12 18:00', '11/9〜11/12', '〜11/12'])
+    expect(timeChoices(m, '2026-11-12')).toEqual(['11/9 10:00〜11/12 18:00', '11/9〜11/12', '11/9〜'])
+  })
+
+  it('見本の 11/10 S（390px）: 「‹ 資料づくり」と「レビュー」は印を時刻の行へ下ろして件名を幅いっぱいに。期間は「〜11/12」、時刻は入る物だけ', () => {
+    const m = fitBox(boxOf(sample, 'materials', 'S'), S390, D)
+    expect(m).toEqual({ narrow: true, thinMarks: false, time: '〜11/12', timeFull: '11/9 10:00〜11/12 18:00' })
+    // レビュー: 字の所 54px にアイコンとロック（28px）を並べると時刻（「15:00」33px）が入らない → 出さない（途中で切らない）
+    expect(fitBox(boxOf(sample, 'review', 'S'), S390, D)).toEqual({
+      narrow: true,
+      thinMarks: false,
+      time: '',
+      timeFull: '15:00–16:00',
+    })
+    // 面談は印の横に件名が入るので下ろさない。時刻の行は幅いっぱい（54px）で「15:30」まで
+    expect(fitBox(boxOf(sample, 'interview', 'S'), S390, D)).toEqual({
+      narrow: false,
+      thinMarks: false,
+      time: '15:30',
+      timeFull: '15:30–17:00',
+    })
+    expect(fitBox(boxOf(sample, 'weekly', 'S'), S390, D)).toMatchObject({ narrow: false, time: '10:00–11:30' })
+  })
+
+  it('M（768px）の 1/3 の「‹ 資料づくり」は横に印のまま、期間は日付だけ（「11/9〜11/12」）', () => {
+    expect(fitBox(boxOf(sample, 'materials', 'M'), 362, D)).toMatchObject({ narrow: false, time: '11/9〜11/12' })
+  })
+
+  it('測れていない（0）時は、印を件名の横・長い表記のまま', () => {
+    for (const id of ['materials', 'review', 'interview']) {
+      const b = boxOf(sample, id, 'S')
+      const f = fitBox(b, 0, D)
+      expect(f, id).toMatchObject({ narrow: false, thinMarks: false })
+      expect(f.time, id).toBe(f.timeFull)
+    }
+  })
+
+  it('L の 1/4 で AI の札とロックの付いた予定も件名が消えない（印を時刻の行へ）。下ろせば件名が入りきる時も下ろす。入りきる件名は横のまま', () => {
+    const four = [
+      timed('a', '09:00', '10:00', { title: '電話' }),
+      timed('b', '09:00', '10:00', { title: '社内の確認', locked: true }),
+      timed('c', '09:00', '10:00', { title: '打ち合わせ', locked: true, by: 'connector', ai: 'claude' }),
+      timed('d', '09:00', '10:15', { title: '見積もりの確認' }),
+    ]
+    const at = (id: string) => fitBox(boxOf(four, id, 'L'), 536, D)
+    expect(at('c')).toMatchObject({ narrow: true, thinMarks: false })
+    // 社内の確認: 横（60px）には 4字しか入らないが、下ろせば（92px）入りきる
+    expect(at('b')).toMatchObject({ narrow: true, time: '9:00' })
+    expect(at('a')).toMatchObject({ narrow: false, time: '9:00–10:00' })
+    // 見積もりの確認（1時間15分。件名 2行）: 横の 2行に入りきる
+    expect(at('d')).toMatchObject({ narrow: false })
+  })
+
+  it('横が狭い（5字より狭い）時は、1行に入る時だけ印を横に置く（「電／話」と1字ずつ折り返さずに下ろす。S 360px の 11/13）', () => {
+    const busy = ['a', 'b', 'c', 'd', 'e'].map((id) => timed(id, '14:00', '15:30', { title: '電話' }))
+    const a = boxOf(busy, 'a', 'S')
+    expect(a.lines).toBe(2)
+    // 予定を置ける所 260px: 3列と札の所 → 字の所 36px、アイコンの横 20px（「電話」は 2行なら入るが、1行には入らない）
+    expect(fitBox(a, 260, D)).toMatchObject({ narrow: true, time: '' })
+    // 390px（290px）ならアイコンの横 30px の1行に入るので横のまま、時刻は「14:00」
+    expect(fitBox(a, 290, D)).toMatchObject({ narrow: false, time: '14:00' })
+  })
+
+  it('1行にまとめた低い枠: 件名を先に出し、時刻は件名の後ろに入る物だけ。とても狭い枠は印を区分のアイコンだけに', () => {
+    const four = [
+      timed('a', '09:00', '09:30', { title: '朝会' }),
+      timed('b', '09:00', '09:30', { title: '連絡' }),
+      timed('c', '09:00', '09:30', { title: '打ち合わせの候補', locked: true, by: 'connector', ai: 'claude' }),
+      timed('d', '09:00', '09:30', { title: '確認' }),
+    ]
+    expect(boxOf(four, 'a', 'L').compact).toBe(true)
+    expect(fitBox(boxOf(four, 'a', 'L'), 536, D)).toMatchObject({ narrow: false, thinMarks: false, time: '9:00' })
+    expect(fitBox(boxOf(four, 'c', 'L'), 536, D)).toMatchObject({ narrow: false, thinMarks: true, time: '' })
+    // 広い（1列の）枠は長い表記のまま
+    expect(fitBox(boxOf([four[0]], 'a', 'L'), 536, D)).toMatchObject({ time: '9:00–9:30', thinMarks: false })
+  })
+})
+
+describe('マンスリーの数字から来た時の位置（arrivalScrollPx）', () => {
+  const list = [
+    timed('w1', '10:00', '11:00'),
+    timed('w2', '13:00', '14:00'),
+    timed('p1', '19:00', '21:00', { kind: 'private' }),
+    timed('p2', '22:00', '23:00', { kind: 'private' }),
+    mkItem({ id: 'pm', kind: 'private', start: '2026-11-09', due: '2026-11-12', startTime: '10:00', endTime: '18:00' }),
+  ]
+  const boxes = buildTimeline(listOf(...list), D, 'L').boxes
+
+  it('目立たせる予定がみな見えていれば動かさない', () => {
+    expect(arrivalScrollPx(boxes, 'work', { top: 8 * 48, height: 600, max: 900 }, 48)).toBeNull()
+  })
+
+  it('見えない予定がある時は、いちばん多く見える位置（予定の始まりの 30分前を上の端に）へ。いちばん下より下へは行かない', () => {
+    // 7:00〜15:20 が見えている: 夜の2件が見えない（間の日の部分は見えている）
+    expect(arrivalScrollPx(boxes, 'private', { top: 7 * 48, height: 400, max: 2000 }, 48)).toBe(19 * 48 - 24)
+    expect(arrivalScrollPx(boxes, 'private', { top: 7 * 48, height: 400, max: 24 * 48 - 400 }, 48)).toBe(24 * 48 - 400)
+    // 仕事は2件とも見える位置（9:30）へ
+    expect(arrivalScrollPx(boxes, 'work', { top: 13.5 * 48, height: 200, max: 2000 }, 48)).toBe(9.5 * 48)
+  })
+
+  it('その区分の予定が無い・高さが測れていない時は動かさない', () => {
+    expect(
+      arrivalScrollPx(
+        boxes.filter((b) => b.c.item.kind === 'work'),
+        'private',
+        { top: 0, height: 400, max: 900 },
+        48,
+      ),
+    ).toBeNull()
+    expect(arrivalScrollPx(boxes, 'private', { top: 0, height: 0, max: 0 }, 48)).toBeNull()
   })
 })

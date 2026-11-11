@@ -530,11 +530,6 @@
   animation: pop-in var(--dur-menu) ease-out;
 }
 
-/* 詳細の「…」のメニュー（src/ui/PopupMenu）も、小さな画面の上に出す */
-body:has(.modal.it-sheet) .pm-menu {
-  z-index: 110;
-}
-
 /* 時刻の一覧・依頼者の候補（入力欄と同じ幅から。中でスクロール） */
 .it-options {
   max-height: min(240px, 40dvh);

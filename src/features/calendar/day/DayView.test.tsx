@@ -8,7 +8,7 @@ import type { AppData, Item } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
 import { useCalendarUi, useToasts } from '../../../store/uiStore'
-import { renderView, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
+import { renderView, resizeObserved, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
 import { testIds } from '../common/testIds'
 import type { SheetLocationState, ViewProps, WidthClass } from '../common/types'
 import { DayView } from './DayView'
@@ -456,8 +456,9 @@ describe('押した時の動き（WP8B）', () => {
     expect(document.activeElement).toBe(screen.getByTestId(testIds.dayMore))
   })
 
-  it('一覧に同じ件名が並ぶ時は、後の物に番号を付けて見分ける', async () => {
+  it('一覧に同じ件名が並んでもそのまま出す（番号を付けない。項目は並びの順で見分ける）。時刻は等幅（is-mono）', async () => {
     const user = userEvent.setup()
+    const errors = vi.spyOn(console, 'error')
     await renderDay(
       itemsOf(
         ...['a', 'b', 'c', 'd', 'e'].map((id) => timed(id, '14:00', '15:00', { title: '電話', order: T0 + id.charCodeAt(0) })),
@@ -465,11 +466,13 @@ describe('押した時の動き（WP8B）', () => {
       { width: 'S' },
     )
     await user.click(screen.getByTestId(testIds.dayMore))
-    expect(
-      within(screen.getByRole('menu'))
-        .getAllByRole('menuitem')
-        .map((i) => i.getAttribute('aria-label')),
-    ).toEqual(['電話、14:00–15:00', '電話（2）、14:00–15:00'])
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem')
+    expect(items.map((i) => i.getAttribute('aria-label'))).toEqual(['電話、14:00–15:00', '電話、14:00–15:00'])
+    for (const i of items) expect(i.querySelector('.pm-hint')?.classList.contains('is-mono')).toBe(true)
+    // 同じ名前の項目でも React のキーが重ならない
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false)
+    await user.click(items[1])
+    errors.mockRestore()
   })
 
   it('タイムスケジュールの点線の丸を押すと完了にし、「『件名』を完了にしました［元に戻す］」。［元に戻す］で戻る（12.5・ITEMS-139）', async () => {
@@ -536,6 +539,110 @@ describe('マンスリーの数字から来た時・登録した時に目立た�
     expect(flashed(screen.getByTestId(testIds.dayArea('work')))).toBe(true)
     expect(flashed(screen.getByTestId(testIds.dayEvent('w-ev')))).toBe(true)
   })
+
+  describe('目立たせる予定が見える所までタイムスケジュールを動かす（arrivalScrollPx）', () => {
+    const scroller = () => screen.getByTestId(testIds.dayTimeline).querySelector('.dy-tl-scroll') as HTMLElement
+    /** jsdom は大きさを測らないので、タイムスケジュールの見えている高さ（400px）と中身の高さ（24時間）を決める */
+    function fakeScroller() {
+      const isScroller = (el: Element) => el.classList.contains('dy-tl-scroll')
+      const client = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(function (this: Element) {
+        return isScroller(this) ? 400 : 0
+      })
+      const scroll = vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(function (this: Element) {
+        return isScroller(this) ? 24 * 48 : 0
+      })
+      return () => {
+        client.mockRestore()
+        scroll.mockRestore()
+      }
+    }
+
+    it('見えない所の予定（11/11 の 22:00）なら、見える所まで動かす（いちばん下まで）', async () => {
+      const restore = fakeScroller()
+      try {
+        act(() => useCalendarUi.getState().flashTarget('day-area:private', 'day-events:private'))
+        await renderDay(itemsOf(timed('late', '22:00', '23:00', { kind: 'private', start: '2026-11-11' })), {
+          viewed: '2026-11-11',
+        })
+        // 開いた時の 7:00（336px）からは見えない → 21:30 を上にしたいが、いちばん下（1152 − 400）まで
+        expect(scroller().scrollTop).toBe(24 * 48 - 400)
+      } finally {
+        restore()
+      }
+    })
+
+    it('みな見えていれば、開いた時の位置のまま（今日は今の 60分前）。数字から来ていない時も動かさない', async () => {
+      const restore = fakeScroller()
+      try {
+        act(() => useCalendarUi.getState().flashTarget('day-area:work', 'day-events:work'))
+        const r = await renderDay(data)
+        expect(scroller().scrollTop).toBe(8 * 48)
+        r.unmount()
+        act(() => useCalendarUi.getState().clearFlash(useCalendarUi.getState().flash?.seq ?? 0))
+        await renderDay(itemsOf(timed('late', '22:00', '23:00', { kind: 'private' })))
+        expect(scroller().scrollTop).toBe(8 * 48)
+      } finally {
+        restore()
+      }
+    })
+  })
+})
+
+describe('狭い枠: 印を時刻の行へ下ろし、件名を幅いっぱいに。時刻・期間は入る表記だけ（11.3・D39。見本の「‹ 資料づ…」「レ…」の直し）', () => {
+  // 見本の 11/10: 資料づくり（11/9 10:00〜11/12 18:00 の間の日）・定例・レビュー（ロック）・面談
+  const sample = itemsOf(
+    mkItem({
+      id: 'materials',
+      title: '資料づくり',
+      start: '2026-11-09',
+      due: '2026-11-12',
+      startTime: '10:00',
+      endTime: '18:00',
+    }),
+    timed('weekly', '10:00', '11:30', { title: '定例ミーティング' }),
+    timed('review', '15:00', '16:00', { title: 'レビュー', locked: true }),
+    timed('interview', '15:30', '17:00', { title: '面談' }),
+  )
+  const events = () => screen.getByTestId(testIds.dayTimeline).querySelector('.dy-events') as HTMLElement
+  const time = (id: string) => screen.getByTestId(testIds.dayEvent(id)).querySelector('.dy-ev-time')?.textContent ?? null
+  const narrow = (id: string) => screen.getByTestId(testIds.dayEvent(id)).classList.contains('is-narrow')
+
+  it('S（予定を置ける所 290px）: 1/3 の「‹ 資料づくり」とレビューは is-narrow。期間は「〜11/12」、入らない時刻は出さない。読み上げは長い表記', async () => {
+    await renderDay(sample, { width: 'S' })
+    act(() => resizeObserved(290, 1056, events()))
+    expect([narrow('materials'), narrow('review'), narrow('interview'), narrow('weekly')]).toEqual([true, true, false, false])
+    expect([time('materials'), time('review'), time('interview'), time('weekly')]).toEqual([
+      '〜11/12',
+      null,
+      '15:30',
+      '10:00–11:30',
+    ])
+    const card = screen.getByTestId(testIds.dayEvent('materials'))
+    expect(card.querySelector('.dy-ev-time')?.getAttribute('aria-hidden')).toBe('true')
+    expect(card.querySelector('.dy-ev-open')?.textContent).toBe('‹ 資料づくり11/9 10:00〜11/12 18:00')
+    expect(screen.getByTestId(testIds.dayEvent('review')).querySelector('.dy-ev-open')?.textContent).toBe('レビュー15:00–16:00')
+    // 広くなったら（測り直し）元の出し方に戻る
+    act(() => resizeObserved(900, 1056, events()))
+    expect(narrow('materials')).toBe(false)
+    expect(time('materials')).toBe('11/9 10:00〜11/12 18:00')
+    expect(time('review')).toBe('15:00–16:00')
+  })
+
+  it('とても狭い1行の枠は、印を区分のアイコンだけにする（is-marks-thin。〆・ロック・AI の札は詳細で見る）', async () => {
+    const four = itemsOf(
+      timed('a', '09:00', '09:30', { title: '朝会' }),
+      timed('b', '09:00', '09:30', { title: '連絡' }),
+      timed('c', '09:00', '09:30', { title: '打ち合わせの候補', locked: true, by: 'connector', ai: 'claude', via: 'メール' }),
+      timed('d', '09:00', '09:30', { title: '確認' }),
+    )
+    await renderDay(four)
+    act(() => resizeObserved(536, 1152, events()))
+    const c = screen.getByTestId(testIds.dayEvent('c'))
+    expect(c.classList.contains('is-compact')).toBe(true)
+    expect(c.classList.contains('is-marks-thin')).toBe(true)
+    expect(screen.getByTestId(testIds.dayEvent('a')).classList.contains('is-marks-thin')).toBe(false)
+    expect(time('a')).toBe('9:00')
+  })
 })
 
 describe('すばやく足す（「＋ 予定を足す」。12.1・ITEMS-123・D44）', () => {
@@ -559,6 +666,30 @@ describe('すばやく足す（「＋ 予定を足す」。12.1・ITEMS-123・D4
     await user.keyboard('{Escape}')
     expect(input()).toBeNull()
     expect(within(area).getByTestId(testIds.dayAdd('private'))).toBeTruthy()
+  })
+
+  it('Esc で閉じると「＋ 予定を足す」の行へフォーカスを戻す。外を押して閉じた時は戻さない（押した所の操作のまま）', async () => {
+    const user = userEvent.setup()
+    await renderDay(itemsOf(mkItem({ id: 'w-row', title: 'メールの返信' })))
+    await user.click(screen.getByTestId(testIds.dayAdd('work')))
+    await user.keyboard('{Escape}')
+    expect(document.activeElement).toBe(screen.getByTestId(testIds.dayAdd('work')))
+    await user.click(screen.getByTestId(testIds.dayAdd('work')))
+    await user.click(screen.getByTestId(testIds.dayHead))
+    expect(input()).toBeNull()
+    expect(document.activeElement).not.toBe(screen.getByTestId(testIds.dayAdd('work')))
+  })
+
+  it('入力欄の外（リストの行）を押している間は閉じず、押し終わる（click）と閉じて、押した行の詳細が開く（並びが押した指の下で動かない）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderDay(itemsOf(mkItem({ id: 'w-row', title: 'メールの返信' })), { width: 'S' })
+    await user.click(screen.getByTestId(testIds.dayAdd('private')))
+    const open = screen.getByTestId(testIds.dayRow('w-row')).querySelector('.dy-open') as HTMLElement
+    await user.pointer({ keys: '[MouseLeft>]', target: open })
+    expect(input()).not.toBeNull()
+    await user.pointer({ keys: '[/MouseLeft]', target: open })
+    expect(input()).toBeNull()
+    expect(sheetOf(router)).toEqual({ kind: 'detail', id: 'w-row' })
   })
 
   it('開いているのは1つだけ（ほかの区切りの行を押すと、そちらに替わる）。見ている日が替わったら閉じる', async () => {
