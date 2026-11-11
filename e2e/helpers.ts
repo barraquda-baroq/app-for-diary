@@ -407,3 +407,125 @@ export async function touchSwipe(
   if (touchVia(page, via) === 'cdp') await cdpTouch(page, points, 0, stepMs)
   else await syntheticTouch(page, points, 0, stepMs)
 }
+
+// ---------- 段階2: 途中で止められるドラッグ（ウィークリーのドラッグ。掴んでいる間の様子を見る・撮る。WP11） ----------
+
+/** 掴んだまま止めているドラッグ。moveTo で動かし、drop で離す（drop の後は使わない） */
+export interface DragSession {
+  /** 指・マウスを to へ steps 回に分けて動かす（離さない） */
+  moveTo(to: Locator | Point, opts?: { steps?: number; stepMs?: number }): Promise<void>
+  /** 離す */
+  drop(): Promise<void>
+}
+
+/**
+ * マウスで押し、grabPx（初めは 8px。掴むのは 5px を超えた時。docs/SPEC.md の 7.11）だけ動かして掴んだ所で止める。
+ * 掴めない物（ロック中）でも同じように押して動かす（掴もうとした様子を見る）
+ */
+export async function startMouseDrag(
+  page: Page,
+  from: Locator | Point,
+  { grabPx = 8, dy = 0 }: { grabPx?: number; dy?: number } = {},
+): Promise<DragSession> {
+  const a = await pointOf(from)
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(a.x + grabPx, a.y + dy, { steps: 2 })
+  return {
+    moveTo: async (to, { steps = 10 } = {}) => {
+      const b = await pointOf(to)
+      await page.mouse.move(b.x, b.y, { steps })
+    },
+    drop: () => page.mouse.up(),
+  }
+}
+
+/** 合成した指（WebKit 用）の、押している間の控え（ページの中に置く。syntheticTouch と同じ送り方） */
+interface SyntheticFinger {
+  target: Element
+  x: number
+  y: number
+}
+
+/** 合成した指の出来事を1つ送る（押した要素へ。外れた後は指の下の要素へ。pointerId は 1。syntheticTouch の説明） */
+async function syntheticFire(page: Page, type: 'pointerdown' | 'pointermove' | 'pointerup', p: Point): Promise<void> {
+  await page.evaluate(
+    ({ type, p }) => {
+      const w = window as unknown as { __e2eFinger?: SyntheticFinger }
+      if (type === 'pointerdown') {
+        w.__e2eFinger = { target: document.elementFromPoint(p.x, p.y) ?? document.body, x: p.x, y: p.y }
+      }
+      const f = w.__e2eFinger
+      if (!f) throw new Error('指を押していません')
+      const buttons = type === 'pointerup' ? 0 : 1
+      ;(f.target.isConnected ? f.target : (document.elementFromPoint(p.x, p.y) ?? document.body)).dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId: 1,
+          pointerType: 'touch',
+          isPrimary: true,
+          clientX: p.x,
+          clientY: p.y,
+          button: 0,
+          buttons,
+          width: 10,
+          height: 10,
+          pressure: buttons ? 0.5 : 0,
+        }),
+      )
+      f.x = p.x
+      f.y = p.y
+      if (type === 'pointerup') delete w.__e2eFinger
+    },
+    { type, p },
+  )
+}
+
+/**
+ * 指で押して holdMs（初めは 450ms。掴むのは 400ms・8px 以内）待ち、掴んだ所で止める。Chromium は CDP の本物のタッチ、WebKit は
+ * 合成した PointerEvent（longPressDrag と同じ）。page.clock.install（タイマーも偽物）と一緒には使わない
+ */
+export async function startLongPress(
+  page: Page,
+  from: Locator | Point,
+  { holdMs = 450, via }: { holdMs?: number; via?: TouchVia } = {},
+): Promise<DragSession> {
+  let pos = await pointOf(from)
+  if (touchVia(page, via) === 'cdp') {
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pos] })
+    await page.waitForTimeout(holdMs)
+    return {
+      moveTo: async (to, { steps = 10, stepMs = 16 } = {}) => {
+        const b = await pointOf(to)
+        for (const p of path(pos, b, steps).slice(1)) {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [p] })
+          if (stepMs) await page.waitForTimeout(stepMs)
+        }
+        pos = b
+      },
+      drop: async () => {
+        try {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        } finally {
+          await cdp.detach()
+        }
+      },
+    }
+  }
+  await syntheticFire(page, 'pointerdown', pos)
+  await page.waitForTimeout(holdMs)
+  return {
+    moveTo: async (to, { steps = 10, stepMs = 16 } = {}) => {
+      const b = await pointOf(to)
+      for (const p of path(pos, b, steps).slice(1)) {
+        await syntheticFire(page, 'pointermove', p)
+        if (stepMs) await page.waitForTimeout(stepMs)
+      }
+      pos = b
+    },
+    drop: () => syntheticFire(page, 'pointerup', pos),
+  }
+}
