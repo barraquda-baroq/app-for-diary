@@ -1,0 +1,71 @@
+/* ===== ウィークリーのドラッグ（src/features/calendar/week/dnd/*。docs/SPEC.md の 7.10・7.11・4.9） =====
+   落とせる日の印（.wk-cell・.wk-half の data-drop）は week.css。ここは掴んだ物の浮いた見た目・落とした後に収まる動き・ロック中の
+   カーソルだけ。色は src/styles.css の変数だけ。
+   掴んでいる間、dnd-kit の Feedback が掴んだ要素に data-dnd-dragging を付けて最上層（popover）へ持ち上げる。dnd-kit は transform と
+   transition を !important で上書きし、transition から scale を外すので、浮く動きは scale と @keyframes で付ける（WP11s の G1）。
+   このファイルは week.css より先に読まれるので、week.css の同じ強さの規則に負けないよう :root を付けて強くする */
+
+/* 浮く（1.03倍・--shadow-lift・不透明度 0.95 に 120ms で。FRAME-229・CALENDAR-162）。視差効果を減らす設定では動きなしですぐ浮く */
+:root .wk-card[data-dnd-dragging],
+:root .wk-end[data-dnd-dragging],
+:root .wk-over[data-dnd-dragging] {
+  scale: 1.03;
+  opacity: 0.95;
+  box-shadow: var(--shadow-lift);
+  animation: dnd-lift var(--dur-lift) ease-out;
+}
+
+/* カードの影は、ラベルの一辺・完了の枠・ディープダークの枠（ぼかしの無い inset。week.css）を残して足す */
+:root .wk-card[data-dnd-dragging][data-label] {
+  box-shadow:
+    inset var(--edge-w) 0 0 var(--label),
+    var(--shadow-lift);
+}
+
+:root .wk-card.is-done[data-dnd-dragging],
+:root[data-theme='deep-dark'] .wk-card[data-dnd-dragging] {
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    var(--shadow-lift);
+}
+
+:root .wk-card.is-done[data-dnd-dragging][data-label],
+:root[data-theme='deep-dark'] .wk-card[data-dnd-dragging][data-label] {
+  box-shadow:
+    inset var(--edge-w) 0 0 var(--label),
+    inset 0 0 0 1px var(--border),
+    var(--shadow-lift);
+}
+
+/* 終点の●（押せる所 28px の丸）・S の「● 件名」の行は、地を --surface にして浮かせる（地が透き通ったままだと影だけが浮く） */
+:root .wk-end[data-dnd-dragging],
+:root .wk-over[data-dnd-dragging] {
+  background: var(--surface);
+}
+
+/* 落とした後、動かさなかった物が元の場所へ戻る間（data-dnd-dropping。160ms）に、浮いた大きさ・薄さから収める。動かした物は
+   移った先の新しいカードを drop.ts の settle で同じように収める（FRAME-230・CALENDAR-182） */
+:root [data-dnd-dragging][data-dnd-dropping] {
+  animation: dnd-settle var(--dur-settle) ease-out forwards;
+}
+
+@keyframes dnd-lift {
+  from {
+    scale: 1;
+    opacity: 1;
+  }
+}
+
+@keyframes dnd-settle {
+  to {
+    scale: 1;
+    opacity: 1;
+  }
+}
+
+/* ロック中の物を掴もうとしている間だけ（揺れた後、離すまで）カーソルを not-allowed にする（CALENDAR-153・D25。lockGesture.ts が
+   html に付け外し）。ふだんのロック中のカードは、ほかのカードと同じ（押すと詳細） */
+:root.dnd-refused,
+:root.dnd-refused * {
+  cursor: not-allowed !important;
+}
