@@ -399,6 +399,18 @@ describe('イヤーの●（8.2・7.9: 完了した物も含めて見る）', ()
     expect(dots.size).toBe(3)
   })
 
+  it('完了した物が先に来ても、あとのまだ完了していない物で open になる（並びに左右されない）', () => {
+    const items = [
+      mkItem({ id: 'a', start: '2026-11-10', done: true, order: 1 }),
+      mkItem({ id: 'b', start: '2026-11-09', due: '2026-11-10', order: 2 }),
+      mkItem({ id: 'c', start: '2026-11-10', done: true, order: 3 }),
+    ]
+    for (const list of [cal(...items), cal(...items).reverse()]) {
+      expect(yearDots(list, 2026).get('2026-11-10')).toEqual({ work: 'open', private: 'none' })
+    }
+    expect(yearDots(cal(items[0], items[2]), 2026).get('2026-11-10')).toEqual({ work: 'allDone', private: 'none' })
+  })
+
   it('複数日の予定は期間中の毎日（月の境をまたいでも）。その年の中の日だけ', () => {
     const list = cal(
       mkItem({ id: 'a', start: '2026-11-29', due: '2026-12-02' }),
@@ -428,22 +440,33 @@ describe('休み（6.5）', () => {
 })
 
 describe('時差を変えても予定の日はずれない（6.4）', () => {
-  it('America/Los_Angeles でも 11/10 10:00 の予定は 11/10 に出る', () => {
-    const items = rec(
-      mkItem({ id: 'a', start: '2026-11-10', startTime: '10:00' }),
-      mkItem({ id: 'b', start: '2026-11-03', due: '2026-11-04', order: T0 + 1 }),
-    )
-    const inTokyo = calendarItems(items)
-    vi.stubEnv('TZ', 'America/Los_Angeles')
+  const items = rec(
+    mkItem({ id: 'a', start: '2026-11-10', startTime: '10:00' }),
+    mkItem({ id: 'b', start: '2026-11-03', due: '2026-11-04', order: T0 + 1 }),
+  )
+  /** その時差の端末で見た、カレンダーに出る日と時刻 */
+  const seenIn = (tz: string, offset: number) => {
+    vi.stubEnv('TZ', tz)
     try {
-      expect(new Date(2026, 10, 10).getTimezoneOffset()).toBe(480)
-      const inLa = calendarItems(items)
-      expect(inLa.map((c) => [c.item.id, c.from, c.to])).toEqual(inTokyo.map((c) => [c.item.id, c.from, c.to]))
-      expect(dayTimed(inLa, '2026-11-10').map((c) => [c.item.id, c.item.startTime])).toEqual([['a', '10:00']])
-      expect([...yearDots(inLa, 2026).keys()]).toEqual(['2026-11-03', '2026-11-04', '2026-11-10'])
-      expect(Object.keys(weekSingles(inLa, '2026-11-08', 'work'))[0]).toBe('2026-11-08')
+      expect(new Date(2026, 10, 10).getTimezoneOffset()).toBe(offset)
+      const list = calendarItems(items)
+      return {
+        periods: list.map((c) => [c.item.id, c.from, c.to]),
+        timed: dayTimed(list, '2026-11-10').map((c) => [c.item.id, c.item.startTime]),
+        dots: [...yearDots(list, 2026).keys()],
+        week: Object.keys(weekSingles(list, '2026-11-08', 'work')),
+      }
     } finally {
       vi.unstubAllEnvs()
     }
+  }
+
+  it('Asia/Tokyo で入れた 11/10 10:00 の予定は、America/Los_Angeles・Pacific/Kiritimati でも 11/10 10:00 に出る', () => {
+    const inTokyo = seenIn('Asia/Tokyo', -540)
+    expect(inTokyo.timed).toEqual([['a', '10:00']])
+    expect(inTokyo.dots).toEqual(['2026-11-03', '2026-11-04', '2026-11-10'])
+    expect(inTokyo.week[0]).toBe('2026-11-08')
+    expect(seenIn('America/Los_Angeles', 480)).toEqual(inTokyo)
+    expect(seenIn('Pacific/Kiritimati', -840)).toEqual(inTokyo)
   })
 })

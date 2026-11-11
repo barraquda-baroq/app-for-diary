@@ -53,11 +53,16 @@ describe('時刻・期間の表記（7.7）', () => {
     expect(timeLabel(c, { on: '2026-11-11' })).toBe('11/9 10:00〜11/11 15:00')
   })
 
-  it('datesOnly（ウィークリーの始点のカードが狭い時）は、複数日の時刻を除いて 11/28〜12/2', () => {
-    expect(timeLabel(one({ start: '2026-11-28', due: '2026-12-02' }), { datesOnly: true })).toBe('11/28〜12/2')
+  it('datesOnly（ウィークリーの始点のカードが狭い時。10.2）は、複数日の時刻を除いて 11/28〜12/2', () => {
     expect(
       timeLabel(one({ start: '2026-11-28', due: '2026-12-02', startTime: '10:00', endTime: '15:00' }), { datesOnly: true }),
     ).toBe('11/28〜12/2')
+    expect(timeLabel(one({ start: '2026-11-28', due: '2026-12-02', startTime: '10:00' }), { datesOnly: true })).toBe(
+      '11/28〜12/2',
+    )
+    // 時刻の無い複数日は省く時刻が無いので、7.7 の表記のまま（長い 11/28〜12/2 にしない）
+    expect(timeLabel(one({ start: '2026-11-28', due: '2026-12-02' }), { datesOnly: true })).toBe('〜12/2')
+    expect(timeLabel(one({ start: '2026-11-28', due: '2026-12-02' }), { datesOnly: true, on: '2026-12-02' })).toBe('11/28〜')
     // 1日の予定は変わらない
     expect(timeLabel(one({ start: '2026-11-10', startTime: '10:00' }), { datesOnly: true })).toBe('10:00')
   })

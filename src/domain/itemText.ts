@@ -15,7 +15,8 @@ import type { ItemKind } from './types'
  * - 1日・開始だけ: `10:00`。開始〜終了: `10:00–11:30`（en dash）
  * - 複数日・時刻なし: `〜11/11`。最終日（on が締め切り日）には `11/9〜`
  * - 複数日・時刻あり: `11/9 10:00〜11/11 15:00`。終了時刻の無い物は `11/9 10:00〜11/11`（最終日は 24:00 まで。開発）
- * - datesOnly（ウィークリーの始点のカードが狭い時）: 複数日は時刻を除いて `11/28〜12/2`
+ * - datesOnly（ウィークリーの始点のカードに期間が入らない時。10.2）: 時刻のある複数日は時刻を省いて日付だけ `11/28〜12/2`。
+ *   時刻の無い複数日は省く時刻が無いので上の表記のまま（`〜12/2` の方が短い）
  */
 export function timeLabel(c: CalItem, opts: { on?: string; datesOnly?: boolean } = {}): string {
   const { startTime, endTime } = c.item
@@ -23,8 +24,8 @@ export function timeLabel(c: CalItem, opts: { on?: string; datesOnly?: boolean }
     if (!startTime) return ''
     return endTime ? `${displayHm(startTime)}–${displayHm(endTime)}` : displayHm(startTime)
   }
-  if (opts.datesOnly) return `${mdLabel(c.from)}〜${mdLabel(c.to)}`
   if (!startTime) return opts.on === c.to ? `${mdLabel(c.from)}〜` : `〜${mdLabel(c.to)}`
+  if (opts.datesOnly) return `${mdLabel(c.from)}〜${mdLabel(c.to)}`
   const head = `${mdLabel(c.from)} ${displayHm(startTime)}〜${mdLabel(c.to)}`
   return endTime ? `${head} ${displayHm(endTime)}` : head
 }
