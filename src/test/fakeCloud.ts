@@ -3,8 +3,8 @@
 //   1回の書き込み（同じ時刻）で書く。受け取り箱の依頼ごとのまとまりは全部書けるか1つも書かない。書くたびに送る書き込みの印
 //   （cloud.marks）を書き、返事を受け取れなかった書き込みが届いていたかを、次の送信・受信でそれで確かめる
 // - 受信: クラウドの書き込みを、オフラインから戻った最初はまとめて1回、その後は書き込みごとに1回ずつ applyRemote で反映する
-// - バックアップからの復元: 送る前に、返事を受け取れなかった書き込みを印で確かめ、この端末に無いクラウドのレコードを消し、
-//   「必ず上書き」の送信待ちは reset の印付きで書く
+// - バックアップからの復元: 送る前に（送っている途中に復元した時は、次の分を送る前に）、返事を受け取れなかった書き込みを印で確かめ、
+//   この端末に無いクラウドのレコードを消し、「必ず上書き」の送信待ちは reset の印付きで書く
 // - 端末内の保存・3者マージは本物（src/db/persistence.ts。fake-indexeddb）
 // NS の src/test/fakeCloud.ts を写し、幕の知らせを外し、受け取り箱の当て方（依頼ごとのまとまり）を足した。月の束は扱わない（エミュレーターで確かめる）。
 import {
@@ -106,7 +106,8 @@ export class FakeDevice {
 
   /** エンジンの pushAuthoritative と同じ: 復元の後、この端末に無いクラウドのレコードを、子から先に消す */
   async pushAuthoritative(): Promise<void> {
-    if (!(await this.p.getMeta('authoritative'))) return
+    const stamp = await this.p.getMeta<unknown>('authoritative')
+    if (!stamp) return
     // エンジンと同じ: 復元の前に送って返事を受け取れなかった書き込みが届いていたら、送った内容を base にしておく
     await this.confirmLanded([...(await this.p.outboxKeys())])
     const local = await this.p.localKeys()
@@ -137,7 +138,10 @@ export class FakeDevice {
       }
       this.cloud.log.push(`${this.name}@${ts}: 復元で消した ${doomed.join(' ')}`)
     }
+    // エンジンと同じ: 当てている間にもう一度復元した時は、印を残したまま、その内容で当て直す
+    if ((await this.p.getMeta<unknown>('authoritative')) !== stamp) return this.pushAuthoritative()
     await this.p.setMeta('authoritative', null)
+    await this.p.setMeta('authoritativeKeep', null)
   }
 
   /** 復元を始めた時の時刻（エンジンの restoreBound） */
@@ -311,9 +315,10 @@ export class FakeDevice {
 
   /** エンジンの uploadAll と同じ: 送り終わるまで送る。書けなければ受信してから送り直す */
   async sync(): Promise<void> {
-    await this.pushAuthoritative()
     let stuck = 0
     for (let round = 0; round < 50; round++) {
+      // エンジンと同じ: 送っている間に復元した時も、次の分を送る前にクラウドに当てる
+      await this.pushAuthoritative()
       const r = await this.uploadBatch()
       if (r.done) break
       if (r.conflicts.length && r.progressed === 0) {

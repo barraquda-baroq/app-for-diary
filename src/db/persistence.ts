@@ -668,7 +668,8 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
    * 送った内容を記録する（completeUpload・confirmLanded）。送った後にこの端末で変わっていなければ送り終わり。変わっていれば、送った内容を
    * 新しい base にして残す。onlyTx = その id のトランザクションの印の付いた行だけ（トランザクションの中で読み直して確かめる）。
    * 復元・すべて削除をクラウドに当てる前（_meta の authoritative）の「必ず上書き」の行は、送った内容を base にするだけにする（送り終わりに
-   * せず、「必ず上書き」も外さない。復元の前に送った書き込みは、復元の内容ではない。6.16）
+   * せず、「必ず上書き」も外さない。復元の前に送った書き込みは、復元の内容ではない。送っている途中に復元した時は、次の分を送る前に
+   * エンジンがクラウドに当てて authoritative を外す。engine の uploadAll。6.16）
    */
   async function completeSent(sent: readonly Change[], onlyTx?: string): Promise<void> {
     if (!sent.length) return

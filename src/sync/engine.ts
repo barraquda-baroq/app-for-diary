@@ -1206,7 +1206,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
    * 終わったら、記録した位置から受け取り直す。
    */
   async function pushAuthoritative(): Promise<void> {
-    if (!(await target.getMeta('authoritative'))) return
+    // 復元・すべて削除をした時刻（replaceAll）。当てている間にもう一度復元したかを、終わる時に比べて確かめる
+    const stamp = await target.getMeta<unknown>('authoritative')
+    if (!stamp) return
     deferred = true
     await ensureModel()
     // 復元の前に送って返事を受け取れなかった書き込みが届いていたら、「必ず上書き」の送信待ちの base を送った内容にしておく（復元を
@@ -1350,6 +1352,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       await batch.commit()
     }
     await target.clearPacks()
+    // 当てている間に、もう一度復元・すべて削除をした: 印を残したまま、その内容で当て直す（前の復元の境・残す物で当てて印を外すと、
+    // 後の復元を始める前にほかの端末が書いた記録を消さないまま、後の復元の「必ず上書き」の送信待ちを送ってしまう）
+    if ((await target.getMeta<unknown>('authoritative')) !== stamp) return pushAuthoritative()
     await target.setMeta('authoritative', null)
     await target.setMeta('authoritativeKeep', null)
   }
@@ -1389,9 +1394,12 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
           await claimOwner()
           ownerOk = true
         }
-        await exclusive(pushAuthoritative)
         let stuck = 0
         for (;;) {
+          if (sendPaused()) return
+          // 復元・すべて削除をクラウドに当ててから送る。送っている間に復元した時（ほかのタブでした時も）も、次の分を送る前に当てる
+          // （当てる前の「必ず上書き」の送信待ちは、送っても送り終わりにならないので、当てないまま同じ物を送り続けないように。6.16）
+          await exclusive(pushAuthoritative)
           if (sendPaused()) return
           const r = await exclusive(uploadBatch)
           if (r.done) break

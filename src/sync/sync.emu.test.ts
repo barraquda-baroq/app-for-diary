@@ -853,6 +853,104 @@ describe('同期（エミュレーター）', () => {
     expect(a.notes).toEqual([])
   })
 
+  it('返事を受け取れなかった書き込みの後で、復元を始める前にほかの端末が直した記録は、届いていた書き込みを確かめた上で復元の内容で上書きする', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await b.online()
+    let id = ''
+    await a.edit((d) => {
+      const r = addItem(d, { title: '元の題名' })
+      id = r.id
+      return r.data
+    })
+    await settle(a, b)
+    const backup = await a.load()
+    listen.loseReply.add(a.fs)
+    listen.deaf.add(a.fs)
+    await a.edit((d) => O.updateItem(d, id, { title: 'Aの題名' }).data)
+    await waitFor(async () => (await b.load()).items[id]?.title === 'Aの題名', 'A の書き込みが B に届く')
+    await waitFor(async () => (await a.p.readOutbox(5))[0]?.unconfirmed, 'A は返事を受け取っていない')
+    a.offline()
+    listen.deaf.delete(a.fs)
+    // 復元を始める前に、B がメモを足した（A はまだ受け取っていない）
+    await b.edit((d) => O.updateItem(d, id, { memo: 'Bが足した' }).data)
+    await settle(b)
+    await a.restore(backup)
+    await a.online()
+    await settle(a, b)
+    expect((await b.load()).items[id]).toMatchObject({ title: '元の題名', memo: '' })
+  })
+
+  it('送っている書き込みの途中で復元しても（ほかのタブで読み込んだ時など）、次の分を送る前にクラウドに当て、送り終わる', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await b.online()
+    let keepId = ''
+    await a.edit((d) => {
+      const r = addItem(d, { title: '残す予定' })
+      keepId = r.id
+      return r.data
+    })
+    await settle(a, b)
+    const backup = await a.load()
+    await a.edit((d) => addItem(d, { title: 'バックアップの後の予定' }).data)
+    await b.edit((d) => addItem(d, { title: 'B が足した予定' }).data)
+    await settle(a, b)
+    // A が送っている書き込み（送信待ちを読んだ後）の途中で、復元した
+    listen.beforeWrite.set(a.fs, () => a.restore(backup))
+    await a.edit((d) => addItem(d, { title: '送っている予定' }).data)
+    const done = await Promise.race([
+      a.engine!.idle().then(() => true),
+      new Promise<false>((r) => setTimeout(() => r(false), 10_000)),
+    ])
+    expect(done).toBe(true)
+    expect(listen.beforeWrite.has(a.fs)).toBe(false)
+    expect(await a.p.outboxCount()).toBe(0)
+    expect(await a.p.getMeta('authoritative')).toBeNull()
+    await settle(a, b)
+    expect(Object.keys((await b.load()).items)).toEqual([keepId])
+  })
+
+  it('復元をクラウドに当てている間にもう一度復元したら、後の復元を始める前にほかの端末が足した記録も消す', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await b.online()
+    let keepId = ''
+    await a.edit((d) => {
+      const r = addItem(d, { title: '残す予定' })
+      keepId = r.id
+      return r.data
+    })
+    await settle(a, b)
+    const right = await a.load()
+    await a.edit((d) => addItem(d, { title: '違うファイルの予定' }).data)
+    await settle(a, b)
+    const wrong = await a.load()
+    a.offline()
+    await b.edit((d) => addItem(d, { title: 'B が前に足した予定' }).data)
+    await settle(b)
+    // 違うファイルを読み込んだ。クラウドに当てている間（B が前に足した予定に削除の印を書く前）に、B が足し、正しいファイルを読み込み直した
+    await a.restore(wrong)
+    let hooked = false
+    listen.beforeWrite.set(a.fs, async () => {
+      hooked = true
+      await b.edit((d) => addItem(d, { title: 'B が後で足した予定' }).data)
+      await settle(b)
+      await a.restore(right)
+    })
+    await a.online()
+    await settle(a, b)
+    expect(hooked).toBe(true)
+    expect(Object.keys((await b.load()).items)).toEqual([keepId])
+    expect(await a.p.getMeta('authoritative')).toBeNull()
+  })
+
   it('初めての受け取りの前に受け取りが止まったら（無料枠を使い切った）、最初の受け取りまで送らない項目だけの送信の後も、その理由を出したままにする', async () => {
     const who = account()
     const seed = await makeDevice('seed', who)

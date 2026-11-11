@@ -171,6 +171,77 @@ describe('復元', () => {
     expect((await b.load()).items[id]).toMatchObject({ title: '元の題名', memo: '' })
   })
 
+  // 送っている途中に復元した（ほかのタブで読み込んだ時など）。クラウドに当てる前の「必ず上書き」の送信待ちは、送っても送り終わりに
+  // ならないので、次の分を送る前に当てる（当てないと、同じ物を送り続ける）
+  it('送っている間に復元しても、次の分を送る前にクラウドに当て、送り終わる', async () => {
+    const { a, b } = await pair()
+    await a.edit((d) => O.addFavorite(d, '残す').data)
+    await settle(a, b)
+    const backup = await a.load()
+    let laterId = ''
+    await b.edit((d) => {
+      const r = O.addFavorite(d, '後で足した')
+      laterId = r.result
+      return r.data
+    })
+    await b.sync()
+    await a.edit((d) => O.addFavorite(d, '送っている物').data)
+    const send = a.uploadBatch.bind(a)
+    let restored = false
+    a.uploadBatch = async (opts) => {
+      const r = await send(opts)
+      if (!restored) {
+        restored = true
+        await a.restore(backup)
+      }
+      return r
+    }
+    await a.sync()
+    expect(restored).toBe(true)
+    expect(await a.p.outboxCount()).toBe(0)
+    expect(await a.p.getMeta('authoritative')).toBeNull()
+    await settle(a, b)
+    expect(await sameData(a, b)).toBe(true)
+    expect(Object.values((await b.load()).favorites).map((f) => f.text)).toEqual(['残す'])
+    expect((await b.load()).favorites[laterId]).toBeUndefined()
+  })
+
+  // 復元をクラウドに当てている間に、もう一度復元した（違うファイルを読み込んでから、正しいファイルを読み込み直した時など）。後の復元を
+  // 始める前にほかの端末が書いた記録も、後の復元で消す（前の復元の境で当てて印を外すと、残ってしまう）
+  it('復元をクラウドに当てている間にもう一度復元したら、後の復元の内容で当て直す', async () => {
+    const { a, b } = await pair()
+    await a.edit((d) => O.addFavorite(d, '残す').data)
+    await settle(a, b)
+    const right = await a.load()
+    await a.edit((d) => O.addFavorite(d, '違うファイルの物').data)
+    await settle(a, b)
+    const wrong = await a.load()
+    a.offline()
+    await a.restore(wrong)
+    // 前の復元の境を決めた直後に、B が足し、A がもう一度復元した
+    let laterId = ''
+    const setMeta = a.p.setMeta.bind(a.p)
+    a.p.setMeta = async (key, value) => {
+      await setMeta(key, value)
+      if (key !== 'authoritativeFrom' || laterId) return
+      await b.edit((d) => {
+        const r = O.addFavorite(d, '後で足した')
+        laterId = r.result
+        return r.data
+      })
+      await b.sync()
+      // 復元の印は復元した時刻（ms）なので、前の復元と同じ時刻にならないように
+      await new Promise((r) => setTimeout(r, 5))
+      await a.restore(right)
+    }
+    await a.pushAuthoritative()
+    expect(laterId).not.toBe('')
+    expect(await a.p.getMeta('authoritative')).toBeNull()
+    await settle(a, b)
+    expect(await sameData(a, b)).toBe(true)
+    expect(Object.values((await b.load()).favorites).map((f) => f.text)).toEqual(['残す'])
+  })
+
   it('MIM を含まないファイルの復元は、ほかの端末で直した MIM を上書きしない（形4）', async () => {
     const { a, b } = await pair()
     let mimId = ''
