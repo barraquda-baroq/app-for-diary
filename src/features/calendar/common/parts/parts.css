@@ -1,0 +1,252 @@
+/* カレンダーの共通の部品（src/features/calendar/common/parts/*。docs/SPEC.md の 4.3〜4.7・4.11・7.1〜7.4・7.7・7.9・12.1）。
+   クラスは .cp- で始める。色は src/styles.css の変数だけを使う（部品で色を足さない）。
+   丸いラベル（.pill）・今日の印（.pill.is-today）・点線の丸（.dot-check）・件名のハイライト（.kind-marker）・曜日の英字（.caps）・
+   時刻の字（.mono-time）は src/styles.css の物をそのまま使い、ここでは足りない所だけを書く。
+   目立たせる枠（.flash。4.9）は outline と animation で出すので、目立たせる要素（カード・行・区切り）にはここでも各画面の CSS でも
+   outline・animation を付けない（付けると枠が隠れる）。目立たせる所は useFlashTarget.ts */
+
+/* ===== 日付と曜日の色（7.1）: 日曜と祝日は --sun、土曜は --sat（itemLook.ts の dayTone） ===== */
+.cp-sun {
+  color: var(--sun);
+}
+
+.cp-sat {
+  color: var(--sat);
+}
+
+/* ===== 曜日の丸いラベル（DayPill。4.4-5・7.3・7.4）。地 --surface-3・角丸 999px・左右 8px・上下 2px は .pill ===== */
+.cp-pill {
+  color: var(--text);
+}
+
+.cp-pill.cp-sun {
+  color: var(--sun);
+}
+
+.cp-pill.cp-sat {
+  color: var(--sat);
+}
+
+/* 休みの日は、--off-fill の地の上で埋もれないよう地を --surface に（今日の印が勝つ。D16） */
+.cp-pill.is-off {
+  background: var(--surface);
+}
+
+/* 今日は地 --today-bg・字 --on-primary・輪（.pill.is-today）に、字の太さ 600（色に頼らずに分かるように。7.3・4.12） */
+.cp-pill.is-today .caps {
+  font-weight: 600;
+}
+
+/* ===== 休みの日の地（7.4）: マス・列・行・見出しに付ける。ディープダークでは、この地の上の淡い字（--text-faint を使う所）を
+   --text-muted で出す（4.5。--off-fill の上で 4.5:1 に届かないため） ===== */
+.cp-offday {
+  background: var(--off-fill);
+}
+
+:root[data-theme='deep-dark'] .cp-offday {
+  --text-faint: var(--text-muted);
+}
+
+/* ===== 祝日名・「休」の字（HolidayName・OffMark。ui 10px・400・行の高さ 1.2。4.7・7.2・7.4） ===== */
+.cp-holiday,
+.cp-off {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* 祝日名は 1行（入らない時は「…」）。inline の span のままでは「…」が効かないので inline-block にし、置いた所の幅に収める
+   （画面が flex・grid の中に置いた時は、そのまま項目になる） */
+.cp-holiday {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: top;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--sun);
+}
+
+.cp-off {
+  flex: none;
+  color: var(--off-text);
+}
+
+/* ===== 件名（ItemTitle。4.3・4.7・7.8・7.9） =====
+   帯（.kind-marker）の上に置く字は --text（件名）と --text-muted（頭の「‹ 」）だけ */
+.cp-title {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* 受けた表示（ウィークリーの「‹ 件名」。12px・--text-muted は画面の CSS） */
+.cp-title.is-muted {
+  color: var(--text-muted);
+}
+
+.cp-title-received {
+  color: var(--text-muted);
+}
+
+/* 完了した物（7.9）: 字は --done-text（ハイライトは部品が付けない）。斜線はデイリーのリスト・タイムスケジュールだけ（strike） */
+.cp-title.is-done,
+.cp-title.is-done .cp-title-received {
+  color: var(--done-text);
+}
+
+.cp-title.is-strike {
+  text-decoration: line-through;
+}
+
+/* 行の数の上限（カードの件名は 2行まで、始点のカード・受けた表示は 1行。4.7・10.2） */
+.cp-lines-1,
+.cp-lines-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cp-lines-1 {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.cp-lines-2 {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* ===== 時刻・期間（ItemTime。等幅 11px は .mono-time。字は --text-muted。7.7・4.5） ===== */
+.cp-time {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ===== 印（ItemMarks。右上に小さく、左から 区分のアイコン → 〆 → ロック → AI の札。--text-muted。7.7・7.10） ===== */
+.cp-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+/* 〆（list 生まれでカレンダーに出ている物。11px。6.3） */
+.cp-due {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* AI の札（Claude が足した物。枠だけの小さな札・10px。カードの中の別のボタン。7.7・D26）。字は ui の書体
+   （等幅にするのは日付・曜日・月・時刻・件数・見出しの英語・締め切り日だけ。4.4-1・FRAME-147） */
+.cp-ai {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 14px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--dur-hover);
+}
+
+/* 押せる所を札の周りに少し広げる（カードの枠の外へは出ない大きさ。AMB-CAL-15） */
+.cp-ai::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+.cp-ai:hover,
+.cp-ai[aria-expanded='true'] {
+  color: var(--text);
+}
+
+/* 出どころのメモ（via）の小窓。見た目と出方は操作メニュー（src/ui/menu.css の .pm-menu）と同じで、中身だけ文にする
+   （CSS を読む順に関わらず .pm-menu の幅・余白より勝つよう、2つのクラスで書く） */
+.pm-menu.cp-via {
+  width: max-content;
+  min-width: 0;
+  max-width: min(320px, calc(100vw - 16px));
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.cp-via-head {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.cp-via-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ===== 行頭の●（LabelDot。直径 10px。ラベルの色、無ければ土台の色（data-kind の --kind-line）。4.3・7.8・7.9） ===== */
+.cp-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--dot-d);
+  height: var(--dot-d);
+  border-radius: 50%;
+  background: var(--kind-line);
+  color: var(--on-label);
+}
+
+.cp-dot[data-label] {
+  background: var(--label);
+}
+
+/* 複数日の終点の●の完了（線と同じ --done-text。7.9） */
+.cp-dot.is-faded,
+.cp-dot.is-faded[data-label] {
+  background: var(--done-text);
+}
+
+/* 完了の✓（●の色は残して中に --on-label の✓。デイリーのリストの行頭。7.9） */
+.cp-dot-check {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
+/* ===== 完了の丸・●のボタン（DoneToggle。押せる所は --dot-hit（既定 40px）、見た目は .dot-check。4.11） =====
+   ●は乗せると周りに細い輪（点線の丸の「乗せると実線」に当たる物） */
+@media (hover: hover) {
+  .cp-done.is-dot:hover .cp-dot {
+    box-shadow: 0 0 0 1.5px var(--text-faint);
+  }
+}
+
+/* ===== すばやく足す（QuickAdd。「＋」の行の所に開く1行の入力欄。12.1） ===== */
+.cp-quick {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+}
+
+.cp-quick .input {
+  min-width: 0;
+}
