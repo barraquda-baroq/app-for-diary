@@ -49,6 +49,8 @@ export const testIds = {
   dayTimeline: 'day-timeline',
   dayEvent: (id: ID) => `day-event-${id}`,
   dayMore: 'day-more',
+  /** 「+n」を押して開く隠れた予定の一覧（PopupMenu） */
+  dayMoreList: 'day-more-list',
   dayNow: 'day-now',
 
   // ----- イヤー（8.） -----

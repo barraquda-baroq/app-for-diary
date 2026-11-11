@@ -6,7 +6,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, openCalendar, rawItem, startLongPress, startMouseDrag, touchSwipe } from './helpers'
+import {
+  collectDiagnosticsOnFailure,
+  openCalendar,
+  rawItem,
+  sheetReady,
+  startLongPress,
+  startMouseDrag,
+  touchSwipe,
+} from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -54,12 +62,6 @@ const itemOf = (page: Page, id: string) =>
 async function openWeek(page: Page, opts: { appearance?: 'white' | 'deep-dark'; data?: DemoData } = {}) {
   await openCalendar(page, WEEK, { data: opts.data ?? demoData(), appearance: opts.appearance })
   await expect(page.getByTestId('view-week')).toBeVisible()
-}
-
-/** 小さな画面（詳細）が開き終わるまで待つ（day.spec.ts と同じ） */
-async function sheetReady(page: Page) {
-  await expect(sheet(page)).toBeVisible()
-  await expect.poll(() => sheet(page).evaluate((el) => el.contains(document.activeElement))).toBe(true)
 }
 
 /**

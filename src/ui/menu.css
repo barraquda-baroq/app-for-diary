@@ -97,7 +97,7 @@
   white-space: normal;
 }
 
-/* 時刻・日付だけの説明（等幅 11px。docs/SPEC.md の 4.4-1・4.7） */
+/* 時刻・日付だけの説明（等幅 11px。docs/SPEC.md の 4.7） */
 .pm-hint.is-mono {
   font-family: var(--font-mono);
   font-size: 11px;

@@ -179,7 +179,7 @@ function MoreChip({ chip, date }: { chip: MoreChipVM; date: string }) {
           placement={{ anchor }}
           onClose={() => setAnchor(null)}
           returnFocus={anchor}
-          testId={`${testIds.dayMore}-list`}
+          testId={testIds.dayMoreList}
         />
       ) : null}
     </>

@@ -557,8 +557,8 @@ export async function signInSync(page: Page, sub: string, { shown = true }: { sh
 }
 
 /**
- * 小さな画面（登録・詳細）が開き終わるまで待つ（Esc を聞き始めるのは、中へフォーカスを移すのと同じ時。見えた直後に Esc を押すと
- * まだ聞いていないことがある。e2e/day.spec.ts の sheetReady と同じ）
+ * 小さな画面（登録・詳細）が開き終わるまで待つ（中へフォーカスが移るまで。Esc を聞き始めるのも同じ時: src/ui/Modal.tsx は描いたすぐ後に
+ * 両方をする）
  */
 export async function sheetReady(page: Page): Promise<Locator> {
   const sheet = page.getByTestId('item-sheet')
