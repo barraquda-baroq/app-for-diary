@@ -2,6 +2,8 @@
 // 色の値・字の色の比は src/styles.test.ts、影・等幅の太さ・色の直書きは src/calendarCss.test.ts が確かめる。ここはデイリーの見た目の値
 // （チェックリストで「CSS」で確かめるとした物）。jsdom は CSS を当てないので、クラス・data-* は DayView.test.tsx、計算した色は E2E
 import { describe, expect, it } from 'vitest'
+import { mkItem } from '../../../domain/testData'
+import { boxMarksPx, boxPx, boxTextPx, COLUMN_GAP_PX, EVENTS_RIGHT_PX, MORE_ROOM_PX } from './dayModel'
 
 // CSS は import すると（?raw でも）テストでは中身が空になるので、ファイルを読む（src/styles.test.ts と同じ読み方）
 const NODE_FS = 'node:fs'
@@ -252,6 +254,33 @@ describe('すばやく足す（12.1・D44）', () => {
     // S・M・指の端末の入力欄は 40px（src/styles.css）
     const input = rulesOf(COMMON).find((r) => r.at.includes('(pointer: coarse)') && r.selector.includes('.input'))
     expect(input?.decls.get('min-height')).toBe('40px')
+  })
+})
+
+describe('枠の幅の計算（dayModel.ts の fitBox）は day.css と同じ値を使う（CSS だけを変えて、狭い枠の決め方がずれないように）', () => {
+  const px = (v: string | undefined) => Number(/^(-?[\d.]+)px$/.exec(v ?? '')?.[1] ?? NaN)
+
+  it('予定を置ける幅の右の空き・列の間・「+n」の札の所', () => {
+    expect(day('.dy-event').get('width')).toBe(
+      `calc((100% - ${EVENTS_RIGHT_PX}px) * var(--w) - var(--more-room) * var(--w-room) - ${COLUMN_GAP_PX}px)`,
+    )
+    expect(day('.dy-events').get('--more-room')).toBe(`${MORE_ROOM_PX}px`)
+  })
+
+  it('字の所の幅 = 枠の幅 − 左右の線 − 左右の余白（点線の丸のある枠・無い枠）', () => {
+    const [, right, , left] = (day('.dy-box').get('padding') ?? '').split(/\s+/).map(px)
+    const border = px(day('.dy-box').get('border')?.split(' ')[0])
+    const noRing = px(day('.dy-box.no-ring').get('padding-left'))
+    const b = { w: 1 / 3, wRoom: 0 }
+    expect(boxPx(b, 300) - boxTextPx({ ...b, ring: true }, 300)).toBeCloseTo(2 * border + left + right)
+    expect(boxPx(b, 300) - boxTextPx({ ...b, ring: false }, 300)).toBeCloseTo(2 * border + noRing + right)
+  })
+
+  it('印どうし・件名と印の間（.dy-ev-marks の gap・.dy-box の column-gap）', () => {
+    // ロックの印（12px）を足した分 − 12px が間
+    const gap = boxMarksPx(mkItem({ locked: true }), null) - boxMarksPx(mkItem({}), null) - 12
+    expect(day('.dy-ev-marks').get('gap')).toBe(`${gap}px`)
+    expect(day('.dy-box').get('column-gap')).toBe(`${gap}px`)
   })
 })
 

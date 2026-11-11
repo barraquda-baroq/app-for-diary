@@ -547,6 +547,15 @@ describe('「＋」→ すばやく足す（12.1・ITEMS-068・D44）', () => {
     expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
   })
 
+  it('入力欄の外の押せない所（列の地）を押して閉じた時は、「＋」へフォーカスを戻さない（戻すのは Esc の時だけ）', async () => {
+    const user = userEvent.setup()
+    await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.click(screen.getByTestId(testIds.weekCol('2026-11-10')))
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(document.activeElement).not.toBe(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+  })
+
   it('入力欄の外を押した時は、押し終わる（click）まで閉じない（S で下のかたまりがずれて、指の下の別の予定が押されないように。開発）', async () => {
     const user = userEvent.setup()
     const { router } = await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
