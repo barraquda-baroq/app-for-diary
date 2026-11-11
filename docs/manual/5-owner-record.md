@@ -21,8 +21,12 @@ DS のアプリは、持ち主の記録を自分では作れない決まりに�
 
 ## A. 自分のアカウントの「ユーザー UID」をコピーする
 
-1. 左のメニューから「Authentication」を押して開く。
-   「構築」や「セキュリティ」のまとまりの中にあります。見当たらない時は、画面の上の検索欄に Authentication と入れて、出てきた「Authentication」を押す。
+1. 次のアドレスをブラウザで開く（DS の Authentication の「ユーザー」の画面が直接開きます）。
+   https://console.firebase.google.com/project/diary-studio-35f4e/authentication/users
+   メニューから開く時は、左のメニューの「Authentication」を押します。「構築」や「セキュリティ」のまとまりの中にあります。
+   左のメニューが見えない時は、画面の左上の「≡」（横線3本）のボタンを押すと出ます。
+   それでも見当たらない時は、画面の上の検索欄に Authentication と入れて、出てきた「Authentication」を押す。
+   「始める」のボタンだけが出る時や、別のプロジェクトの画面が出る時は、手順1でプロジェクトを作った Google アカウントでログインしているかを確かめてください。
 
 2. 画面の上に並んだタブ（「ユーザー」「ログイン方法」「設定」など）の中から、「ユーザー」を押す。
    ログインしたことのある Google アカウントが、1行に1つずつ並んでいます。
@@ -38,7 +42,9 @@ DS のアプリは、持ち主の記録を自分では作れない決まりに�
 
 ## B. Firestore に持ち主の記録を作る
 
-1. 左のメニューから「Firestore Database」を押して開く。
+1. 次のアドレスをブラウザで開く（DS の Firestore の画面が直接開きます）。
+   https://console.firebase.google.com/project/diary-studio-35f4e/firestore
+   メニューから開く時は、左のメニューの「Firestore Database」を押します。「構築」や「データベースとストレージ」のまとまりの中にあります。
    見当たらない時は、画面の上の検索欄に Firestore と入れて、出てきた「Firestore Database」を押す。
 
 2. 画面の上に並んだタブの中から「データ」を押す。
