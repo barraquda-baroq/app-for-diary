@@ -11,7 +11,7 @@ import { shake } from '../../../../ui/motion'
 import { LOCK_SELECTOR } from '../../common/parts'
 import { testIds } from '../../common/testIds'
 import { useWeekScroller } from '../weekScroller'
-import { gesture, IDLE, TOUCH_HOLD_MS, type GestureInput, type GestureState, type PointerKind } from './gesture'
+import { gesture, IDLE, pointerKind, TOUCH_HOLD_MS, type GestureInput, type GestureState, type PointerKind } from './gesture'
 
 /** 掴もうとしている間、ページ（html）に付けるクラス（dnd.css でカーソルを not-allowed にする） */
 export const REFUSED_CLASS = 'dnd-refused'
@@ -57,6 +57,8 @@ function lockIconOf(el: Element, id: ID, scroller: Element | null): Element | nu
 /** ロック中の物の上で押した時から、離すまでを見る */
 function watchLockedPress(ev: PointerEvent, el: HTMLElement, lockIcon: () => Element | null): void {
   stopCurrent?.()
+  // 右クリック（見ない押し方）でも控える（指で押した後にマウスで右クリックした時に、メニューを止めない）
+  lastPointer = pointerKind(ev.pointerType)
   let state: GestureState = gesture(IDLE, {
     type: 'down',
     pointerId: ev.pointerId,
@@ -67,7 +69,6 @@ function watchLockedPress(ev: PointerEvent, el: HTMLElement, lockIcon: () => Ele
     isPrimary: ev.isPrimary,
   }).state
   if (state.phase !== 'pressed') return
-  lastPointer = state.pointer
   const root = el.ownerDocument.documentElement
   let timer = 0
 

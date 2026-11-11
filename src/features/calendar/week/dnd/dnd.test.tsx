@@ -183,6 +183,31 @@ describe('掴むと、その週の落とせる日すべてに印（useDayDrop。
     expect(navigator.vibrate).not.toHaveBeenCalled()
     await release()
   })
+
+  it('掴んだ時に、文字を打っている欄からフォーカスを外す（指で掴んだ時に週が欄の所へ飛ばないように）。欄の中身はそのまま', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
+    const field = document.createElement('input')
+    field.value = '打ちかけ'
+    document.body.appendChild(field)
+    field.focus()
+    const card = screen.getByTestId(testIds.weekCard('priv'))
+    await act(async () => {
+      card.dispatchEvent(pointer('pointerdown', 'touch', 10))
+      await vi.advanceTimersByTimeAsync(399)
+    })
+    // 掴む前（軽く押しただけ）はそのまま
+    expect(document.activeElement).toBe(field)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(card.getAttribute('data-dnd-dragging')).toBe('true')
+    expect(document.activeElement).not.toBe(field)
+    expect(field.value).toBe('打ちかけ')
+    vi.useRealTimers()
+    await release('touch')
+    field.remove()
+  })
 })
 
 describe('掴めない物（CALENDAR-150・176・ITEMS-249）', () => {
@@ -255,6 +280,32 @@ describe('掴めない物（CALENDAR-150・176・ITEMS-249）', () => {
     await act(async () => {
       window.dispatchEvent(pointer('pointerup', 'touch', 10, 0))
     })
+  })
+
+  it('指で押した後でも、マウスの右クリックのメニューは止めない（右ボタンの押し方も控える）', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    await renderWeek()
+    const card = screen.getByTestId(testIds.weekCard('locked'))
+    await act(async () => {
+      card.dispatchEvent(pointer('pointerdown', 'touch', 10))
+      await vi.advanceTimersByTimeAsync(400)
+      window.dispatchEvent(pointer('pointerup', 'touch', 10, 0))
+    })
+    const right = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+      button: 2,
+      buttons: 2,
+    })
+    await act(async () => {
+      card.dispatchEvent(right)
+    })
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
+    card.dispatchEvent(menu)
+    expect(menu.defaultPrevented).toBe(false)
   })
 
   it('視差効果を減らす設定では揺らさず、ロックの印（●の時は同じ予定のカードの中の印）を --accent にする', async () => {

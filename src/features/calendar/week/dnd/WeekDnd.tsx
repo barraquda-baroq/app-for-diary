@@ -5,7 +5,8 @@
 //   指はスクロール（CALENDAR-160）。キーボードでは掴まない（Enter・Space は詳細を開く。詳細の日付の欄で同じことができる。G2・CALENDAR-183）
 // - カードの中の点線の丸・AI の札の上から押しても掴める（どれもカードの入れ物の中。dnd-kit の初めの決まりは、中のボタンからは掴まない）
 // - 掴むと、その週の落とせる日すべてに印（地 --accent-soft と 1px の --accent の点線、上にある日は線。D25・CALENDAR-166）。
-//   区分は掴んだ物と同じ段だけ（CALENDAR-165・ITEMS-098）。指で掴んだ時は 15ms 振動（CALENDAR-163）
+//   区分は掴んだ物と同じ段だけ（CALENDAR-165・ITEMS-098）。指で掴んだ時は 15ms 振動（CALENDAR-163）。文字を打っている欄
+//   （すばやく足す）からはフォーカスを外す（指で動かし始めた時に、週がその欄の所へ飛ばないように）
 // - 浮いた見た目は dnd.css（1.03倍・--shadow-lift・0.95・120ms。G1）。読み上げの案内（英語）は出さない（Accessibility を外す。G2）
 // - 画面の端（60px）に近づくと、ウィークリーのスクロールの中だけを自動でスクロールする（ページは動かさない。G3・G4・CALENDAR-167・
 //   ITEMS-099）
@@ -38,7 +39,7 @@ import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
 import type { Item, ItemKind } from '../../../../domain/types'
 import { vibrate15 } from '../../../../ui/motion'
 import { useWeekScroller } from '../weekScroller'
-import { applyDrop, settle, SETTLE_BACK } from './drop'
+import { applyDrop, reveal, settle, SETTLE_BACK } from './drop'
 import { activationOf, pointerKind } from './gesture'
 import { useLockGesture } from './lockGesture'
 import {
@@ -152,6 +153,19 @@ function limitAutoScroll(manager: DragDropManager, week: RefObject<HTMLElement |
   }
 }
 
+// ---------- 入力欄のフォーカス ----------
+
+/**
+ * 掴んだ時に、文字を打っている欄（すばやく足すの入力欄など）からフォーカスを外す。指で掴むとフォーカスは欄に残ったままで、Chromium は
+ * 指を動かし始めた時に、その欄を見える所へ出そうと週をスクロールする（欄が見えていない時は、掴んだカードの下の日が飛ぶ）。マウスは
+ * 押した時にフォーカスがカードへ移るので同じになる。欄は閉じない（すばやく足すは、押し終わってから閉じる。useCloseAfterPress）
+ */
+function blurTextField(): void {
+  const el = document.activeElement
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable))
+    el.blur()
+}
+
 // ---------- WeekDnd ----------
 
 /** ウィークリーを包む（ドラッグの受け持ち。段階2はウィークリーだけ、段階3で TopPage へ上げる。D52） */
@@ -165,6 +179,7 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
       if (!data) return
       const days = dropDays(data.item, data.handle, week)
       store.set({ kind: data.item.kind, days: new Set(days.keys()) })
+      blurTextField()
       const activator = event.operation.activatorEvent
       if (activator instanceof PointerEvent && pointerKind(activator.pointerType) === 'touch') vibrate15()
       limitAutoScroll(manager, scroller, event.operation.source?.element)
@@ -183,9 +198,16 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
       // 動かした時、元のカードは React が外す（戻る動きは見えない）ので、すぐ片付けて移った先のカードを収める。
       // 動かさなかった時は、浮いたカードが元の場所へ戻る
       if (feedback) feedback.dropAnimation = moved ? null : SETTLE_BACK
-      if (moved && source) {
-        const id = source.id
-        requestAnimationFrame(() => settle(manager.registry.draggables.get(id)?.element))
+      if (moved && data) {
+        // 移った先の要素（始点・●を動かして1日の予定になった時は、カード。元の要素は外れている）を収め、見える所まで出す
+        const ids = [source?.id, dragId(data.item.id, 'card')]
+        requestAnimationFrame(() => {
+          const el = ids
+            .map((id) => (id === undefined ? undefined : manager.registry.draggables.get(id)?.element))
+            .find((x) => x?.isConnected)
+          settle(el)
+          reveal(el)
+        })
       }
     },
     [store, week],

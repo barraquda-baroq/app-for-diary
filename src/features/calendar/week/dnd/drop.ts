@@ -7,10 +7,12 @@
 //   見えない（WP11s の G5）。それは使わず（WeekDnd が dropAnimation を null に）、移った先の新しいカードを浮いた見た目から収める（settle）
 // - 動かさなかった時（元の日・落とせない所・取り消し）: dnd-kit の落とす時の動きで、浮いた物が元の場所へ戻る（SETTLE_BACK）
 // 視差効果を減らす設定ではどちらも動かさない（dnd-kit も自分で止める。目立たせる枠は motion.ts のとおり出る。CALENDAR-265・FRAME-238）
+// 移った先のカードは、並びの決まり（7.5）で指を離した所より下（段・日のかたまりの見えていない所）に入ることがあるので、目立たせる
+// 間に見える所まで出す（reveal。CALENDAR-181）
 import { dropPatch, dropToast } from '../../../../domain/drag'
 import { actions } from '../../../../store/actions'
 import { attempt, notify, useCalendarUi } from '../../../../store/uiStore'
-import { prefersReducedMotion } from '../../../../ui/motion'
+import { prefersReducedMotion, scrollBehavior } from '../../../../ui/motion'
 import { flashKey, UNDO_LABEL } from '../../common/parts'
 import type { DragData, DropData, WeekCtx } from './types'
 
@@ -54,4 +56,12 @@ export function settle(el: Element | null | undefined): void {
   } catch {
     /* scale を動かせないブラウザでは収める動きなし（位置はもう正しい） */
   }
+}
+
+/**
+ * 移った先のカードを、段・日のかたまりのスクロールの中で見える所まで出す（もう見えている時は動かさない。視差効果を減らす設定ではすぐに。
+ * src/ui/motion.ts の scrollBehavior）
+ */
+export function reveal(el: Element | null | undefined): void {
+  el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: scrollBehavior() })
 }

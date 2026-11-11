@@ -139,6 +139,12 @@ function withLateWork(): DemoData {
   return { ...data, items: { ...data.items, [late.id]: late } }
 }
 
+/**
+ * 指で掴めた（浮いた）まで待つ。掴むのはページの中のタイマーで押してから 0.4秒後なので、押してから 0.45秒（startLongPress）では
+ * 込んでいる時に足りないことがある。掴む前に動かすと 8px を超えてスクロールになる
+ */
+const lifted = (page: Page) => expect(page.locator('[data-dnd-dragging]')).toHaveCount(1)
+
 /** ［元に戻す］・完了などの知らせが出ていない（出るなら落とした直後に出るので、少し待ってから確かめる） */
 async function noToast(page: Page) {
   // 出ないことを確かめるため、落とした後に知らせが出るまでの間（数十 ms）より長く待つ
@@ -215,6 +221,20 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
       endTime: '18:00',
     })
     await expect(cellL(page, 'work', '2026-11-14').getByTestId(`week-end-${I.materials}`)).toBeVisible()
+  })
+
+  test('始点のカードを締め切り日へ落とすと1日の予定になり、移った先のカードが段の下の方でも見える所まで出て目立つ', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    // 展示会の手配（11/10〜11/13）の始点を 11/13 へ: 1日の予定のカードになり、時刻の無いカードは混んだ 11/13 のいちばん下へ
+    await mouseDrop(page, startCard(page, I.expo), cellL(page, 'work', '2026-11-13'))
+    await expect(toast(page, '開始日を 11/13（金）にしました')).toBeVisible()
+    expect(await itemOf(page, I.expo)).toMatchObject({ start: '2026-11-13', due: '2026-11-13' })
+    const moved = cellL(page, 'work', '2026-11-13').getByTestId(`week-card-${I.expo}`)
+    await expect(moved).toHaveClass(/\bflash\b/)
+    // 段の中をスクロールして、目立たせているカードを見える所まで出す（CALENDAR-181）
+    await expect(moved).toBeInViewport({ ratio: 1 })
   })
 
   test('落とせない所: 違う区分の段・週の外・1日にすると終了 < 開始になる日（23:00〜01:00 の始点を 11/11 へ）。受けた表示は掴めない', async ({
@@ -389,8 +409,8 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
   test('0.45秒押してから動かすと掴んで動かせる（15ms 振動）。落とせるのは同じ半分（仕事）だけ', async ({ page }) => {
     await openWeek(page)
     const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
-    expect(await vibrations(page)).toEqual([15])
     await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
+    expect(await vibrations(page)).toEqual([15])
     // プライベートの半分の上: 印は無く、落とせない（ITEMS-098）
     await drag.moveTo(await visiblePoint(halfS(page, 'private', '2026-11-09')))
     expect(await markedDates(page, 'private', 'S')).toEqual([])
@@ -425,6 +445,7 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await openWeek(page)
     const week = page.getByTestId('view-week')
     const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
+    await lifted(page)
     const box = await week.evaluate((e) => {
       const r = e.getBoundingClientRect()
       return { x: r.left + r.width / 4, bottom: Math.min(r.bottom, window.innerHeight), max: e.scrollHeight - e.clientHeight }
@@ -445,12 +466,40 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
 
+  test('すばやく足すを開いたまま長押しで動かしても、週がずれない（入力欄のフォーカスを外す）。離した後に閉じる', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const week = page.getByTestId('view-week')
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    // スマホでは入力欄がキーボードの下に隠れることがある。ここでは押さずに（閉じずに）入力欄を見えない所へずらしておく
+    await week.evaluate((e) => {
+      e.scrollTop = 0
+    })
+    const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
+    await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
+    await expect(input).not.toBeFocused()
+    // 指を動かしても、週は入力欄の所まで飛ばない（Chromium は指で動かし始めた時に、フォーカスのある入力欄を見える所へ出す）。
+    // 落とす所（11/9）は週の上下の端から 60px より離れている（自動のスクロールは起きない）
+    const top = await week.evaluate((e) => e.scrollTop)
+    await drag.moveTo(await visiblePoint(halfS(page, 'work', '2026-11-09')))
+    expect(await week.evaluate((e) => e.scrollTop)).toBe(top)
+    await expect(halfS(page, 'work', '2026-11-09')).toHaveAttribute('data-drop', 'hover')
+    await expect(input).toBeVisible()
+    await drag.drop()
+    await expect(toast(page, '11/9（月）へ移しました')).toBeVisible()
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-09')
+    await expect(input).toHaveCount(0)
+  })
+
   test('ロック中のカードを長押しすると揺れるだけ（浮かず、振動せず、知らせも詳細も出ない）', async ({ page }) => {
     await openWeek(page)
     await recordPulses(page)
     const gym = card(page, I.gym)
     const drag = await startLongPress(page, await grabPoint(gym))
-    expect(await recordedPulses(page)).toEqual([`shake:week-card-${I.gym}`])
+    await expect.poll(() => recordedPulses(page)).toEqual([`shake:week-card-${I.gym}`])
     await drag.moveTo(await visiblePoint(halfS(page, 'private', '2026-11-13')))
     await expect(page.locator('[data-dnd-dragging]')).toHaveCount(0)
     await drag.drop()
@@ -465,6 +514,7 @@ test.describe('タブレット（M・指）', { tag: ['@m'] }, () => {
   test('7日を横でも、長押しで掴んで別の日の列へ動かせる', async ({ page }) => {
     await openWeek(page)
     const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
+    await lifted(page)
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-12')))
     await expect(cellL(page, 'work', '2026-11-12')).toHaveAttribute('data-drop', 'hover')
     await drag.drop()
@@ -477,6 +527,7 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
   test('長押しで1日のカードと終点の●を動かせる', async ({ page }) => {
     await openWeek(page)
     let drag = await startLongPress(page, await grabPoint(card(page, I.meeting)), { via: 'synthetic' })
+    await lifted(page)
     await drag.moveTo(await visiblePoint(halfS(page, 'work', '2026-11-09')))
     await drag.drop()
     await expect(toast(page, '11/9（月）へ移しました')).toBeVisible()
@@ -484,6 +535,7 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
 
     // 夜行バス（11/11〜11/12）の終点の●（レールの中）を 11/13 へ
     drag = await startLongPress(page, await grabPoint(endDot(page, I.nightBus)), { via: 'synthetic' })
+    await lifted(page)
     await drag.moveTo(await visiblePoint(halfS(page, 'private', '2026-11-13')))
     await drag.drop()
     await expect(toast(page, '締め切り日を 11/13（金）にしました')).toBeVisible()
@@ -508,6 +560,7 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
     // すぐ動かした指はスクロールにするので、touch-action はそのまま
     expect(css.touchAction).toBe('auto')
     const drag = await startLongPress(page, await grabPoint(gym), { via: 'synthetic' })
+    await expect.poll(() => recordedPulses(page)).toEqual([`shake:week-card-${I.gym}`])
     await drag.moveTo(await visiblePoint(halfS(page, 'private', '2026-11-13')))
     await drag.drop()
     expect(await recordedPulses(page)).toEqual([`shake:week-card-${I.gym}`])
