@@ -304,6 +304,12 @@ test.describe('登録と詳細の動き（PC）', { tag: ['@pc'] }, () => {
     await page.getByTestId('item-done').focus()
     await expect(title).toHaveValue('定例会議（第2回）')
     expect((await savedItem(page, 'e1'))?.title).toBe('定例会議（第2回）')
+    // 打ちかけの時刻（Enter も押さず欄も離れない）も、読み込み直す前に保存する
+    await page.getByTestId('item-start-time').click()
+    await page.keyboard.type('1030')
+    await page.reload()
+    await expect(page.getByTestId('item-start-time')).toHaveValue('10:30')
+    expect((await savedItem(page, 'e1'))?.startTime).toBe('10:30')
   })
 
   test('時刻を入れて 1日の予定で終了 < 開始になると、翌日までにして「翌日 02:00 まで」。そろえると終了 < 開始になる日付は断る（6.4）', async ({

@@ -4,10 +4,12 @@
 // 読めない字は元の値に戻して理由を出す。画面の表記は時の頭の 0 を落とす（9:00。D24）。
 // 開始時刻が空の間は終了の欄を押せない（ITEMS-229）。翌日にした時の「翌日 02:00 まで」（hint）、list 生まれでカレンダーに出ていない時に
 // 押せなくする所（disabledNote）は包む画面が決める。
-// 打った字は、欄を離れた時・Enter で決める。Ctrl+Enter・⌘+Enter（登録）の時も先に決めてから包む所へ渡す（登録の前に打った時刻を入れる）
+// 打った字は、欄を離れた時・Enter で決める。Ctrl+Enter・⌘+Enter（登録）の時も先に決めてから包む所へ渡す（登録の前に打った時刻を入れる）。
+// 欄を離れずに閉じた時（Esc・「戻る」）と、画面を閉じる・裏に回る時も、読める字なら決める（詳細の画面で打ちかけの時刻を失わない）
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { displayHm } from '../../../domain/dates'
 import { parseTime, timeListAnchor, timeOptions } from '../../../domain/itemInput'
+import { markDraftClean, markDraftDirty } from '../../../store/draftRegistry'
 import { ClockIcon } from '../../../ui/icons'
 import { cls } from '../../calendar/common/parts/itemLook'
 import { testIds } from '../../calendar/common/testIds'
@@ -70,6 +72,27 @@ function TimeInput({ which, value, startTime, disabled, labelledBy, onCommit, on
   const options = OPTIONS[which]
   // 欄の外で値が変わった（開始を空にして終了も消えた・翌日にした・一覧で選んだ）時は、その値を出す
   useEffect(() => setText(shown(value)), [value])
+
+  // 打ちかけの字（まだ欄を離れていない・Enter を押していない）は、欄を離れずに閉じた時（Esc・「戻る」で部品が消える）と、画面を
+  // 閉じる・裏に回る時（src/store/lifecycle.ts の flushAllDrafts）にも決める（詳細の画面は直したそばから保存する。ITEMS-208）。
+  // 読めない字はそのまま残す（決める時に元へ戻すのは、欄を離れた・Enter の時だけ）
+  const pending = useRef({ text, value, onCommit })
+  pending.current = { text, value, onCommit }
+  const draftKey = useRef(Symbol('time'))
+  const flushTyped = useRef(() => {
+    const p = pending.current
+    markDraftClean(draftKey.current)
+    if (p.text === shown(p.value)) return
+    const parsed = parseTime(p.text, which)
+    if (parsed === undefined || parsed === p.value) return
+    p.value = parsed
+    p.onCommit(parsed)
+  }).current
+  useEffect(() => {
+    if (text !== shown(value) && parseTime(text, which) !== undefined) markDraftDirty(draftKey.current, flushTyped)
+    else markDraftClean(draftKey.current)
+  }, [text, value, which, flushTyped])
+  useEffect(() => flushTyped, [flushTyped])
   useEffect(() => {
     if (disabled) setOpen(false)
   }, [disabled])

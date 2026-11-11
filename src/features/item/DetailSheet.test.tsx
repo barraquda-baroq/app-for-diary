@@ -10,6 +10,7 @@ import { trashNotice } from '../../domain/trash'
 import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
 import { getRaw, useApp } from '../../store/appStore'
+import { flushAllDrafts } from '../../store/draftRegistry'
 import { usePrefs, useToasts, type Prefs } from '../../store/uiStore'
 import { renderView, setupCalendarTests } from '../../test/renderCalendar'
 import { testIds } from '../calendar/common/testIds'
@@ -602,6 +603,33 @@ describe('日付と時刻の決まり（12.4・6.3・6.4）', () => {
     await user.type(start, '９：３０{Enter}')
     expect(stored('k').startTime).toBe('09:30')
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('打ちかけの時刻（まだ欄を離れていない）も、Esc・「戻る」で閉じる時（部品が消える時）に保存する（ITEMS-208）', async () => {
+    const { unmount } = await open([mkItem({ id: 'u', startTime: '09:00' })])
+    const end = byId(testIds.itemEndTime) as HTMLInputElement
+    end.focus()
+    fireEvent.change(end, { target: { value: '1030' } })
+    expect(stored('u').endTime).toBeNull()
+    unmount()
+    expect(stored('u')).toMatchObject({ startTime: '09:00', endTime: '10:30' })
+  })
+
+  it('打ちかけの時刻は、画面を閉じる・裏に回る時（pagehide。下書きをまとめて保存する時）にも保存する。読めない字は保存しない', async () => {
+    await open([mkItem({ id: 'w', startTime: '09:00' })])
+    const start = byId(testIds.itemStartTime) as HTMLInputElement
+    start.focus()
+    fireEvent.change(start, { target: { value: '25:00' } })
+    act(() => flushAllDrafts())
+    expect(stored('w').startTime).toBe('09:00')
+    // 読めない字はそのまま欄に残す（打ち直せる）
+    expect(start.value).toBe('25:00')
+    fireEvent.change(start, { target: { value: '8' } })
+    expect(useApp.getState().draftsDirty).toBe(true)
+    act(() => flushAllDrafts())
+    expect(stored('w').startTime).toBe('08:00')
+    expect(start.value).toBe('8:00')
+    expect(useApp.getState().draftsDirty).toBe(false)
   })
 })
 

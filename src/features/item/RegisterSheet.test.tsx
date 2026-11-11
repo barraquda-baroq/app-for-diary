@@ -15,7 +15,7 @@ import { testIds } from '../calendar/common/testIds'
 import type { RegisterInit } from '../calendar/common/types'
 import { DATE_PICKER_TEST_ID } from './fields/MiniMonth'
 import { timeListTestId } from './fields/TimeFields'
-import { DISCARD_TEST_IDS, RegisterSheet } from './RegisterSheet'
+import { DISCARD_MESSAGE, DISCARD_TEST_IDS, RegisterSheet } from './RegisterSheet'
 
 setupCalendarTests()
 
@@ -415,6 +415,8 @@ describe('書きかけのまま閉じる時の確かめ（12.2・ITEMS-186・AMB
         .getAllByRole('button')
         .filter((b) => b.dataset.testid?.startsWith('item-discard'))
       expect(buttons.map((b) => b.textContent)).toEqual(['捨てる', '戻る'])
+      // 捨てると何が起きるかを1文で添える（空の本文の帯を出さない）
+      expect(within(dialog).getByText(DISCARD_MESSAGE)).toBeTruthy()
       // 開いた時は［戻る］にフォーカス
       expect(document.activeElement).toBe(byId(DISCARD_TEST_IDS.keep))
       await user.click(byId(DISCARD_TEST_IDS.keep))

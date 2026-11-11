@@ -31,10 +31,14 @@ import { ItemSheet } from './ItemSheet'
 /** 書きかけを捨てるかの確かめのボタンの data-testid */
 export const DISCARD_TEST_IDS = { discard: 'item-discard', keep: 'item-discard-keep' } as const
 
+/** 書きかけを捨てるかの確かめの文（NS の書きかけの確かめと同じく、捨てると何が起きるかを1文で添える） */
+export const DISCARD_MESSAGE = '入力した予定は登録されません。'
+
 /** 「書きかけを捨てますか？［捨てる］［戻る］」（［戻る］が主な選択肢。開いた時はここにフォーカス）。捨てる時 true */
 async function confirmDiscard(): Promise<boolean> {
   const choice = await choiceDialog({
     title: '書きかけを捨てますか？',
+    message: DISCARD_MESSAGE,
     choices: [
       { value: 'discard', label: '捨てる', danger: true, testId: DISCARD_TEST_IDS.discard },
       { value: 'keep', label: '戻る', primary: true, testId: DISCARD_TEST_IDS.keep },
