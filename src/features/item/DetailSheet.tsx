@@ -24,7 +24,7 @@ import type { ItemPatch } from '../../domain/ops'
 import { UNTITLED } from '../../domain/repair'
 import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
-import { getData, getRaw, useApp, useRecord } from '../../store/appStore'
+import { getData, getStoredRecord, useApp, useRecord } from '../../store/appStore'
 import { attempt, notify, notifyError, usePrefs } from '../../store/uiStore'
 import { CopyIcon, DotCheckIcon, MoreIcon, TrashIcon } from '../../ui/icons'
 import { PopupMenu } from '../../ui/PopupMenu'
@@ -82,8 +82,9 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
   const labelNames = useApp((s) => s.data.labelNames)
   const detailsPref = usePrefs((s) => s.detailsOpen)
   const setPrefs = usePrefs((s) => s.setPrefs)
-  // 欄の値は保存した記録から（直すとすぐ保存し、保存した値がここに戻る。文字の欄は打っている間の下書きを欄の中に持つ）
-  const form = useMemo(() => detailForm(item, rawTitleOf(getRaw().items[item.id])), [item])
+  // 欄の値は保存した記録から（直すとすぐ保存し、保存した値がここに戻る。文字の欄は打っている間の下書きを欄の中に持つ）。件名が空かは
+  // 端末に書く（書いた）形の記録で見る（件名が空の予定の複製は、保存し終える前も空。D48）
+  const form = useMemo(() => detailForm(item, rawTitleOf(getStoredRecord('items', item.id))), [item])
   const [open, setOpen] = useState(() => hasDetails(form) || detailsPref)
   /** 日付にできなかった理由（6.4。次に日付・時刻を決めるまで） */
   const [dateError, setDateError] = useState<string | null>(null)

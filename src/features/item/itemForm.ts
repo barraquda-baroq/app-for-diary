@@ -4,6 +4,7 @@
 // 持つ（ここでは当てない）。ほかに、詳細の画面で保存する日付・時刻の差分、書きかけか、メモの URL の切り出し
 import { registerDefaults, type RegisterInit, type When } from '../../domain/itemInput'
 import type { LabelKey } from '../../domain/labels'
+import { UNTITLED } from '../../domain/repair'
 import type { Item, ItemKind } from '../../domain/types'
 import { kindOf, labelOf } from '../calendar/common/parts/itemLook'
 
@@ -39,10 +40,11 @@ export function registerForm(init: RegisterInit): ItemForm {
 /**
  * 詳細の画面の初めの値。item は表示用に直した記録（useData()。知らない kind は仕事・知らないラベルはラベルなし。6.12）。
  * rawTitle は端末の記録（raw）の件名: 件名が空の記録は、表示用の記録では「（件名なし）」になっているので、欄は空にして
- * プレースホルダで「（件名なし）」と出す（本当に「（件名なし）」という件名の記録と見分けるため。D48・AMB-ITEMS-26）
+ * プレースホルダで「（件名なし）」と出す（本当に「（件名なし）」という件名の記録と見分けるため。D48・AMB-ITEMS-26）。
+ * 表示用の件名が「（件名なし）」でない時は、端末の記録がまだ空でも（このタブで件名を直して、まだ保存していない間）その件名を出す
  */
 export function detailForm(item: Item, rawTitle?: unknown): ItemForm {
-  const blank = typeof rawTitle === 'string' && rawTitle.trim() === ''
+  const blank = item.title === UNTITLED && typeof rawTitle === 'string' && rawTitle.trim() === ''
   return {
     origin: item.origin,
     start: item.start,

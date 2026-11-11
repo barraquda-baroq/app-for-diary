@@ -59,6 +59,16 @@ function contentBase(r: Obj) {
 /** 件名が空の時の表示（6.12） */
 export const UNTITLED = '（件名なし）'
 
+/**
+ * 表示用の記録の件名「（件名なし）」が、端末の記録（stored。raw）の空の件名（文字でない・項目が無い物も）を直した物か（6.12・D48）。
+ * 本当に「（件名なし）」という件名の記録とは、端末の記録を見て見分ける。端末の記録が無い（このタブで作ってまだ保存していない）時は
+ * false（表示用の記録がそのまま端末に書く形）
+ */
+export function untitledByRepair(shown: { title: unknown }, stored: unknown): boolean {
+  if (shown.title !== UNTITLED || !isObj(stored)) return false
+  return typeof stored.title !== 'string' || stored.title.trim() === ''
+}
+
 // ---------- 項目（日付と時刻の並びの直し） ----------
 
 type DateFields = Pick<Item, 'origin' | 'start' | 'due' | 'startTime' | 'endTime'>

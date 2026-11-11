@@ -80,6 +80,8 @@ describe('詳細の画面の初めの値', () => {
     expect(detailForm(shown, '  ').title).toBe('')
     expect(detailForm(shown, '（件名なし）').title).toBe('（件名なし）')
     expect(detailForm(shown).title).toBe('（件名なし）')
+    // このタブで件名を直して、まだ保存していない間（端末の記録は空のまま）は、直した件名
+    expect(detailForm(mkItem({ title: '直した件名' }), '').title).toBe('直した件名')
   })
 
   it('rawTitleOf: 記録が無ければ undefined、件名が文字でなければ空（null・項目が無い）', () => {
