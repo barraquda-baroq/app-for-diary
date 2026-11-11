@@ -1,0 +1,426 @@
+{
+  "generatedBy": "scripts/sample-variants.mjs",
+  "note": "段階2の見本の色の案（docs/SPEC.md の 21.・22.）。手で直さず、node scripts/sample-variants.mjs で作り直す",
+  "themes": [
+    "white",
+    "dark",
+    "deep-dark"
+  ],
+  "questions": {
+    "2": {
+      "title": "色合いの間隔",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "options": [
+        {
+          "letter": "A",
+          "id": "now",
+          "label": "今の色"
+        },
+        {
+          "letter": "B",
+          "id": "hue30",
+          "label": "12の色合いを同じ間隔（30°おき）にずらした色"
+        }
+      ]
+    },
+    "3": {
+      "title": "仕事・プライベートの地の濃さ",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "options": [
+        {
+          "letter": "A",
+          "id": "depth-lighter",
+          "label": "淡い"
+        },
+        {
+          "letter": "B",
+          "id": "now",
+          "label": "今"
+        },
+        {
+          "letter": "C",
+          "id": "depth-deeper",
+          "label": "濃い"
+        }
+      ]
+    },
+    "4": {
+      "title": "件名の帯の形",
+      "appearances": [
+        "white",
+        "dark"
+      ],
+      "options": [
+        {
+          "letter": "A",
+          "id": "now",
+          "label": "字の下 6割"
+        },
+        {
+          "letter": "B",
+          "id": "highlight-full",
+          "label": "字の高さいっぱい"
+        }
+      ]
+    },
+    "5": {
+      "title": "土日祝の日付の色（ホワイトとディープダーク）",
+      "appearances": [
+        "white",
+        "deep-dark"
+      ],
+      "reference": [
+        "dark"
+      ],
+      "options": [
+        {
+          "letter": "A",
+          "id": "now",
+          "label": "今の色"
+        },
+        {
+          "letter": "B",
+          "id": "weekend-matched",
+          "label": "ダークに合わせて作り直した色"
+        }
+      ]
+    },
+    "6": {
+      "title": "グレーの差し色の濃さ",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "options": [
+        {
+          "letter": "A",
+          "id": "accent-lighter",
+          "label": "淡い"
+        },
+        {
+          "letter": "B",
+          "id": "now",
+          "label": "今"
+        },
+        {
+          "letter": "C",
+          "id": "accent-deeper",
+          "label": "濃い"
+        }
+      ]
+    }
+  },
+  "options": {
+    "hue30": {
+      "question": 2,
+      "letter": "B",
+      "label": "12の色合いを同じ間隔（30°おき）にずらした色",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "tokens": {
+        "white": {
+          "--label-rose-l": "#e49a9f",
+          "--label-coral-l": "#e29f81",
+          "--label-apricot-l": "#d3a96f",
+          "--label-lemon-l": "#b9b570",
+          "--label-lime-l": "#98be84",
+          "--label-mint-l": "#77c4a3",
+          "--label-teal-l": "#64c3c3",
+          "--label-sky-l": "#6dbddc",
+          "--label-blue-l": "#8ab4ea",
+          "--label-wisteria-l": "#aba9e8",
+          "--label-violet-l": "#c7a0d9",
+          "--label-peony-l": "#db9abe",
+          "--label-rose-d": "#c3656f",
+          "--label-coral-d": "#c16d45",
+          "--label-apricot-d": "#b07a20",
+          "--label-lemon-d": "#918a21",
+          "--label-lime-d": "#669649",
+          "--label-mint-d": "#249c74",
+          "--label-teal-d": "#0c9999",
+          "--label-sky-d": "#0994ba",
+          "--label-blue-d": "#5188cd",
+          "--label-wisteria-d": "#7f7bcb",
+          "--label-violet-d": "#a16fb8",
+          "--label-peony-d": "#b86797"
+        },
+        "dark": {
+          "--label-rose-l": "#febec1",
+          "--label-coral-l": "#fcc2a9",
+          "--label-apricot-l": "#eecb9a",
+          "--label-lemon-l": "#d8d49b",
+          "--label-lime-l": "#bcddab",
+          "--label-mint-l": "#a3e1c5",
+          "--label-teal-l": "#95e1e0",
+          "--label-sky-l": "#9bdcf6",
+          "--label-blue-l": "#b3d4fe",
+          "--label-wisteria-l": "#cbcbff",
+          "--label-violet-l": "#e4c3f3",
+          "--label-peony-l": "#f6bedc",
+          "--label-rose-d": "#eb9097",
+          "--label-coral-d": "#e89772",
+          "--label-apricot-d": "#d7a459",
+          "--label-lemon-d": "#b8b25b",
+          "--label-lime-d": "#90be76",
+          "--label-mint-d": "#62c49d",
+          "--label-teal-d": "#43c3c3",
+          "--label-sky-d": "#54bce2",
+          "--label-blue-d": "#7eb1f3",
+          "--label-wisteria-d": "#a7a4f1",
+          "--label-violet-d": "#c898de",
+          "--label-peony-d": "#e091be"
+        },
+        "deep-dark": {
+          "--label-rose-l": "#816f70",
+          "--label-coral-l": "#80716a",
+          "--label-apricot-l": "#7c7366",
+          "--label-lemon-l": "#767567",
+          "--label-lime-l": "#6f786b",
+          "--label-mint-l": "#697971",
+          "--label-teal-l": "#667978",
+          "--label-sky-l": "#67777e",
+          "--label-blue-l": "#6c7582",
+          "--label-wisteria-l": "#737381",
+          "--label-violet-l": "#79717e",
+          "--label-peony-l": "#7f7077",
+          "--label-rose-d": "#5e4e4f",
+          "--label-coral-d": "#5d4f49",
+          "--label-apricot-d": "#5a5145",
+          "--label-lemon-d": "#545345",
+          "--label-lime-d": "#4d5549",
+          "--label-mint-d": "#48574f",
+          "--label-teal-d": "#455756",
+          "--label-sky-d": "#46555c",
+          "--label-blue-d": "#4b535f",
+          "--label-wisteria-d": "#51515f",
+          "--label-violet-d": "#574f5b",
+          "--label-peony-d": "#5c4e55"
+        }
+      },
+      "css": ":root[data-theme='white'] {\n  --label-rose-l: #e49a9f;\n  --label-coral-l: #e29f81;\n  --label-apricot-l: #d3a96f;\n  --label-lemon-l: #b9b570;\n  --label-lime-l: #98be84;\n  --label-mint-l: #77c4a3;\n  --label-teal-l: #64c3c3;\n  --label-sky-l: #6dbddc;\n  --label-blue-l: #8ab4ea;\n  --label-wisteria-l: #aba9e8;\n  --label-violet-l: #c7a0d9;\n  --label-peony-l: #db9abe;\n  --label-rose-d: #c3656f;\n  --label-coral-d: #c16d45;\n  --label-apricot-d: #b07a20;\n  --label-lemon-d: #918a21;\n  --label-lime-d: #669649;\n  --label-mint-d: #249c74;\n  --label-teal-d: #0c9999;\n  --label-sky-d: #0994ba;\n  --label-blue-d: #5188cd;\n  --label-wisteria-d: #7f7bcb;\n  --label-violet-d: #a16fb8;\n  --label-peony-d: #b86797;\n}\n:root[data-theme='dark'] {\n  --label-rose-l: #febec1;\n  --label-coral-l: #fcc2a9;\n  --label-apricot-l: #eecb9a;\n  --label-lemon-l: #d8d49b;\n  --label-lime-l: #bcddab;\n  --label-mint-l: #a3e1c5;\n  --label-teal-l: #95e1e0;\n  --label-sky-l: #9bdcf6;\n  --label-blue-l: #b3d4fe;\n  --label-wisteria-l: #cbcbff;\n  --label-violet-l: #e4c3f3;\n  --label-peony-l: #f6bedc;\n  --label-rose-d: #eb9097;\n  --label-coral-d: #e89772;\n  --label-apricot-d: #d7a459;\n  --label-lemon-d: #b8b25b;\n  --label-lime-d: #90be76;\n  --label-mint-d: #62c49d;\n  --label-teal-d: #43c3c3;\n  --label-sky-d: #54bce2;\n  --label-blue-d: #7eb1f3;\n  --label-wisteria-d: #a7a4f1;\n  --label-violet-d: #c898de;\n  --label-peony-d: #e091be;\n}\n:root[data-theme='deep-dark'] {\n  --label-rose-l: #816f70;\n  --label-coral-l: #80716a;\n  --label-apricot-l: #7c7366;\n  --label-lemon-l: #767567;\n  --label-lime-l: #6f786b;\n  --label-mint-l: #697971;\n  --label-teal-l: #667978;\n  --label-sky-l: #67777e;\n  --label-blue-l: #6c7582;\n  --label-wisteria-l: #737381;\n  --label-violet-l: #79717e;\n  --label-peony-l: #7f7077;\n  --label-rose-d: #5e4e4f;\n  --label-coral-d: #5d4f49;\n  --label-apricot-d: #5a5145;\n  --label-lemon-d: #545345;\n  --label-lime-d: #4d5549;\n  --label-mint-d: #48574f;\n  --label-teal-d: #455756;\n  --label-sky-d: #46555c;\n  --label-blue-d: #4b535f;\n  --label-wisteria-d: #51515f;\n  --label-violet-d: #574f5b;\n  --label-peony-d: #5c4e55;\n}\n",
+      "notes": [
+        "ホワイトの teal-d は sRGB に入らないので、彩度を 0.12 から 0.104 に下げた",
+        "ホワイトの sky-d は sRGB に入らないので、彩度を 0.12 から 0.116 に下げた",
+        "ダークの blue-l は sRGB に入らないので、彩度を 0.075 から 0.069 に下げた",
+        "ダークの wisteria-l は sRGB に入らないので、彩度を 0.075 から 0.071 に下げた"
+      ]
+    },
+    "depth-lighter": {
+      "question": 3,
+      "letter": "A",
+      "label": "淡い",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "tokens": {
+        "white": {
+          "--work-soft": "#ecf2fa",
+          "--private-soft": "#fcedf2",
+          "--work-area": "#f5f8fc",
+          "--private-area": "#fdf5f8",
+          "--work-sheet": "#f2f6fc",
+          "--private-sheet": "#fcf2f7",
+          "--work-marker": "#e0ebfa",
+          "--private-marker": "#f9e0ea"
+        },
+        "dark": {
+          "--work-soft": "#1b242f",
+          "--private-soft": "#2b1e25",
+          "--work-area": "#191e26",
+          "--private-area": "#221b20",
+          "--work-sheet": "#1b212b",
+          "--private-sheet": "#261d23",
+          "--work-marker": "#243243",
+          "--private-marker": "#3a2530"
+        },
+        "deep-dark": {
+          "--work-soft": "#121316",
+          "--private-soft": "#121316"
+        }
+      },
+      "css": ":root[data-theme='white'] {\n  --work-soft: #ecf2fa;\n  --private-soft: #fcedf2;\n  --work-area: #f5f8fc;\n  --private-area: #fdf5f8;\n  --work-sheet: #f2f6fc;\n  --private-sheet: #fcf2f7;\n  --work-marker: #e0ebfa;\n  --private-marker: #f9e0ea;\n}\n:root[data-theme='dark'] {\n  --work-soft: #1b242f;\n  --private-soft: #2b1e25;\n  --work-area: #191e26;\n  --private-area: #221b20;\n  --work-sheet: #1b212b;\n  --private-sheet: #261d23;\n  --work-marker: #243243;\n  --private-marker: #3a2530;\n}\n:root[data-theme='deep-dark'] {\n  --work-soft: #121316;\n  --private-soft: #121316;\n}\n",
+      "notes": []
+    },
+    "depth-deeper": {
+      "question": 3,
+      "letter": "C",
+      "label": "濃い",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "tokens": {
+        "white": {
+          "--work-soft": "#dde8f6",
+          "--private-soft": "#f9e1ea",
+          "--work-area": "#edf2fa",
+          "--private-area": "#fbeef3",
+          "--work-sheet": "#e4edf8",
+          "--private-sheet": "#f9e6ee",
+          "--work-marker": "#c8dcf5",
+          "--private-marker": "#f5d1df"
+        },
+        "dark": {
+          "--work-soft": "#1e2d40",
+          "--private-soft": "#3e2330",
+          "--work-area": "#1b2532",
+          "--private-area": "#2c1d25",
+          "--work-sheet": "#1e2a3c",
+          "--private-sheet": "#34222b",
+          "--work-marker": "#2c405a",
+          "--private-marker": "#5f3047"
+        },
+        "deep-dark": {
+          "--work-soft": "#16171b",
+          "--private-soft": "#16171b"
+        }
+      },
+      "css": ":root[data-theme='white'] {\n  --work-soft: #dde8f6;\n  --private-soft: #f9e1ea;\n  --work-area: #edf2fa;\n  --private-area: #fbeef3;\n  --work-sheet: #e4edf8;\n  --private-sheet: #f9e6ee;\n  --work-marker: #c8dcf5;\n  --private-marker: #f5d1df;\n}\n:root[data-theme='dark'] {\n  --work-soft: #1e2d40;\n  --private-soft: #3e2330;\n  --work-area: #1b2532;\n  --private-area: #2c1d25;\n  --work-sheet: #1e2a3c;\n  --private-sheet: #34222b;\n  --work-marker: #2c405a;\n  --private-marker: #5f3047;\n}\n:root[data-theme='deep-dark'] {\n  --work-soft: #16171b;\n  --private-soft: #16171b;\n}\n",
+      "notes": [
+        "ホワイトの --work-soft は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.27 にとどめた",
+        "ホワイトの --private-soft は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.17 にとどめた",
+        "ホワイトの --work-area は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.32 にとどめた",
+        "ホワイトの --private-area は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.25 にとどめた",
+        "ホワイトの --work-marker は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.26 にとどめた",
+        "ホワイトの --private-marker は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.06 にとどめた",
+        "ダークの --work-soft は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.26 にとどめた",
+        "ダークの --work-marker は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.09 にとどめた",
+        "ダークの --private-marker は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.38 にとどめた"
+      ]
+    },
+    "highlight-full": {
+      "question": 4,
+      "letter": "B",
+      "label": "字の高さいっぱい",
+      "appearances": [
+        "white",
+        "dark"
+      ],
+      "tokens": {},
+      "css": ".kind-marker {\n  background: linear-gradient(var(--kind-marker, transparent), var(--kind-marker, transparent)) !important;\n}\n",
+      "notes": []
+    },
+    "weekend-matched": {
+      "question": 5,
+      "letter": "B",
+      "label": "ダークに合わせて作り直した色",
+      "appearances": [
+        "white",
+        "deep-dark"
+      ],
+      "tokens": {
+        "white": {
+          "--sat": "#213452",
+          "--sun": "#763140"
+        },
+        "deep-dark": {
+          "--sat": "#838890",
+          "--sun": "#98888a"
+        }
+      },
+      "css": ":root[data-theme='white'] {\n  --sat: #213452;\n  --sun: #763140;\n}\n:root[data-theme='deep-dark'] {\n  --sat: #838890;\n  --sun: #98888a;\n}\n",
+      "notes": [
+        "ホワイトの --sat は、--work-text より面に近い側では 4.5:1 に届かないので、反対の側（暗い側）にした",
+        "ホワイトの --sun は、--private-text より面に近い側では 4.5:1 に届かないので、反対の側（暗い側）にした"
+      ]
+    },
+    "accent-lighter": {
+      "question": 6,
+      "letter": "A",
+      "label": "淡い",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "tokens": {
+        "white": {
+          "--primary": "#636363",
+          "--primary-hover": "#515151",
+          "--today-ring": "#515151",
+          "--selection": "#ebebeb",
+          "--accent-soft": "#f3f3f3"
+        },
+        "dark": {
+          "--primary": "#434343",
+          "--primary-hover": "#494949",
+          "--today-ring": "#aaaaaa",
+          "--selection": "#363636",
+          "--accent-soft": "#1e1e1e"
+        },
+        "deep-dark": {
+          "--primary": "#1d1d1d",
+          "--primary-hover": "#242424",
+          "--today-bg": "#393939",
+          "--today-ring": "#7c7c7c",
+          "--selection": "#1f1f1f",
+          "--accent-soft": "#131313"
+        }
+      },
+      "css": ":root[data-theme='white'] {\n  --primary: #636363;\n  --primary-hover: #515151;\n  --today-ring: #515151;\n  --selection: #ebebeb;\n  --accent-soft: #f3f3f3;\n}\n:root[data-theme='dark'] {\n  --primary: #434343;\n  --primary-hover: #494949;\n  --today-ring: #aaaaaa;\n  --selection: #363636;\n  --accent-soft: #1e1e1e;\n}\n:root[data-theme='deep-dark'] {\n  --primary: #1d1d1d;\n  --primary-hover: #242424;\n  --today-bg: #393939;\n  --today-ring: #7c7c7c;\n  --selection: #1f1f1f;\n  --accent-soft: #131313;\n}\n",
+      "notes": [
+        "ホワイトの --accent-soft は面との明るさの差が小さいので、面を越えないよう差の半分（0.035）だけ動かした",
+        "ダークの --primary は 0.060 動かすと決まりを割るので、0.042 にとどめた",
+        "ダークの --accent-soft は面との明るさの差が小さいので、面を越えないよう差の半分（0.025）だけ動かした",
+        "ディープダークの --today-bg は 0.060 動かすと決まりを割るので、0.029 にとどめた",
+        "ディープダークの --accent-soft は面との明るさの差が小さいので、面を越えないよう差の半分（0.021）だけ動かした"
+      ]
+    },
+    "accent-deeper": {
+      "question": 6,
+      "letter": "C",
+      "label": "濃い",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "tokens": {
+        "white": {
+          "--primary": "#424242",
+          "--primary-hover": "#313131",
+          "--today-ring": "#313131",
+          "--selection": "#c4c4c4",
+          "--accent-soft": "#e7e7e7"
+        },
+        "dark": {
+          "--primary": "#5e5e5e",
+          "--primary-hover": "#6a6a6a",
+          "--today-ring": "#d0d0d0",
+          "--selection": "#565656",
+          "--accent-soft": "#2c2c2c"
+        },
+        "deep-dark": {
+          "--primary": "#3a3a3a",
+          "--primary-hover": "#434343",
+          "--today-bg": "#494949",
+          "--today-ring": "#a0a0a0",
+          "--selection": "#3c3c3c",
+          "--accent-soft": "#1d1d1d"
+        }
+      },
+      "css": ":root[data-theme='white'] {\n  --primary: #424242;\n  --primary-hover: #313131;\n  --today-ring: #313131;\n  --selection: #c4c4c4;\n  --accent-soft: #e7e7e7;\n}\n:root[data-theme='dark'] {\n  --primary: #5e5e5e;\n  --primary-hover: #6a6a6a;\n  --today-ring: #d0d0d0;\n  --selection: #565656;\n  --accent-soft: #2c2c2c;\n}\n:root[data-theme='deep-dark'] {\n  --primary: #3a3a3a;\n  --primary-hover: #434343;\n  --today-bg: #494949;\n  --today-ring: #a0a0a0;\n  --selection: #3c3c3c;\n  --accent-soft: #1d1d1d;\n}\n",
+      "notes": [
+        "ホワイトの --accent-soft は 0.060 動かすと決まりを割るので、0.003 にとどめた",
+        "ダークの --accent-soft は 0.060 動かすと決まりを割るので、0.035 にとどめた",
+        "ディープダークの --today-bg は 0.060 動かすと決まりを割るので、0.035 にとどめた",
+        "ディープダークの --accent-soft は 0.060 動かすと決まりを割るので、0.023 にとどめた"
+      ]
+    }
+  }
+}
