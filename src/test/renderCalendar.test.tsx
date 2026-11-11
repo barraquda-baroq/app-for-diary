@@ -3,11 +3,9 @@ import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mkItem } from '../domain/testData'
-import { DayView } from '../features/calendar/day/DayView'
 import { MonthView } from '../features/calendar/month/MonthView'
 import { testIds } from '../features/calendar/common/testIds'
 import { useDayDrop, useItemDrag, WeekDnd } from '../features/calendar/week/dnd'
-import { WeekView } from '../features/calendar/week/WeekView'
 import { YearView } from '../features/calendar/year/YearView'
 import { DetailSheet } from '../features/item/DetailSheet'
 import { RegisterSheet } from '../features/item/RegisterSheet'
@@ -96,7 +94,7 @@ describe('renderAt（アプリの行き先）', () => {
 })
 
 describe('仮の画面（受け取る物は最後の形）', () => {
-  it('マンスリーは段階0の空のマス目（日付と今日の丸）のまま', async () => {
+  it('マンスリーは受け取る物どおりにマス目を描く（行の数・今日の丸・S の詰めた形）', async () => {
     const { setProps } = await renderView(MonthView, viewProps({ mode: 'month' }))
     const view = screen.getByTestId(testIds.view('month'))
     const grid = within(view).getByTestId('calendar-month')
@@ -111,11 +109,7 @@ describe('仮の画面（受け取る物は最後の形）', () => {
     expect(document.querySelector('.today-mark')).toBeNull()
   })
 
-  it.each([
-    ['week', WeekView],
-    ['day', DayView],
-    ['year', YearView],
-  ] as const)('%s は「段階2で作ります」の仮の画面', async (mode, View) => {
+  it.each([['year', YearView]] as const)('%s は「段階2で作ります」の仮の画面', async (mode, View) => {
     await renderView(View, viewProps({ mode }))
     expect(screen.getByTestId(testIds.view(mode)).textContent).toContain('段階2で作ります')
   })
