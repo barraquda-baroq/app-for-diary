@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { testIds } from '../src/features/calendar/common/testIds'
 import { adminCreateOwner, adminGoogleUser, useRules } from '../src/test/emulatorAdmin'
-import { seed, signInSync, syncDevice } from './helpers'
+import { seed, signInSync, startMouseDrag, syncDevice } from './helpers'
 
 test.beforeAll(async () => {
   await useRules(readFileSync('firestore.rules', 'utf8'))
@@ -66,11 +66,13 @@ test('A で足した予定と休みが B のマンスリーの件数・ウィー
   await expect(b.getByTestId(testIds.weekCol('2026-11-13'))).toHaveClass(/cp-offday/)
   await expect(b.getByTestId(testIds.weekOff('2026-11-13'))).toBeChecked()
 
-  // B で日付を 11/14（土）へ動かす（ドロップと同じ操作 actions.moveItemDates。7.11）。
-  // TODO（結合の担当へ）: WP11 のドラッグが入ったら、B の画面でカードを 11/14 のマスへ本物のドラッグで落とす（e2e/helpers.ts の
-  // mouseDrag）のが簡単なら、ここをそれに替える
-  await seed(b, ({ actions }, i) => actions.moveItemDates(i, { start: '2026-11-14', due: null, clearEnd: false }), id)
+  // B の画面でカードを 11/14（土）のマスへマウスでドラッグして落とす（7.10・7.11）。上にあるマスに印が付いてから離す
+  const drag = await startMouseDrag(b, workCell(b, '2026-11-12').getByTestId(testIds.weekCard(id)))
+  await drag.moveTo(workCell(b, '2026-11-14'))
+  await expect(workCell(b, '2026-11-14')).toHaveAttribute('data-drop', 'hover')
+  await drag.drop()
   await expect(workCell(b, '2026-11-14').getByTestId(testIds.weekCard(id))).toBeVisible()
+  expect(await b.evaluate((i) => window.__ds.getData().items[i], id)).toMatchObject({ start: '2026-11-14', due: null })
 
   // A: ウィークリーでは 11/14 のマスに移り、マンスリーの件数も 11/12 から 11/14 へ移る
   await go(a, '/week/2026-11-08')
