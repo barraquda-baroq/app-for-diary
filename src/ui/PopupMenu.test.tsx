@@ -284,3 +284,70 @@ describe('PopupMenu（上に開く・本文のフォーカスを動かさない�
     expect(document.activeElement).toBe(screen.getByTestId('item-a'))
   })
 })
+
+describe('PopupMenu（項目の見分け方・等幅の説明）', () => {
+  it('同じ名前の項目が並んでも、並びの順で見分ける（React のキーが重ならず、押した項目の働きになる）', () => {
+    const errors = vi.spyOn(console, 'error')
+    const first = vi.fn()
+    const second = vi.fn()
+    render(
+      <PopupMenu
+        label="ほかに 2件の予定"
+        items={[
+          { label: '電話', hint: '14:00–15:00', onSelect: first },
+          { label: '電話', hint: '14:00–15:00', onSelect: second },
+        ]}
+        placement={{ point: { x: 10, y: 10 } }}
+        onClose={() => {}}
+      />,
+    )
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(2)
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false)
+    fireEvent.click(items[1])
+    expect(second).toHaveBeenCalledTimes(1)
+    expect(first).not.toHaveBeenCalled()
+  })
+
+  it('monoHint: 説明（時刻）を等幅の字で出す（is-mono）。省くとふつうの字', () => {
+    render(
+      <PopupMenu
+        label="一覧"
+        items={[
+          { label: '社内の確認', hint: '14:45–15:30', monoHint: true, onSelect: () => {} },
+          { label: '削除', hint: 'ロック中は削除できません', onSelect: () => {} },
+        ]}
+        placement={{ point: { x: 10, y: 10 } }}
+        onClose={() => {}}
+      />,
+    )
+    const [time, plain] = screen.getAllByRole('menuitem').map((el) => el.querySelector('.pm-hint') as HTMLElement)
+    expect(time.className).toBe('pm-hint is-mono')
+    expect(plain.className).toBe('pm-hint')
+  })
+})
+
+describe('メニューの重なり（menu.css）', () => {
+  // CSS は import するとテストでは中身が空になるので、ファイルを読む（src/styles.test.ts と同じ読み方）
+  const NODE_FS = 'node:fs'
+  const read = async (relative: string) => {
+    const { readFileSync } = (await import(/* @vite-ignore */ NODE_FS)) as {
+      readFileSync: (path: string, encoding: 'utf8') => string
+    }
+    return readFileSync(decodeURIComponent(new URL(relative, import.meta.url).pathname), 'utf8')
+  }
+  /** そのセレクタの規則の z-index（コメントを除いて探す） */
+  const zIndexOf = (css: string, selector: string) => {
+    const src = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    const at = src.search(new RegExp(`(^|\\n)${selector.replace(/[.[\]]/g, '\\$&')}\\s*\\{`))
+    const body = src.slice(at, src.indexOf('}', at))
+    return Number(/z-index:\s*(\d+)/.exec(body)?.[1])
+  }
+
+  it('小さな画面（登録・詳細。.modal-backdrop）の上で開いたメニューも、その前に出す。お知らせ（.toasts）よりは後ろ', async () => {
+    const menu = zIndexOf(await read('./menu.css'), '.pm-menu')
+    const common = await read('../styles.css')
+    expect(menu).toBeGreaterThan(zIndexOf(common, '.modal-backdrop'))
+    expect(menu).toBeLessThan(zIndexOf(common, '.toasts'))
+  })
+})

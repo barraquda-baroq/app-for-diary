@@ -1,5 +1,5 @@
 // すばやく足す（QuickAdd。12.1・6.13・D31・D42・D44・AMB-ITEMS-21）
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { calendarItems, weekSingles } from '../../../../domain/calendar'
@@ -10,7 +10,7 @@ import { quickDraftKey } from '../../../../store/localDrafts'
 import { useToasts } from '../../../../store/uiStore'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
 import { testIds } from '../testIds'
-import { QuickAdd, type QuickAddProps } from './QuickAdd'
+import { CLICK_WAIT_MS, QuickAdd, type QuickAddProps } from './QuickAdd'
 
 setupCalendarTests()
 
@@ -141,7 +141,7 @@ describe('足さない時（ITEMS-157・158）', () => {
 })
 
 describe('閉じる（ITEMS-156・FRAME-103・CALENDAR-268）', () => {
-  it('Esc で閉じる。同じ Esc を下の小さな画面・休みを付ける状態へ渡さない', async () => {
+  it('Esc で閉じる（閉じたきっかけ escape。画面は「＋」の行へフォーカスを戻す）。同じ Esc を下の小さな画面・休みを付ける状態へ渡さない', async () => {
     const user = userEvent.setup()
     const { onClose } = await open()
     const outer = vi.fn()
@@ -149,6 +149,7 @@ describe('閉じる（ITEMS-156・FRAME-103・CALENDAR-268）', () => {
     await user.keyboard('{Escape}')
     window.removeEventListener('keydown', outer)
     expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('escape')
     expect(outer).not.toHaveBeenCalled()
   })
 
@@ -158,26 +159,93 @@ describe('閉じる（ITEMS-156・FRAME-103・CALENDAR-268）', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('入力欄の外を押すと閉じる（入力欄の中を押しても閉じない）', async () => {
+  it('入力欄の外を押すと閉じる（閉じたきっかけ press。入力欄の中を押しても閉じない）', async () => {
     const user = userEvent.setup()
     const { input, onClose } = await open()
     await user.click(input)
     expect(onClose).not.toHaveBeenCalled()
     await user.click(screen.getByTestId('outside'))
     expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
   })
 
-  it('キーボードでフォーカスを外へ移した（Tab）時も閉じる（開いたまま Esc の効かない入力欄を残さない）', async () => {
+  it('キーボードでフォーカスを外へ移した（Tab）時も閉じる（閉じたきっかけ focus。開いたまま Esc の効かない入力欄を残さない）', async () => {
     const user = userEvent.setup()
     const { onClose } = await open()
     await user.tab({ shift: true })
     expect(document.activeElement).toBe(screen.getByTestId('outside'))
     expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('focus')
   })
 
   it('窓・アプリを切り替えてフォーカスが外れた（行き先の無い blur）だけでは閉じない', async () => {
     const { input, onClose } = await open()
     fireEvent.blur(input, { relatedTarget: null })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('外を押した時は、押し終わってから閉じる（開発。押した指・掴んだカードの下で並びが動かないように）', () => {
+  it('押している間（pointerdown・フォーカスの移り）は閉じず、click の時に1回だけ閉じる', async () => {
+    const user = userEvent.setup()
+    const { onClose } = await open()
+    const outside = screen.getByTestId('outside')
+    await user.pointer({ keys: '[MouseLeft>]', target: outside })
+    // マウスを押すとフォーカスは押したボタンへ移る（入力欄の blur）が、まだ閉じない
+    expect(document.activeElement).toBe(outside)
+    expect(onClose).not.toHaveBeenCalled()
+    await user.pointer({ keys: '[/MouseLeft]', target: outside })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
+  })
+
+  it('pointercancel（なぞってスクロールした）ですぐ閉じる', async () => {
+    const { onClose } = await open()
+    const outside = screen.getByTestId('outside')
+    fireEvent.pointerDown(outside)
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.pointerCancel(outside)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('離しても click が来ない時（長押し・ドラッグ）は、離してから CLICK_WAIT_MS で閉じる', async () => {
+    const { onClose } = await open()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const outside = screen.getByTestId('outside')
+    fireEvent.pointerDown(outside)
+    act(() => {
+      vi.advanceTimersByTime(CLICK_WAIT_MS * 3)
+    })
+    // 押している間は待つ
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.pointerUp(outside)
+    act(() => {
+      vi.advanceTimersByTime(CLICK_WAIT_MS - 1)
+    })
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('押し終わりを待っている間の Esc は、待たずにすぐ閉じる（escape）', async () => {
+    const { input, onClose } = await open()
+    fireEvent.pointerDown(screen.getByTestId('outside'))
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('escape')
+    fireEvent.click(screen.getByTestId('outside'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('押し終わりを待っている間に画面が外した（日・週が替わった）時は、後から閉じると伝えない', async () => {
+    const { onClose, unmount } = await open()
+    const outside = screen.getByTestId('outside')
+    fireEvent.pointerDown(outside)
+    unmount()
+    fireEvent.click(document.body)
+    fireEvent.pointerCancel(document.body)
     expect(onClose).not.toHaveBeenCalled()
   })
 })

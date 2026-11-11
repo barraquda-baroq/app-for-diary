@@ -30,10 +30,10 @@ import {
   QuickAdd,
   useFlashTarget,
 } from '../common/parts'
+import type { QuickAddCloseReason } from '../common/parts/QuickAdd'
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import { useItemDrag, type DragHandle, type WeekCtx } from './dnd'
-import { useCloseAfterPress } from './useCloseAfterPress'
 import { cardLayout, laneMarksBelow, marksPx, receivedTwoLines, startCardLook } from './weekModel'
 import './week.css'
 
@@ -297,36 +297,37 @@ export interface AddRowProps {
   open?: boolean
   /** 「＋」を押した（すばやく足すを開く） */
   onAdd?: (date: string, kind: ItemKind) => void
-  /** すばやく足すを閉じた（Esc・入力欄の外を押した） */
+  /** すばやく足すを閉じた（Esc・入力欄の外を押し終えた・フォーカスを外へ移した） */
   onClose?: () => void
 }
 
 /**
  * いちばん下の「＋」の行（28px。7日を横の PC では列に乗せた時だけ出す。10.2・D43）。押すと、その場でその日・その段のすばやく足す
  * （1行の入力欄。12.1）に替わる（D44）。Esc で閉じた時は「＋」にフォーカスを戻す（キーボードで続けて操作できるように）。
- * 外を押して閉じた時は戻さない（押した所の操作のまま）。外を押した時は押し終わってから閉じる（S で下のかたまりがずれて、指の下の
- * 別の予定が押されないように。useCloseAfterPress）
+ * 外を押して閉じた時は戻さない（押した所の操作のまま）。外を押した時に押し終わってから閉じるのは QuickAdd（S で下のかたまりが
+ * ずれて、指の下の別の予定が押されないように。掴んだカードの下で並びが動かないように）
  */
 export function AddRow({ date, kind, open = false, onAdd, onClose }: AddRowProps) {
   const button = useRef<HTMLButtonElement>(null)
-  /** Esc で閉じた（入力欄の Esc は下へ渡らないので、先に捕まえて覚える） */
+  /** Esc で閉じた（「＋」へフォーカスを戻す） */
   const byEsc = useRef(false)
   const wasOpen = useRef(open)
-  const close = useCloseAfterPress(open, () => onClose?.())
   useLayoutEffect(() => {
     if (wasOpen.current && !open && byEsc.current) button.current?.focus({ preventScroll: true })
     wasOpen.current = open
     byEsc.current = false
   }, [open])
+  const close = useCallback(
+    (reason: QuickAddCloseReason) => {
+      byEsc.current = reason === 'escape'
+      onClose?.()
+    },
+    [onClose],
+  )
 
   if (open) {
     return (
-      <div
-        className="wk-quick"
-        onKeyDownCapture={(e) => {
-          byEsc.current = e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229
-        }}
-      >
+      <div className="wk-quick">
         <QuickAdd date={date} kind={kind} onClose={close} />
       </div>
     )

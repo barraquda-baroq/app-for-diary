@@ -244,9 +244,47 @@ describe('指の端末の押せる所（D08・4.11）', () => {
 })
 
 describe('すばやく足す（12.1・D44）', () => {
-  it('入力欄は「＋ 予定を足す」の行と同じ 40px の高さに収める', () => {
-    expect(day('.dy-quick').get('min-height')).toBe('40px')
+  it('入力欄は「＋ 予定を足す」の行と同じ 40px の高さちょうど（S・M の入力欄 40px に上下の余白を足さない。開いた・閉じた時に下の物が動かない）', () => {
+    expect(day('.dy-quick').get('height')).toBe('40px')
+    const [top, , bottom] = (day('.dy-quick').get('padding') ?? '').split(/\s+/)
+    expect([top, bottom]).toEqual(['0', '0'])
     expect(day('.dy-add').get('min-height')).toBe('40px')
+    // S・M・指の端末の入力欄は 40px（src/styles.css）
+    const input = rulesOf(COMMON).find((r) => r.at.includes('(pointer: coarse)') && r.selector.includes('.input'))
+    expect(input?.decls.get('min-height')).toBe('40px')
+  })
+})
+
+describe('予定の枠の中の並び（11.3。狭い枠は dayModel.ts の fitBox）', () => {
+  it('ふつうの枠: 1行目に件名（残りの幅）と右上の印、2行目に時刻（幅いっぱい）。時刻は途中で切らない（入る表記を fitBox が選ぶ）', () => {
+    expect(day('.dy-box').get('flex-wrap')).toBe('wrap')
+    expect(day('.dy-ev-open').get('flex')).toBe('1 1 0')
+    expect(day('.dy-ev-marks').get('flex')).toBe('none')
+    expect(day('.dy-ev-time').get('flex')).toBe('0 0 100%')
+    expect(day('.dy-ev-time').get('overflow')).toBe('hidden')
+  })
+
+  it('狭い枠（is-narrow）: 件名は1行目の幅いっぱい、印は2行目の時刻の右へ下ろす', () => {
+    expect(day('.dy-box.is-narrow .dy-ev-open').get('flex-basis')).toBe('100%')
+    expect(day('.dy-box.is-narrow .dy-ev-time').get('flex')).toBe('1 1 0')
+    const marks = day('.dy-box.is-narrow .dy-ev-marks')
+    expect([marks.get('order'), marks.get('margin-left')]).toEqual(['1', 'auto'])
+  })
+
+  it('低い枠（is-compact）: 件名・時刻・印を1行に（時刻から縮める）。とても狭い枠（is-marks-thin）は〆・ロック・AI の札を出さない', () => {
+    expect(day('.dy-box.is-compact').get('flex-wrap')).toBe('nowrap')
+    expect(day('.dy-box.is-compact .dy-ev-time').get('flex')).toBe('0 100 auto')
+    expect(day('.dy-box.is-compact .dy-ev-marks').get('order')).toBe('1')
+    const thin = DAY_RULES.find((r) => r.selector.startsWith('.dy-box.is-marks-thin'))
+    expect(thin?.selector).toBe(".dy-box.is-marks-thin .dy-ev-marks :is([data-mark='due'], [data-mark='lock'], .cp-ai)")
+    expect(thin?.decls.get('display')).toBe('none')
+  })
+
+  it('狭い枠の AI の札の押せる所は、上の件名へは広げない（指の端末。D08）', () => {
+    const r = DAY_RULES.find(
+      (x) => x.at.includes('(pointer: coarse)') && x.selector === '.dy-box.is-narrow .dy-ev-marks .cp-ai::after',
+    )
+    expect(r?.decls.get('inset')?.split(/\s+/)[0]).toBe('0')
   })
 })
 

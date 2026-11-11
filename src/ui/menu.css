@@ -1,8 +1,10 @@
 /* 右クリック・長押し・「…」で開く小さな操作メニュー（PopupMenu.tsx）。NS の src/ui/menu.css から。
-   地は --surface（--danger の削除の項目を置けるのは --surface の上だけ。docs/SPEC.md の 4.5）。出る時は pop-in 120ms（4.9） */
+   地は --surface（--danger の削除の項目を置けるのは --surface の上だけ。docs/SPEC.md の 4.5）。出る時は pop-in 120ms（4.9）。
+   小さな画面（.modal-backdrop の z-index 100）の上で開くメニュー（詳細の「…」など）も、その前に出す（欄の下の小窓 .it-pop と同じ
+   110。お知らせ 200 よりは後ろ） */
 .pm-menu {
   position: fixed;
-  z-index: 60;
+  z-index: 110;
   display: flex;
   flex-direction: column;
   min-width: 220px;
@@ -93,6 +95,14 @@
   font-weight: 400;
   color: var(--text-muted);
   white-space: normal;
+}
+
+/* 時刻・日付だけの説明（等幅 11px。docs/SPEC.md の 4.4-1・4.7） */
+.pm-hint.is-mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-synthesis-weight: none;
 }
 
 /* 横一列のメニュー: 見出しの下に、指で押せる大きさの項目を並べる（列の数は --pm-cols） */

@@ -6,9 +6,11 @@
 //   1日の予定は1日の予定どうしの重なりだけでまとめてその右に）に並べた枠の位置と高さ（px）、列に入らない分の「+n」の札（札の所を
 //   空けて、予定に重ねない）、開いた時の位置、押した所の時刻
 // 時刻の計算（その日の部分・重なり・開始のカードの高さ）は src/domain/dayLayout.ts、並びは src/domain/calendar.ts にあり、ここでは
-// 1時間の高さ（L・M 48px、S 44px）で px に直し、枠の中の出し方（1行にまとめるか・件名を何行まで出すか・線と●／矢印）を決める
+// 1時間の高さ（L・M 48px、S 44px）で px に直し、枠の中の出し方（1行にまとめるか・件名を何行まで出すか・線と●／矢印）を決める。
+// 枠の幅（px）で決める所（狭い枠では印を時刻の行へ下ろす・入らない時刻を短くする。fitBox）と、マンスリーの数字から来た時の位置
+// （arrivalScrollPx）は、画面が測った幅・高さを渡して決める
 import { dayList, dayTimed, dayUndone, type CalItem, type DayRow } from '../../../domain/calendar'
-import { dottedDate } from '../../../domain/dates'
+import { displayHm, dottedDate, mdLabel } from '../../../domain/dates'
 import {
   DAY_MINUTES,
   EVENT_MIN_PX,
@@ -23,8 +25,10 @@ import {
   type Placed,
 } from '../../../domain/dayLayout'
 import { holidayName } from '../../../domain/holidays'
-import { listTail, type ListTail } from '../../../domain/itemText'
-import { ITEM_KINDS, type ID, type ItemKind } from '../../../domain/types'
+import { hasDueMark } from '../../../domain/items'
+import { listTail, timeLabel, type ListTail } from '../../../domain/itemText'
+import { ITEM_KINDS, type ID, type Item, type ItemKind } from '../../../domain/types'
+import { aiTagText, displayTitle, hasAiTag, kindOf } from '../common/parts/itemLook'
 import type { WidthClass } from '../common/types'
 
 // ---------- 大きさ（px。day.css と同じ値） ----------
@@ -305,4 +309,206 @@ export function buildDay(
     sections: ITEM_KINDS.map((kind) => buildSection(list, date, kind)),
     timeline: buildTimeline(list, date, width),
   }
+}
+
+// ---------- 予定の枠の中の出し方（枠の幅で決める。11.3・D39） ----------
+
+/** 予定を置ける幅の右の空き（px。空いた時間を押せるように残す。day.css の「100% − 8px」） */
+export const EVENTS_RIGHT_PX = 8
+/** 「+n」の札の所（px。day.css の --more-room） */
+export const MORE_ROOM_PX = 24
+/** 列の間（px。day.css の left の +2px・width の −2px） */
+export const COLUMN_GAP_PX = 2
+/** 枠の左右の線（1px ずつ）・左の余白（点線の丸のある枠は丸の分を足して 30px、無い枠は 10px）・右の余白 */
+const BOX_BORDER_X = 2
+const BOX_PAD_LEFT_RING = 30
+const BOX_PAD_LEFT = 10
+const BOX_PAD_RIGHT = 6
+/** 件名・時刻と印の間、印どうしの間（day.css・parts.css の gap） */
+const MARK_GAP = 4
+/** 1行にまとめた枠の、件名と時刻の間 */
+const COMPACT_TIME_GAP = 6
+/** 印の幅（px。区分のアイコン 12・〆 11・ロック 12・AI の札「Claude」44・「AI」20・終わりの● 10・矢印 12） */
+const MARK_PX = { kind: 12, due: 11, lock: 12, aiClaude: 44, ai: 20, dot: 10, arrow: 12 } as const
+/**
+ * 2行の枠で件名に残したい幅（px。12px の字で5字）。印を件名の横に置くとこれより狭くなり、件名が入らない枠は、印を時刻の行の右へ
+ * 下ろす（これより広くても、下ろせば件名が入りきる時は下ろす）
+ */
+export const MIN_TITLE_PX = 60
+/**
+ * 1行にまとめた枠で件名に残したい幅（px。12px の字で3字）。〆・ロック・AI の札まで出すとこれより狭くなり、件名が入らない枠は、
+ * 印を区分のアイコンだけにする（下ろす行が無いので）
+ */
+export const MIN_COMPACT_TITLE_PX = 36
+/** 時刻が入るかを見る時に、入れる所から引いておく分（書体の違い） */
+const FIT_MARGIN = 2
+
+/** 予定の枠の幅（px）。eventsPx は予定を置ける所（時刻の欄の右）の幅。day.css の width と同じ式 */
+export function boxPx(b: Pick<TimedBoxVM, 'w' | 'wRoom'>, eventsPx: number): number {
+  return (eventsPx - EVENTS_RIGHT_PX) * b.w - MORE_ROOM_PX * b.wRoom - COLUMN_GAP_PX
+}
+
+/** 枠の中の字の所の幅（px。枠の幅 − 左右の線 − 左右の余白） */
+export function boxTextPx(b: Pick<TimedBoxVM, 'w' | 'wRoom' | 'ring'>, eventsPx: number): number {
+  return boxPx(b, eventsPx) - BOX_BORDER_X - (b.ring ? BOX_PAD_LEFT_RING : BOX_PAD_LEFT) - BOX_PAD_RIGHT
+}
+
+/**
+ * 枠の右上の印の幅（px）: 区分のアイコン → 〆 → ロック → AI の札、日をまたぐ予定の線を引かないカードは右端の●・矢印（間 4px）。
+ * thin は区分のアイコンと●・矢印だけにした時
+ */
+export function boxMarksPx(
+  item: Pick<Item, 'origin' | 'start' | 'due' | 'locked' | 'by' | 'ai'>,
+  inlineEnd: 'dot' | 'arrow' | null,
+  thin = false,
+): number {
+  const widths: number[] = [MARK_PX.kind]
+  if (!thin) {
+    if (hasDueMark(item)) widths.push(MARK_PX.due)
+    if (item.locked) widths.push(MARK_PX.lock)
+    if (hasAiTag(item)) widths.push(aiTagText(item) === 'Claude' ? MARK_PX.aiClaude : MARK_PX.ai)
+  }
+  if (inlineEnd) widths.push(MARK_PX[inlineEnd])
+  return widths.reduce((a, b) => a + b, 0) + MARK_GAP * (widths.length - 1)
+}
+
+/** 全角の字か（ひらがな・カタカナ・漢字・〜 など。英数字と記号の – ‹ は半分の幅） */
+const isWide = (ch: string): boolean => (ch.codePointAt(0) ?? 0) >= 0x2e80
+
+/** 等幅（Roboto Mono）の字の幅のおおよそ（px）: 英数字は字の大きさの 0.6 倍、〜 などの全角の字（ゴシックで出る）は 1 倍 */
+export function monoPx(text: string, fontPx = 11): number {
+  let w = 0
+  for (const ch of text) w += isWide(ch) ? fontPx : 0.6 * fontPx
+  return w
+}
+
+/** 件名（ui の書体）の1字の幅のおおよそ（px。全角は 1.02 倍、英数字は 0.6 倍で、少し多めに見る） */
+const titleCharPx = (ch: string, fontPx: number): number => (isWide(ch) ? 1.02 * fontPx : 0.6 * fontPx)
+
+/** 件名（ui の書体）の字の幅のおおよそ（px） */
+export function titlePx(text: string, fontPx = 12): number {
+  let w = 0
+  for (const ch of text) w += titleCharPx(ch, fontPx)
+  return w
+}
+
+/** 件名を roomPx の幅で折り返した時の行の数のおおよそ（どこでも折り返せるとして、1字ずつ詰める。幅が無い時は Infinity） */
+export function titleLineCount(text: string, roomPx: number, fontPx = 12): number {
+  if (!text) return 1
+  let lines = 1
+  let used = 0
+  for (const ch of text) {
+    const w = titleCharPx(ch, fontPx)
+    if (w > roomPx) return Infinity
+    if (used + w > roomPx) {
+      lines++
+      used = 0
+    }
+    used += w
+  }
+  return lines
+}
+
+/**
+ * 枠に出す時刻・期間の候補（長い順。7.7）: 1日の予定は「10:00–11:30」→「10:00」（開始だけ）。日をまたぐ予定は
+ * 「11/9 10:00〜11/12 18:00」→「11/9〜11/12」（日付だけ）→「〜11/12」（最終日は「11/9〜」）
+ */
+export function timeChoices(c: CalItem, date: string): string[] {
+  const full = timeLabel(c, { on: date })
+  if (!full) return []
+  const out = [full]
+  if (!c.multi) {
+    if (c.item.startTime) out.push(displayHm(c.item.startTime))
+  } else {
+    out.push(timeLabel(c, { on: date, datesOnly: true }))
+    out.push(date === c.to ? `${mdLabel(c.from)}〜` : `〜${mdLabel(c.to)}`)
+  }
+  return out.filter((t, i) => t && out.indexOf(t) === i)
+}
+
+/** 枠の幅に合わせた中の出し方 */
+export interface BoxFit {
+  /**
+   * 印を時刻の行の右へ下ろし、件名に字の所の幅いっぱいを使う（2行が入る枠で、印を件名の横に置くと件名が入りきらず、下ろせば
+   * 入りきる時か、件名に MIN_TITLE_PX も残らない時。1行にまとめた枠は下ろす行が無いので false）
+   */
+  narrow: boolean
+  /** 印を区分のアイコン（と●・矢印）だけにする（〆・ロック・AI の札まで出すと、件名・字の所に入らない、とても狭い枠） */
+  thinMarks: boolean
+  /** 出す時刻・期間（候補のうち入るいちばん長い物。どれも入らない時は ''。途中で切らない） */
+  time: string
+  /** 読み上げる時刻・期間（いつも長い表記。時刻の無い物は ''） */
+  timeFull: string
+}
+
+/**
+ * 枠の幅（eventsPx は予定を置ける所の幅。測れていない時は 0）に合わせて、枠の中の出し方を決める（11.3・D39）。
+ * - 2行の枠: 印を件名の横に置くと件名が出せる行（lines。横が 5字（MIN_TITLE_PX）より狭い時は1行）に入りきらない時は、下ろせば
+ *   入りきるか、件名に 5字も残らない時に、印を時刻の行の右へ下ろし、件名は字の所の幅いっぱい（narrow）。時刻はその行の印の左
+ *   （下ろさない時は字の所の幅いっぱい）に入る候補。横に入りきる件名（「電話」）は印を横に置いたままにして、時刻に幅いっぱいを残す
+ * - 1行の枠: 件名を先に出し、時刻は件名の後ろに入る候補。印まで出すと件名に 3字が残らず件名が入らない時は、印を区分のアイコンだけに
+ * - 下ろしても印が字の所に入らない時も、印を区分のアイコンだけに
+ * 測れていない時は、印を件名の横・時刻は長い表記のまま。件名の幅は字の数からのおおよそ（titlePx）
+ */
+export function fitBox(b: TimedBoxVM, eventsPx: number, date: string): BoxFit {
+  const choices = timeChoices(b.c, date)
+  const timeFull = choices[0] ?? ''
+  if (!(eventsPx > 0)) return { narrow: false, thinMarks: false, time: timeFull, timeFull }
+  const text = boxTextPx(b, eventsPx)
+  const inlineEnd = b.part === 'single' || b.line ? null : (b.endMark ?? 'arrow')
+  const marks = boxMarksPx(b.c.item, inlineEnd)
+  const thin = boxMarksPx(b.c.item, inlineEnd, true)
+  const titleText = `${b.received ? '‹ ' : ''}${displayTitle(b.c.item)}`
+  const title = titlePx(titleText)
+  const beside = text - marks - MARK_GAP
+  const pick = (room: number) => choices.find((t) => monoPx(t) <= room - FIT_MARGIN) ?? ''
+  if (b.compact) {
+    const thinMarks = marks > thin && beside < MIN_COMPACT_TITLE_PX && title > beside
+    const room = text - (thinMarks ? thin : marks) - MARK_GAP - title - COMPACT_TIME_GAP
+    return { narrow: false, thinMarks, time: pick(room), timeFull }
+  }
+  // 横の幅が狭い（MIN_TITLE_PX より狭い）時は、1行に入る時だけ横に置く（「電／話」のように1字ずつ折り返さない）
+  const fitsBeside = titleLineCount(titleText, beside) <= (beside >= MIN_TITLE_PX ? b.lines : 1)
+  const fitsBelow = titleLineCount(titleText, text) <= b.lines
+  if (fitsBeside || (!fitsBelow && beside >= MIN_TITLE_PX)) {
+    return { narrow: false, thinMarks: false, time: pick(text), timeFull }
+  }
+  const thinMarks = marks > thin && marks > text
+  return { narrow: true, thinMarks, time: pick(text - (thinMarks ? thin : marks) - MARK_GAP), timeFull }
+}
+
+// ---------- マンスリーの数字から来た時の位置（11.2・4.9） ----------
+
+/** 予定が見えているとみなす、見えている部分の高さ（px。件名の行の分。枠がこれより低い時は枠の高さ） */
+const SEEN_PX = 24
+
+/**
+ * マンスリーの数字から来て、タイムスケジュールのその区分の予定を目立たせる時の位置（上の端の px。動かさない時は null）。
+ * view は今の位置（top）・見えている高さ（height）・いちばん下まで動かした時の位置（max）。
+ * 目立たせる予定の枠（その区分の1日の予定と、日をまたぐ予定のその日の部分。部分は見えている間カードが上に貼り付く）が今の位置で
+ * みな見えていれば動かさない。見えない物がある時は、各予定の始まりの 30分前を上の端にした位置のうち、見える予定がいちばん多い
+ * 位置（同じ数なら早い方）へ動かす（今の位置より多く見える時だけ）
+ */
+export function arrivalScrollPx(
+  boxes: readonly TimedBoxVM[],
+  kind: ItemKind,
+  view: { top: number; height: number; max: number },
+  hourPx: number,
+): number | null {
+  const mine = boxes.filter((b) => kindOf(b.c.item) === kind)
+  if (!mine.length || !(view.height > 0)) return null
+  const seenAt = (top: number) =>
+    mine.filter((b) => Math.min(b.top + b.height, top + view.height) - Math.max(b.top, top) >= Math.min(b.height, SEEN_PX)).length
+  let best = view.top
+  let most = seenAt(view.top)
+  if (most === mine.length) return null
+  const starts = mine.map((b) => Math.min(Math.max(0, view.max), Math.max(0, b.top - hourPx / 2))).sort((a, b) => a - b)
+  for (const top of starts) {
+    const n = seenAt(top)
+    if (n > most) {
+      best = top
+      most = n
+    }
+  }
+  return best === view.top ? null : best
 }

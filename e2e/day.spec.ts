@@ -1,6 +1,7 @@
 // デイリーの E2E（docs/SPEC.md の 11.・7.3・4.3・12.1・12.5）: 本物のブラウザでしか確かめられない所だけ（開いた時の位置・今の時刻の
 // 線が動くこと・区切りの地の色・貼り付く開始のカード・重なりの列と「+n」の一覧・L/M の 4:6 と S の上下の積み方・空いた所を押した
-// 時の登録の画面・マンスリーの数字から来た時に目立たせること・●の完了と［元に戻す］・すばやく足す・指でなぞって次の日）。
+// 時の登録の画面・マンスリーの数字から来た時に目立たせて見える所まで動かすこと・●の完了と［元に戻す］・すばやく足す（Esc で閉じると
+// 行へフォーカスが戻る・開いても下の物が動かない）・指でなぞって次の日・狭い枠でも件名が読めること）。
 // 並びや表記は dayModel.test.ts・DayView.test.tsx。データは作り物の e2e/fixtures/demoData.ts、今は 2026年11月10日（火）9:00
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { testIds } from '../src/features/calendar/common/testIds'
@@ -228,6 +229,8 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     await input.press('Escape')
     await expect(page.getByTestId(testIds.quickAddInput)).toHaveCount(0)
     await expect(page.getByTestId(testIds.dayAdd('private'))).toBeVisible()
+    // Esc で閉じた時は「＋ 予定を足す」の行へフォーカスを戻す（キーボードで続けて操作できるように）
+    await expect(page.getByTestId(testIds.dayAdd('private'))).toBeFocused()
   })
 
   test('マンスリーの仕事の数字から来ると、仕事の区切りとタイムスケジュールの仕事の予定を目立たせる（ITEMS-124・CALENDAR-188）', async ({
@@ -243,6 +246,17 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId(testIds.dayEvent(DEMO_IDS.dinner))).not.toHaveClass(/\bflash\b/)
     // 目立たせるのは 1.2秒
     await expect(page.getByTestId(testIds.dayArea('work'))).not.toHaveClass(/\bflash\b/, { timeout: 3000 })
+    // 11/11 のプライベートの数字から: 開いた時の 7:00 からは見えない夜行バス（22:00〜）が見える所まで動かす
+    await page.goBack()
+    await at(page, '/month/2026-11')
+    await page.getByTestId(testIds.monthCount('2026-11-11', 'private')).click()
+    await at(page, '/day/2026-11-11')
+    const bus = page.getByTestId(testIds.dayEvent(DEMO_IDS.nightBus))
+    await expect(bus).toHaveClass(/\bflash\b/)
+    const view = await box(scroller(page))
+    const b = await box(bus)
+    expect(b.y).toBeGreaterThanOrEqual(view.y - 1)
+    expect(b.y + b.height).toBeLessThanOrEqual(view.y + view.height + 1)
   })
 })
 
@@ -262,6 +276,39 @@ test.describe('デイリー（M。768px）', { tag: ['@m'] }, () => {
 })
 
 test.describe('デイリー（S）', { tag: ['@s'] }, () => {
+  test.describe('見本と同じ 390px', () => {
+    test.use({ viewport: { width: 390, height: 844 } })
+
+    test('1/3 の幅の枠でも件名が読める: 印を時刻の行へ下ろし、期間・時刻は入る表記だけ（途中で切らない。D39）', async ({
+      page,
+    }) => {
+      await openCalendar(page, '/day/2026-11-10', { data: demoData() })
+      /** 件名・時刻が入りきっているか（切れていれば中身の方が大きい） */
+      const fits = (el: Locator) => el.evaluate((e) => e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1)
+      // 資料づくり（間の日の「‹ 」のカード・1/3）とレビュー（ロック・1/3）
+      for (const [id, title] of [
+        [DEMO_IDS.materials, '‹ 資料づくり'],
+        [DEMO_IDS.review, 'レビュー'],
+      ] as const) {
+        const ev = page.getByTestId(testIds.dayEvent(id))
+        await expect(ev).toHaveClass(/\bis-narrow\b/)
+        const t = ev.locator('.dy-ev-title')
+        await expect(t).toHaveText(title)
+        expect(await fits(t), id).toBe(true)
+        // 印は件名の下（時刻の行）
+        const marks = await box(ev.locator('.dy-ev-marks'))
+        expect(marks.y, id).toBeGreaterThanOrEqual((await box(t)).y + 12)
+      }
+      const period = page.getByTestId(testIds.dayEvent(DEMO_IDS.materials)).locator('.dy-ev-time')
+      await expect(period).toHaveText('〜11/12')
+      expect(await fits(period)).toBe(true)
+      // 面談の時刻は「15:30」まで（「15:30–17:」のように切らない）
+      const interview = page.getByTestId(testIds.dayEvent(DEMO_IDS.interview)).locator('.dy-ev-time')
+      await expect(interview).toHaveText('15:30')
+      expect(await fits(interview)).toBe(true)
+    })
+  })
+
   test('上に時刻の無いリスト（仕事 → プライベート。日の見出しより下の 45% まで）、下にタイムスケジュール（1時間 44px）（ITEMS-106）', async ({
     page,
   }) => {
@@ -310,8 +357,17 @@ test.describe('デイリー（S）', { tag: ['@s'] }, () => {
     await expect(toast).toBeVisible()
     await toast.getByRole('button', { name: '元に戻す' }).tap()
     await expect(row).not.toHaveClass(/\bis-done\b/)
-    // すばやく足す（仕事の区切り）
-    await page.getByTestId(testIds.dayAdd('work')).tap()
+    // すばやく足す（仕事の区切り）。入力欄は「＋ 予定を足す」の行と同じ高さで、開いても下の物が動かない
+    const addRow = page.getByTestId(testIds.dayAdd('work'))
+    await addRow.scrollIntoViewIfNeeded()
+    const rowHeight = (await box(addRow)).height
+    const below = page.getByTestId(testIds.dayArea('private'))
+    const belowY = (await box(below)).y
+    await addRow.tap()
+    const quick = page.getByTestId(testIds.dayArea('work')).locator('.dy-quick')
+    await expect(quick).toBeVisible()
+    expect((await box(quick)).height).toBe(rowHeight)
+    expect((await box(below)).y).toBe(belowY)
     const input = page.getByTestId(testIds.dayArea('work')).getByTestId(testIds.quickAddInput)
     await input.fill('伝票の整理')
     await input.press('Enter')

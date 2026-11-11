@@ -2,6 +2,8 @@
 // 外側を押す・Esc・Tab・スクロール・画面の幅の変更で閉じ、矢印キーで項目を移動できる。閉じたら開く前の要素へフォーカスを戻す。
 // 外側を押して閉じた時は閉じるだけ（下にある行のリンクなどは開かない）。
 // 押せない項目は aria-disabled にして（フォーカスは移せる）、押すと理由（hint）を知らせる。
+// 項目は並びの順で見分ける（同じ名前の項目が並んでもよい。デイリーの「+n」の一覧に同じ件名の予定が並ぶ時など）。
+// 小さな画面（登録・詳細）の上でも開けるよう、小さな画面より前に出す（menu.css の z-index）。
 // 記号バーの「括弧」のように、本文にカーソルを置いたまま開くメニュー（autoFocus・keepFocus）にも使う。
 import { useEffect, useId, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -20,6 +22,8 @@ export interface PopupMenuItem {
   disabled?: boolean
   /** 項目の下に出す短い説明（押せない理由など） */
   hint?: string
+  /** hint を等幅の字で出す（時刻・日付だけの説明。docs/SPEC.md の 4.4-1） */
+  monoHint?: boolean
   testId?: string
 }
 
@@ -238,9 +242,9 @@ export function PopupMenu({
       <p className="pm-title" aria-hidden="true">
         {label}
       </p>
-      {items.map((it) => (
+      {items.map((it, i) => (
         <button
-          key={it.label}
+          key={i}
           type="button"
           role="menuitem"
           className={`pm-item${it.danger ? ' is-danger' : ''}${it.disabled ? ' is-disabled' : ''}`}
@@ -259,7 +263,7 @@ export function PopupMenu({
           {it.icon ? <span className="pm-icon">{it.icon}</span> : null}
           <span className="pm-text">
             <span className="pm-label">{it.label}</span>
-            {it.hint ? <span className="pm-hint">{it.hint}</span> : null}
+            {it.hint ? <span className={it.monoHint ? 'pm-hint is-mono' : 'pm-hint'}>{it.hint}</span> : null}
           </span>
         </button>
       ))}
