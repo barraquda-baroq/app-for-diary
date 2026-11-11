@@ -1,7 +1,8 @@
 // 段階2の見本の画面を撮る（docs/SPEC.md の 21.・22.。作者に色と見た目を決めてもらう）。ふつうの E2E・CI では流さない:
 //   E2E_SAMPLES=1 npx playwright test --project=samples   （npm run samples。開発サーバーとテスト用のログインと作り物のデータだけを使う）
 // 撮る物は e2e/samples/shots.ts、色の案は e2e/samples/variants.json（node scripts/sample-variants.mjs が作る）。
-// 絵は e2e/artifacts/samples/（リポジトリに入れない）に JPEG（品質 85）で書き、見本のページを作るための控え（parts/*.json）も残す。
+// 絵は e2e/artifacts/samples/（リポジトリに入れない）に JPEG（品質 85）で書き、見本のページを作るための控え（parts/*.json。order は
+// SHOTS・CROPS の中の順で、見本のページはこの順に並べる）も残す。
 // 画面の中身（マンスリー・ウィークリー・デイリー・登録と詳細）ができる前は、開けない行き先・仮の画面のままの撮る物を飛ばす
 // （できた後は、探す所が1つでも見つからなければ落ちる）。見本のデータを置けることと、案の CSS が効くことは、中身が無くても確かめる
 import { expect, test, type Page } from '@playwright/test'
@@ -185,7 +186,15 @@ for (const size of ['L', 'S'] as const) {
         test(`${name}（${shot.title}・${APPEARANCE_NAMES[appearance]}）`, async ({ page }) => {
           await openShot(page, shot, appearance)
           await snap(page, name)
-          record(name, { kind: 'shot', id: shot.id, size, part: shot.part ?? null, title: shot.title, appearance })
+          record(name, {
+            kind: 'shot',
+            order: SHOTS.indexOf(shot),
+            id: shot.id,
+            size,
+            part: shot.part ?? null,
+            title: shot.title,
+            appearance,
+          })
         })
       }
     }
@@ -223,6 +232,7 @@ async function shootOption(
   await snap(page, name, await crop.area(page))
   record(name, {
     kind: 'crop',
+    order: CROPS.indexOf(crop),
     question: crop.question,
     id: crop.id,
     title: crop.title,
