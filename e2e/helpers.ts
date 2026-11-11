@@ -252,7 +252,10 @@ export async function openCalendar(page: Page, hash = '/', opts: OpenCalendarOpt
   const { now = E2E_NOW, appearance, prefs, data } = opts
   if (now !== false) await page.clock.setFixedTime(new Date(now))
   const stored = appearance || prefs ? { v: 1, ...(appearance ? { appearance } : {}), ...prefs } : null
-  // 2回目からは、# だけが違う行き先へ移ってもページを読み込み直さない（初めに置いた物が効かない）ので、読み込み直す
+  // 2回目からは、# だけが違う行き先へ移ってもページは読み込み直されない（初めに置いた物が効かない）。移ってから読み込み直すと、
+  // その間にアプリが # を書き換え（#/ → 前回のモードの #/week/… など）、書き換えた後の行き先を読み込み直すことがある（CI で
+  // 前回のモードが 1回目のままになった）。2回目からは ? の後ろを変えて、初めから新しいページとして開く（アプリは ? の後ろを
+  // launch=1 しか見ない）
   const opened = page.url() !== 'about:blank'
   const mark = `e2e:prefs-set:${++openCount}`
   await page.addInitScript(
@@ -265,8 +268,7 @@ export async function openCalendar(page: Page, hash = '/', opts: OpenCalendarOpt
     },
     { p: stored, mark },
   )
-  await page.goto(`/#${hash}`)
-  if (opened) await page.reload()
+  await page.goto(opened ? `/?e2e-open=${openCount}#${hash}` : `/#${hash}`)
   await page.waitForFunction(() => Boolean(window.__ds))
   await expect(page.getByTestId('top-page')).toBeVisible()
   if (data) await seedData(page, data)
