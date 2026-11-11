@@ -82,7 +82,8 @@ export function Modal({
     target?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (!isTop()) return
-      if (e.key === 'Escape') {
+      // 日本語の変換を取り消す Esc（isComposing・Safari は変換の終わりの後に keyCode 229 で来る）では閉じない（src/ui/keys.ts と同じ）
+      if (e.key === 'Escape' && !(e.isComposing || e.keyCode === 229)) {
         e.stopPropagation()
         onCloseRef.current()
         return

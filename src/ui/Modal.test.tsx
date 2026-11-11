@@ -69,4 +69,18 @@ describe('Modal の印（段階2）', () => {
     fireEvent.click(screen.getByTestId('modal-close'))
     expect(onClose).toHaveBeenCalledTimes(3)
   })
+
+  it('日本語の変換を取り消す Esc（isComposing・Safari の keyCode 229）では閉じない', () => {
+    const onClose = vi.fn()
+    render(
+      <Modal title="予定" onClose={onClose} testId="m">
+        中身
+      </Modal>,
+    )
+    fireEvent.keyDown(document, { key: 'Escape', isComposing: true })
+    fireEvent.keyDown(document, { key: 'Escape', keyCode: 229 })
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
 })
