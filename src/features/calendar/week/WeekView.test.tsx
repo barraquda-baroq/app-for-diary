@@ -2,13 +2,14 @@
 // 受けた表示・端の＞・終点の●・完了の見え方・印・休みの列・見出しの行の数・縦のレールと「● 件名」の行・「＋」の行、
 // 予定を押すと詳細が開く（丸・AI の札は別のボタン）、日付の見出し → デイリー・休みのチェック・「＋」→ すばやく足す（その場で
 // 入力欄に替わる）、列が狭い時の始点のカード・受けた表示の件名の2行
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mkItem, mkOffDay, mkTask, T0 } from '../../../domain/testData'
 import type { AppData, Item } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
+import { useCalendarUi } from '../../../store/uiStore'
 import { quickDraftKey, readLocal } from '../../../store/localDrafts'
 import { renderView, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
 import { sheetOf } from '../common/sheets'
@@ -358,6 +359,33 @@ describe('予定を押すと詳細（12.3・ITEMS-079・195）', () => {
     await user.click(screen.getByTestId(testIds.aiTag('ai')))
     expect(screen.getByTestId(`${testIds.aiTag('ai')}-via`).textContent).toContain('メール: 候補日')
     expect(sheetOf(router.state.location.state)).toBeNull()
+  })
+})
+
+describe('登録した予定（item:{id}）を目立たせて、見える所まで動かす（4.9・12.2。デイリー・落とした時と同じ。開発）', () => {
+  it.each([
+    ['1日のカード', testIds.weekCard('mail'), 'mail', 'L'],
+    ['始点のカード', testIds.weekStart('multi'), 'multi', 'L'],
+    ['受けた表示', testIds.weekReceived('recv'), 'recv', 'L'],
+    ['7日を縦のカード', testIds.weekCard('mail'), 'mail', 'S'],
+  ] as const)('%s', async (_, testId, id, width) => {
+    await renderWeek({ width })
+    const scrolled = vi.mocked(Element.prototype.scrollIntoView)
+    scrolled.mockClear()
+    act(() => useCalendarUi.getState().flashTarget(`item:${id}`))
+    const el = screen.getByTestId(testId)
+    expect(el.classList.contains('flash')).toBe(true)
+    expect(scrolled.mock.contexts).toContain(el)
+    expect(scrolled.mock.calls[scrolled.mock.contexts.indexOf(el)][0]).toMatchObject({ block: 'nearest' })
+  })
+
+  it('視差効果を減らす設定では、すぐに動かす', async () => {
+    const props = viewProps({ mode: 'week', viewed: '2026-11-10', area: { width: 994, height: 760 } })
+    await renderView(WeekView, props, { path: '/week/2026-11-08', data: { items: WEEK }, reducedMotion: true })
+    const scrolled = vi.mocked(Element.prototype.scrollIntoView)
+    scrolled.mockClear()
+    act(() => useCalendarUi.getState().flashTarget('item:meet'))
+    expect(scrolled).toHaveBeenCalledWith({ block: 'nearest', behavior: 'auto' })
   })
 })
 
