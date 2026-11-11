@@ -428,15 +428,29 @@ test.describe('起動アニメーション', { tag: ['@pc', '@s', '@ios'] }, () 
         __reason?: string
       }
       const w = window as unknown as Times
+      let pageSeen = false
       new MutationObserver(() => {
         const el = document.getElementById('ds-launch')
         if (el && w.__created == null) w.__created = performance.now()
+        // ページの中で描く時（OffscreenCanvas の無いブラウザ・CI の iPhone。e2e/helpers.ts）は、印を付けたすぐ後の
+        // requestAnimationFrame でロゴを描く。ここで頼む requestAnimationFrame はその後に並ぶので、描いた直後の時になる
+        if (el && el.getAttribute('data-launch-renderer') === 'page' && !pageSeen) {
+          pageSeen = true
+          requestAnimationFrame(() => {
+            if (w.__drawn == null) w.__drawn = performance.now()
+          })
+        }
         if (el && el.getAttribute('data-launch-end') && w.__fade == null) {
           w.__fade = performance.now()
           w.__reason = el.getAttribute('data-launch-end')!
         }
         if (!el && w.__created != null && w.__removed == null) w.__removed = performance.now()
-      }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-launch-end'] })
+      }).observe(document, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-launch-renderer', 'data-launch-end'],
+      })
       // Worker がロゴを描いた時（描いてすぐ 'started' を送ってくる）
       const Base = window.Worker
       window.Worker = class extends Base {
@@ -473,7 +487,7 @@ test.describe('起動アニメーション', { tag: ['@pc', '@s', '@ios'] }, () 
       const at = (v: number | undefined) => (v == null ? null : v - w.__created!)
       return { removed: at(w.__removed)!, drawn: at(w.__drawn), ready: at(w.__ready), fade: at(w.__fade)!, reason: w.__reason }
     })
-    // （Chromium は Worker で描く）
+    // （ふだんの Chromium は Worker で描き、CI の iPhone はページの中で描く）
     expect(t.drawn).not.toBeNull()
     expect(t.ready).not.toBeNull()
     expect(t.reason).toBe('done')
@@ -487,6 +501,7 @@ test.describe('起動アニメーション', { tag: ['@pc', '@s', '@ios'] }, () 
 
   test('ふだんは Worker（別のスレッド）で描き、絵が進む', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'OffscreenCanvas を Worker に渡せるブラウザ')
+    test.skip(process.env.E2E_LAUNCH_RENDERER === 'page', 'テストの中でページの中で描かせている（e2e/helpers.ts）')
     await page.goto('/?launch=1#/', { waitUntil: 'commit' })
     const el = overlay(page)
     await expect(el).toHaveAttribute('data-launch-renderer', 'worker')
