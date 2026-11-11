@@ -232,22 +232,105 @@ export function notifyError(message: string): void {
   useToasts.getState().push('error', message)
 }
 
+/** 操作の失敗を知らせる（仕様上できない操作 DomainError は文だけ、思いがけない失敗はコンソールにも残す） */
+function reportFailure(e: unknown): void {
+  if (e instanceof DomainError) {
+    notifyError(e.message)
+    return
+  }
+  notifyError(e instanceof Error ? e.message : String(e))
+  console.error(e)
+}
+
 /**
  * 操作を実行し、仕様上できない操作（DomainError）はエラーのお知らせで知らせる。
- * 成功時は戻り値を、失敗時は undefined を返す。
+ * 成功時は戻り値を、失敗時は undefined を返す。Promise を返す操作（ゴミ箱へ移す・戻す）は attemptAsync を使う
+ * （attempt は投げた例外だけを受け、Promise の失敗は受けない）
  */
 export function attempt<R>(fn: () => R): R | undefined {
   try {
     return fn()
   } catch (e) {
-    if (e instanceof DomainError) {
-      notifyError(e.message)
-      return undefined
-    }
-    notifyError(e instanceof Error ? e.message : String(e))
-    console.error(e)
+    reportFailure(e)
     return undefined
   }
+}
+
+/**
+ * Promise を返す操作（actions.trashItem・restoreTrashEntry など）を実行し、失敗（投げた例外も、Promise の失敗も）を
+ * attempt と同じくお知らせで知らせる。成功時は結果を、失敗時は undefined を返す
+ */
+export async function attemptAsync<R>(fn: () => Promise<R>): Promise<R | undefined> {
+  try {
+    return await fn()
+  } catch (e) {
+    reportFailure(e)
+    return undefined
+  }
+}
+
+// ---------- カレンダーの画面の状態（開いている間だけ。端末に覚えない。docs/SPEC.md の 3.7・4.9・6.4・9.5） ----------
+
+/**
+ * 目立たせる所（4.9 の 1.2秒の枠）。キーは 'item:{id}'（登録・ドラッグで移った予定のカード）・'day-area:{区分}'（デイリーの区分の
+ * 区切り）・'day-events:{区分}'（タイムスケジュールのその区分の予定）。keys の全部を一緒に目立たせる（マンスリーの数字から来た時の
+ * 区切りと予定。7.12）。key は keys の最初の物。seq は同じ所をもう一度目立たせる時にも変わる連番（NS の reveal.ts の作り）
+ */
+export interface FlashTarget {
+  key: string
+  keys: readonly string[]
+  seq: number
+}
+
+export interface CalendarUi {
+  /**
+   * 見ている日（'YYYY-MM-DD'）。月・年の行き先は日を持たないので、モードを替えた時に引き継ぐ日をここに覚える
+   * （行き先の期間の中にあればこの日、無ければ今日・期間の最初の日。確かめ A2・D02）。開いている間だけ
+   */
+  viewed: string | null
+  /** マンスリーの「休みを付ける」の状態（9.5。‹ ›・今日・スワイプ・［＋ 登録］では続き、マンスリーを離れると終わる。D30） */
+  offMode: boolean
+  /** 目立たせる所（無ければ null） */
+  flash: FlashTarget | null
+  /** 最後に押した・キーを打った時刻（ミリ秒。裏から戻って6時間たったら今日へ移す決まり 6.4 に使う。D31） */
+  lastInteraction: number
+}
+
+export interface CalendarUiState extends CalendarUi {
+  setViewed: (date: string | null) => void
+  setOffMode: (on: boolean) => void
+  /** 目立たせる（キーを1つ以上） */
+  flashTarget: (...keys: string[]) => void
+  /** 目立たせ終えた（開き直した時にもう一度目立たせないよう、その seq の物だけ消す。新しく目立たせた物は残す） */
+  clearFlash: (seq: number) => void
+  /** 押した・打った（at は省くと今） */
+  touch: (at?: number) => void
+}
+
+let flashSeq = 0
+
+/** 初めの状態（テストで戻す時にも使う） */
+export function initialCalendarUi(): CalendarUi {
+  return { viewed: null, offMode: false, flash: null, lastInteraction: Date.now() }
+}
+
+export const useCalendarUi = create<CalendarUiState>((set, get) => ({
+  ...initialCalendarUi(),
+  setViewed: (viewed) => set({ viewed }),
+  setOffMode: (offMode) => set({ offMode }),
+  flashTarget: (...keys) => {
+    if (keys.length === 0) return
+    set({ flash: { key: keys[0], keys, seq: ++flashSeq } })
+  },
+  clearFlash: (seq) => {
+    if (get().flash?.seq === seq) set({ flash: null })
+  },
+  touch: (at = Date.now()) => set({ lastInteraction: at }),
+}))
+
+/** その所を目立たせる時か */
+export function flashMatches(flash: FlashTarget | null, key: string): boolean {
+  return Boolean(flash?.keys.includes(key))
 }
 
 // ---------- アプリ（PWA）の更新 ----------

@@ -13,7 +13,7 @@ import { registerSW } from 'virtual:pwa-register'
 import { App } from './App'
 import { afterNextPaint, notifyAppReady } from './launch/launchHook'
 import { actions } from './store/actions'
-import { getData, getRaw, initStore, startTrashPurge } from './store/appStore'
+import { flushNow, getData, getRaw, initStore, replaceAllData, setTrashClock, startTrashPurge } from './store/appStore'
 import { installLeaveHandlers } from './store/lifecycle'
 import { useAppUpdate } from './store/uiStore'
 import { fakeSignInForTest, inboxContext, initSync, signInForTest, syncNow, useSync, whenAuthKnown } from './sync/controller'
@@ -50,6 +50,16 @@ if (import.meta.env.DEV) {
     getData,
     getRaw,
     actions,
+    /**
+     * 画面のテスト用（段階2のカレンダーの E2E。e2e/helpers.ts の seedData）: 端末の中のデータを丸ごと置き換え、保留中の変更を
+     * すぐ保存する。画面を通さずに予定・休みを置く
+     */
+    replaceAllData,
+    flushNow,
+    /** 端末の中のデータを読み終えるまで待つ（データを置く前に。window.__ds は読み終える前からある） */
+    whenStoreReady: () => storeReady.then(() => undefined),
+    /** 画面のテスト用: ゴミ箱の期限切れを決める時刻を差し替える（30日を過ぎた物が消える所の確かめ） */
+    setTrashClock,
     /** 受け取り箱の依頼を当てる時の文脈（段階5で自動で当てる所が使う。テストでは許可を上書きする） */
     inboxContext,
     syncNow,

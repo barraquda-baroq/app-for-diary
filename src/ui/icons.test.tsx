@@ -34,6 +34,8 @@ describe('線のアイコン', () => {
       'PrintIcon',
       'CloudIcon',
       'CloudOffIcon',
+      // Claude からの提案の印（段階2で形だけ足す。使うのは段階5。確かめ A20）
+      'ProposalIcon',
     ]) {
       expect(names, name).toContain(name)
     }
@@ -91,6 +93,19 @@ describe('線のアイコン', () => {
     expect(svg.getAttribute('class')).toBe('icon icon-sm')
     expect(svg.getAttribute('stroke-width')).toBe(String(ICON_STROKE_SMALL))
     expect(ICON_STROKE_SMALL).toBe(2.4)
+  })
+
+  it('提案の印は、角の丸い吹き出しの中に点3つ（4.10）', () => {
+    const { container } = render(<icons.ProposalIcon />)
+    const svg = svgOf(container)
+    expect(svg.querySelectorAll('path')).toHaveLength(1)
+    const dots = [...svg.querySelectorAll('circle')]
+    expect(dots).toHaveLength(3)
+    // 点は同じ高さに等しい間で並び、吹き出しの中（塗った丸）
+    expect(new Set(dots.map((d) => d.getAttribute('cy'))).size).toBe(1)
+    const xs = dots.map((d) => Number(d.getAttribute('cx')))
+    expect(xs[1] - xs[0]).toBe(xs[2] - xs[1])
+    for (const d of dots) expect(d.getAttribute('fill')).toBe('currentColor')
   })
 
   it('区分のアイコンは、仕事がかばん・プライベートが家', () => {

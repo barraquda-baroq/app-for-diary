@@ -1,14 +1,27 @@
 // アプリの外枠: ヘッダー、外観の反映、アプリの更新の帯、お知らせ（トースト）、ダイアログ。NS の src/ui/Layout.tsx から。
 // ヘッダー（docs/SPEC.md の 3.3）: 左に DS のアイコンと名前、右に 同期の表示 → 設定の歯車 → いちばん右に［MIM］。
-// NS のパンくず・端末への保存の状態・別のタブの変更の帯・iPhone / Android のアプリの帯は持ち込まない（保存の帯などは段階1で足す）
-import { useCallback, useEffect, useLayoutEffect, type ReactNode } from 'react'
+// NS のパンくず・端末への保存の状態・別のタブの変更の帯・iPhone / Android のアプリの帯は持ち込まない（保存の帯などは段階1で足す）。
+// 段階2で、左のアイコンと名前の行き先（前回のモードの今日を含む期間）・カレンダーの ‹ › 今日 でスクロールを戻さないこと・
+// iPhone のキーボードの高さ（--kb）を足した
+import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
-import { isCalendarPath, isMimPath, paths } from '../routes'
+import { todayStr } from '../domain/dates'
+import { calendarModeOf, isCalendarPath, isMimPath, paths } from '../routes'
 import { saveBeforeLeave } from '../store/lifecycle'
-import { notifyError, resolveAppearance, THEME_COLORS, useAppUpdate, usePrefs, useToasts } from '../store/uiStore'
+import {
+  notifyError,
+  resolveAppearance,
+  THEME_COLORS,
+  useAppUpdate,
+  useCalendarUi,
+  usePrefs,
+  useToasts,
+  type CalendarMode,
+} from '../store/uiStore'
 import { DialogHost, cancelAllDialogs } from './dialogs'
 import { GearIcon, KeyIcon, XIcon } from './icons'
+import { useKeyboardInset } from './keyboardInset'
 import { SyncIndicator } from './SyncIndicator'
 import './layout.css'
 
@@ -75,13 +88,31 @@ function MimButton() {
 }
 
 /**
+ * 左のアイコンと名前を押した時、履歴を置き換えるか（docs/SPEC.md の 3.3・確かめ A6・D05）。前回のモードのカレンダーを見ている時
+ * （トップ #/ を含む）は［今日］と同じく置き換え、ほかの画面（設定・MIM・別のモードを開いた直後）からは積む
+ */
+export function brandReplaces(pathname: string, lastMode: CalendarMode): boolean {
+  return isCalendarPath(pathname) && (calendarModeOf(pathname) ?? lastMode) === lastMode
+}
+
+/**
  * 各画面のヘッダー（ログインの画面では出さない）。actions にほかのボタンを渡すと、同期の表示の左に並ぶ。
- * 左のアイコンと名前を押すとトップへ（段階2で、前回のモードの今日を含む期間へ置き換わる）。幅 380px 未満では名前を出さない
+ * 左のアイコンと名前を押すと、前回のモードの今日を含む期間へ（FRAME-029）。行き先はトップ（#/）で、トップを開くと前回のモードの
+ * 今日を含む期間へ置き換わる（FRAME-001）。見ている日も今日にする。幅 380px 未満では名前を出さない
  */
 export function AppHeader({ actions }: { actions?: ReactNode }) {
+  const { pathname } = useLocation()
+  const lastMode = usePrefs((s) => s.lastMode)
   return (
     <header className="app-header" data-testid="app-header">
-      <Link to={paths.top()} className="brand" aria-label="Diary Studio（トップへ）" data-testid="brand">
+      <Link
+        to={paths.top()}
+        replace={brandReplaces(pathname, lastMode)}
+        onClick={() => useCalendarUi.getState().setViewed(todayStr())}
+        className="brand"
+        aria-label="Diary Studio（トップへ）"
+        data-testid="brand"
+      >
         <img src="./icon.svg" alt="" width={26} height={26} />
         <span className="brand-name">Diary Studio</span>
       </Link>
@@ -183,15 +214,31 @@ export function PrefsEffect() {
 
 /**
  * 画面（パス）が変わったら先頭から表示する（スマホでトップを下までスクロールしてから設定を開いた時など）。
- * ブラウザの「戻る／進む」では動かさない（ブラウザが元の位置に戻す）
+ * ブラウザの「戻る／進む」では動かさない（ブラウザが元の位置に戻す）。カレンダーの中の置き換え（‹ ›・［今日］・スワイプ・
+ * 6時間で今日へ戻る）でも動かさない（S・M でカレンダーの下のリストまで送っていても、その位置のまま。D54）。モードの切り替え（積む）は先頭へ
  */
+export function scrollsToTop(navType: 'POP' | 'PUSH' | 'REPLACE', from: string, to: string): boolean {
+  if (navType === 'POP') return false
+  if (navType === 'REPLACE' && isCalendarPath(from) && isCalendarPath(to)) return false
+  return true
+}
+
 function ScrollOnNavigate() {
   const { pathname } = useLocation()
   const navType = useNavigationType()
+  const prev = useRef(pathname)
   useLayoutEffect(() => {
-    if (navType !== 'POP') window.scrollTo(0, 0)
+    const from = prev.current
+    prev.current = pathname
+    if (from !== pathname && scrollsToTop(navType, from, pathname)) window.scrollTo(0, 0)
     // パスが変わった時だけ動かす（navType は同じ時に一緒に変わるので、依存に入れない）
   }, [pathname])
+  return null
+}
+
+/** iPhone のキーボードの高さを --kb に入れる（src/ui/keyboardInset.ts） */
+function KeyboardInset() {
+  useKeyboardInset()
   return null
 }
 
@@ -207,6 +254,7 @@ export function AppFrame({ children }: { children: ReactNode }) {
     <div className="app">
       <ScrollOnNavigate />
       <CloseDialogsOnNavigate />
+      <KeyboardInset />
       <PrefsEffect />
       <UpdateBanner />
       {children}
