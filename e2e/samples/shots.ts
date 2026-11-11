@@ -39,9 +39,12 @@ export interface Shot {
 const week = DEMO_WEEKS.main
 const month = `/month/${DEMO_TODAY.slice(0, 7)}`
 
-/** 要素を、そのスクロールの中のいちばん上に出す */
+/** 要素を、そのスクロールの中のいちばん上に出す（scrollIntoView はページもスクロールするので、ページは上に戻す） */
 async function scrollToTop(target: Locator): Promise<void> {
-  await target.evaluate((e) => e.scrollIntoView({ block: 'start', inline: 'nearest' }))
+  await target.evaluate((e) => {
+    e.scrollIntoView({ block: 'start', inline: 'nearest' })
+    window.scrollTo(0, 0)
+  })
 }
 
 /**
