@@ -99,13 +99,13 @@ export function cloudSettled(s: Pick<SyncState, 'leader' | 'status' | 'accountMi
 }
 
 /**
- * ゴミ箱の期限切れ（30日）を決める時刻（6.15）。ログインしていない端末は端末の時計。ログインしている時は、同期を受け持つ画面が、端末の
- * 時計とサーバーの時刻の見積もり（同期で届いた文書の時刻から。src/sync/engine.ts の serverNow）の早い方で決める（時計が大きく進んだ
- * 端末が、ゴミ箱の中身（同期の競合の控えも）を消して、その削除をどの端末にも送らないように）。ログインの状態が分かる前・見積もりが
- * まだ無い間・同期を受け持たない画面（serverNow が null）は消さない（null）
+ * ゴミ箱の期限切れ（30日）を決める時刻（6.15）。ログインしている時に、同期を受け持つ画面が、端末の時計とサーバーの時刻の見積もり
+ * （同期で届いた文書の時刻から。src/sync/engine.ts の serverNow）の早い方で決める（時計が大きく進んだ端末が、ゴミ箱の中身（同期の
+ * 競合の控えも）を消して、その削除をどの端末にも送らないように）。ログインしていない間・ログインの状態が分かる前・見積もりがまだ無い間・
+ * 同期を受け持たない画面（serverNow が null）は消さない（null）。ログインしていない間に端末の時計で消すと、その削除が送信待ちに残り、
+ * 次に同じアカウントでログインした時にどの端末にも送られる（ログインしていない間はデータを出さないので、消しても見える物は無い。2.5）
  */
 export function trashPurgeTime(auth: SyncState['auth'], serverNow: number | null, deviceNow: number): number | null {
-  if (auth === 'signedOut') return deviceNow
   if (auth !== 'signedIn' || serverNow === null) return null
   return Math.min(deviceNow, serverNow)
 }
@@ -568,8 +568,6 @@ function boot(): Promise<void> {
             accountMismatch: null,
             connector: null,
           })
-          // ログインしていない端末は、端末の時計でゴミ箱の期限切れを消す
-          purgeTrashNow()
         }
       })
     } catch (e) {

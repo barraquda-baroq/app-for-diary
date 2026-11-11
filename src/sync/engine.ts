@@ -10,7 +10,7 @@
 // - 分けた文書に親の表の名前 parentTable（2.4）
 // - 月の束（6.11）: 束の文書（itemPack:{月}）を受け取ったら中の項目の変化に広げる。束の中の項目を送る時は、束から抜いて個別の文書を
 //   書く。直接読んで項目の文書が無い時は、束を全部読んでから「消された」とみなす。復元では束を開いて消す。1日1回 maintain で
-//   古い月の項目を束にまとめ、90日より前の削除の印を片付ける。85日より前に受け取ったきりの端末は全部を受け取り直す
+//   古い月の項目を束にまとめ、90日より前の削除の印を片付ける。最後にクラウドと揃ってから 85日を過ぎた端末は全部を受け取り直す
 // - 無料枠を使い切った（resource-exhausted）時の状態（2.8・18.4）
 // - 受け取り箱の依頼の削除の印も、ほかの記録と同じに扱う
 import {
@@ -48,7 +48,7 @@ import {
 import { todayStr } from '../domain/dates'
 import type { InboxPerms } from '../domain/inbox'
 import { isTableName, type Item, type TableName } from '../domain/types'
-import { newId } from '../domain/util'
+import { DAY_MS, newId } from '../domain/util'
 import { appModelRef, asModel, watchAppModel, type AppModel } from './appModel'
 import { OWNER_MISMATCH_MESSAGE, OWNER_MISSING_MESSAGE } from './syncView'
 import { decideBatch, nothingToSend, sameAsBase, selectBatch, type BatchEntry, type CloudState } from './batch'
@@ -69,6 +69,8 @@ import {
   type RecordDoc,
 } from './codec'
 import {
+  FULL_RESYNC_MS,
+  PACK_AGE_MS,
   decodePack,
   encodePack,
   itemsPerTransaction,
@@ -235,6 +237,8 @@ const OFFLINE_MESSAGE = 'オフラインです。つながると自動で同期�
 const MODEL_PAUSED = new Error('データの形の版を確かめるまで送りません')
 /** この端末が送った版の指紋を、文書ごとにいくつまで覚えておくか */
 const SENT_MEMORY = 20
+/** 最後にクラウドと揃った時刻（_meta の caughtUpAt）を書き直す間隔の下限 */
+const CAUGHT_UP_SAVE_MS = 60 * 60 * 1000
 /** 全部を受け取り直した時のお知らせ（6.11） */
 export const FULL_RESYNC_NOTICE = 'しばらく同期していなかったので、全部を受け取り直しました'
 
@@ -350,8 +354,16 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
   /** いまの購読を始めた位置（購読し直すと、それまでに届いた分を読み直さずに済む） */
   let subscribedFrom: StoredCursor | null = null
   let downloaded = false
-  /** 全部を受け取り直している（85日より前に受け取ったきりの端末。最初のサーバーの通知の後に dropMissing。6.11） */
+  /** 全部を受け取り直している（最後にクラウドと揃ってから 85日を過ぎた端末。最初のサーバーの通知の後に dropMissing。6.11） */
   let resyncing = false
+  /**
+   * この端末が最後にクラウドと揃った時刻（記録の購読でサーバーからの通知を受け取った時の、端末の時計。_meta の caughtUpAt）。
+   * 85日の受け取り直しはこれで決める（6.11）。受け取った位置（いちばん新しい文書の時刻）で決めると、85日より前の書き込みしか無い
+   * クラウドでは、全部を受け取り直すたびに位置がまた 85日より前になり、受け取り直しが止まらない
+   */
+  let caughtUpAt: number | null = null
+  /** _meta に書いた caughtUpAt（書くのは 1時間に1回まで） */
+  let caughtUpSaved: number | null = null
   /** バックアップからの復元・すべて削除をクラウドに当てるまで、受信を止めている */
   let deferred = false
   /**
@@ -419,6 +431,17 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     const d = describeError(e)
     if (!d.offline) console.warn('同期できませんでした', e)
     setStatus({ phase: d.offline ? 'offline' : 'error', error: d.message, errorCode: d.code })
+  }
+
+  /**
+   * 記録の購読が誤りで止まった時の状態。購読がサーバーからの通知を受け取り直すまで、送る物の無い送信が終わっても「同期済み」に
+   * 戻さない（購読が止まっている間に、同期済みと出さないように）
+   */
+  let listenFailure: Pick<SyncStatus, 'phase' | 'error' | 'errorCode'> | null = null
+  function listenFail(e: unknown): void {
+    if (stopped) return
+    fail(e)
+    listenFailure = { phase: status.phase, error: status.error, errorCode: status.errorCode }
   }
 
   function rememberSent(id: string, hash: string): void {
@@ -556,24 +579,24 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
           await handleSnapshot(changed, all, fromCache, full)
           resubscribeCount = 0
         }).catch((e) => {
-          fail(e)
+          listenFail(e)
           if (gen === listenerGen) resubscribeLater()
         })
       },
       (err) => {
-        fail(err)
+        listenFail(err)
         if (gen === listenerGen) resubscribeLater()
       },
     )
   }
 
   /**
-   * 記録した位置が 85日より前なら、全部を受け取り直す（6.11）。受け取り直すことを _meta の resyncPending に覚えてから位置を消す
+   * 最後にクラウドと揃ってから 85日を過ぎていれば（resyncDue）、全部を受け取り直す（6.11）。受け取り直すことを _meta の resyncPending に覚えてから位置を消す
    * （最初の通知を受け取って端末の中の記録を片付ける前に、アプリを閉じても・画面が受け持ちを譲っても、次に始めた時に受け取り直す）。
    * 受け取り直すなら true（呼んだ側が、位置を消した購読を始める）
    */
   async function startResyncIfDue(): Promise<boolean> {
-    if (!cursor || !needsFullResync(cursor.s, clock())) return false
+    if (!resyncDue()) return false
     await target.setMeta('resyncPending', true)
     cursor = null
     await target.setMeta('cursor', null)
@@ -581,7 +604,28 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     return true
   }
 
-  /** 記録した位置から購読し直す（長く眠っていた画面は、位置が 85日より前なら全部を受け取り直す） */
+  /**
+   * 全部を受け取り直す時か: 最後にクラウドと揃ってから 85日を過ぎた（端末の時計どうしで比べるので、時計のずれは打ち消し合う）。
+   * 揃った時刻を知らない・端末の時計がそれより 1日以上戻った時は、記録した位置（サーバーの時刻）と端末の時計の差で決める
+   */
+  function resyncDue(): boolean {
+    if (!cursor) return false
+    if (caughtUpAt !== null) {
+      const since = clock() - caughtUpAt
+      if (since >= -DAY_MS) return since > FULL_RESYNC_MS
+    }
+    return needsFullResync(cursor.s, clock())
+  }
+
+  /** クラウドと揃った（サーバーからの通知を受け取った）時刻を覚える */
+  async function noteCaughtUp(): Promise<void> {
+    caughtUpAt = clock()
+    if (caughtUpSaved !== null && Math.abs(caughtUpAt - caughtUpSaved) < CAUGHT_UP_SAVE_MS) return
+    caughtUpSaved = caughtUpAt
+    await target.setMeta('caughtUpAt', caughtUpAt)
+  }
+
+  /** 記録した位置から購読し直す（長く眠っていた画面は、最後にクラウドと揃ってから 85日を過ぎていれば全部を受け取り直す） */
   function resubscribe(): void {
     void exclusive(async () => {
       if (stopped) return
@@ -590,7 +634,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     }).catch(fail)
   }
 
-  /** 記録した位置が購読を始めた位置より進んでいれば、そこから購読し直す（位置が 85日より前なら、全部を受け取り直す） */
+  /** 記録した位置が購読を始めた位置より進んでいれば、そこから購読し直す（最後にクラウドと揃ってから 85日を過ぎていれば、全部を受け取り直す） */
   function reanchor(): void {
     if (stopped || !unsub || resubscribeTimer || deferred) return
     void exclusive(async () => {
@@ -655,6 +699,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
   ): Promise<void> {
     if (stopped || deferred) return
     if (!changed.length && fromCache) return
+    // 位置から購読していて、前にクラウドと揃ってから 85日を過ぎた後に届いたサーバーの通知（開いたまま長く眠っていた画面の購読が
+    // つながり直した）: 眠っていた間に片付いた削除の印は届かないので、揃ったとはみなさず、この後で全部を受け取り直す（6.11）
+    const slept = !fromCache && subscribedFrom !== null && caughtUpAt !== null && clock() - caughtUpAt > FULL_RESYNC_MS
     const chunks = new Map<string, ChunkDoc>()
     for (const d of all) {
       const data = d.data() as Partial<ChunkDoc>
@@ -711,12 +758,17 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       const keys = cloudKeysOf(all, chunks)
       // 束が読めない時は消さない（読めた所までで決めると、束の中の項目を消してしまう。resyncPending は残し、次に始めた時に受け取り直す）
       if (keys) {
+        // 返事を受け取れなかった書き込みが届いていたら、先に送り終わりにする（その後にほかの端末で消され、印も片付いた記録の送信待ちが
+        // 残って、端末の中にだけ記録が残らないように）
+        await confirmLandedKeys([...(await target.outboxKeys())])
         await target.dropMissing(keys)
         await target.setMeta('resyncPending', null)
         opts.onNotice?.(FULL_RESYNC_NOTICE)
       }
     }
     if (!fromCache) {
+      if (!slept) await noteCaughtUp()
+      listenFailure = null
       downloaded = true
       if (!status.downloaded) setStatus({ downloaded: true })
     }
@@ -732,8 +784,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         if (pending > 0) requestUpload()
       }
     }
-    // 全件を購読している（初めての受け取り）なら、届いた分を抱えたままにしないよう、記録した位置から購読し直す
-    if (!fromCache && !subscribedFrom && cursor) reanchor()
+    // 全件を購読している（初めての受け取り）なら、届いた分を抱えたままにしないよう、記録した位置から購読し直す。
+    // 長く眠っていた画面は、全部を受け取り直す
+    if (!fromCache && ((!subscribedFrom && cursor) || slept)) reanchor()
   }
 
   // ---------- 送信 ----------
@@ -900,8 +953,13 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
    * 戻したり文章を二重につないだりしないように）
    */
   async function confirmLandedFor(changes: readonly Change[]): Promise<void> {
-    if (!changes.length) return
-    const txs = await target.unconfirmedTx(changes.map((c) => outboxKey(c.table, c.id)))
+    await confirmLandedKeys(changes.map((c) => outboxKey(c.table, c.id)))
+  }
+
+  /** keys（送信待ちのキー）のうち返事を受け取れなかった物の書き込みが、届いていたら送り終わりにする（confirmLandedFor） */
+  async function confirmLandedKeys(keys: readonly string[]): Promise<void> {
+    if (!keys.length) return
+    const txs = await target.unconfirmedTx(keys)
     if (!txs.size) return
     const landed = landedOf(await getDocFromServer(markRef))
     if (landed && txs.has(landed)) {
@@ -1349,9 +1407,10 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         const pending = await refreshPending()
         if (pending === 0)
           setStatus(
-            downloaded
-              ? { phase: 'synced', lastSyncedAt: Date.now(), error: null, errorCode: null }
-              : { phase: 'downloading', error: null, errorCode: null },
+            listenFailure ??
+              (downloaded
+                ? { phase: 'synced', lastSyncedAt: Date.now(), error: null, errorCode: null }
+                : { phase: 'downloading', error: null, errorCode: null }),
           )
         else if (!downloaded) setStatus({ phase: 'downloading', error: null, errorCode: null })
       } catch (e) {
@@ -1419,15 +1478,20 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       // このアカウントと同期するのは初めて: 端末内のものはクラウドとの共通の履歴が無い前提で突き合わせ、全件を受け取る
       await target.markAllDirty()
       await target.setMeta('cursor', null)
+      await target.setMeta('caughtUpAt', null)
       await target.setMeta('uid', uid)
     }
     if ((await target.getMeta<number>('syncSchema')) !== SYNC_SCHEMA) {
       await target.setMeta('cursor', null)
+      await target.setMeta('caughtUpAt', null)
       await target.setMeta('syncSchema', SYNC_SCHEMA)
     }
     if (stopped) return
     cursor = (await target.getMeta<StoredCursor | null>('cursor')) ?? null
-    // 85日より前に受け取ったきり（その間にほかの端末で消され、削除の印も片付いた物があるかもしれない）: 全部を受け取り直す（6.11）。
+    const savedCaughtUp = await target.getMeta<unknown>('caughtUpAt')
+    caughtUpAt = typeof savedCaughtUp === 'number' && Number.isFinite(savedCaughtUp) ? savedCaughtUp : null
+    caughtUpSaved = caughtUpAt
+    // 最後にクラウドと揃ってから 85日を過ぎた（その間にほかの端末で消され、削除の印も片付いた物があるかもしれない）: 全部を受け取り直す（6.11）。
     // 前に始めた受け取り直しが、端末の中の記録を片付ける前に止まっていた（アプリを閉じた・画面が受け持ちを譲った）時も、初めから
     // 受け取り直す（片付けは、位置を消して全部を購読した最初の通知でだけ行う）
     if (!(await startResyncIfDue()) && (await target.getMeta('resyncPending'))) {
@@ -1510,8 +1574,11 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
 
   // ---------- 手入れ（月の束・削除の印の片付け。6.11） ----------
 
-  /** 1つの月の束に項目をまとめる（1つのトランザクション）。まとめた項目の id を返す */
-  async function packMonth(month: string, items: Item[]): Promise<string[]> {
+  /**
+   * 1つの月の束に項目をまとめる（1つのトランザクション）。まとめた項目の id を返す。serverNow = サーバーの時刻の見積もり（項目の
+   * 文書が 60日より前に書かれた物だけをまとめる）
+   */
+  async function packMonth(month: string, items: Item[], serverNow: number): Promise<string[]> {
     const packId = docIdOf(PACK_TABLE, month)
     const res = await runTransaction(fs, async (tx) => {
       if (modelState !== 'ok') throw MODEL_PAUSED
@@ -1519,11 +1586,15 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       if (cur.doc && !cur.doc.deleted && !cur.body) throw new Error(`クラウドの月の束を読み取れませんでした（${packId}）`)
       const snaps: DocumentSnapshot<DocumentData>[] = []
       for (const it of items) snaps.push(await tx.get(doc(col, docIdOf('items', it.id))))
-      // 項目の文書がこの端末の内容と同じ物だけをまとめる（ほかの端末で直されていれば、まとめない）
+      // 項目の文書がこの端末の内容と同じ物だけをまとめる（ほかの端末で直されていれば、まとめない）。文書が書かれてから（サーバーの
+      // 時刻で）60日たっていない物もまとめない（updatedAt の古いまま書き直された項目。ゴミ箱から戻した物など。復元を始めた後に
+      // ほかの端末が書いた項目は、束に入れずに個別の文書のまま残し、復元が消さないように。6.11）
       const ok = items.filter((it, i) => {
         const s = snaps[i]
         if (!s.exists()) return false
         const d = s.data() as RecordDoc
+        const at = timeOf(d)
+        if (!at || at.s * 1000 + Math.floor(at.n / 1_000_000) > serverNow - PACK_AGE_MS) return false
         return !d.deleted && (d.chunks ?? 0) === 0 && d.hash === hashRecord(it)
       })
       if (!ok.length) return null
@@ -1574,10 +1645,13 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       const queued = new Set<string>()
       for (const k of await target.outboxKeys()) if (k.startsWith('items/')) queued.add(k.slice('items/'.length))
       const packed = new Set((await target.packsOf()).keys())
-      const candidates = packCandidates(await target.items(), { now, queued, packed, chunkSize })
+      // サーバーの時刻の見積もり（まだ文書が届いていなければ、まとめない）
+      const serverNow = clockSkew === null ? null : now - clockSkew
+      const candidates =
+        serverNow === null ? new Map<string, Item[]>() : packCandidates(await target.items(), { now, queued, packed, chunkSize })
       for (const [month, list] of candidates) {
-        if (stopped) return
-        const ids = await packMonth(month, list).catch((e: unknown) => {
+        if (stopped || serverNow === null) return
+        const ids = await packMonth(month, list, serverNow).catch((e: unknown) => {
           if (e === MODEL_PAUSED) return []
           throw e
         })

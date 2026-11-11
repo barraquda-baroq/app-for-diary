@@ -84,10 +84,11 @@ describe('ゴミ箱の期限切れを決める時刻（6.15）', () => {
     expect(trashPurgeTime('signedIn', now, yearAhead)).toBe(now)
     expect(trashPurgeTime('signedIn', now + 5000, now)).toBe(now)
   })
-  it('見積もりがまだ無い・ログインの状態が分かる前は消さない。ログインしていない端末は端末の時計', () => {
+  it('見積もりがまだ無い・ログインの状態が分かる前・ログインしていない間は消さない', () => {
     expect(trashPurgeTime('signedIn', null, now)).toBeNull()
     expect(trashPurgeTime('idle', now, now)).toBeNull()
     expect(trashPurgeTime('checking', now, now)).toBeNull()
-    expect(trashPurgeTime('signedOut', null, now)).toBe(now)
+    expect(trashPurgeTime('signedOut', null, now)).toBeNull()
+    expect(trashPurgeTime('signedOut', now, now)).toBeNull()
   })
 })

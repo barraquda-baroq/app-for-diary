@@ -32,7 +32,10 @@ vi.mock('./engine', () => ({
 }))
 
 import { createPersistence, type Persistence } from '../db/persistence'
-import { initStore, resetStoreForTests } from '../store/appStore'
+import { DAY, dataWith, mkFavorite } from '../domain/testData'
+import { trashFavorite } from '../domain/trash'
+import { emptyData } from '../domain/types'
+import { flushNow, getData, initStore, resetStoreForTests } from '../store/appStore'
 import { canShowData, initSync, resetSyncForTests, useSync } from './controller'
 
 let p: Persistence | null = null
@@ -42,6 +45,7 @@ afterEach(() => {
   resetStoreForTests()
   p?.close()
   p = null
+  vi.useRealTimers()
 })
 
 const settle = () => new Promise((r) => setTimeout(r, 100))
@@ -76,5 +80,29 @@ describe('前に別のアカウントで使っていた端末（2.5 の 4.）', 
     expect(useSync.getState().accountMismatch).toEqual({ previousEmail: 'a@example.com' })
     expect(again).not.toContain(true)
     expect(h.engines).toBe(0)
+  })
+})
+
+describe('ログアウトした時のゴミ箱（6.15）', () => {
+  it('時計の進んだ端末でログアウトしても、ゴミ箱の期限切れを消さない（消すと、次のログインでその削除をどの端末にも送る）', async () => {
+    p = createPersistence(`signout-${Math.random().toString(36).slice(2)}`)
+    const now = Date.now()
+    const fav = mkFavorite({ id: 'f1', text: 'x', createdAt: now - DAY, updatedAt: now - DAY })
+    await p.save(emptyData(), trashFavorite(dataWith({ favorites: [fav] }), 'f1').data)
+    // 同期が済んだ端末（送信待ちが無い）
+    await p.completeUpload((await p.readOutbox(100)).map((it) => ({ table: it.table, id: it.id, record: it.local })))
+    await p.setMeta('uid', 'uid-a')
+    await p.setMeta('ownerSeen', 'uid-a')
+    expect(await p.outboxCount()).toBe(0)
+    await initStore(p)
+    await initSync()
+    expect(Object.keys(getData().trashEntries)).toHaveLength(1)
+    // 端末の時計が 40日進んでいて、ログアウトした
+    vi.useFakeTimers({ toFake: ['Date'], now: now + 40 * DAY })
+    h.onUser!(null)
+    await settle()
+    await flushNow()
+    expect(Object.keys(getData().trashEntries)).toHaveLength(1)
+    expect([...(await p.outboxKeys())]).toEqual([])
   })
 })

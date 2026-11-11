@@ -171,11 +171,20 @@ export function normalizeDatesKeeping(dates: readonly unknown[]): unknown[] {
  * next が小さい順・重なりなしの正しい日付なら、normalizeDatesKeeping と同じ並びになる（next は並べ直さない）
  */
 export function keepUnknownDates(next: readonly unknown[], current: unknown): unknown[] {
+  return keepUnknownValues(next, current, isYmd)
+}
+
+/** keepUnknownDates の、毎週の曜日（routines.weekdays）の物。知らない値 = 0〜6 の整数でない値（種類を変えていない時に使う。形3） */
+export function keepUnknownWeekdays(next: readonly unknown[], current: unknown): unknown[] {
+  return keepUnknownValues(next, current, (w) => isInt(w, 0, 6))
+}
+
+function keepUnknownValues(next: readonly unknown[], current: unknown, known: (x: unknown) => boolean): unknown[] {
   const out = [...next]
   const seen = new Set(out.map((d) => stableStringify(d)))
   for (const d of Array.isArray(current) ? current : []) {
     const k = stableStringify(d)
-    if (isYmd(d) || seen.has(k)) continue
+    if (known(d) || seen.has(k)) continue
     seen.add(k)
     out.push(d)
   }

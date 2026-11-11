@@ -39,7 +39,7 @@ import {
   mkTask,
 } from './testData'
 import { trashItem, trashRoutine } from './trash'
-import type { AppData, InboxRecord, Item } from './types'
+import type { AppData, InboxRecord, Item, Routine } from './types'
 
 const PERMS = { linked: true, adds: true, edits: true, proposals: true }
 const ctx = (p: Partial<InboxContext> = {}): InboxContext => ({ now: T0, perms: PERMS, ...p })
@@ -1034,6 +1034,18 @@ describe('会話で提案に答えた依頼（19.5・19.7 の 5.）', () => {
     expect(out.inbox['xe-2'].status).toBe('applied')
     expect(out.inbox['xp-1'].status).toBe('declined')
   })
+
+  it('依頼の行で［元に戻す］と、提案も承認した後に戻した提案と同じ控えになる（同じ中身の提案をまた出さない）', () => {
+    const applied = run(dataWith({ items: [item], inbox: [prop, answer()] })).data
+    const back = undoRequest(applied, 'xe-2', ctx({ now: T0 + HOUR }))
+    expect(back.data.items[item.id].start).toBe('2026-12-03')
+    expect(back.data.inbox['xp-1']).toMatchObject({ status: 'accepted', undoneAt: T0 + HOUR })
+    expect(back.touched.get('xe-2')).toContain('inbox/xp-1')
+    const at = T0 + 2 * HOUR
+    const again = { ...prop, id: 'xp-3', createdAt: at, updatedAt: at, baseHash: revOf(back.data.items[item.id]) }
+    const out = run({ ...back.data, inbox: { ...back.data.inbox, 'xp-3': again } }, { now: at }).data
+    expect(out.inbox['xp-3']).toMatchObject({ status: 'rejected', reason: 'previously_declined' })
+  })
 })
 
 describe('競合を選ぶ（18.5）', () => {
@@ -1236,6 +1248,66 @@ describe('元に戻す（18.5）', () => {
     const trashed = trashItem(added, added.inbox['xa-1'].targetId).data
     expect(canUndo(trashed, trashed.inbox['xa-1'])).toEqual({ ok: false, message: 'ゴミ箱にあります（戻してから元に戻せます）' })
     expect(() => undoRequest(trashed, 'xa-1', ctx())).toThrow('ゴミ箱にあります')
+  })
+
+  it('このアプリの知らない値（新しい版の値など）だった項目も、元の値に戻す（戻す値だけで決まる決まりでは止めない。形3）', () => {
+    // 知らない区分
+    const raw = { ...mkItem({ id: 'i1' }), kind: 'family' } as unknown as Item
+    const applied = run(dataWith({ items: [raw], inbox: [edit('xe-k', raw, { kind: 'work' })] })).data
+    expect(applied.items.i1.kind).toBe('work')
+    const back = undoRequest(applied, 'xe-k', ctx())
+    expect(back.result).toEqual({ status: 'done', message: null })
+    expect(back.data.items.i1.kind).toBe('family')
+    // 知らない種類のルーチン
+    const routine = { ...mkRoutine({ id: 'r1', cycle: 'weekly', weekdays: [2] }), cycle: 'biweekly' } as unknown as Routine
+    const rec = mkInbox({
+      id: 'xe-c',
+      op: 'update',
+      table: 'routines',
+      targetId: 'r1',
+      baseHash: revOf(routine),
+      patch: { cycle: 'weekly', weekdays: [1] },
+      requestQuote: '毎週月曜にして',
+      createdAt: T0 - HOUR,
+    })
+    const changed = run(dataWith({ routines: [routine], inbox: [rec] })).data
+    expect(changed.routines.r1).toMatchObject({ cycle: 'weekly', weekdays: [1] })
+    const undone = undoRequest(changed, 'xe-c', ctx())
+    expect(undone.result.status).toBe('done')
+    expect(undone.data.routines.r1).toMatchObject({ cycle: 'biweekly', weekdays: [2] })
+  })
+})
+
+describe('毎週の曜日の知らない値（形3。6.12）', () => {
+  const raw = { ...mkRoutine({ id: 'r1', cycle: 'weekly', weekdays: [1] }), weekdays: [1, 'x-new'] } as unknown as Routine
+  const rec = mkInbox({
+    id: 'xe-w',
+    op: 'update',
+    table: 'routines',
+    targetId: 'r1',
+    baseHash: revOf(raw),
+    patch: { weekdays: [1, 3] },
+    requestQuote: '月と水にして',
+    createdAt: T0 - HOUR,
+  })
+
+  it('種類を変えずに曜日を直す依頼は、今の記録の知らない値を後ろに残す（2台目は「もう当たっていました」。元に戻すとそのまま戻る）', () => {
+    const data = dataWith({ routines: [raw], inbox: [rec] })
+    const out = run(data).data
+    expect(out.inbox['xe-w'].status).toBe('applied')
+    expect(out.routines.r1.weekdays).toEqual([1, 3, 'x-new'])
+    const second = run({ ...data, routines: out.routines }, { now: T0 + 1000 }).data
+    expect(second.inbox['xe-w']).toMatchObject({ status: 'applied', message: 'もう当たっていました' })
+    const back = undoRequest(out, 'xe-w', ctx())
+    expect(back.result.status).toBe('done')
+    expect(back.data.routines.r1.weekdays).toEqual([1, 'x-new'])
+  })
+
+  it('種類を変える依頼では残さない（ほかの種類の曜日は使わない）', () => {
+    const toMonthly = mkInbox({ ...rec, id: 'xe-m', patch: { cycle: 'monthly', weekdays: [], monthDay: 3 } })
+    const out = run(dataWith({ routines: [raw], inbox: [toMonthly] })).data
+    expect(out.inbox['xe-m'].status).toBe('applied')
+    expect(out.routines.r1.weekdays).toEqual([])
   })
 })
 

@@ -15,7 +15,7 @@ import { hashJson, revOf } from './hash'
 import { itemProblems } from './items'
 import { itemDateFixes } from './repair'
 import { isLabelKey, labelKeyOf } from './labels'
-import { checkDatesProblem, isRoutineCycle, keepUnknownDates, routineProblems } from './routines'
+import { checkDatesProblem, isRoutineCycle, keepUnknownDates, keepUnknownWeekdays, routineProblems } from './routines'
 import { inboxTrashIds, isInTrash, restoreTrashEntry, trashRecord } from './trash'
 import { transact } from './tx'
 import {
@@ -508,15 +508,21 @@ function resolvePatch(data: AppData, rec: InboxRecord): { patch: Record<string, 
 }
 
 /**
- * 今の内容に patch の値がもう全部入っているか（チェックした日は、当てる時と同じに今の記録の知らない値を後ろに残した形で比べる。
- * 2台が同じ依頼を当てた時、後の端末が「もう当たっていました」にできるように。patched）
+ * 今の内容に patch の値がもう全部入っているか（チェックした日・毎週の曜日は、当てる時と同じに今の記録の知らない値を後ろに残した形で
+ * 比べる。2台が同じ依頼を当てた時、後の端末が「もう当たっていました」にできるように。patched）
  */
 function alreadyApplied(table: InboxTable, target: Target | undefined, patch: Record<string, unknown>): boolean {
   if (!target) return false
   const t = target as unknown as Record<string, unknown>
-  return Object.entries(patch).every(([k, v]) =>
-    deepEqual(t[k], table === 'routineChecks' && k === 'dates' && Array.isArray(v) ? keepUnknownDates(v, t[k]) : v),
-  )
+  const kept = (k: string, v: unknown) =>
+    !Array.isArray(v)
+      ? v
+      : table === 'routineChecks' && k === 'dates'
+        ? keepUnknownDates(v, t[k])
+        : table === 'routines' && k === 'weekdays' && (!('cycle' in patch) || patch.cycle === t.cycle)
+          ? keepUnknownWeekdays(v, t[k])
+          : v
+  return Object.entries(patch).every(([k, v]) => deepEqual(t[k], kept(k, v)))
 }
 
 /** 200字を超える値は指紋にする（undo.after。6.14） */
@@ -566,6 +572,9 @@ function patched(
       const next: Routine = { ...cur, ...(patch as Partial<Routine>), updatedAt: ctx.now }
       const problem = routineProblems(next).find((p) => touches(p.fields))
       if (problem) return { problem: problem.message }
+      // 種類を変えていない毎週の曜日は、今の記録の知らない値（新しい版が足した値など）を捨てずに後ろに残す（手で直した時と同じ。形3。6.12）
+      if ('weekdays' in patch && next.cycle === cur.cycle && Array.isArray(next.weekdays))
+        next.weekdays = keepUnknownWeekdays(next.weekdays, cur.weekdays) as number[]
       // 種類が変わったら、手で変えた時と同じく、新しい種類のいちばん下に並べる（src/domain/ops.ts の updateRoutine）
       if (next.cycle !== cur.cycle) next.order = routineOrderFor(data, cur.id, next.cycle)
       return { next }
@@ -1311,7 +1320,20 @@ export function undoRequest(
   if (!can.ok) throw new DomainError(can.message ?? '元に戻せません。')
   const touched: Touched = new Map()
   const markUndone = (d: AppData) =>
-    transact(d, (tx) => tx.put('inbox', { ...rec, undoneAt: ctx.now, updatedAt: ctx.now, message: '元に戻しました' })).data
+    transact(d, (tx) => {
+      tx.put('inbox', { ...rec, undoneAt: ctx.now, updatedAt: ctx.now, message: '元に戻しました' })
+      // 会話で答えた提案（この依頼で当たった）も、承認した後に元に戻した提案と同じく控えにする（同じ中身の提案をまた出さない。19.5 の 4.）
+      const prop = rec.proposalId ? d.inbox[rec.proposalId] : undefined
+      if (
+        prop &&
+        !isNewerVersion(prop) &&
+        prop.op === 'propose' &&
+        prop.status === 'accepted' &&
+        prop.answerId === rec.id &&
+        prop.undoneAt == null
+      )
+        tx.put('inbox', { ...prop, undoneAt: ctx.now, updatedAt: ctx.now, message: '元に戻しました' })
+    }).data
   const finish = (next: AppData, result: UndoResult) => {
     addTouched(touched, id, changedKeys(data, next))
     return { data: next, result, touched }
@@ -1391,8 +1413,9 @@ const UNDO_UNITS: Partial<Record<TableName, readonly (readonly string[])[]>> = {
 
 /**
  * 戻す項目（restore）から、戻さない項目を外して返す（restore を書き換える）: 組の項目のほかの物を戻さない（skipped・外した物）時と、
- * 戻した後の記録が決まり（6.2〜6.4・6.7）に合わなくなる時。決まりは戻す項目に関わる物だけで見る（直していない項目の知らない値で
- * 止めない。形3）
+ * 戻した後の記録が決まり（6.2〜6.4・6.7）に合わなくなる時。決まりは、戻す項目と戻さない項目の組み合わせで決まる物だけで見る（直して
+ * いない項目の知らない値で止めない。戻す項目だけで決まる物は、直す前の記録にもあった物（このアプリの知らない値など）なので、
+ * そのまま戻す。形3）
  */
 function holdBackUndo(table: TableName, target: Target, restore: Record<string, unknown>, skipped: readonly string[]): string[] {
   const held: string[] = []
@@ -1407,7 +1430,7 @@ function holdBackUndo(table: TableName, target: Target, restore: Record<string, 
     for (const unit of units) if (unit.some((f) => out.has(f))) unit.forEach(hold)
     const next = { ...target, ...restore }
     const problems = table === 'items' ? itemProblems(next as Item) : table === 'routines' ? routineProblems(next as Routine) : []
-    const bad = problems.filter((p) => p.fields.some((f) => f in restore))
+    const bad = problems.filter((p) => p.fields.some((f) => f in restore) && p.fields.some((f) => !(f in restore)))
     if (bad.length === 0) return held
     for (const p of bad) p.fields.forEach(hold)
   }

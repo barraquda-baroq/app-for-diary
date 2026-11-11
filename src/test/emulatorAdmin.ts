@@ -26,9 +26,20 @@ export async function useRules(content: string): Promise<void> {
   })
 }
 
-/** エミュレーターの文書を全部消す */
+/**
+ * エミュレーターの文書を全部消す（前のテストの購読を閉じた直後は、エミュレーターが 500 を返すことがあるので、少し待って 3回まで
+ * やり直す）
+ */
 export async function clearFirestore(): Promise<void> {
-  await emulatorRequest('DELETE', `/emulator/v1/projects/${EMU_PROJECT}/databases/(default)/documents`)
+  for (let i = 0; ; i++) {
+    try {
+      await emulatorRequest('DELETE', `/emulator/v1/projects/${EMU_PROJECT}/databases/(default)/documents`)
+      return
+    } catch (e) {
+      if (i >= 2) throw e
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  }
 }
 
 /** 持ち主の記録 config/owner を管理者の権限で作る（作者が Firebase の画面で作るのと同じ。形1・docs/manual/5-owner-record.md） */
