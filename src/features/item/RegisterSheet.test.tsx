@@ -1,17 +1,21 @@
 // 予定の登録の画面（docs/SPEC.md の 12.2・3.8・4.3・4.6）: 題・欄の並び・件名にフォーカス・初めの値、区分とラベルを選び替えると
 // 地と帯の印（data-kind・data-label）がその場で替わる、「詳しく」の開閉を端末ごとに覚える、件名が空の間は［登録］を押せない、
 // ラベルの呼び名の出し方、ディープダークの題の左のアイコン
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { DATE_REFUSED } from '../../domain/itemInput'
 import { LABEL_DEFAULT_NAMES, LABEL_KEYS } from '../../domain/labels'
+import { mkItem, T0, DAY } from '../../domain/testData'
 import type { LabelName } from '../../domain/types'
 import { useApp } from '../../store/appStore'
-import { PREFS_KEY, usePrefs } from '../../store/uiStore'
+import { PREFS_KEY, useCalendarUi, usePrefs, useToasts } from '../../store/uiStore'
 import { renderView, setupCalendarTests } from '../../test/renderCalendar'
 import { testIds } from '../calendar/common/testIds'
 import type { RegisterInit } from '../calendar/common/types'
-import { RegisterSheet } from './RegisterSheet'
+import { DATE_PICKER_TEST_ID } from './fields/MiniMonth'
+import { timeListTestId } from './fields/TimeFields'
+import { DISCARD_TEST_IDS, RegisterSheet } from './RegisterSheet'
 
 setupCalendarTests()
 
@@ -244,5 +248,229 @@ describe('ボタン（12.2・ITEMS-184）', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
     await user.click(within(sheet()).getByTestId('modal-close'))
     expect(onClose).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ---------- 後半（動き）: 登録・Ctrl/⌘+Enter・入力の決まり・書きかけの確かめ ----------
+
+const items = () => Object.values(useApp.getState().data.items)
+
+describe('登録する（12.2・12.4・ITEMS-187・194）', () => {
+  it('［登録］で 12.4 の決まりを当ててから足し、閉じて、新しいカードを目立たせる（お知らせは出さない）', async () => {
+    const { user, onClose } = await open({ start: '2026-11-12' }, { prefs: { detailsOpen: true } })
+    await user.type(byId(testIds.itemTitle), '  打ち合わせ  ')
+    await user.click(byId(testIds.itemKind('private')))
+    await user.click(byId(testIds.itemLabel('sky-l')))
+    await user.type(byId(testIds.itemRequester), '総務')
+    await user.click(byId(testIds.itemLock))
+    await user.click(byId(testIds.itemListed))
+    await user.type(byId(testIds.itemMemo), '持ち物')
+    await user.click(byId(testIds.itemRegister))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    const [item] = items()
+    expect(item).toMatchObject({
+      origin: 'calendar',
+      title: '打ち合わせ',
+      kind: 'private',
+      start: '2026-11-12',
+      due: null,
+      startTime: null,
+      endTime: null,
+      label: 'sky-l',
+      requester: '総務',
+      locked: true,
+      listed: true,
+      memo: '持ち物',
+      done: false,
+      by: 'user',
+    })
+    expect(useCalendarUi.getState().flash?.key).toBe(`item:${item.id}`)
+    expect(useToasts.getState().toasts).toEqual([])
+  })
+
+  it('Ctrl+Enter・⌘+Enter でも登録する（どの欄の中でも。ITEMS-185）', async () => {
+    const { user, onClose } = await open()
+    await user.type(byId(testIds.itemTitle), '会議')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(items().map((i) => i.title)).toEqual(['会議'])
+  })
+
+  it('打ちかけの時刻（まだ欄を離れていない）も、Ctrl/⌘+Enter の前に決めてから登録する', async () => {
+    const { user } = await open()
+    await user.type(byId(testIds.itemTitle), '会議')
+    await user.click(byId(testIds.itemStartTime))
+    await user.keyboard('930')
+    await user.keyboard('{Meta>}{Enter}{/Meta}')
+    expect(items()[0]).toMatchObject({ title: '会議', startTime: '09:30', endTime: null })
+  })
+
+  it('件名が空の間は Ctrl+Enter でも登録しない', async () => {
+    const { user, onClose } = await open()
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(items()).toEqual([])
+  })
+
+  it('翌日までの時刻は、入れた時から「翌日 02:00 まで」を出し、［登録］で2日の予定にして足す（D37・AMB-ITEMS-05）', async () => {
+    const { user } = await open({ start: '2026-11-10' })
+    await user.type(byId(testIds.itemTitle), '夜行バス')
+    await user.type(byId(testIds.itemStartTime), '22:00{Enter}')
+    await user.type(byId(testIds.itemEndTime), '2:00{Enter}')
+    expect(byId(testIds.itemTimeHint).textContent).toBe('翌日 02:00 まで')
+    // 登録するまでは日付はそのまま
+    expect(byId(testIds.itemDue).textContent).toBe('なし')
+    await user.click(byId(testIds.itemRegister))
+    expect(items()[0]).toMatchObject({ start: '2026-11-10', due: '2026-11-11', startTime: '22:00', endTime: '02:00' })
+  })
+
+  it('翌日までの時刻を入れた後に日付を動かして 1日の予定で終了 < 開始になる時は、その日付にはできない（最後に直した欄。AMB-ITEMS-29）', async () => {
+    const { user } = await open({ start: '2026-11-10' })
+    await user.type(byId(testIds.itemStartTime), '22:00{Enter}')
+    await user.type(byId(testIds.itemEndTime), '2:00{Enter}')
+    await user.click(byId(testIds.itemStart))
+    await user.click(byId(DATE_PICKER_TEST_ID).querySelector('[data-date="2026-11-12"]') as HTMLElement)
+    expect(byId(testIds.itemDateError).textContent).toBe(DATE_REFUSED)
+    expect(byId(testIds.itemStart).textContent).toBe('11月10日（火）')
+  })
+
+  it('締め切り日を選ぶと「空なら1日だけ」の欄に入り［×］で消せる。開始日より前の日なら開始日もそろえる（6.3）', async () => {
+    const { user } = await open({ start: '2026-11-10' })
+    await user.click(byId(testIds.itemDue))
+    await user.click(byId(DATE_PICKER_TEST_ID).querySelector('[data-date="2026-11-13"]') as HTMLElement)
+    expect(byId(testIds.itemDue).textContent).toBe('11月13日（金）')
+    await user.click(byId(testIds.itemDueClear))
+    expect(byId(testIds.itemDue).textContent).toBe('なし')
+    await user.click(byId(testIds.itemDue))
+    await user.click(byId(DATE_PICKER_TEST_ID).querySelector('[data-date="2026-11-06"]') as HTMLElement)
+    expect(byId(testIds.itemStart).textContent).toBe('11月6日（金）')
+    expect(byId(testIds.itemDue).textContent).toBe('11月6日（金）')
+  })
+
+  it('S の日付は下からのシートで選ぶ（D38）', async () => {
+    const { user } = await open({ start: '2026-11-10' }, { width: 'S' })
+    await user.click(byId(testIds.itemDue))
+    const picker = byId(DATE_PICKER_TEST_ID)
+    expect(picker.classList.contains('modal')).toBe(true)
+    expect(within(picker).getByRole('heading').textContent).toBe('締め切り日を選ぶ')
+    await user.click(picker.querySelector('[data-date="2026-11-11"]') as HTMLElement)
+    expect(screen.queryByTestId(DATE_PICKER_TEST_ID)).toBeNull()
+    expect(byId(testIds.itemDue).textContent).toBe('11月11日（水）')
+  })
+
+  it('開始時刻を空にすると終了時刻も消える（ITEMS-229）', async () => {
+    const { user } = await open({ start: '2026-11-10', startTime: '13:00', endTime: '14:00' })
+    const start = byId(testIds.itemStartTime) as HTMLInputElement
+    await user.clear(start)
+    act(() => start.blur())
+    const end = byId(testIds.itemEndTime) as HTMLInputElement
+    expect(end.value).toBe('')
+    expect(end.disabled).toBe(true)
+  })
+
+  it('時刻の一覧の Esc は一覧だけを閉じる（登録の画面は閉じない）', async () => {
+    const { user, onClose } = await open()
+    await user.click(byId(testIds.itemStartTime))
+    expect(byId(timeListTestId('start'))).toBeTruthy()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId(timeListTestId('start'))).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('依頼者の候補（直近 365日・回数の多い順）から選べる', async () => {
+    const { user } = await open(undefined, {
+      prefs: { detailsOpen: true },
+      data: {
+        items: {
+          a: mkItem({ id: 'a', requester: '総務', createdAt: T0 - DAY }),
+          b: mkItem({ id: 'b', requester: '営業部', createdAt: T0 - 2 * DAY }),
+          c: mkItem({ id: 'c', requester: '営業部', createdAt: T0 - 3 * DAY }),
+        },
+      },
+    })
+    await user.click(byId(testIds.itemRequester))
+    const list = screen.getByRole('listbox', { name: '依頼者の候補' })
+    expect([...list.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(['営業部', '総務'])
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect((byId(testIds.itemRequester) as HTMLInputElement).value).toBe('営業部')
+  })
+})
+
+describe('書きかけのまま閉じる時の確かめ（12.2・ITEMS-186・AMB-ITEMS-10）', () => {
+  const discardDialog = () => screen.queryByRole('dialog', { name: '書きかけを捨てますか？' })
+
+  it.each([
+    ['［やめる］', () => fireEvent.click(byId(testIds.itemCancel))],
+    ['［×］', () => fireEvent.click(within(sheet()).getByTestId('modal-close'))],
+    ['Esc', () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })],
+    ['背景', () => fireEvent.mouseDown(sheet().parentElement as HTMLElement)],
+  ])(
+    '%s: 件名に字があれば「書きかけを捨てますか？［捨てる］［戻る］」。［戻る］なら開いたまま、［捨てる］で閉じる',
+    async (_name, close) => {
+      const { user, onClose } = await open()
+      await user.type(byId(testIds.itemTitle), '会議')
+      act(() => close())
+      const dialog = discardDialog()!
+      const buttons = within(dialog)
+        .getAllByRole('button')
+        .filter((b) => b.dataset.testid?.startsWith('item-discard'))
+      expect(buttons.map((b) => b.textContent)).toEqual(['捨てる', '戻る'])
+      // 開いた時は［戻る］にフォーカス
+      expect(document.activeElement).toBe(byId(DISCARD_TEST_IDS.keep))
+      await user.click(byId(DISCARD_TEST_IDS.keep))
+      expect(onClose).not.toHaveBeenCalled()
+      expect(discardDialog()).toBeNull()
+      act(() => close())
+      await user.click(byId(DISCARD_TEST_IDS.discard))
+      expect(onClose).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('メモだけに字がある時も確かめる。件名・メモが空なら確かめずに閉じる', async () => {
+    const { user, onClose, unmount } = await open(undefined, { prefs: { detailsOpen: true } })
+    await user.type(byId(testIds.itemMemo), 'あとで')
+    await user.click(byId(testIds.itemCancel))
+    expect(discardDialog()).not.toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    await user.click(byId(DISCARD_TEST_IDS.keep))
+    unmount()
+    const second = await open()
+    await second.user.type(byId(testIds.itemTitle), '   ')
+    await second.user.click(byId(testIds.itemCancel))
+    expect(discardDialog()).toBeNull()
+    expect(second.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('「戻る」（履歴を戻す）も、書きかけの間は止めて確かめる。［戻る］なら開いたまま、［捨てる］で戻る', async () => {
+    const { user, router } = await open()
+    await act(() => router.navigate('/month/2026-11'))
+    await user.type(byId(testIds.itemTitle), '会議')
+    await act(() => router.navigate(-1))
+    expect(discardDialog()).not.toBeNull()
+    await user.click(byId(DISCARD_TEST_IDS.keep))
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    await act(() => router.navigate(-1))
+    await user.click(byId(DISCARD_TEST_IDS.discard))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+
+  it('書きかけでなければ「戻る」は止めない', async () => {
+    const { router } = await open()
+    await act(() => router.navigate('/month/2026-11'))
+    await act(() => router.navigate(-1))
+    expect(discardDialog()).toBeNull()
+    expect(router.state.location.pathname).toBe('/')
+  })
+
+  it('登録した後の閉じ方（履歴を戻す）は止めない', async () => {
+    const onClose = vi.fn()
+    const r = await renderView(RegisterSheet, { init: { start: '2026-11-10' }, onClose }, {})
+    await act(() => r.router.navigate('/month/2026-11'))
+    onClose.mockImplementation(() => void r.router.navigate(-1))
+    const user = userEvent.setup()
+    await user.type(byId(testIds.itemTitle), '会議')
+    await user.click(byId(testIds.itemRegister))
+    await waitFor(() => expect(r.router.state.location.pathname).toBe('/'))
+    expect(discardDialog()).toBeNull()
   })
 })

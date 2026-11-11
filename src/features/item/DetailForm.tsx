@@ -2,17 +2,19 @@
 // Task List にも出す・メモ）。真ん中の小さな画面・下からのシート・段階3の右の列のパネルのどれにも入れられるよう、この部品は
 // 小さな画面（Modal）を知らず、欄の値（value）と、欄を直した時に呼ぶ物だけを受け取る（FRAME-052）。
 // 欄を直した時の決まりは包む画面が当てる: 日付は onDates（editDates）、時刻は onTimes（editTimes）、ほかは onChange
-// （欄ごとに1回。最後に直した欄の決まりで決める。AMB-ITEMS-29）。詳細の画面の自動の保存も包む画面（WP9 の後半）
+// （欄ごとに1回。最後に直した欄の決まりで決める。AMB-ITEMS-29）。
+// 詳細の画面（mode が detail）では、文字の欄（件名・依頼者・メモ）は打っている間は欄の中に下書きを持ち、0.6秒止まった時・離れた時に
+// onChange を呼ぶ（包む画面が保存する。fields/useAutosave.ts）。登録の画面では打つたびに onChange を呼ぶ
 import { useId } from 'react'
 import type { AppData } from '../../domain/types'
-import { DateFields, type DateWhich } from './fields/DateFields'
+import { DateFields } from './fields/DateFields'
 import { DetailsFold } from './fields/DetailsFold'
 import { KindSwitch } from './fields/KindSwitch'
 import { LabelPicker } from './fields/LabelPicker'
 import { MemoField } from './fields/MemoField'
 import { RequesterField } from './fields/RequesterField'
 import { SwitchRow } from './fields/SwitchRow'
-import { TimeFields, type TimeWhich } from './fields/TimeFields'
+import { TimeFields } from './fields/TimeFields'
 import { TitleField } from './fields/TitleField'
 import { testIds } from '../calendar/common/testIds'
 import type { DatePatch, FieldPatch, ItemForm, TimePatch } from './itemForm'
@@ -27,20 +29,15 @@ export interface DetailFormProps {
   /** 「詳しく」を開いているか */
   detailsOpen: boolean
   onToggleDetails: () => void
-  /** 件名・区分・ラベル・依頼者・ロック・Task List にも出す・メモを直した */
+  /**
+   * 件名・区分・ラベル・依頼者・ロック・Task List にも出す・メモを直した（詳細の画面の文字の欄は、0.6秒止まった時・離れた時。
+   * 件名は空にできないので、空の件名では呼ばない）
+   */
   onChange: (patch: FieldPatch) => void
   /** 日付の欄を決めた（［×］で消した・小さな月のカレンダーで選んだ） */
   onDates: (patch: DatePatch) => void
-  /** 時刻の欄を決めた */
+  /** 時刻の欄を決めた（打って離れた・Enter・一覧で選んだ） */
   onTimes: (patch: TimePatch) => void
-
-  // ----- WP9 の後半で使う所（今は渡さなくてよい） -----
-  /** 文字の欄（件名・依頼者・メモ）を離れた（詳細の画面で保存する） */
-  onTextCommit?: () => void
-  /** 日付の欄を押した（小さな月のカレンダーを開く。D38） */
-  onPickDate?: (which: DateWhich, anchor: HTMLElement) => void
-  /** 時刻の欄を押した（5分刻みの一覧を開く） */
-  onOpenTimeList?: (which: TimeWhich, anchor: HTMLElement) => void
   /** 日付にできなかった理由（DATE_REFUSED など） */
   dateError?: string | null
   /** list 生まれのタスクが今カレンダーにどう出るかの1行（listStatusLine） */
@@ -58,6 +55,8 @@ export interface DetailFormProps {
 export function DetailForm(p: DetailFormProps) {
   const { value: v, onChange } = p
   const id = useId()
+  /** 詳細の画面: 文字の欄は直したそばから自動で保存する（12.3） */
+  const autosave = p.mode === 'detail'
   return (
     <div className="it-form">
       <div className="it-field">
@@ -69,7 +68,7 @@ export function DetailForm(p: DetailFormProps) {
           value={v.title}
           onChange={(title) => onChange({ title })}
           placeholder={p.titlePlaceholder}
-          onCommit={p.onTextCommit}
+          autosave={autosave}
         />
       </div>
       <div className="it-field">
@@ -83,8 +82,7 @@ export function DetailForm(p: DetailFormProps) {
         due={v.due}
         startClearable={p.mode === 'detail' && v.origin === 'list'}
         dueNote={v.origin === 'calendar' ? '空なら1日だけ' : null}
-        onClear={(which) => p.onDates({ [which]: null })}
-        onPick={p.onPickDate}
+        onChange={(which, date) => p.onDates({ [which]: date })}
         error={p.dateError}
         statusLine={p.statusLine}
       />
@@ -92,7 +90,6 @@ export function DetailForm(p: DetailFormProps) {
         startTime={v.startTime}
         endTime={v.endTime}
         onTimes={p.onTimes}
-        onOpenList={p.onOpenTimeList}
         hint={p.timeHint}
         disabledNote={p.timesDisabledNote}
       />
@@ -107,7 +104,7 @@ export function DetailForm(p: DetailFormProps) {
           id={`${id}-requester`}
           value={v.requester}
           onChange={(requester) => onChange({ requester })}
-          onCommit={p.onTextCommit}
+          autosave={autosave}
         />
         <div className="it-switches">
           <SwitchRow label="ロック" checked={v.locked} onChange={(locked) => onChange({ locked })} testId={testIds.itemLock} />
@@ -119,7 +116,7 @@ export function DetailForm(p: DetailFormProps) {
             testId={testIds.itemListed}
           />
         </div>
-        <MemoField id={`${id}-memo`} value={v.memo} onChange={(memo) => onChange({ memo })} onCommit={p.onTextCommit} />
+        <MemoField id={`${id}-memo`} value={v.memo} onChange={(memo) => onChange({ memo })} autosave={autosave} />
       </DetailsFold>
     </div>
   )
