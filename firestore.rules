@@ -5,7 +5,8 @@ rules_version = '2';
 // - 持ち主: config/owner（{ uid, createdAt }）に記録したアカウント。作者が段階1の版を公開する前に、Firebase の画面（管理者）で作る
 //   （手順書 docs/manual/5-owner-record.md・docs/DEPLOY.md の 3。形1）。アプリとコネクタからは作れない・書き換えられない。
 //   持ち主を変えたい時は、Firebase の画面で config/owner の uid を新しい持ち主のものに書き換える。
-// - 持ち主のデータは users/{uid}/records（1つの記録 = 1つの文書）と、データの形の版 users/{uid}/meta/app だけ。
+// - 持ち主のデータは users/{uid}/records（1つの記録 = 1つの文書）と、データの形の版 users/{uid}/meta/app と、端末ごとの送る書き込みの印
+//   users/{uid}/sync/{端末の ID} だけ。
 //   持ち主本人だけが読み書きでき、ほかの場所は誰も読み書きできない。
 // - 段階6で、Claude 用のコネクタの部分を足す: 読ませる表（と、その分けた文書。parentTable で決める）を並べて読ませ、MIM とゴミ箱は
 //   読ませない。受け取り箱（inbox:）は「新しく作るだけ」（xa-・xe-・xp- の id の頭で許可を分ける）。config/connector を作る・直す（19.6）。
@@ -95,6 +96,17 @@ service cloud.firestore {
       allow create: if isOwner(uid) && validAppModel();
       allow update: if isOwner(uid) && validAppModel()
         && request.resource.data.model >= resource.data.model;
+    }
+
+    // 送る書き込みの印（src/sync/engine.ts の SENT_MARKS）: 端末ごとに、その端末の記録を書く送るトランザクションが書く、そのトランザクションの id。
+    // 返事を受け取れなかった書き込みが届いたかを、次の送信・受信で確かめる（2.4）。持ち主だけが読み書きでき、形は { tx } だけ
+    match /users/{uid}/sync/{deviceId} {
+      allow get: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['tx'])
+        && request.resource.data.tx is string
+        && request.resource.data.tx.size() >= 1 && request.resource.data.tx.size() <= 64
+        && deviceId.size() <= 64;
     }
 
     match /{document=**} {

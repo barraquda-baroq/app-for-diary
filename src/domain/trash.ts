@@ -5,7 +5,7 @@
 import { shortDateLabel } from './dates'
 import { isDerivedId, routineCheckId } from './derivedId'
 import { periodOf } from './items'
-import { ROUTINE_CYCLE_LABELS, normalizeDates } from './routines'
+import { ROUTINE_CYCLE_LABELS, normalizeDatesKeeping } from './routines'
 import { Tx, transact } from './tx'
 import {
   DomainError,
@@ -409,6 +409,9 @@ export interface RestoreResult {
 
 type Ordered = { id: ID; order: number }
 
+/** 並びの項目（端末に保存した記録なので、並びでなければ空とみなす） */
+const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+
 /**
  * order で並ぶ一覧へ戻す。先頭にあった（prevId = null）なら先頭、直前にあった要素がまだあればその直後、
  * なければ削除した時の order の値の位置。今の order の値でその位置に並ぶならそのまま、並ばなければ前後の間の値にする
@@ -500,8 +503,9 @@ export function restoreTrashEntry(data: AppData, entryId: ID): { data: AppData; 
         const routineId = ids.get(c.routineId) ?? c.routineId
         const id = routineCheckId(routineId, c.month)
         const existing = tx.get('routineChecks', id)
-        // 同じ月の記録が今あれば（ゴミ箱に入れている間に別の端末から届いた時など）、チェックした日を合わせる
-        const dates = existing ? normalizeDates([...existing.dates, ...c.dates]) : c.dates
+        // 同じ月の記録が今あれば（ゴミ箱に入れている間に別の端末から届いた時など）、チェックした日を合わせる。正しい日付は小さい順・
+        // 重なりなしにし、YYYY-MM-DD でない値（新しい版が足した形かもしれない値）は捨てずに後ろに残す（形3。同期の NORMALIZE と同じ）
+        const dates = existing ? (normalizeDatesKeeping([...listOf(existing.dates), ...listOf(c.dates)]) as string[]) : c.dates
         tx.put('routineChecks', { ...(existing ?? c), id, routineId, dates })
         continue
       }

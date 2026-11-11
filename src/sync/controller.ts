@@ -24,6 +24,8 @@ import {
   getRaw,
   onExternalSave,
   onLocalSave,
+  purgeTrashNow,
+  setTrashClock,
 } from '../store/appStore'
 import { notify } from '../store/uiStore'
 import { DATA_MODEL } from './appVersion'
@@ -96,6 +98,18 @@ export function cloudSettled(s: Pick<SyncState, 'leader' | 'status' | 'accountMi
   return s.leader && s.status?.phase === 'synced' && s.status.pending === 0 && !s.status.outdated && !s.accountMismatch
 }
 
+/**
+ * ゴミ箱の期限切れ（30日）を決める時刻（6.15）。ログインしていない端末は端末の時計。ログインしている時は、同期を受け持つ画面が、端末の
+ * 時計とサーバーの時刻の見積もり（同期で届いた文書の時刻から。src/sync/engine.ts の serverNow）の早い方で決める（時計が大きく進んだ
+ * 端末が、ゴミ箱の中身（同期の競合の控えも）を消して、その削除をどの端末にも送らないように）。ログインの状態が分かる前・見積もりが
+ * まだ無い間・同期を受け持たない画面（serverNow が null）は消さない（null）
+ */
+export function trashPurgeTime(auth: SyncState['auth'], serverNow: number | null, deviceNow: number): number | null {
+  if (auth === 'signedOut') return deviceNow
+  if (auth !== 'signedIn' || serverNow === null) return null
+  return Math.min(deviceNow, serverNow)
+}
+
 let engine: SyncEngine | null = null
 let generation = 0
 let releaseLeader: (() => void) | null = null
@@ -103,6 +117,8 @@ let booted: Promise<void> | null = null
 let hooksInstalled = false
 /** 画面のテスト用に、Firebase を使わずにログインした状態にしている（fakeSignInForTest） */
 let faked = false
+
+setTrashClock(() => (faked ? Date.now() : trashPurgeTime(useSync.getState().auth, engine?.serverNow() ?? null, Date.now())))
 
 const firebaseModule = () => import('./firebase')
 const firestoreModule = () => import('./firestore')
@@ -117,7 +133,9 @@ function storeTarget(): SyncTarget {
   return {
     readOutbox: (n) => p.readOutbox(n),
     completeUpload: (sent) => p.completeUpload(sent),
-    markUnconfirmed: (keys) => p.markUnconfirmed(keys),
+    markUnconfirmed: (rows, tx) => p.markUnconfirmed(rows, tx),
+    unconfirmedTx: (keys) => p.unconfirmedTx(keys),
+    confirmLanded: (tx) => p.confirmLanded(tx),
     applyRemote: (changes, cursor, opts) => applyRemoteChanges(changes, cursor, opts),
     outboxCount: () => p.outboxCount(),
     outboxKeys: () => p.outboxKeys(),
@@ -310,6 +328,8 @@ function startEngine(uid: string): void {
       import('./appModel'),
     ])
     if (token !== generation) return
+    /** 最初の受け取りが終わった（サーバーの時刻の見積もりができた）時に、ゴミ箱の期限切れを消す */
+    let purged = false
     const e = createSyncEngine({
       firestore: store.firestore(),
       uid,
@@ -339,6 +359,10 @@ function startEngine(uid: string): void {
           useSync.setState({ owner: 'ok' })
         }
         if (status.phase === 'synced' && !maintainTimer) scheduleMaintain()
+        if (status.downloaded && !purged) {
+          purged = true
+          purgeTrashNow()
+        }
       },
     })
     engine = e
@@ -412,8 +436,7 @@ export async function recheckOwner(): Promise<void> {
     if (state === 'ok') {
       await getPersistence()?.setMeta('ownerSeen', user.uid)
       if (token !== ownerToken) return
-      useSync.setState({ owner: 'ok', ownerSeen: true })
-      await startAfterOwner(user)
+      await startAfterOwner(user, token)
     } else if (state !== useSync.getState().owner) useSync.setState({ owner: state })
   } catch (e) {
     // 通信できない: 今の文のまま（次に表に戻った・つながった時に確かめ直す）
@@ -436,8 +459,7 @@ async function verifyOwner(user: SyncUser): Promise<void> {
   const seen = (await p?.getMeta<string>('ownerSeen')) === user.uid
   if (token !== ownerToken) return
   if (seen || fb.usingEmulator) {
-    useSync.setState({ owner: 'ok', ownerSeen: true })
-    await startAfterOwner(user)
+    await startAfterOwner(user, token)
     return
   }
   useSync.setState({ owner: 'checking', ownerSeen: false })
@@ -447,8 +469,8 @@ async function verifyOwner(user: SyncUser): Promise<void> {
     if (token !== ownerToken) return
     if (state === 'ok') {
       await p?.setMeta('ownerSeen', user.uid)
-      useSync.setState({ owner: 'ok', ownerSeen: true })
-      await startAfterOwner(user)
+      if (token !== ownerToken) return
+      await startAfterOwner(user, token)
     } else useSync.setState({ owner: state, ownerSeen: false })
   } catch (e) {
     // 通信できない: 「確かめています…」のまま、つながったら・少し後で確かめ直す
@@ -461,17 +483,28 @@ async function verifyOwner(user: SyncUser): Promise<void> {
   }
 }
 
-/** 持ち主を確かめた後: 前に別のアカウントで使っていたら確かめ、そうでなければ同期を始める（2.5 の 4） */
-async function startAfterOwner(user: SyncUser): Promise<void> {
+/** この端末で前に別のアカウントを使っていた時の、そのアカウント（2.5 の 4。同じアカウント・初めての端末なら null） */
+async function previousAccount(uid: string): Promise<{ previousEmail: string } | null> {
   const p = getPersistence()
   const previous = await p?.getMeta<string>('uid')
-  if (previous && previous !== user.uid) {
+  return previous && previous !== uid ? { previousEmail: (await p?.getMeta<string>('email')) ?? '' } : null
+}
+
+/**
+ * 持ち主を確かめた後: 前に別のアカウントで使っていたら確かめ、そうでなければ同期を始める（2.5 の 4）。データの画面を出してよいことは、
+ * 前に別のアカウントで使っていたかを読んでから1回で入れる（確かめる前に、データの画面が一瞬出ないように）
+ */
+async function startAfterOwner(user: SyncUser, token: number): Promise<void> {
+  const mismatch = await previousAccount(user.uid)
+  if (token !== ownerToken) return
+  if (mismatch) {
     stopEngine()
-    useSync.setState({ accountMismatch: { previousEmail: (await p?.getMeta<string>('email')) ?? '' } })
+    useSync.setState({ owner: 'ok', ownerSeen: true, accountMismatch: mismatch })
     return
   }
-  await p?.setMeta('email', user.email)
-  useSync.setState({ accountMismatch: null })
+  await getPersistence()?.setMeta('email', user.email)
+  if (token !== ownerToken) return
+  useSync.setState({ owner: 'ok', ownerSeen: true, accountMismatch: null })
   startEngine(user.uid)
 }
 
@@ -497,8 +530,17 @@ function boot(): Promise<void> {
             // この端末で持ち主だと確かめたアカウントかを先に読む（起動のたびにログインの画面が一瞬出ないように、ログインした状態と
             // 一緒に入れる）
             const seen = fb.usingEmulator || (await getPersistence()?.getMeta<string>('ownerSeen')) === u.uid
+            // 前に別のアカウントで使っていた端末なら、その確かめ（2.5 の 4）も一緒に入れる（データの画面が一瞬出ないように）
+            const mismatch = seen ? await previousAccount(u.uid) : null
             if (token !== ownerToken || faked) return
-            useSync.setState({ auth: 'signedIn', user: u, error: null, owner: seen ? 'ok' : 'checking', ownerSeen: seen })
+            useSync.setState({
+              auth: 'signedIn',
+              user: u,
+              error: null,
+              owner: seen ? 'ok' : 'checking',
+              ownerSeen: seen,
+              accountMismatch: mismatch,
+            })
             await verifyOwner(u)
           })().catch(reportError)
         } else {
@@ -512,6 +554,8 @@ function boot(): Promise<void> {
             accountMismatch: null,
             connector: null,
           })
+          // ログインしていない端末は、端末の時計でゴミ箱の期限切れを消す
+          purgeTrashNow()
         }
       })
     } catch (e) {

@@ -166,7 +166,7 @@ describe('受け取り箱の依頼ごとのまとまり（g。19.5）', () => {
     await seed(p, base)
     const next = put(put(base, 'items', mkItem({ id: 'ce-1' })), 'inbox', applied)
     await p.save(base, next, hooks(), { groups: new Map([['xa-1', ['items/ce-1', 'inbox/xa-1']]]) })
-    await p.markUnconfirmed(['inbox/xa-1'])
+    await p.markUnconfirmed([{ key: 'inbox/xa-1', record: applied as AnyRecord }], 'tx-1')
     // クラウドの受け取り箱が先に変わっていた（別の端末が当てた）: 3者マージしても、まとまりの印は残る
     await p.applyRemote([{ table: 'inbox', id: 'xa-1', record: { ...applied, appliedAt: 9 } as AnyRecord }], hooks())
     // 送った後に端末で変わった（completeUpload は base を書き直して残す）
@@ -380,6 +380,59 @@ describe('反映（applyRemote）', () => {
     await p.applyRemote([{ table: 'items', id: 'a', record: { ...it1, title: '束から出た' } as AnyRecord }], hooks())
     expect([...(await p.packsOf()).keys()]).toEqual(['b'])
     expect(await p.outboxCount()).toBe(0)
+  })
+})
+
+describe('返事を受け取れなかった書き込み（送る書き込みの印。2.4）', () => {
+  it('送る前に id と送る内容を覚え、届いていたと分かったら送った内容を base にする（その後に変わっていなければ送り終わり）', async () => {
+    const p = fresh()
+    const a = mkItem({ id: 'a', title: '元' })
+    const b = mkItem({ id: 'b', title: '元' })
+    await seed(p, dataWith({ items: [a, b] }))
+    const before = await p.load()
+    const sentA = { ...a, title: '送ったA' }
+    const sentB = { ...b, title: '送ったB' }
+    await p.save(before, put(put(before, 'items', sentA), 'items', sentB))
+    await p.markUnconfirmed(
+      [
+        { key: 'items/a', record: sentA as AnyRecord },
+        { key: 'items/b', record: sentB as AnyRecord },
+      ],
+      'tx-1',
+    )
+    // 送った後に、b だけまた直した
+    const now = await p.load()
+    await p.save(now, put(now, 'items', { ...sentB, memo: '後で足した' }))
+    expect(await p.unconfirmedTx(['items/a', 'items/b', 'items/x'])).toEqual(new Set(['tx-1']))
+    const rows = await p.readOutbox(10)
+    expect(rows.find((r) => r.k === 'items/a')).toMatchObject({ unconfirmed: true, tx: 'tx-1', sent: sentA, base: a })
+    // 別の id の書き込みが届いていても、この行は変えない
+    await p.confirmLanded('tx-0')
+    expect((await p.readOutbox(10)).map((r) => r.k)).toEqual(['items/a', 'items/b'])
+    await p.confirmLanded('tx-1')
+    const left = await p.readOutbox(10)
+    expect(left.map((r) => r.k)).toEqual(['items/b'])
+    expect(left[0].base).toEqual(sentB)
+    expect(left[0].unconfirmed).toBeUndefined()
+    expect(left[0].tx).toBeUndefined()
+    expect(await p.unconfirmedTx(['items/b'])).toEqual(new Set())
+  })
+
+  it('クラウドの内容から base を書き直したら（受け取った反映）、印と送った内容も外す', async () => {
+    const p = fresh()
+    const a = mkItem({ id: 'a', title: '元' })
+    await seed(p, dataWith({ items: [a] }))
+    const before = await p.load()
+    const mine = { ...a, title: '送った' }
+    await p.save(before, put(before, 'items', mine))
+    await p.markUnconfirmed([{ key: 'items/a', record: mine as AnyRecord }], 'tx-1')
+    const theirs = { ...a, requester: 'ほかの端末' }
+    await p.applyRemote([{ table: 'items', id: 'a', record: theirs as AnyRecord }], hooks())
+    const [row] = await p.readOutbox(10)
+    expect(row.base).toEqual(theirs)
+    expect(row.unconfirmed).toBeUndefined()
+    expect(row.tx).toBeUndefined()
+    expect(row.sent).toBeUndefined()
   })
 })
 

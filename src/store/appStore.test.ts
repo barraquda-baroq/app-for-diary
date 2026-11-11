@@ -157,6 +157,30 @@ describe('別の端末の変更', () => {
     expect((await p.load()).items.i1).toMatchObject({ memo: 'このタブ', requester: '山田' })
   })
 
+  it('保存の途中に直した予定がほかのタブで消されていても、ゴミ箱の控えは表示用に直す前の記録（知らない値が残る。形3）', async () => {
+    const name = `store-rebase-${++seq}-${Math.random().toString(36).slice(2)}`
+    p = createPersistence(name)
+    const future = { ...mkItem({ title: '家族の予定' }), kind: 'family', label: 'new-color', extra: { x: 1 } } as unknown as Item
+    await p.save(emptyData(), dataWith({ items: [future] }))
+    await p.completeUpload((await p.readOutbox(100)).map((it) => ({ table: it.table, id: it.id, record: it.local })))
+    await initStore(p)
+    // ほかのタブがこの予定を消した（このタブには知らせが届いていない）
+    const other = createPersistence(name)
+    const disk = await other.load()
+    await other.save(disk, { ...disk, items: {} })
+    other.close()
+    // このタブで直して保存を始め、保存の途中にもう一度直す
+    commit(O.updateItem(getData(), 'i1', { memo: '1回目' }).data)
+    const saving = flushNow()
+    await Promise.resolve()
+    commit(O.updateItem(getData(), 'i1', { memo: '2回目' }).data)
+    await saving
+    await flushNow()
+    const copies = Object.values((await p.load()).trashRecords).map((r) => r.record as unknown as Record<string, unknown>)
+    expect(copies.map((c) => c.memo).sort()).toEqual(['1回目', '2回目'])
+    for (const c of copies) expect(c).toMatchObject({ kind: 'family', label: 'new-color', extra: { x: 1 } })
+  })
+
   it('rebaseView: このタブで変えていない記録は新しい内容に置き換える', () => {
     const a = dataWith({ items: [mkItem({ title: 'A' })] })
     const b = dataWith({ items: [mkItem({ title: 'B' })] })

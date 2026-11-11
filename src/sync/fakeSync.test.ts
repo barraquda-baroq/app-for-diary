@@ -45,6 +45,42 @@ describe('返事を受け取れなかった書き込み', () => {
       expect(cloud.docs.get(`favorites:${id}`)?.record).toBeNull()
     })
   }
+
+  // 書き込みは届いたが返事が無く、ほかの端末がその書き込みの上に書いた（題名を戻し、メモに足した）。送る書き込みの印でその書き込みが
+  // 届いていたと分かるので、送った内容を base にして合わせる（古い base で合わせると、題名が戻らず、メモが二重につながる）
+  for (const order of ['受け取ってから送る', 'もう一度直して送ってから受け取る'] as const) {
+    it(`その上にほかの端末が書いた版を、送った内容を base にして合わせる（${order}）`, async () => {
+      const { a, b } = await pair()
+      let id = ''
+      await a.edit((d) => {
+        const r = O.addItem(d, { origin: 'calendar', title: '元の題名', start: '2026-12-01' })
+        id = r.result
+        return r.data
+      })
+      await settle(a, b)
+      await a.edit((d) => O.updateItem(d, id, { title: 'Aの題名', memo: 'Aが書いた' }).data)
+      await a.uploadBatch({ replyLost: true })
+      // B は A の書き込みを受け取り、題名を戻して、メモに足した
+      await b.sync()
+      expect((await b.load()).items[id].title).toBe('Aの題名')
+      await b.edit((d) => O.updateItem(d, id, { title: '元の題名', memo: 'Aが書いた\nBが足した' }).data)
+      await b.sync()
+      // A が戻る（A の書き込みはクラウドで B の版に置き換わっていて、A の版の通知は届かない）
+      a.offline()
+      if (order === 'もう一度直して送ってから受け取る') {
+        await a.edit((d) => O.updateItem(d, id, { requester: 'A社' }).data)
+        await a.uploadBatch()
+      } else await a.receive()
+      await settle(a, b)
+      expect(await sameData(a, b)).toBe(true)
+      const got = (await b.load()).items[id]
+      expect(got.title).toBe('元の題名')
+      expect(got.memo).toBe('Aが書いた\nBが足した')
+      expect(got.requester).toBe(order === 'もう一度直して送ってから受け取る' ? 'A社' : '')
+      expect(a.notes).toEqual([])
+      expect(Object.keys((await a.load()).trashEntries)).toEqual([])
+    })
+  }
 })
 
 describe('復元', () => {

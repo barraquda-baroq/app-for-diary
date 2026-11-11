@@ -36,10 +36,19 @@ import {
   type Transaction,
   type Unsubscribe,
 } from 'firebase/firestore'
-import { outboxKey, tableSendRank, type AuthoritativeKeep, type Change, type OutboxItem } from '../db/persistence'
+import {
+  outboxKey,
+  tableSendRank,
+  type AnyRecord,
+  type AuthoritativeKeep,
+  type Change,
+  type OutboxItem,
+  type SentRow,
+} from '../db/persistence'
 import { todayStr } from '../domain/dates'
 import type { InboxPerms } from '../domain/inbox'
-import type { Item, TableName } from '../domain/types'
+import { isTableName, type Item, type TableName } from '../domain/types'
+import { newId } from '../domain/util'
 import { appModelRef, asModel, watchAppModel, type AppModel } from './appModel'
 import { OWNER_MISMATCH_MESSAGE, OWNER_MISSING_MESSAGE } from './syncView'
 import { decideBatch, nothingToSend, sameAsBase, selectBatch, type BatchEntry, type CloudState } from './batch'
@@ -77,10 +86,14 @@ export interface SyncTarget {
   readOutbox(limit: number): Promise<OutboxItem[]>
   completeUpload(sent: Change[]): Promise<void>
   /**
-   * 送るトランザクションを始める前に、その送信待ちに「返事を受け取るまで、クラウドが base のままか分からない」と印を付ける
-   * （書き込みが届いたのに返事を受け取れないことがある。OutboxRow.unconfirmed）
+   * 送るトランザクションで書く送信待ちに、書き込みを送る前に「返事を受け取るまで、クラウドが base のままか分からない」と印を付ける
+   * （書き込みが届いたのに返事を受け取れないことがある。OutboxRow.unconfirmed）。tx = そのトランザクションの id、record = 送る内容
    */
-  markUnconfirmed(keys: string[]): Promise<void>
+  markUnconfirmed(rows: readonly SentRow[], tx: string): Promise<void>
+  /** 印の付いた送信待ちのうち、keys の物のトランザクションの id */
+  unconfirmedTx(keys: readonly string[]): Promise<Set<string>>
+  /** トランザクション tx の書き込みは届いていた: その印の付いた送信待ちを、送った返事を受け取った時と同じにする */
+  confirmLanded(tx: string): Promise<void>
   /**
    * クラウドの変更を反映する。cursor は同じトランザクションで記録する。
    * バックアップからの復元・すべて削除をクラウドに当てる前は反映せずに null を返す（後で受け取り直す）。
@@ -173,6 +186,11 @@ export interface SyncEngine {
    * now はテスト用（時計を進める）
    */
   maintain(now?: number): Promise<MaintainResult>
+  /**
+   * サーバーの時刻の見積もり（ms。端末の時計から、届いた文書の更新時刻との差のいちばん小さい値を引いた時刻。本当のサーバーの時刻より
+   * 後にならない）。まだ文書が届いていなければ null。ゴミ箱の期限切れを決める時に使う（6.15）
+   */
+  serverNow(): number | null
   readonly status: SyncStatus
 }
 
@@ -192,6 +210,11 @@ export const SYNC_SCHEMA = 1
 export const OWNER_DOC = ['config', 'owner'] as const
 /** Claude との連携と許可（段階6で作る。段階1〜5は読むだけ。6.14） */
 export const CONNECTOR_DOC = ['config', 'connector'] as const
+/**
+ * 送る書き込みの印（users/{uid}/sync/{端末の ID}。`{ tx }`）: その端末の送るトランザクションが毎回読み、記録を書く時は、そのトランザクションの
+ * id を書く。返事を受け取れなかった時に、書き込みが届いたかをこれで確かめる（2.4）
+ */
+export const SENT_MARKS = 'sync'
 
 export { OWNER_MISMATCH_MESSAGE, OWNER_MISSING_MESSAGE }
 
@@ -319,6 +342,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
   const modelWait = opts.modelWait ?? MODEL_WAIT_MS
   const clock = opts.now ?? (() => Date.now())
   const col = collection(fs, 'users', uid, RECORDS)
+  const markRef = doc(fs, 'users', uid, SENT_MARKS, deviceId)
 
   let stopped = false
   let unsub: Unsubscribe | null = null
@@ -347,6 +371,11 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
   }
   /** この端末が送った版の指紋（文書ごと、古い順） */
   const sent = new Map<string, string[]>()
+  /**
+   * 送る書き込みの印（markRef）で最後に確かめた値（その id の書き込みの送信待ちは、もう送り終わりにした）。違う値を読んだら、
+   * 返事を受け取れなかった書き込みが届いていた（confirmLanded）
+   */
+  let lastLanded: string | null = null
   /** 持ち主の確認が済んだ（ownerLock の時） */
   let ownerOk = opts.ownerLock === false
   /**
@@ -445,6 +474,17 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
   function marks(data: RecordDoc, at: StoredCursor | null): Pick<Change, 'own' | 'reset' | 'afterRestore'> {
     return {
       ...(data.device === deviceId ? { own: true } : {}),
+      ...packItemMarks(data, at),
+    }
+  }
+
+  /**
+   * 月の束の中の項目の変化の印（reset・afterRestore）。own は付けない: 束の文書の device は束を書き直した端末で、中の項目を書いた
+   * 端末ではない（この端末が書き直した束にも、ほかの端末が直した後で束に戻した項目が入っていることがある。own にすると 3者マージを
+   * 飛ばして、その直した内容を、この端末の古い base からの変更で上書きしてしまう。6.11）
+   */
+  function packItemMarks(data: RecordDoc, at: StoredCursor | null): Pick<Change, 'reset' | 'afterRestore'> {
+    return {
       ...(freshReset(data, at) ? { reset: true } : {}),
       ...(writtenAfter(data, restoreBound) ? { afterRestore: true } : {}),
     }
@@ -480,7 +520,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     resubscribeCount += 1
     resubscribeTimer = setTimeout(() => {
       resubscribeTimer = null
-      subscribe()
+      resubscribe()
     }, delay)
   }
 
@@ -527,12 +567,36 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     )
   }
 
-  /** 記録した位置が購読を始めた位置より進んでいれば、そこから購読し直す */
+  /**
+   * 記録した位置が 85日より前なら、全部を受け取り直す（6.11）。受け取り直すことを _meta の resyncPending に覚えてから位置を消す
+   * （最初の通知を受け取って端末の中の記録を片付ける前に、アプリを閉じても・画面が受け持ちを譲っても、次に始めた時に受け取り直す）。
+   * 受け取り直すなら true（呼んだ側が、位置を消した購読を始める）
+   */
+  async function startResyncIfDue(): Promise<boolean> {
+    if (!cursor || !needsFullResync(cursor.s, clock())) return false
+    await target.setMeta('resyncPending', true)
+    cursor = null
+    await target.setMeta('cursor', null)
+    resyncing = true
+    return true
+  }
+
+  /** 記録した位置から購読し直す（長く眠っていた画面は、位置が 85日より前なら全部を受け取り直す） */
+  function resubscribe(): void {
+    void exclusive(async () => {
+      if (stopped) return
+      await startResyncIfDue()
+      subscribe()
+    }).catch(fail)
+  }
+
+  /** 記録した位置が購読を始めた位置より進んでいれば、そこから購読し直す（位置が 85日より前なら、全部を受け取り直す） */
   function reanchor(): void {
     if (stopped || !unsub || resubscribeTimer || deferred) return
     void exclusive(async () => {
       if (stopped || !unsub || deferred) return
-      if (cursor && (!subscribedFrom || later(cursor, subscribedFrom))) subscribe()
+      if (await startResyncIfDue()) subscribe()
+      else if (cursor && (!subscribedFrom || later(cursor, subscribedFrom))) subscribe()
     }).catch(fail)
   }
 
@@ -560,7 +624,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     if (body === undefined) return null
     if (!body) return []
     const month = data.id
-    const m = marks(data, at)
+    const m = packItemMarks(data, at)
     return Object.values(body.items)
       .filter((it) => !skip.has(it.id))
       .map((it) => ({ table: 'items' as const, id: it.id, record: it as Change['record'], pack: month, ...m }))
@@ -631,6 +695,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     }
     const advance = !fromCache && newest && later(newest, cursor) ? newest : undefined
     if (changes.length || advance) {
+      if (!fromCache) await confirmLandedFor(changes)
       const applied = await target.applyRemote(changes, advance)
       if (applied === null) {
         // 復元・すべて削除をクラウドに当てるまで受け取らない（当てた後で、記録した位置から受け取り直す）
@@ -641,12 +706,13 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     }
     if (advance) cursor = advance
     // 全部を受け取り直した: クラウドにも送信待ちにも無い端末の中の記録を消す（束を広げた後の項目も「クラウドにある」に数える。6.11）
-    if (resyncing && full && !fromCache) {
+    if (resyncing && full && !fromCache && !subscribedFrom) {
       resyncing = false
       const keys = cloudKeysOf(all, chunks)
-      // 束が読めない時は消さない（読めた所までで決めると、束の中の項目を消してしまう）
+      // 束が読めない時は消さない（読めた所までで決めると、束の中の項目を消してしまう。resyncPending は残し、次に始めた時に受け取り直す）
       if (keys) {
         await target.dropMissing(keys)
+        await target.setMeta('resyncPending', null)
         opts.onNotice?.(FULL_RESYNC_NOTICE)
       }
     }
@@ -812,6 +878,38 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     return out
   }
 
+  /** 送る書き込みの印の値（無い・形が違えば null） */
+  function landedOf(snap: DocumentSnapshot<DocumentData>): string | null {
+    const v = snap.exists() ? (snap.data() as { tx?: unknown }).tx : null
+    return typeof v === 'string' && v ? v : null
+  }
+
+  /** 書き込みが届いていた送信待ち: その時に送った内容（sent）を base にした物（送った返事を受け取った時と同じ） */
+  function landedEntry(b: BatchEntry, sent: AnyRecord | null): BatchEntry {
+    const base = sent
+    const it: OutboxItem = { ...b.it, base, noHistory: false, force: false }
+    delete it.unconfirmed
+    delete it.tx
+    delete it.sent
+    return { ...b, it, baseHash: hashRecord(base) }
+  }
+
+  /**
+   * 届いた変化が、返事を受け取れなかった書き込みの送信待ちに当たる時: 送る書き込みの印をサーバーから読み、その書き込みが届いていたら、
+   * 送った内容を base にしてから反映する（ほかの端末がその書き込みの後に書いた版を、古い base で 3者マージして、ほかの端末の変更を
+   * 戻したり文章を二重につないだりしないように）
+   */
+  async function confirmLandedFor(changes: readonly Change[]): Promise<void> {
+    if (!changes.length) return
+    const txs = await target.unconfirmedTx(changes.map((c) => outboxKey(c.table, c.id)))
+    if (!txs.size) return
+    const landed = landedOf(await getDocFromServer(markRef))
+    if (landed && txs.has(landed)) {
+      await target.confirmLanded(landed)
+      lastLanded = landed
+    }
+  }
+
   async function uploadBatch(): Promise<BatchResult> {
     const items = (await target.readOutbox(BATCH_RECORDS)).filter((it) => !heldUntilDownloaded(it))
     if (!items.length) return { done: true, progressed: 0, conflicts: [] }
@@ -820,25 +918,44 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     const selected = selectBatch(items, { chunkSize, maxChars: batchChars, maxDocs: BATCH_DOCS })
     // 月の束に入っている項目（_pack）。項目の文書が無い時は、束の中の項目と比べる（6.11）
     const packs = selected.some((b) => b.it.table === 'items') ? await target.packsOf() : new Map<string, string>()
-    const batch = capPackMonths(selected, packs, packMonthCap)
-    if (!batch.length) return { done: false, progressed: idle.length, conflicts: [] }
+    const given = capPackMonths(selected, packs, packMonthCap)
+    if (!given.length) return { done: false, progressed: idle.length, conflicts: [] }
     if (sendPaused()) return { done: false, progressed: idle.length, conflicts: [] }
-    const unmarked = batch.filter((b) => !b.it.force && !b.it.unconfirmed).map((b) => b.it.k)
-    if (unmarked.length) await target.markUnconfirmed(unmarked)
-    const bound = batch.some((b) => b.it.force)
+    const bound = given.some((b) => b.it.force)
       ? ((await target.getMeta<StoredCursor | null>('authoritativeFrom')) ?? null)
       : null
 
+    let attempt = ''
+    /** この送信の前の試みで付けた印（SDK がトランザクションをやり直した時。送信待ち → その試みの id と送った内容） */
+    const tried = new Map<string, { tx: string; sent: AnyRecord | null }>()
+    /** この送信の中で、届いていたと分かった書き込みの送った内容（送信待ち → 新しい base。やり直した試みでも使う） */
+    const resolved = new Map<string, AnyRecord | null>()
     const result = await runTransaction(fs, async (tx) => {
+      // このトランザクション（の1回の試み）の id。送る書き込みの印に書く
+      attempt = newId()
       const recheck = modelState !== 'ok' && Boolean(opts.appModel)
-      const [snaps, marker] = await Promise.all([
-        Promise.all(batch.map((b) => tx.get(doc(col, docIdOf(b.it.table, b.it.id))))),
+      const [snaps, marker, markSnap] = await Promise.all([
+        Promise.all(given.map((b) => tx.get(doc(col, docIdOf(b.it.table, b.it.id))))),
         recheck ? tx.get(appModelRef(fs, uid)) : Promise.resolve(null),
+        tx.get(markRef),
       ])
       if (recheck) {
         if (marker && newerModel(marker.exists() ? asModel(marker.data()) : null)) throw MODEL_PAUSED
         if (modelState === 'newer') throw MODEL_PAUSED
       } else if (modelState !== 'ok') throw MODEL_PAUSED
+      // 前に返事を受け取れなかった書き込みが届いていた（印がその書き込みの id）: その時に送った内容を base にしてから決める。
+      // この端末の送るトランザクションはどれも印を読む（読んだ後に印が変われば届かない）ので、印は、この端末の最後に届いた書き込みを指す
+      const landed = landedOf(markSnap)
+      if (landed && landed !== lastLanded) {
+        await target.confirmLanded(landed)
+        lastLanded = landed
+      }
+      const batch = given.map((b) => {
+        const m = tried.get(b.it.k) ?? (b.it.tx ? { tx: b.it.tx, sent: b.it.sent ?? null } : null)
+        if (landed && m?.tx === landed) resolved.set(b.it.k, m.sent)
+        const base = resolved.get(b.it.k)
+        return base !== undefined ? landedEntry(b, base) : b
+      })
       const clouds = snaps.map((snap) => (snap.exists() ? (snap.data() as RecordDoc) : null))
       // 項目の文書が無く、_pack が束を指している項目: 束を読む（月ごとに1回）
       const packBodies = new Map<string, { doc: RecordDoc | null; body: PackBody | null }>()
@@ -872,6 +989,13 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         return { exists: c !== null, hash: c && !c.deleted ? c.hash : '', fresh: c !== null && writtenAfter(c, bound) }
       })
       const decision = decideBatch(batch, states)
+      // 書く送信待ちに、書き込みを送る前に「返事を受け取るまで分からない」とこの試みの id・送る内容を覚える（届いたのに返事が無かった時に、
+      // 次の送信や受信で、印を読んで確かめる）
+      const marks: SentRow[] = batch
+        .filter((b, i) => decision.write[i] && !sameAsBase(b.it))
+        .map((b) => ({ key: b.it.k, record: b.it.local }))
+      if (marks.length) await target.markUnconfirmed(marks, attempt)
+      for (const m of marks) tried.set(m.key, { tx: attempt, sent: m.record })
       const written: { change: Change; docId: string; hash: string; replaced: StoredCursor | null }[] = []
       const settled: Change[] = []
       /** 束から抜く項目（月 → id） */
@@ -901,7 +1025,16 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         txWrite(tx, PACK_TABLE, month, enc, false, cur.doc?.chunks ?? 0, false)
         packWrites.push({ docId: docIdOf(PACK_TABLE, month), hash: enc.hash, replaced: cur.doc ? timeOf(cur.doc) : null })
       }
-      return { written, settled, conflicts: decision.conflicts, packWrites, unpacked: [...unpack.values()].flat() }
+      // 印は、記録を書く試みだけが書く（書かない試みも印を読んでいるので、その間に印が変われば、この試みは届かない）
+      if (marks.length) tx.set(markRef, { tx: attempt })
+      return {
+        written,
+        settled,
+        conflicts: decision.conflicts,
+        packWrites,
+        unpacked: [...unpack.values()].flat(),
+        marked: marks.length > 0,
+      }
     }).catch((e: unknown) => {
       if (e === MODEL_PAUSED) return null
       if (e instanceof PackOverflow) {
@@ -911,6 +1044,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       throw e
     })
     if (!result) return { done: false, progressed: idle.length, conflicts: [] }
+    if (result.marked) lastLanded = attempt
     packMonthCap = Infinity
     for (const w of [...result.written, ...result.packWrites]) {
       rememberSent(w.docId, w.hash)
@@ -957,7 +1091,13 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
           packed ??= await readAllPacks()
           const p = packed.get(it.id)
           if (p) {
-            changes.push({ table: 'items', id: it.id, record: p.item as Change['record'], pack: p.month, ...marks(p.data, null) })
+            changes.push({
+              table: 'items',
+              id: it.id,
+              record: p.item as Change['record'],
+              pack: p.month,
+              ...packItemMarks(p.data, null),
+            })
             continue
           }
         }
@@ -974,7 +1114,10 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       if (rec !== undefined)
         changes.push({ table: it.table, id: it.id, record: rec as Change['record'], ...marks(data, timeOf(data)) })
     }
-    if (changes.length) await target.applyRemote(changes, undefined, { direct: true })
+    if (changes.length) {
+      await confirmLandedFor(changes)
+      await target.applyRemote(changes, undefined, { direct: true })
+    }
   }
 
   /** クラウドの記録がこのアプリより新しい版なら、送るのを止める（要更新の表示）。止めたら true */
@@ -1069,7 +1212,8 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     const doomed: string[] = []
     const packDocs: string[] = []
     for (const { id, data } of docs) {
-      if (writtenAfter(data, until)) continue
+      // 月の束は、復元を始めた後にほかの端末が書き直した物も開いて消す（書き直しは、項目を抜く・変えていない項目を足すだけなので、
+      // 守る物が無い。残すと、復元で消した項目や復元の前の版が、次に束を書き直した時にどの端末にも戻ってしまう。6.11）
       if (data.table === PACK_TABLE) {
         const body = readPackDoc(data, chunkOf(id))
         if (body === undefined) throw new Error(`クラウドの月の束を読み取れませんでした（${id}）`)
@@ -1079,6 +1223,10 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         packDocs.push(id)
         continue
       }
+      // 復元を始めた後にほかの端末が書いた記録は、消さずに受信で 3者マージする
+      if (writtenAfter(data, until)) continue
+      // この版の知らない表（後の版が足した表）の文書は消さない（読めない物は消さない。後の版の表のことは、その版が決める。6.16）
+      if (!isTableName(data.table)) continue
       const key = outboxKey(data.table, data.id)
       if (keepTables.has(data.table) || keepKeys.has(key) || mimTrash.has(id)) continue
       if (!local.has(key)) doomed.push(id)
@@ -1087,35 +1235,52 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     // 子（チェックの記録など）を親より先に消す（送信待ちを送る順と同じ）
     const rank = (id: string) => tableSendRank(splitDocId(id).table)
     doomed.sort((a, b) => rank(a) - rank(b))
-    const ops: { kind: 'tomb' | 'delete'; id: string }[] = [
-      ...doomed.map((id) => ({ kind: 'tomb' as const, id })),
-      ...packDocs.flatMap((id) => [
-        { kind: 'delete' as const, id },
-        ...(chunkDocs.get(id) ?? []).map((c) => ({ kind: 'delete' as const, id: chunkIdOf(id, c.index) })),
-      ]),
-    ]
-    for (let i = 0; i < ops.length; i += 200) {
-      const batch = writeBatch(fs)
-      for (const op of ops.slice(i, i + 200)) {
-        if (op.kind === 'delete') {
-          batch.delete(doc(col, op.id))
-          continue
-        }
-        const { table, id: recId } = splitDocId(op.id)
-        const tombstone: RecordDoc = {
-          table: table as CloudTable,
-          id: recId,
-          json: null,
-          chunks: 0,
-          deleted: true,
-          hash: '',
-          updated: serverTimestamp(),
-          device: deviceId,
-          reset: true,
-        }
-        batch.set(doc(col, op.id), tombstone)
-        for (const c of chunkDocs.get(op.id) ?? []) batch.delete(doc(col, chunkIdOf(op.id, c.index)))
+    // 復元の削除の印は、トランザクションで文書を読み直し、上で読んだ時から変わっていない物にだけ書く（読んだ後にほかの端末が書いた物は
+    // 消さずに、受信で 3者マージする。束の中の項目は、個別の文書がまだ無いことを確かめる）
+    const seenAt = new Map(docs.map(({ id, data }) => [id, timeOf(data)]))
+    const unchanged = (id: string, cur: RecordDoc | null): boolean => {
+      if (!cur) return true
+      const was = seenAt.get(id) ?? null
+      const now = timeOf(cur)
+      return !writtenAfter(cur, until) && was !== null && now !== null && was.s === now.s && was.n === now.n
+    }
+    for (let i = 0; i < doomed.length; ) {
+      // 1つのトランザクションの書き込みが 400 を超えないように分ける（削除の印と、その文書の分けた文書）
+      const part: string[] = []
+      let writes = 0
+      while (i < doomed.length && (part.length === 0 || writes + 1 + (chunkDocs.get(doomed[i])?.length ?? 0) <= 400)) {
+        writes += 1 + (chunkDocs.get(doomed[i])?.length ?? 0)
+        part.push(doomed[i])
+        i += 1
       }
+      await runTransaction(fs, async (tx) => {
+        if (modelState === 'newer') throw MODEL_PAUSED
+        const snaps = await Promise.all(part.map((id) => tx.get(doc(col, id))))
+        part.forEach((id, j) => {
+          const cur = snaps[j].exists() ? (snaps[j].data() as RecordDoc) : null
+          if (!unchanged(id, cur)) return
+          const { table, id: recId } = splitDocId(id)
+          const tombstone: RecordDoc = {
+            table: table as CloudTable,
+            id: recId,
+            json: null,
+            chunks: 0,
+            deleted: true,
+            hash: '',
+            updated: serverTimestamp(),
+            device: deviceId,
+            reset: true,
+          }
+          tx.set(doc(col, id), tombstone)
+          for (const c of chunkDocs.get(id) ?? []) tx.delete(doc(col, chunkIdOf(id, c.index)))
+        })
+      })
+    }
+    // 月の束の文書（と分けた文書）は本当に消す（中の項目は、上の削除の印と、この端末の「必ず上書き」の送信待ちで書き直す）
+    const packOps = packDocs.flatMap((id) => [id, ...(chunkDocs.get(id) ?? []).map((c) => chunkIdOf(id, c.index))])
+    for (let i = 0; i < packOps.length; i += 400) {
+      const batch = writeBatch(fs)
+      for (const id of packOps.slice(i, i + 400)) batch.delete(doc(col, id))
       await batch.commit()
     }
     await target.clearPacks()
@@ -1262,39 +1427,74 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     }
     if (stopped) return
     cursor = (await target.getMeta<StoredCursor | null>('cursor')) ?? null
-    // 85日より前に受け取ったきり（その間にほかの端末で消され、削除の印も片付いた物があるかもしれない）: 全部を受け取り直す（6.11）
-    if (cursor && needsFullResync(cursor.s, clock())) {
+    // 85日より前に受け取ったきり（その間にほかの端末で消され、削除の印も片付いた物があるかもしれない）: 全部を受け取り直す（6.11）。
+    // 前に始めた受け取り直しが、端末の中の記録を片付ける前に止まっていた（アプリを閉じた・画面が受け持ちを譲った）時も、初めから
+    // 受け取り直す（片付けは、位置を消して全部を購読した最初の通知でだけ行う）
+    if (!(await startResyncIfDue()) && (await target.getMeta('resyncPending'))) {
       cursor = null
-      resyncing = true
       await target.setMeta('cursor', null)
+      resyncing = true
     }
     deferred = Boolean(await target.getMeta('authoritative'))
     restoreBound = (await target.getMeta<StoredCursor | null>('authoritativeFrom')) ?? null
     setStatus({ phase: 'downloading', error: null, errorCode: null })
     await refreshPending()
-    if (opts.appModel && !modelUnsub) {
-      modelUnsub = watchAppModel(fs, uid, opts.appModel, (s) => {
-        if (stopped) return
-        if (s.state === 'unknown') {
-          if (modelState === 'ok') {
-            modelState = 'unknown'
-            modelRecheck = true
-            modelReady = new Promise<void>((resolve) => (modelKnown = resolve))
-            setStatus({ phase: 'offline', error: OFFLINE_MESSAGE, errorCode: 'offline' })
-          }
-          return
-        }
-        const was = modelState
-        modelState = s.state
-        modelRecheck = false
-        modelKnown()
-        if (s.state === 'newer') setStatus({ outdated: s.cloud })
-        else if (status.outdated) setStatus({ outdated: null })
-        if (s.state === 'ok' && was !== 'ok') requestUpload(true)
-      })
-    }
+    watchModel()
     if (!deferred) subscribe()
     requestUpload(true)
+  }
+
+  let modelRetry: ReturnType<typeof setTimeout> | null = null
+  let modelRetryCount = 0
+  /** データの形の版の見張りの世代（見張り直したら、前の見張りの知らせは使わない） */
+  let modelGen = 0
+
+  /**
+   * データの形の版（meta/app）を見張る。見張りが誤りで止まった時（Firestore は誤りの後に見張りを閉じる。持ち主の記録を移す途中・
+   * 無料枠を使い切った時など）は、確かめていない扱いにして（送る時はトランザクションの中で meta/app を読む）、少し後で見張り直す
+   */
+  function watchModel(): void {
+    if (!opts.appModel || stopped || modelUnsub) return
+    const gen = ++modelGen
+    modelUnsub = watchAppModel(fs, uid, opts.appModel, (s) => {
+      if (stopped || gen !== modelGen) return
+      if (s.state === 'error') {
+        modelGen += 1
+        modelUnsub?.()
+        modelUnsub = null
+        modelState = 'unknown'
+        modelRecheck = true
+        // 待っている送信は、トランザクションの中で確かめて送る（オフラインの表示にはしない）
+        modelKnown()
+        requestUpload(true)
+        if (!modelRetry) {
+          const delay = RETRY_DELAYS_MS[Math.min(modelRetryCount, RETRY_DELAYS_MS.length - 1)]
+          modelRetryCount += 1
+          modelRetry = setTimeout(() => {
+            modelRetry = null
+            watchModel()
+          }, delay)
+        }
+        return
+      }
+      if (s.state === 'unknown') {
+        if (modelState === 'ok') {
+          modelState = 'unknown'
+          modelRecheck = true
+          modelReady = new Promise<void>((resolve) => (modelKnown = resolve))
+          setStatus({ phase: 'offline', error: OFFLINE_MESSAGE, errorCode: 'offline' })
+        }
+        return
+      }
+      modelRetryCount = 0
+      const was = modelState
+      modelState = s.state
+      modelRecheck = false
+      modelKnown()
+      if (s.state === 'newer') setStatus({ outdated: s.cloud })
+      else if (status.outdated) setStatus({ outdated: null })
+      if (s.state === 'ok' && was !== 'ok') requestUpload(true)
+    })
   }
 
   const onOnline = () => {
@@ -1303,7 +1503,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       void begin()
       return
     }
-    if (!unsub && !resubscribeTimer) subscribe()
+    if (!unsub && !resubscribeTimer) resubscribe()
     else reanchor()
     requestUpload(true)
   }
@@ -1407,7 +1607,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       modelUnsub?.()
       modelUnsub = null
       modelKnown()
-      for (const t of [uploadTimer, retryTimer, resubscribeTimer, beginRetry]) if (t) clearTimeout(t)
+      for (const t of [uploadTimer, retryTimer, resubscribeTimer, beginRetry, modelRetry]) if (t) clearTimeout(t)
       if (typeof window !== 'undefined') window.removeEventListener('online', onOnline)
     },
 
@@ -1420,6 +1620,8 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     reanchor,
 
     maintain,
+
+    serverNow: () => (clockSkew === null ? null : clock() - clockSkew),
 
     async idle() {
       for (;;) {

@@ -40,6 +40,13 @@ export interface OutboxRow {
    * クラウドの内容から base を書き直す時（送った返事・受け取った反映）は、この印の無い行に置き換わる
    */
   unconfirmed?: boolean
+  /**
+   * 返事を受け取れなかった送るトランザクションの id と、そのトランザクションで送った内容（unconfirmed の時だけ）。クラウドの「送る
+   * 書き込みの印」（users/{uid}/sync/{端末の ID}。src/sync/engine.ts）がこの id なら、その書き込みは届いていて、送った内容が新しい
+   * base になる（confirmLanded）。ほかの端末がその書き込みの後に書いた版を、古い base で 3者マージしないように（2.4）
+   */
+  tx?: string
+  sent?: AnyRecord | null
   at: number
   /**
    * 受け取り箱の依頼ごとのまとまり（依頼・提案の id。19.5）。同じまとまりは1つのトランザクションで、全部を書けるか、1つも書かない
@@ -81,6 +88,9 @@ export interface OutboxItem {
   force: boolean
   /** 送ったトランザクションの返事を受け取っていない（OutboxRow.unconfirmed） */
   unconfirmed?: boolean
+  /** 返事を受け取れなかったトランザクションの id と、その時に送った内容（OutboxRow.tx・sent） */
+  tx?: string
+  sent?: AnyRecord | null
   /** いまの端末内の内容（null = 削除した） */
   local: AnyRecord | null
   /** 受け取り箱の依頼ごとのまとまり（OutboxRow.g） */
@@ -290,8 +300,18 @@ export interface Persistence {
   readOutbox(limit: number): Promise<OutboxItem[]>
   /** 送った内容を記録する。送った後に端末内で変わっていなければ送信待ちから外す */
   completeUpload(sent: Change[]): Promise<void>
-  /** 送るトランザクションを始める前に、その送信待ちに「返事を受け取るまで、クラウドが base のままか分からない」と印を付ける */
-  markUnconfirmed(keys: string[]): Promise<void>
+  /**
+   * 送るトランザクションで書く送信待ちに、書き込みを送る前に「返事を受け取るまで、クラウドが base のままか分からない」と印を付ける。
+   * tx = そのトランザクションの id（クラウドの「送る書き込みの印」に書く値）、record = 送る内容
+   */
+  markUnconfirmed(rows: readonly SentRow[], tx: string): Promise<void>
+  /** 印の付いた送信待ちのうち、keys の物のトランザクションの id */
+  unconfirmedTx(keys: readonly string[]): Promise<Set<string>>
+  /**
+   * トランザクション tx の書き込みはクラウドに届いていた（クラウドの「送る書き込みの印」が tx だった）: tx の印の付いた送信待ちを、
+   * 送った返事を受け取った時（completeUpload）と同じにする（送った内容が新しい base。その後に端末で変わっていなければ送り終わり）
+   */
+  confirmLanded(tx: string): Promise<void>
   outboxCount(): Promise<number>
   /** 送信待ちのある記録のキー（`${表名}/${id}`） */
   outboxKeys(): Promise<Set<string>>
@@ -316,11 +336,22 @@ export interface Persistence {
   close(): void
 }
 
-/** 送信待ちの行を書き直す（g は残す。base を書き直す時は返事待ちの印を外す。6.10・19.5） */
+/** 送るトランザクションで書く送信待ち（markUnconfirmed）。key = `${表名}/${id}`、record = 送る内容 */
+export interface SentRow {
+  key: string
+  record: AnyRecord | null
+}
+
+/** 送信待ちの行を書き直す（g は残す。base を書き直す時は返事待ちの印（とその書き込みの id・送った内容）を外す。6.10・19.5） */
 function rewriteRow(row: OutboxRow, patch: Partial<OutboxRow>): OutboxRow {
   const next: OutboxRow = { ...row, ...patch }
-  if ('base' in patch && !('unconfirmed' in patch)) delete next.unconfirmed
-  for (const f of ['noHistory', 'force', 'unconfirmed', 'g'] as const) if (!next[f]) delete next[f]
+  if ('base' in patch && !('unconfirmed' in patch)) {
+    delete next.unconfirmed
+    delete next.tx
+    delete next.sent
+  }
+  for (const f of ['noHistory', 'force', 'unconfirmed', 'tx', 'g'] as const) if (!next[f]) delete next[f]
+  if (!next.tx) delete next.sent
   return next
 }
 
@@ -447,6 +478,7 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
           noHistory: Boolean(r.noHistory),
           force: Boolean(r.force),
           ...(r.unconfirmed ? { unconfirmed: true } : {}),
+          ...(r.tx ? { tx: r.tx, sent: r.sent ?? null } : {}),
           local: locals[i] ?? null,
           ...(r.g ? { group: r.g } : {}),
         }),
@@ -630,6 +662,28 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
     if (gone.length) await db.gone.bulkPut(gone)
     if (unpacked.length) await db.packs.bulkDelete(unpacked)
     if (packs.length) await db.packs.bulkPut(packs)
+  }
+
+  /**
+   * 送った内容を記録する（completeUpload・confirmLanded）。送った後にこの端末で変わっていなければ送り終わり。変わっていれば、送った内容を
+   * 新しい base にして残す。onlyTx = その id のトランザクションの印の付いた行だけ（トランザクションの中で読み直して確かめる）
+   */
+  async function completeSent(sent: readonly Change[], onlyTx?: string): Promise<void> {
+    if (!sent.length) return
+    const tables = [...new Set(sent.map((s) => s.table))].filter((t) => KNOWN_TABLES.has(t))
+    await db.transaction('rw', [...tables.map((t) => db.tableOf(t)), db.outbox, db.gone], async () => {
+      for (const s of sent) {
+        if (!KNOWN_TABLES.has(s.table)) continue
+        const k = outboxKey(s.table, s.id)
+        const row = await db.outbox.get(k)
+        if (onlyTx !== undefined && row?.tx !== onlyTx) continue
+        if (!s.record && isGoneKind(s.table, s.id)) await db.gone.put({ k, at: Date.now() })
+        if (!row) continue
+        const disk = (await db.tableOf(s.table).get(s.id)) ?? null
+        if (deepEqual(disk, s.record)) await db.outbox.delete(k)
+        else await db.outbox.put(rewriteRow(row, { base: s.record, noHistory: undefined, force: undefined }))
+      }
+    })
   }
 
   return {
@@ -892,33 +946,35 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
       })
     },
 
-    async completeUpload(sent) {
+    completeUpload(sent) {
+      return completeSent(sent)
+    },
+
+    async markUnconfirmed(sent, tx) {
       if (!sent.length) return
-      const tables = [...new Set(sent.map((s) => s.table))].filter((t) => KNOWN_TABLES.has(t))
-      await db.transaction('rw', [...tables.map((t) => db.tableOf(t)), db.outbox, db.gone], async () => {
-        for (const s of sent) {
-          if (!KNOWN_TABLES.has(s.table)) continue
-          const k = outboxKey(s.table, s.id)
-          const row = await db.outbox.get(k)
-          if (!s.record && isGoneKind(s.table, s.id)) await db.gone.put({ k, at: Date.now() })
-          if (!row) continue
-          const disk = (await db.tableOf(s.table).get(s.id)) ?? null
-          // 送った後にこの端末で変わっていなければ送り終わり。変わっていれば、送った内容を新しい base にして残す
-          if (deepEqual(disk, s.record)) await db.outbox.delete(k)
-          else await db.outbox.put(rewriteRow(row, { base: s.record, noHistory: undefined, force: undefined }))
-        }
+      await db.transaction('rw', db.outbox, async () => {
+        const rows = await db.outbox.bulkGet(sent.map((s) => s.key))
+        const marked: OutboxRow[] = []
+        rows.forEach((r, i) => {
+          if (r) marked.push(rewriteRow(r, { unconfirmed: true, tx, sent: sent[i].record }))
+        })
+        if (marked.length) await db.outbox.bulkPut(marked)
       })
     },
 
-    async markUnconfirmed(keys) {
-      if (!keys.length) return
-      await db.transaction('rw', db.outbox, async () => {
-        const rows = await db.outbox.bulkGet(keys)
-        const marked = rows
-          .filter((r): r is OutboxRow => Boolean(r) && !r!.unconfirmed)
-          .map((r) => rewriteRow(r, { unconfirmed: true }))
-        if (marked.length) await db.outbox.bulkPut(marked)
-      })
+    async unconfirmedTx(keys) {
+      const out = new Set<string>()
+      if (!keys.length) return out
+      for (const r of await db.outbox.bulkGet([...keys])) if (r?.unconfirmed && r.tx) out.add(r.tx)
+      return out
+    },
+
+    async confirmLanded(tx) {
+      const rows = await db.outbox.filter((r) => r.tx === tx).toArray()
+      const sent = rows
+        .filter((r) => KNOWN_TABLES.has(r.t))
+        .map((r): Change => ({ table: r.t, id: r.id, record: r.sent ?? null }))
+      if (sent.length) await completeSent(sent, tx)
     },
 
     outboxCount() {
@@ -944,6 +1000,8 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
           r.noHistory = true
           r.force = false
           delete r.unconfirmed
+          delete r.tx
+          delete r.sent
         })
         for (const t of TABLE_NAMES) {
           const ids = await db.tableOf(t).toCollection().primaryKeys()

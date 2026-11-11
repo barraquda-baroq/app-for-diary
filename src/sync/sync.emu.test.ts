@@ -8,7 +8,9 @@ import { GoogleAuthProvider, connectAuthEmulator, getAuth, signInWithCredential 
 import {
   collection,
   connectFirestoreEmulator,
+  disableNetwork,
   doc,
+  enableNetwork,
   getDoc,
   getDocs,
   initializeFirestore,
@@ -17,12 +19,13 @@ import {
   setDoc,
   terminate,
   type Firestore,
+  type Timestamp,
 } from 'firebase/firestore'
 import emuRules from '../../firestore.emu.rules?raw'
 import prodRules from '../../firestore.rules?raw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPersistence, type ConflictNote, type Persistence, type ReplaceOptions } from '../db/persistence'
-import { adminCreateOwner, EMU_PROJECT, emulatorRequest, useRules } from '../test/emulatorAdmin'
+import { adminCreateOwner, adminDeleteOwner, EMU_PROJECT, emulatorRequest, useRules } from '../test/emulatorAdmin'
 import { mimTrashIds, parseBackup, restoreData, backupJson, type RestoreKeep } from '../domain/backup'
 import { todayStr } from '../domain/dates'
 import { derivedItemId } from '../domain/derivedId'
@@ -53,6 +56,8 @@ const listen = vi.hoisted(() => ({
   offline: new Set<unknown>(),
   /** 記録の購読の通知を捨てる Firestore（ほかの端末の書き込みを受け取る前に送った時の再現） */
   deaf: new Set<unknown>(),
+  /** 次のトランザクション・まとめた書き込みの前に1回だけ動かす（読んだ後・書く前に、ほかの端末が書いた時の再現） */
+  beforeWrite: new Map<unknown, () => Promise<void>>(),
 }))
 vi.mock('firebase/firestore', async (importOriginal) => {
   const m = await importOriginal<typeof import('firebase/firestore')>()
@@ -72,7 +77,23 @@ vi.mock('firebase/firestore', async (importOriginal) => {
     }
     return (m.onSnapshot as unknown as (...a: unknown[]) => () => void)(ref, ...rest)
   }
+  const beforeWrite = async (fs: unknown) => {
+    const hook = listen.beforeWrite.get(fs)
+    if (!hook) return
+    listen.beforeWrite.delete(fs)
+    await hook()
+  }
+  const writeBatch = ((fs: unknown) => {
+    const batch = (m.writeBatch as unknown as (f: unknown) => { commit: () => Promise<void> })(fs)
+    const commit = batch.commit.bind(batch)
+    batch.commit = async () => {
+      await beforeWrite(fs)
+      return commit()
+    }
+    return batch
+  }) as unknown as typeof m.writeBatch
   const runTransaction = (async (fs: unknown, ...rest: unknown[]) => {
+    await beforeWrite(fs)
     if (listen.offline.has(fs))
       throw Object.assign(new Error('通信できません（テスト）'), { name: 'FirebaseError', code: 'unavailable' })
     const r = await (m.runTransaction as unknown as (...a: unknown[]) => Promise<unknown>)(fs, ...rest)
@@ -80,7 +101,7 @@ vi.mock('firebase/firestore', async (importOriginal) => {
       throw Object.assign(new Error('返事を受け取れませんでした（テスト）'), { name: 'FirebaseError', code: 'unavailable' })
     return r
   }) as unknown as typeof m.runTransaction
-  return { ...m, onSnapshot, runTransaction }
+  return { ...m, onSnapshot, runTransaction, writeBatch }
 })
 
 const PROJECT = EMU_PROJECT
@@ -114,6 +135,7 @@ afterEach(async () => {
   listen.loseReply.clear()
   listen.offline.clear()
   listen.deaf.clear()
+  listen.beforeWrite.clear()
   for (const d of devices.splice(0)) {
     d.offline()
     d.p.close()
@@ -136,7 +158,15 @@ function keepOptions(keep?: RestoreKeep): ReplaceOptions {
 async function makeDevice(
   name: string,
   account: string,
-  opts: { chunkSize?: number; batchChars?: number; ownerLock?: boolean; appModel?: AppModel; now?: () => number } = {},
+  opts: {
+    chunkSize?: number
+    batchChars?: number
+    ownerLock?: boolean
+    appModel?: AppModel
+    now?: () => number
+    /** 端末の中の保存先の名前（同じ名前で作ると、アプリを開き直した端末になる） */
+    dbName?: string
+  } = {},
 ): Promise<Device> {
   const app = initializeApp({ projectId: PROJECT, apiKey: 'fake-api-key', authDomain: 'localhost' }, `${name}-${++seq}`)
   const auth = getAuth(app)
@@ -148,7 +178,7 @@ async function makeDevice(
   const fs = initializeFirestore(app, { localCache: memoryLocalCache() })
   connectFirestoreEmulator(fs, '127.0.0.1', 8080)
   apps.push({ app, fs })
-  const p = createPersistence(`emu-${name}-${seq}-${Math.random().toString(36).slice(2)}`)
+  const p = createPersistence(opts.dbName ?? `emu-${name}-${seq}-${Math.random().toString(36).slice(2)}`)
   const notes: ConflictNote[] = []
   const hooksFor = async () => {
     const before = repairData(await p.load()).data
@@ -157,7 +187,9 @@ async function makeDevice(
   const target: SyncTarget = {
     readOutbox: (n) => p.readOutbox(n),
     completeUpload: (s) => p.completeUpload(s),
-    markUnconfirmed: (keys) => p.markUnconfirmed(keys),
+    markUnconfirmed: (rows, tx) => p.markUnconfirmed(rows, tx),
+    unconfirmedTx: (keys) => p.unconfirmedTx(keys),
+    confirmLanded: (tx) => p.confirmLanded(tx),
     applyRemote: async (changes, cursor, o) => p.applyRemote(changes, { cursor, ...(await hooksFor()), ...o }),
     outboxCount: () => p.outboxCount(),
     outboxKeys: () => p.outboxKeys(),
@@ -330,7 +362,8 @@ function oldItem(id: string, title: string, p: Partial<Item> = {}): Item {
 
 /** 受け取り箱の1件（コネクタが作った時の形） */
 function inboxRec(p: Partial<InboxRecord> & Pick<InboxRecord, 'id' | 'op' | 'table' | 'targetId'>): InboxRecord {
-  const at = Date.now()
+  // 作った時刻と直した時刻は同じ値（createdAt だけを渡した時も。待っている依頼は updatedAt = createdAt の形だけ）
+  const at = p.createdAt ?? Date.now()
   return {
     v: 1,
     proposeOp: null,
@@ -344,7 +377,6 @@ function inboxRec(p: Partial<InboxRecord> & Pick<InboxRecord, 'id' | 'op' | 'tab
     ai: 'claude',
     via: null,
     createdAt: at,
-    updatedAt: at,
     status: 'pending',
     reason: null,
     message: null,
@@ -355,6 +387,7 @@ function inboxRec(p: Partial<InboxRecord> & Pick<InboxRecord, 'id' | 'op' | 'tab
     undo: null,
     undoneAt: null,
     ...p,
+    updatedAt: p.updatedAt ?? at,
   }
 }
 
@@ -586,6 +619,42 @@ describe('同期（エミュレーター）', () => {
     expect((await b.load()).favorites[id]).toBeUndefined()
   })
 
+  it('返事を受け取れなかった書き込みの上にほかの端末が書いた版は、送った内容を base にして合わせる（送る書き込みの印）', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await b.online()
+    let id = ''
+    await a.edit((d) => {
+      const r = addItem(d, { title: '元の題名' })
+      id = r.id
+      return r.data
+    })
+    await settle(a, b)
+    // A の書き込みはクラウドに届くが返事が無く、A は自分の書き込みの通知も受け取らないまま閉じる
+    listen.loseReply.add(a.fs)
+    listen.deaf.add(a.fs)
+    await a.edit((d) => O.updateItem(d, id, { title: 'Aの題名', memo: 'Aが書いた' }).data)
+    await waitFor(async () => (await b.load()).items[id]?.title === 'Aの題名', 'A の書き込みが B に届く')
+    await waitFor(async () => (await a.p.readOutbox(5))[0]?.unconfirmed, 'A は返事を受け取っていない')
+    a.offline()
+    // B は A の版の上で、題名を戻し、メモに足した
+    await b.edit((d) => O.updateItem(d, id, { title: '元の題名', memo: 'Aが書いた\nBが足した' }).data)
+    await settle(b)
+    // A は閉じている間にも直した（送信待ちが残る）。開き直すと、印で A の書き込みが届いていたと分かる
+    await a.edit((d) => O.updateItem(d, id, { requester: 'A社' }).data)
+    listen.deaf.delete(a.fs)
+    await a.online()
+    await settle(a, b)
+    const got = (await b.load()).items[id]
+    expect(got.title).toBe('元の題名')
+    expect(got.memo).toBe('Aが書いた\nBが足した')
+    expect(got.requester).toBe('A社')
+    expect(a.notes).toEqual([])
+    expect((await getDoc(doc(a.fs, 'users', a.uid, 'sync', 'a'))).data()?.tx).toEqual(expect.any(String))
+  })
+
   it('バックアップからの復元は、ほかの端末にも当たる（この端末が受け取っていない記録も消える）', async () => {
     const who = account()
     const a = await makeDevice('a', who)
@@ -686,14 +755,16 @@ describe('DS の表の同期（エミュレーター）', () => {
     await a.online()
     await b.online()
     let routineId = ''
+    // 暦の日付は1回だけ読む（送って揃うまでの間に日付が変わっても落ちないように）
+    const day = today()
     await a.edit((d) => {
-      let data = addItem(d, { title: '会議', startTime: '10:00', endTime: '11:00' }).data
-      data = O.addItem(data, { origin: 'list', title: 'タスク', due: today() }).data
+      let data = addItem(d, { title: '会議', startTime: '10:00', endTime: '11:00', start: day }).data
+      data = O.addItem(data, { origin: 'list', title: 'タスク', due: day }).data
       data = O.setOffDay(data, '2026-11-23', true)
       data = O.setLabelName(data, 'sky-l', '会議')
       const r = O.addRoutine(data, { title: '朝の体操', cycle: 'daily' })
       routineId = r.result
-      data = O.checkRoutine(r.data, routineId, today())
+      data = O.checkRoutine(r.data, routineId, day)
       data = O.addFavorite(data, '本を読む').data
       return O.addMimNote(data, { title: 'メモ', body: '本文' }).data
     })
@@ -706,7 +777,7 @@ describe('DS の表の同期（エミュレーター）', () => {
     ).toEqual(['タスク', '会議'])
     expect(d.offDays['2026-11-23'].off).toBe(true)
     expect(d.labelNames['sky-l'].name).toBe('会議')
-    expect(Object.values(d.routineChecks).flatMap((c) => c.dates)).toEqual([today()])
+    expect(Object.values(d.routineChecks).flatMap((c) => c.dates)).toEqual([day])
     expect(Object.values(d.favorites).map((f) => f.text)).toEqual(['本を読む'])
     expect(Object.values(d.mimNotes).map((m) => m.title)).toEqual(['メモ'])
     // 休みを外すのも届く（記録は消さない）
@@ -931,6 +1002,15 @@ describe('持ち主とアクセスルール（エミュレーター。形1）', 
       await expect(own('mimNotes:m#0', chunk('mimNotes:m', 'mimNotes', 1))).rejects.toThrow()
       await expect(own('mimNotes:m#0', chunk('mimNotes:m', 'mimNotes', 0))).resolves.toBeUndefined()
       await expect(own('itemPack:2025-03#0', chunk('itemPack:2025-03', 'itemPack', 0))).resolves.toBeUndefined()
+      // 送る書き込みの印は持ち主だけが書け、形は { tx } だけ
+      const mark = (fs: Firestore, uid: string, data: object) => setDoc(doc(fs, 'users', uid, 'sync', 'dev-1'), data)
+      expect((await getDoc(doc(owner.fs, 'users', owner.uid, 'sync', 'owner'))).data()?.tx).toEqual(expect.any(String))
+      await expect(mark(owner.fs, owner.uid, { tx: 't-1' })).resolves.toBeUndefined()
+      await expect(mark(owner.fs, owner.uid, { tx: 't-1', junk: 1 })).rejects.toThrow()
+      await expect(mark(owner.fs, owner.uid, { tx: 1 })).rejects.toThrow()
+      await expect(mark(owner.fs, owner.uid, { tx: 'x'.repeat(65) })).rejects.toThrow()
+      await expect(mark(stranger.fs, stranger.uid, { tx: 't-1' })).rejects.toThrow()
+      await expect(getDoc(doc(stranger.fs, 'users', owner.uid, 'sync', 'dev-1'))).rejects.toThrow()
       // 持ち主の記録はアプリから書き換えられない
       await expect(setDoc(doc(owner.fs, 'config', 'owner'), { uid: owner.uid, createdAt: serverTimestamp() })).rejects.toThrow()
       // config/connector は持ち主が読める（無ければ連携していない）・作れない
@@ -1007,6 +1087,47 @@ describe('データの形の版（エミュレーター）', () => {
     await waitFor(async () => (await getDoc(ref)).data()?.model === 1, '形の版が書き直される')
     await waitFor(async () => (await cloud(a, `favorites:${aId}`))?.deleted === false, '残していた変更が送られる')
     await settle(a, b)
+  })
+
+  it('形の版の見張りが誤りで止まっても（持ち主の記録を移す途中など）、見張り直して、後で上がった版に気付く（本番のアクセスルール）', async () => {
+    await useRules(prodRules)
+    await emulatorRequest('DELETE', `/emulator/v1/projects/${PROJECT}/databases/(default)/documents`)
+    try {
+      const a = await makeDevice('a', account(), { ownerLock: true, appModel: APP })
+      await adminCreateOwner(a.uid)
+      await a.online()
+      const ref = appModelRef(a.fs, a.uid)
+      await waitFor(async () => (await getDoc(ref)).data()?.model === 1, '形の版が記録される')
+      await settle(a)
+      // 持ち主の記録が無い間につなぎ直した: 見張りはどれも permission-denied で止まる
+      await adminDeleteOwner()
+      await disableNetwork(a.fs)
+      await enableNetwork(a.fs)
+      await waitFor(async () => a.engine?.status.errorCode === 'permission-denied', '読めなくなる')
+      // 記録が戻った後に、新しい版のアプリが形の版を上げた
+      await adminCreateOwner(a.uid)
+      await waitFor(async () => a.engine?.status.phase === 'synced', '受け取りが戻る', 30_000)
+      await emulatorRequest('PATCH', `/v1/projects/${PROJECT}/databases/(default)/documents/users/${a.uid}/meta/app`, {
+        fields: {
+          model: { integerValue: '2' },
+          appVersion: { stringValue: '0.2' },
+          updatedAt: { timestampValue: new Date().toISOString() },
+        },
+      })
+      await waitFor(async () => a.engine?.status.outdated?.model === 2, '古い版の端末が気付く', 30_000)
+      let aId = ''
+      await a.edit((d) => {
+        const r = O.addFavorite(d, '古い版で足した')
+        aId = r.result
+        return r.data
+      })
+      await new Promise((r) => setTimeout(r, 1500))
+      await a.engine?.idle()
+      expect(await cloud(a, `favorites:${aId}`)).toBeUndefined()
+      expect(await a.p.outboxCount()).toBeGreaterThan(0)
+    } finally {
+      await useRules(emuRules)
+    }
   })
 })
 
@@ -1159,6 +1280,82 @@ describe('月の束（エミュレーター。6.11）', () => {
     expect(Object.keys((await bb.load()).trashEntries)).toEqual([])
   })
 
+  /**
+   * A で予定を足して消し、削除の印を片付ける（100日後の手入れ）。消した予定と、手入れをした時刻を返す。
+   * beforeDelete = 足した予定が届いた後・消す前にすること
+   */
+  async function purgedItem(a: Device, beforeDelete?: () => Promise<void>): Promise<{ item: Item; later: number }> {
+    let id = ''
+    await a.edit((d) => {
+      const r = addItem(d, { title: '消す予定' })
+      id = r.id
+      return r.data
+    })
+    await settle(a)
+    await beforeDelete?.()
+    const item = (await a.load()).items[id]
+    await a.edit((d) => {
+      const { [id]: _x, ...items } = d.items
+      void _x
+      return { ...d, items }
+    })
+    await settle(a)
+    const later = Date.now() + 100 * DAY_MS
+    expect((await a.engine!.maintain(later)).purged).toBeGreaterThanOrEqual(1)
+    expect(await cloud(a, `items:${id}`)).toBeUndefined()
+    return { item, later }
+  }
+
+  it('全部を受け取り直す前にアプリを閉じても、次に開いた時に受け取り直し、片付いた印の記録を消す', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    await a.online()
+    const { item, later } = await purgedItem(a)
+    // B は 85日より前に受け取ったきりで、まだ記録を持っている（送信待ちは無い）
+    const dbName = `emu-b-reopen-${Math.random().toString(36).slice(2)}`
+    const b1 = await makeDevice('b', who, { now: () => later, dbName })
+    await b1.p.setMeta('uid', a.uid)
+    await b1.p.setMeta('syncSchema', SYNC_SCHEMA)
+    await b1.p.setMeta('cursor', { s: Math.floor(Date.now() / 1000) - 10, n: 0 })
+    await b1.p.save(await b1.load(), putItem(await b1.load(), item))
+    await b1.p.completeUpload([{ table: 'items', id: item.id, record: (await b1.load()).items[item.id] }])
+    expect(await b1.p.outboxCount()).toBe(0)
+    // 開いてすぐ、最初の通知を受け取る前に閉じた
+    listen.deaf.add(b1.fs)
+    await b1.online()
+    b1.offline()
+    expect(await b1.p.getMeta('cursor')).toBeNull()
+    b1.p.close()
+    // 開き直す（同じ端末の中の保存先）
+    const b2 = await makeDevice('b2', who, { now: () => later, dbName })
+    await b2.online()
+    await waitFor(async () => !(await b2.load()).items[item.id], '片付いた印の記録が消える')
+    expect(await b2.p.getMeta('resyncPending')).toBeNull()
+    expect(await b2.p.outboxCount()).toBe(0)
+  })
+
+  it('長く眠っていた画面も、購読し直す時に 85日より前の位置なら全部を受け取り直す', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    let clock = Date.now()
+    const b = await makeDevice('b', who, { now: () => clock })
+    await a.online()
+    await b.online()
+    await settle(a, b)
+    // B は予定を受け取った後、画面が眠っていて、A で消して印が片付いたのを受け取らない
+    const { item, later } = await purgedItem(a, async () => {
+      await settle(a, b)
+      listen.deaf.add(b.fs)
+    })
+    expect((await b.load()).items[item.id]).toBeDefined()
+    // 100日後に目を覚まし、購読し直す
+    clock = later
+    listen.deaf.delete(b.fs)
+    b.engine!.reanchor()
+    await waitFor(async () => !(await b.load()).items[item.id], '片付いた印の記録が消える')
+    expect(await b.p.getMeta('resyncPending')).toBeNull()
+  })
+
   it('時計が進んでいる端末が手入れをしても、新しい削除の印は片付けない（境はサーバーの時刻）', async () => {
     const who = account()
     const a = await makeDevice('a', who, { now: () => Date.now() + 100 * DAY_MS })
@@ -1179,7 +1376,9 @@ describe('月の束（エミュレーター。6.11）', () => {
     })
     await settle(a, b)
     expect((await cloud(a, `items:${id}`))?.deleted).toBe(true)
-    // A の時計は 100日進んでいる（端末の時計だけで決めると、今日の削除の印が 90日より前に見える）
+    // A の時計は 100日進んでいる（端末の時計だけで決めると、今日の削除の印が 90日より前に見える）。サーバーの時刻の見積もりは
+    // 本当の時刻より後にならない（ゴミ箱の期限切れも、この見積もりで決める。6.15）
+    expect(a.engine!.serverNow()!).toBeLessThanOrEqual(Date.now())
     const r = await a.engine!.maintain()
     expect(r.purged).toBe(0)
     expect((await cloud(a, `items:${id}`))?.deleted).toBe(true)
@@ -1200,6 +1399,128 @@ describe('月の束（エミュレーター。6.11）', () => {
     expect(await cloud(a, 'itemPack:2025-03')).toBeUndefined()
     expect((await cloud(a, 'items:old-1'))?.deleted).toBe(true)
     expect((await cloud(a, 'items:old-2'))?.deleted).toBe(false)
+  })
+
+  it('復元を始めた後にほかの端末が書き直した束も開いて消す（消した項目が、次に束を書き直した時に戻らない）', async () => {
+    const { a, b } = await packed()
+    await waitFor(async () => (await b.p.packsOf()).size === 3, 'B が束を覚える')
+    await settle(a, b)
+    // A が old-1 の無いバックアップを読み込む。どこまでのクラウドに当てるか（境）は先に決まっていた（前の回の復元の送信が途中で止まった）
+    a.offline()
+    const pack = (await cloud(b, 'itemPack:2025-03')) as RecordDoc
+    const at = pack.updated as Timestamp
+    const d = await a.load()
+    const { ['old-1']: _x, ...items } = d.items
+    void _x
+    await a.restore({ ...d, items })
+    await a.p.setMeta('authoritativeFrom', { s: at.seconds, n: at.nanoseconds })
+    // その間に B が old-2 を直した（束を境より後に書き直す）
+    await b.edit((x) => O.updateItem(x, 'old-2', { memo: 'Bで直した' }).data)
+    await settle(b)
+    await a.online()
+    await settle(a, b)
+    expect(await cloud(a, 'itemPack:2025-03')).toBeUndefined()
+    // 次の B の手入れで old-3 がまた束に入っても、old-1 は戻らない
+    expect((await b.engine!.maintain()).packed).toEqual({ '2025-03': 1 })
+    await waitFor(async () => (await a.p.packsOf()).get('old-3') === '2025-03', 'A が新しい束を受け取る')
+    await settle(a, b)
+    for (const dev of [a, b]) {
+      const x = await dev.load()
+      expect(x.items['old-1']).toBeUndefined()
+      expect(x.items['old-2'].memo).toBe('Bで直した')
+      expect(x.items['old-3']).toBeDefined()
+    }
+  })
+
+  it('この端末が書き直した束の中の、ほかの端末が直した項目も 3者マージする（own として扱わない）', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await a.edit((d) => [oldItem('Y', 'y'), oldItem('Z', 'z')].reduce(putItem, d))
+    await settle(a)
+    await b.online()
+    await settle(a, b)
+    expect((await a.engine!.maintain()).packed).toEqual({ '2025-03': 2 })
+    await waitFor(async () => (await b.p.packsOf()).size === 2, 'B が束を覚える')
+    await settle(a, b)
+    // A はオフラインの間に、束の中の Y と Z を直した
+    a.offline()
+    await a.edit((d) => O.updateItem(O.updateItem(d, 'Y', { memo: 'Aのy' }).data, 'Z', { title: 'Aのz' }).data)
+    // B は Z を直し（束から抜ける）、後の手入れで B の Z がまた束に入った
+    await b.edit((d) => O.updateItem(d, 'Z', { memo: 'Bのz' }).data)
+    await settle(b)
+    expect((await b.engine!.maintain(Date.now() + 100 * DAY_MS)).packed).toEqual({ '2025-03': 1 })
+    await settle(b)
+    // A は B の束を受け取る前に送る: Y を束から抜いて束を書き直す（中に B の Z が入ったまま、書いた端末は A）
+    listen.deaf.add(a.fs)
+    await a.online()
+    await waitFor(async () => ((await cloud(a, 'itemPack:2025-03')) as RecordDoc | undefined)?.device === 'a', 'A が束を書き直す')
+    listen.deaf.delete(a.fs)
+    await b.edit((d) => O.addFavorite(d, '通知を起こす').data)
+    await settle(a, b)
+    for (const dev of [a, b]) {
+      const z = (await dev.load()).items['Z']
+      expect(z.title).toBe('Aのz')
+      expect(z.memo).toBe('Bのz')
+      expect((await dev.load()).items['Y'].memo).toBe('Aのy')
+    }
+  })
+
+  it('復元の削除の印は、読んだ後にほかの端末が書いた記録には書かない（その記録は消さずに残す）', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await b.online()
+    await settle(a, b)
+    // A が受け取っていない記録 R（A がオフラインの間に B が足した）
+    a.offline()
+    let rId = ''
+    await b.edit((d) => {
+      const r = O.addFavorite(d, 'Bで足した')
+      rId = r.result
+      return r.data
+    })
+    await settle(b)
+    await a.restore(await a.load())
+    // A がクラウドを読んだ後・削除の印を書く前に、B が R を直した
+    listen.beforeWrite.set(a.fs, async () => {
+      await b.edit((d) => O.updateFavorite(d, rId, { text: 'Bで直した' }))
+      await settle(b)
+    })
+    await a.online()
+    await settle(a, b)
+    for (const dev of [a, b]) expect((await dev.load()).favorites[rId]?.text).toBe('Bで直した')
+    expect(Object.keys((await b.load()).trashEntries)).toEqual([])
+  })
+
+  it('復元は、この版の知らない表（後の版が足した表）の文書を消さない', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    await a.online()
+    await a.edit((d) => addItem(d, { title: '残す予定' }).data)
+    await settle(a)
+    // 後の版のアプリが足した表の文書（このテストでは管理者の権限で置く）
+    const path = `/v1/projects/${PROJECT}/databases/(default)/documents/users/${a.uid}/records/attachments:a1`
+    await emulatorRequest('PATCH', path, {
+      fields: {
+        table: { stringValue: 'attachments' },
+        id: { stringValue: 'a1' },
+        json: { stringValue: '{"id":"a1"}' },
+        chunks: { integerValue: '0' },
+        deleted: { booleanValue: false },
+        hash: { stringValue: 'x' },
+        updated: { timestampValue: new Date().toISOString() },
+        device: { stringValue: 'newer-app' },
+      },
+    })
+    await a.restore(await a.load())
+    await settle(a)
+    await waitFor(async () => !(await a.p.getMeta('authoritative')), '復元をクラウドに当て終わる')
+    const got = (await emulatorRequest('GET', path)) as { fields: { deleted: { booleanValue: boolean } } }
+    expect(got.fields.deleted.booleanValue).toBe(false)
+    expect(a.engine?.status.phase).toBe('synced')
   })
 })
 

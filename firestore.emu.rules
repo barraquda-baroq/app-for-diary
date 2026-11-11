@@ -82,6 +82,17 @@ service cloud.firestore {
         && request.resource.data.model >= resource.data.model;
     }
 
+    // 送る書き込みの印（src/sync/engine.ts の SENT_MARKS）: 端末ごとに、その端末の記録を書く送るトランザクションが書く、そのトランザクションの id。
+    // 返事を受け取れなかった書き込みが届いたかを、次の送信・受信で確かめる（2.4）。持ち主だけが読み書きでき、形は { tx } だけ
+    match /users/{uid}/sync/{deviceId} {
+      allow get: if isSelf(uid);
+      allow create, update: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(['tx'])
+        && request.resource.data.tx is string
+        && request.resource.data.tx.size() >= 1 && request.resource.data.tx.size() <= 64
+        && deviceId.size() <= 64;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

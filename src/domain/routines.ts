@@ -12,8 +12,9 @@ import {
   toYmd,
   weekdayOfYmd,
 } from './dates'
+import { stableStringify } from './equal'
 import { LIMITS, ROUTINE_CYCLES, type AppData, type ID, type Routine, type RoutineCheck, type RoutineCycle } from './types'
-import { charCount } from './util'
+import { charCount, compareStr } from './util'
 
 type Spec = Pick<Routine, 'cycle' | 'weekdays' | 'monthDay' | 'yearMonth' | 'yearDay'>
 
@@ -136,9 +137,49 @@ export function nextResetDay(r: Spec, today: string): string {
   }
 }
 
-/** チェックした日の並べ直し（正しい日付だけ・小さい順・重なりなし） */
+/** チェックした日の並べ直し（正しい日付だけ・小さい順・重なりなし。表示と計算に使う） */
 export function normalizeDates(dates: readonly unknown[]): string[] {
   return [...new Set(dates.filter((d): d is string => isYmd(d)))].sort()
+}
+
+/**
+ * 知っている形の値は小さい順・重なりなしに、知らない値は元の順のまま（重なりは除く）後ろに（形3: 新しい版が足した値を捨てない）。
+ * src/sync/merge.ts の NORMALIZE（routines.weekdays・routineChecks.dates）も使う
+ */
+export function normalizeKeeping<T>(
+  v: readonly unknown[],
+  known: (x: unknown) => x is T,
+  compare: (a: T, b: T) => number,
+): unknown[] {
+  const ok = new Map<string, T>()
+  const other = new Map<string, unknown>()
+  for (const x of v) {
+    const k = stableStringify(x)
+    if (known(x)) ok.set(k, x)
+    else if (!other.has(k)) other.set(k, x)
+  }
+  return [...[...ok.values()].sort(compare), ...other.values()]
+}
+
+/** 保存する記録のチェックした日の並べ直し（形3）: 正しい日付は小さい順・重なりなし、YYYY-MM-DD でない値は捨てずに後ろに */
+export function normalizeDatesKeeping(dates: readonly unknown[]): unknown[] {
+  return normalizeKeeping(dates, isYmd, compareStr)
+}
+
+/**
+ * 直した後のチェックした日（next）に、今の記録の知らない値（YYYY-MM-DD でない値）を、元の順のまま重ねずに後ろに残す（形3）。
+ * next が小さい順・重なりなしの正しい日付なら、normalizeDatesKeeping と同じ並びになる（next は並べ直さない）
+ */
+export function keepUnknownDates(next: readonly unknown[], current: unknown): unknown[] {
+  const out = [...next]
+  const seen = new Set(out.map((d) => stableStringify(d)))
+  for (const d of Array.isArray(current) ? current : []) {
+    const k = stableStringify(d)
+    if (isYmd(d) || seen.has(k)) continue
+    seen.add(k)
+    out.push(d)
+  }
+  return out
 }
 
 /** そのルーチンのチェックの記録（月ごと） */

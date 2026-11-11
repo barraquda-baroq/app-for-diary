@@ -212,6 +212,30 @@ describe('戻す', () => {
     expect(back.routines.a).toBe(moved.routines.a)
   })
 
+  it('ルーチンを戻す時、同じ月のチェックの記録がもうあれば日を合わせ、YYYY-MM-DD でない値も捨てずに後ろに残す（形3）', () => {
+    const data = dataWith({
+      routines: [mkRoutine()],
+      routineChecks: [mkCheck('r1', '2026-11', ['2026-11-10', 'later-a', '2026-11-03', 'later-b'])],
+    })
+    const trashed = trashRoutine(data, 'r1')
+    // ゴミ箱にある間に、別の端末から同じ月の記録が届いた（新しい版の形かもしれない値を含む）
+    const arrived: AppData = {
+      ...trashed.data,
+      routineChecks: {
+        'r1:2026-11': mkCheck('r1', '2026-11', ['2026-11-05', 'later-b', '2026-11-03', { at: 1 }] as string[]),
+      },
+    }
+    const back = restoreTrashEntry(arrived, trashed.result).data
+    expect(back.routineChecks['r1:2026-11'].dates).toEqual([
+      '2026-11-03',
+      '2026-11-05',
+      '2026-11-10',
+      'later-b',
+      { at: 1 },
+      'later-a',
+    ])
+  })
+
   it('先頭にあった物は先頭へ戻る（やりたいこと）', () => {
     const data = dataWith({ favorites: [mkFavorite({ id: 'a', order: -1 }), mkFavorite({ id: 'b', order: 0 })] })
     const trashed = trashFavorite(data, 'a')

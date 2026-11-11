@@ -15,7 +15,7 @@ import { hashJson, revOf } from './hash'
 import { itemProblems } from './items'
 import { itemDateFixes } from './repair'
 import { isLabelKey, labelKeyOf } from './labels'
-import { checkDatesProblem, isRoutineCycle, routineProblems } from './routines'
+import { checkDatesProblem, isRoutineCycle, keepUnknownDates, routineProblems } from './routines'
 import { inboxTrashIds, isInTrash, restoreTrashEntry, trashRecord } from './trash'
 import { transact } from './tx'
 import {
@@ -507,11 +507,16 @@ function resolvePatch(data: AppData, rec: InboxRecord): { patch: Record<string, 
   return { patch }
 }
 
-/** 今の内容に patch の値がもう全部入っているか */
-function alreadyApplied(target: Target | undefined, patch: Record<string, unknown>): boolean {
+/**
+ * 今の内容に patch の値がもう全部入っているか（チェックした日は、当てる時と同じに今の記録の知らない値を後ろに残した形で比べる。
+ * 2台が同じ依頼を当てた時、後の端末が「もう当たっていました」にできるように。patched）
+ */
+function alreadyApplied(table: InboxTable, target: Target | undefined, patch: Record<string, unknown>): boolean {
   if (!target) return false
   const t = target as unknown as Record<string, unknown>
-  return Object.entries(patch).every(([k, v]) => deepEqual(t[k], v))
+  return Object.entries(patch).every(([k, v]) =>
+    deepEqual(t[k], table === 'routineChecks' && k === 'dates' && Array.isArray(v) ? keepUnknownDates(v, t[k]) : v),
+  )
 }
 
 /** 200字を超える値は指紋にする（undo.after。6.14） */
@@ -557,9 +562,13 @@ function patched(
       return { next }
     }
     case 'routines': {
-      const next: Routine = { ...(target as Routine), ...(patch as Partial<Routine>), updatedAt: ctx.now }
+      const cur = target as Routine
+      const next: Routine = { ...cur, ...(patch as Partial<Routine>), updatedAt: ctx.now }
       const problem = routineProblems(next).find((p) => touches(p.fields))
-      return problem ? { problem: problem.message } : { next }
+      if (problem) return { problem: problem.message }
+      // 種類が変わったら、手で変えた時と同じく、新しい種類のいちばん下に並べる（src/domain/ops.ts の updateRoutine）
+      if (next.cycle !== cur.cycle) next.order = routineOrderFor(data, cur.id, next.cycle)
+      return { next }
     }
     case 'routineChecks': {
       const parsed = parseRoutineCheckId(rec.targetId)!
@@ -567,8 +576,9 @@ function patched(
       const cur = target as RoutineCheck | undefined
       const problem = checkDatesProblem(routine, parsed.month, cur?.dates ?? [], patch.dates, ctx.dayOf(rec.createdAt))
       if (problem) return { problem }
+      // patch の dates は正しい日付だけ。今の記録の知らない値（YYYY-MM-DD でない値）は捨てずに後ろに残す（形3。6.12）
       const next: RoutineCheck = cur
-        ? { ...cur, dates: patch.dates as string[], updatedAt: ctx.now }
+        ? { ...cur, dates: keepUnknownDates(patch.dates as string[], cur.dates) as string[], updatedAt: ctx.now }
         : {
             id: rec.targetId,
             routineId: parsed.routineId,
@@ -590,6 +600,10 @@ function patched(
     }
   }
 }
+
+/** 種類（cycle）を変えたルーチンの並び: その種類のいちばん下（ほかのルーチンの order の次） */
+const routineOrderFor = (data: AppData, id: ID, cycle: unknown): number =>
+  nextOrder(Object.values(data.routines).filter((r) => r.id !== id && r.cycle === cycle))
 
 /** 直す前・後の控え（6.14。完了を変えた時は doneAt・doneOn も） */
 function updateUndo(target: Target | undefined, next: Target, patch: Record<string, unknown>): UndoUpdated {
@@ -868,7 +882,7 @@ function applyEdit(data: AppData, rec: InboxRecord, ctx: Ctx): Step {
     if ('problem' in resolved) return put(reject(rec, invalid(resolved.problem), ctx))
     patch = resolved.patch
     // 3. もう当たっている（2台が同時に当てた・同期の行き違い）。競合にしない
-    if (alreadyApplied(target, patch)) {
+    if (alreadyApplied(rec.table, target, patch)) {
       const next = acceptLinkedProposal(
         transact(data, (tx) =>
           tx.put('inbox', settle(rec, 'applied', ctx, { undo: { afterHash: revOf(target) }, message: 'もう当たっていました' })),
@@ -923,6 +937,9 @@ function applyNow(
 // ---------- 提案（19.5） ----------
 
 const samePatch = (a: InboxRecord, b: InboxRecord) => stableStringify(a.patch) === stableStringify(b.patch)
+/** 作者が断ったのと同じ提案（拒否・30日答えが無かった・承認した後に元に戻した）。同じ中身の提案をまた出さない控え（19.5 の 4.） */
+const declinedLike = (o: InboxRecord) =>
+  o.status === 'declined' || o.status === 'expired' || (o.status === 'accepted' && o.undoneAt != null)
 const earlier = (a: InboxRecord, b: InboxRecord) =>
   a.createdAt < b.createdAt || (a.createdAt === b.createdAt && compareStr(a.id, b.id) < 0)
 
@@ -949,7 +966,7 @@ function checkProposal(data: AppData, rec: InboxRecord, ctx: Ctx): Step {
     if ('problem' in resolved) return put(reject(rec, invalid(resolved.problem), ctx))
     patch = resolved.patch
     // 3. 直す提案の値がもう全部入っている
-    if (alreadyApplied(target, patch))
+    if (alreadyApplied(rec.table, target, patch))
       return put(settle(rec, 'superseded', ctx, { reason: 'already_done', message: MESSAGES.already_done! }))
   }
   // 4. 同じ項目への同じ中身の提案（前に作った物）
@@ -965,7 +982,8 @@ function checkProposal(data: AppData, rec: InboxRecord, ctx: Ctx): Step {
   )
   if (same.some((o) => o.status === 'pending'))
     return put(reject(rec, { reason: 'duplicate', message: '同じ提案が答えを待っています' }, ctx))
-  if (same.some((o) => o.status === 'declined' || o.status === 'expired')) {
+  // 承認した後に作者が［元に戻す］で戻した提案も、断ったのと同じに扱う（戻したばかりの変更を、同じメールを読み直すたびに出し直さない）
+  if (same.some(declinedLike)) {
     return put(reject(rec, { reason: 'previously_declined', message: MESSAGES.previously_declined! }, ctx))
   }
   // 新しい提案に置き換わった提案と同じ中身なら、出し直さない（同じメールを読み直すたびに、提案が入れ替わらないように。19.7 の 7.）
@@ -1128,7 +1146,7 @@ export function answerProposal(
     const resolved = resolvePatch(data, rec)
     if ('problem' in resolved) return { data, result: { status: 'invalid', message: resolved.problem }, touched }
     patch = resolved.patch
-    if (alreadyApplied(target, patch)) {
+    if (alreadyApplied(rec.table, target, patch)) {
       const message = MESSAGES.already_done!
       const next = transact(data, (tx) =>
         tx.put('inbox', settle(rec, 'superseded', ctx, { reason: 'already_done', message })),
@@ -1212,7 +1230,7 @@ export function approveConflict(
     const resolved = resolvePatch(data, rec)
     if ('problem' in resolved) return { data, result: { status: 'invalid', message: resolved.problem }, touched }
     patch = resolved.patch
-    if (alreadyApplied(target, patch)) {
+    if (alreadyApplied(rec.table, target, patch)) {
       const next = acceptLinkedProposal(
         transact(data, (tx) =>
           tx.put('inbox', settle(rec, 'applied', ctx, { undo: { afterHash: revOf(target) }, message: 'もう当たっていました' })),
@@ -1333,17 +1351,66 @@ export function undoRequest(
     if (matchesUndoValue(t[f] ?? null, u.after[f] ?? null)) restore[f] = before
     else skipped.push(f)
   }
-  if (skipped.length > 0 && !opts.confirmed) {
-    const names = [...new Set(skipped.map((f) => FIELD_LABELS[f] ?? f))].join('・')
-    return { data, result: { status: 'needsConfirm', message: `その後に直された項目（${names}）は戻しません`, skipped }, touched }
+  // 組の項目（日付と時刻・完了・ルーチンの指定）の一部だけを戻さない・戻すと決まりに合わなくなる項目も戻さない
+  const held = holdBackUndo(rec.table, target, restore, skipped)
+  if ((skipped.length > 0 || held.length > 0) && !opts.confirmed) {
+    const names = (fields: readonly string[]) => [...new Set(fields.map((f) => FIELD_LABELS[f] ?? f))].join('・')
+    const message =
+      skipped.length > 0 && held.length > 0
+        ? `その後に直された項目（${names(skipped)}）と、戻すと組み合わせが合わなくなる項目（${names(held)}）は戻しません`
+        : skipped.length > 0
+          ? `その後に直された項目（${names(skipped)}）は戻しません`
+          : `戻すと組み合わせが合わなくなる項目（${names(held)}）は戻しません`
+    return { data, result: { status: 'needsConfirm', message, skipped: [...skipped, ...held] }, touched }
   }
   let next = data
-  if (Object.keys(restore).length > 0)
-    next = transact(data, (tx) => tx.put(rec.table, { ...target, ...restore, updatedAt: ctx.now } as never)).data
-  return finish(markUndone(next), {
-    status: 'done',
-    message: skipped.length > 0 ? `${skipped.length}項目は戻していません` : null,
-  })
+  if (Object.keys(restore).length > 0) {
+    const restored = { ...target, ...restore, updatedAt: ctx.now } as Target
+    // ルーチンの種類を戻したら、手で変えた時と同じく、その種類のいちばん下に並べる
+    if (rec.table === 'routines' && 'cycle' in restore && restore.cycle !== (target as Routine).cycle)
+      (restored as Routine).order = routineOrderFor(data, rec.targetId, restore.cycle)
+    // 保存の時と同じに、日付と時刻の並びの直し（6.12 の「（書き戻す）」の3つ）を重ねて書く（形3）
+    const written = rec.table === 'items' ? { ...restored, ...itemDateFixes(restored as Item) } : restored
+    next = transact(data, (tx) => tx.put(rec.table, written as never)).data
+  }
+  const kept = skipped.length + held.length
+  return finish(markUndone(next), { status: 'done', message: kept > 0 ? `${kept}項目は戻していません` : null })
+}
+
+/**
+ * 元に戻す時に組で扱う項目（組のどれかを戻さない時は、ほかも戻さない。片方だけを戻して、作者が後で直した値と混ざった、表示で直される
+ * 記録にしないように。18.5）
+ */
+const UNDO_UNITS: Partial<Record<TableName, readonly (readonly string[])[]>> = {
+  items: [
+    ['start', 'due', 'startTime', 'endTime'],
+    ['done', 'doneAt', 'doneOn'],
+  ],
+  routines: [['cycle', 'weekdays', 'monthDay', 'yearMonth', 'yearDay']],
+}
+
+/**
+ * 戻す項目（restore）から、戻さない項目を外して返す（restore を書き換える）: 組の項目のほかの物を戻さない（skipped・外した物）時と、
+ * 戻した後の記録が決まり（6.2〜6.4・6.7）に合わなくなる時。決まりは戻す項目に関わる物だけで見る（直していない項目の知らない値で
+ * 止めない。形3）
+ */
+function holdBackUndo(table: TableName, target: Target, restore: Record<string, unknown>, skipped: readonly string[]): string[] {
+  const held: string[] = []
+  const hold = (f: string) => {
+    if (!(f in restore)) return
+    delete restore[f]
+    held.push(f)
+  }
+  const units = UNDO_UNITS[table] ?? []
+  for (;;) {
+    const out = new Set([...skipped, ...held])
+    for (const unit of units) if (unit.some((f) => out.has(f))) unit.forEach(hold)
+    const next = { ...target, ...restore }
+    const problems = table === 'items' ? itemProblems(next as Item) : table === 'routines' ? routineProblems(next as Routine) : []
+    const bad = problems.filter((p) => p.fields.some((f) => f in restore))
+    if (bad.length === 0) return held
+    for (const p of bad) p.fields.forEach(hold)
+  }
 }
 
 // ---------- 掃除（6.14） ----------
@@ -1358,8 +1425,8 @@ function targetExists(data: AppData, rec: InboxRecord): boolean {
  * 受け取り箱の掃除（6.14・19.5）。ストアが1日1回ほど呼ぶ。消した記録は削除の印として送る（6.11 で片付く）。
  * - 処理して 90日たった記録（依頼の applied・rejected、提案の accepted・superseded・rejected）は消す
  * - conflict は 90日たっても選ばれなければ当てずに rejected（expired）
- * - declined・expired の提案は、対象の記録がある間は消さない（同じ中身の提案をまた出さない控え）。対象が無くなったら、ほかと同じく
- *   処理して 90日たった時に消す
+ * - declined・expired の提案と、承認した後に元に戻した提案（accepted で undoneAt がある）は、対象の記録がある間は消さない（同じ中身の
+ *   提案をまた出さない控え）。対象が無くなったら、ほかと同じく処理して 90日たった時に消す
  * - pending は消さない（答えの無い提案は processInbox が 30日で expired にする）
  */
 export function cleanupInbox(data: AppData, context: InboxContext): { data: AppData; touched: Touched } {
@@ -1373,7 +1440,7 @@ export function cleanupInbox(data: AppData, context: InboxContext): { data: AppD
         if (age >= INBOX_KEEP_MS) tx.put('inbox', reject(rec, { reason: 'expired', message: MESSAGES.expired! }, ctx))
         continue
       }
-      if (rec.op === 'propose' && (rec.status === 'declined' || rec.status === 'expired')) {
+      if (rec.op === 'propose' && declinedLike(rec)) {
         if (targetExists(data, rec)) continue
       }
       if (age >= INBOX_KEEP_MS) tx.delete('inbox', rec.id)

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { useToasts } from '../store/uiStore'
 import { DATA_MODEL } from './appVersion'
-import { canShowData, cloudSettled, onTabMessage, resetSyncForTests, useSync } from './controller'
+import { canShowData, cloudSettled, onTabMessage, resetSyncForTests, trashPurgeTime, useSync } from './controller'
 import { useSyncView } from './syncView'
 
 afterEach(() => resetSyncForTests())
@@ -74,5 +74,20 @@ describe('同期を受け持つ画面の受け渡し（データの形の版）'
     useSync.setState({ auth: 'signedIn', leader: false, status: null })
     onTabMessage({ status, model: DATA_MODEL - 1 })
     expect(useSync.getState().status).toEqual(status)
+  })
+})
+
+describe('ゴミ箱の期限切れを決める時刻（6.15）', () => {
+  const now = Date.UTC(2026, 10, 10)
+  const yearAhead = now + 365 * 24 * 60 * 60 * 1000
+  it('ログインしている時は、端末の時計とサーバーの時刻の見積もりの早い方（時計が進んだ端末がゴミ箱を空にしない）', () => {
+    expect(trashPurgeTime('signedIn', now, yearAhead)).toBe(now)
+    expect(trashPurgeTime('signedIn', now + 5000, now)).toBe(now)
+  })
+  it('見積もりがまだ無い・ログインの状態が分かる前は消さない。ログインしていない端末は端末の時計', () => {
+    expect(trashPurgeTime('signedIn', null, now)).toBeNull()
+    expect(trashPurgeTime('idle', now, now)).toBeNull()
+    expect(trashPurgeTime('checking', now, now)).toBeNull()
+    expect(trashPurgeTime('signedOut', null, now)).toBe(now)
   })
 })

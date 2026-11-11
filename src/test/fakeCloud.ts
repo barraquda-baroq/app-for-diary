@@ -1,6 +1,7 @@
 // テスト用の仮のクラウドと端末（docs/SPEC.md の 2.10）。同期エンジン（src/sync/engine.ts）と同じ規則で送受信する:
 // - 送信: 送信待ちを readOutbox で読み、selectBatch・decideBatch（src/sync/batch.ts）で、クラウドの指紋が base と同じものだけを
-//   1回の書き込み（同じ時刻）で書く。受け取り箱の依頼ごとのまとまりは全部書けるか1つも書かない
+//   1回の書き込み（同じ時刻）で書く。受け取り箱の依頼ごとのまとまりは全部書けるか1つも書かない。書くたびに送る書き込みの印
+//   （cloud.marks）を書き、返事を受け取れなかった書き込みが届いていたかを、次の送信・受信でそれで確かめる
 // - 受信: クラウドの書き込みを、オフラインから戻った最初はまとめて1回、その後は書き込みごとに1回ずつ applyRemote で反映する
 // - バックアップからの復元: 送る前に、この端末に無いクラウドのレコードを消し、「必ず上書き」の送信待ちは reset の印付きで書く
 // - 端末内の保存・3者マージは本物（src/db/persistence.ts。fake-indexeddb）
@@ -19,7 +20,7 @@ import type { InboxContext, Touched } from '../domain/inbox'
 import { repairData } from '../domain/repair'
 import type { AppData } from '../domain/types'
 import { newId } from '../domain/util'
-import { decideBatch, nothingToSend, sameAsBase, selectBatch } from '../sync/batch'
+import { decideBatch, nothingToSend, sameAsBase, selectBatch, type BatchEntry } from '../sync/batch'
 import { hashRecord, type Rec } from '../sync/codec'
 import { createConflictHooks } from '../sync/conflicts'
 import { stableStringify } from '../sync/merge'
@@ -37,6 +38,8 @@ interface CloudDoc {
 
 export class FakeCloud {
   docs = new Map<string, CloudDoc>()
+  /** 送る書き込みの印（端末 → その端末の最後に届いた送る書き込みの id。エンジンの users/{uid}/sync/{端末の ID}） */
+  marks = new Map<string, string>()
   ts = 0
   /** 書き込みの記録（失敗した時の説明用） */
   log: string[] = []
@@ -61,6 +64,9 @@ export class FakeDevice {
   catchingUp = false
   notes: ConflictNote[] = []
   private sent = new Map<string, string[]>()
+  /** 送る書き込みの印で最後に確かめた値（エンジンの lastLanded） */
+  private lastLanded: string | null = null
+  private attempts = 0
 
   constructor(
     readonly name: string,
@@ -148,10 +154,24 @@ export class FakeDevice {
     if (!items.length) return { done: true, progressed: 0, conflicts: [] }
     const idle = items.filter(nothingToSend)
     if (idle.length) await this.p.completeUpload(idle.map((it) => ({ table: it.table, id: it.id, record: it.local })))
-    const batch = selectBatch(items, { chunkSize: 250_000, maxChars: 1_500_000, maxDocs: 400 })
-    if (!batch.length) return { done: false, progressed: idle.length, conflicts: [] }
-    const unmarked = batch.filter((b) => !b.it.force && !b.it.unconfirmed).map((b) => b.it.k)
-    if (unmarked.length) await this.p.markUnconfirmed(unmarked)
+    const given = selectBatch(items, { chunkSize: 250_000, maxChars: 1_500_000, maxDocs: 400 })
+    if (!given.length) return { done: false, progressed: idle.length, conflicts: [] }
+    // エンジンと同じ: 送る書き込みの印が前に返事を受け取れなかった書き込みなら、その時に送った内容を base にしてから決める
+    const attempt = `${this.name}-tx-${++this.attempts}`
+    const landed = this.cloud.marks.get(this.name) ?? null
+    if (landed && landed !== this.lastLanded) {
+      await this.p.confirmLanded(landed)
+      this.lastLanded = landed
+    }
+    const batch: BatchEntry[] = given.map((b) =>
+      landed && b.it.tx === landed
+        ? {
+            ...b,
+            it: { ...b.it, base: b.it.sent ?? null, noHistory: false, force: false, unconfirmed: false, tx: undefined },
+            baseHash: hashRecord(b.it.sent ?? null),
+          }
+        : b,
+    )
     const clouds = batch.map((b) => this.cloud.docs.get(`${b.it.table}:${b.it.id}`))
     const from = batch.some((b) => b.it.force) ? ((await this.p.getMeta<number>('authoritativeFrom')) ?? null) : null
     const decision = decideBatch(
@@ -162,6 +182,8 @@ export class FakeDevice {
         fresh: Boolean(c && c.device !== this.name && from !== null && c.ts > from),
       })),
     )
+    const marks = batch.filter((b, i) => decision.write[i] && !sameAsBase(b.it)).map((b) => ({ key: b.it.k, record: b.it.local }))
+    if (marks.length) await this.p.markUnconfirmed(marks, attempt)
     const ts = ++this.cloud.ts
     const written: Change[] = []
     const settled: Change[] = []
@@ -189,12 +211,14 @@ export class FakeDevice {
       }
       written.push({ table: b.it.table, id: b.it.id, record: b.it.local })
     })
+    if (marks.length) this.cloud.marks.set(this.name, attempt)
     this.cloud.log.push(
       `${this.name}@${ts}: 書いた ${written.map((w) => `${w.table}:${w.id.slice(0, 6)}${w.record ? '' : '(削除)'}`).join(' ')}` +
         (decision.conflicts.length ? ` | 書けなかった ${decision.conflicts.map((c) => c.k).join(' ')}` : '') +
         (opts.replyLost ? '（返事を受け取れなかった）' : ''),
     )
     if (opts.replyLost) return { done: false, progressed: 0, conflicts: [] }
+    if (marks.length) this.lastLanded = attempt
     await this.p.completeUpload([...written, ...settled])
     return { done: false, progressed: idle.length + written.length + settled.length, conflicts: decision.conflicts }
   }
@@ -224,6 +248,13 @@ export class FakeDevice {
   }
 
   private async apply(changes: Change[], cursor: number | undefined, direct = false): Promise<Change[] | null> {
+    // エンジンの confirmLandedFor と同じ: 返事を受け取れなかった書き込みの送信待ちに当たる変化は、印を読んで確かめてから
+    const txs = await this.p.unconfirmedTx(changes.map((c) => `${c.table}/${c.id}`))
+    const landed = this.cloud.marks.get(this.name)
+    if (landed && txs.has(landed)) {
+      await this.p.confirmLanded(landed)
+      this.lastLanded = landed
+    }
     return this.p.applyRemote(changes, { cursor, ...(await this.hooks()), ...(direct ? { direct: true } : {}) })
   }
 

@@ -21,7 +21,7 @@ import {
   type SaveOutcome,
 } from '../db/persistence'
 import { mimTrashIds, type RestoreKeep } from '../domain/backup'
-import { repairData, storedData } from '../domain/repair'
+import { repairData, storedData, storedRecord } from '../domain/repair'
 import { purgeExpiredTrash } from '../domain/trash'
 import { TABLE_NAMES, emptyData, type AppData, type TableName } from '../domain/types'
 import { newId } from '../domain/util'
@@ -260,8 +260,10 @@ function announceConflicts(notes: ConflictNote[]): void {
 /**
  * oldBase から newBase への変化を、その後に編集された latest に重ねる。
  * このタブでも編集し直したレコードは、項目ごとに合わせる（同期と同じ規則）。
+ * raws = oldBase・newBase の表示用に直す前の記録（raw）。競合の控え（ゴミ箱）は、表示用に直す前の記録で作る（知らない値を残す。
+ * 形3・6.15）: このタブの内容は raw にこのタブの変更を重ねた物、ほかのタブ・端末の内容は newBase の raw
  */
-export function rebaseView(latest: AppData, oldBase: AppData, newBase: AppData): AppData {
+export function rebaseView(latest: AppData, oldBase: AppData, newBase: AppData, raws?: { old: AppData; new: AppData }): AppData {
   if (latest === oldBase) return newBase
   const out = { ...latest } as unknown as Tables
   const extras: Change[] = []
@@ -288,8 +290,17 @@ export function rebaseView(latest: AppData, oldBase: AppData, newBase: AppData):
       // このタブでも編集していた
       const r = mergeRemote(t, o[id] ?? null, mine ?? null, n[id] ?? null, { device: deviceLabel() })
       if (r.record !== mine) write(id, r.record)
+      const rawOf = (kept: AnyRecord): AnyRecord => {
+        if (!raws) return kept
+        if (kept === mine) {
+          const oldRaw = (raws.old[t] as Record<string, AnyRecord>)[id]
+          return (storedRecord(t, oldRaw as never, o[id] as never, mine as never) as AnyRecord | undefined) ?? kept
+        }
+        if (kept === n[id]) return (raws.new[t] as Record<string, AnyRecord>)[id] ?? kept
+        return kept
+      }
       for (const kept of [r.deletedEdit, r.keptCopy, r.overwritten])
-        if (kept && TEXT_TABLES.has(t)) extras.push(...hooks.trashCopy(t, kept))
+        if (kept && TEXT_TABLES.has(t)) extras.push(...hooks.trashCopy(t, rawOf(kept)))
     }
     out[t] = table
   }
@@ -319,6 +330,7 @@ async function saveOnce(): Promise<boolean> {
     for (const t of Object.keys(outcome.dropped) as TableName[])
       for (const id of outcome.dropped[t] ?? []) dropped.push({ table: t, id, record: null })
     raw = applyChanges(raw, [...outcome.written, ...dropped])
+    const rawWritten = raw
     const mergedCount = Object.values(outcome.merged).reduce((n, a) => n + (a?.length ?? 0), 0) + dropped.length
     // 別タブの変更と合わせたレコード・競合の控えは、修復した表示用の内容にしてから使う
     const changed = outcomeChanges(outcome)
@@ -331,7 +343,12 @@ async function saveOnce(): Promise<boolean> {
       // 保存している間に別のタブが書いていた: 下書きも無ければ、すぐに読み込み直す（このタブの raw を古いままにしない）
       if (useApp.getState().externalChange && !useApp.getState().draftsDirty) void reloadFromDisk()
     } else {
-      useApp.setState({ data: rebaseView(latest, next, written), saveStatus: 'pending', saveError: null, mergedCount })
+      useApp.setState({
+        data: rebaseView(latest, next, written, { old: rawNext, new: rawWritten }),
+        saveStatus: 'pending',
+        saveError: null,
+        mergedCount,
+      })
       scheduleSave()
     }
     retryCount = 0
@@ -369,14 +386,14 @@ export function flushNow(): Promise<boolean> {
   return run
 }
 
-/** raw に当てた変化を、表示用の内容と画面の内容にも重ねる（chain の中で呼ぶ） */
-function refreshView(changes: readonly Change[]): void {
+/** raw に当てた変化を、表示用の内容と画面の内容にも重ねる（chain の中で呼ぶ）。rawBefore = 当てる前の raw */
+function refreshView(changes: readonly Change[], rawBefore: AppData): void {
   if (!changes.length) return
   const view = repairData(raw).data
   const oldBase = persisted
   persisted = view
   const latest = useApp.getState().data
-  const next = rebaseView(latest, oldBase, view)
+  const next = rebaseView(latest, oldBase, view, { old: rawBefore, new: raw })
   if (next === view) useApp.setState({ data: next })
   else {
     useApp.setState({ data: next, saveStatus: 'pending' })
@@ -404,8 +421,9 @@ function diffChanges(a: AppData, b: AppData): Change[] {
 async function refreshRawFromDisk(p: Persistence): Promise<AppData> {
   const changes = diffChanges(raw, await p.load())
   if (changes.length) {
+    const before = raw
     raw = applyChanges(raw, changes)
-    refreshView(changes)
+    refreshView(changes, before)
   }
   const s = useApp.getState()
   if (s.externalChange && s.data === persisted) useApp.setState({ externalChange: false })
@@ -448,8 +466,9 @@ export function commitRaw<R>(
     for (const t of Object.keys(outcome.dropped) as TableName[])
       for (const id of outcome.dropped[t] ?? []) dropped.push({ table: t, id, record: null })
     const changes = [...outcome.written, ...dropped]
+    const before = raw
     raw = applyChanges(raw, changes)
-    refreshView(changes)
+    refreshView(changes, before)
     if (outcome.written.length) {
       channel?.postMessage({ from: tabId })
       emit(savedListeners)
@@ -481,8 +500,9 @@ export function applyRemoteChanges(
     const written = await persistence.applyRemote(changes, { cursor, ...opts, ...conflictHooks(notes) })
     announceConflicts(notes)
     if (!written || !written.length) return written
+    const before = raw
     raw = applyChanges(raw, written)
-    refreshView(written)
+    refreshView(written, before)
     // 端末内に新しく積んだ送信待ち（競合の控え）があれば送ってもらう
     emit(savedListeners)
     channel?.postMessage({ from: tabId })
@@ -502,8 +522,9 @@ export function dropMissingRecords(keys: ReadonlySet<string>): Promise<Change[]>
     if (!(await saveOnce())) throw new Error('この端末の変更を保存できません')
     const dropped = await persistence.dropMissing(keys)
     if (!dropped.length) return dropped
+    const before = raw
     raw = applyChanges(raw, dropped)
-    refreshView(dropped)
+    refreshView(dropped, before)
     channel?.postMessage({ from: tabId })
     return dropped
   })
@@ -578,12 +599,13 @@ export async function reloadFromDisk(): Promise<boolean> {
   if (!saved) return false
   const run = chain.then(async () => {
     const loaded = await p.load()
+    const before = raw
     raw = loaded
     const view = repairData(loaded).data
     const oldBase = persisted
     persisted = view
     const latest = useApp.getState().data
-    const next = rebaseView(latest, oldBase, view)
+    const next = rebaseView(latest, oldBase, view, { old: before, new: loaded })
     useApp.setState({ data: next, externalChange: false })
     if (next !== view) scheduleSave()
   })
@@ -600,8 +622,19 @@ export async function reloadFromDisk(): Promise<boolean> {
 const TRASH_PURGE_MS = 60 * 60 * 1000
 let purgeTimer: ReturnType<typeof setInterval> | null = null
 
-/** 期限（30日）を過ぎたゴミ箱の物を完全に削除する */
-export function purgeTrashNow(nowTs = Date.now()): void {
+/**
+ * ゴミ箱の期限切れを決める時刻（null = まだ決められないので消さない）。同期の司令塔が、ログインしている時はサーバーの時刻の見積もりで
+ * 決める物に差し替える（src/sync/controller.ts の trashPurgeTime。6.15）
+ */
+let trashClock: () => number | null = () => Date.now()
+
+export function setTrashClock(fn: () => number | null): void {
+  trashClock = fn
+}
+
+/** 期限（30日）を過ぎたゴミ箱の物を完全に削除する（nowTs が null なら、まだ消さない） */
+export function purgeTrashNow(nowTs: number | null = trashClock()): void {
+  if (nowTs === null) return
   if (useApp.getState().status !== 'ready') return
   const data = useApp.getState().data
   const next = purgeExpiredTrash(data, nowTs)

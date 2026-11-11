@@ -286,6 +286,28 @@ describe('直す（19.5 の直す）', () => {
     expect(touched.get('xe-1')).toEqual(['items/t1', 'inbox/xe-1'])
   })
 
+  it('ルーチンの種類を変えたら、手で変えた時と同じく、新しい種類のいちばん下に並べる（元に戻した時も）', () => {
+    const r1 = mkRoutine({ id: 'r1', cycle: 'daily', order: 0 })
+    const r2 = mkRoutine({ id: 'r2', cycle: 'weekly', weekdays: [1], order: 0 })
+    const r0 = mkRoutine({ id: 'r0', cycle: 'weekly', weekdays: [2], order: 1 })
+    const d3 = mkRoutine({ id: 'r3', cycle: 'daily', order: 5 })
+    const rec = mkInbox({
+      id: 'xe-r',
+      op: 'update',
+      table: 'routines',
+      targetId: 'r1',
+      baseHash: revOf(r1),
+      patch: { cycle: 'weekly', weekdays: [3] },
+      requestQuote: '毎週水曜にして',
+      createdAt: T0 - HOUR,
+    })
+    const out = run(dataWith({ routines: [r1, r2, r0, d3], inbox: [rec] })).data
+    expect(out.routines.r1).toMatchObject({ cycle: 'weekly', order: 2 })
+    expect(out.inbox['xe-r'].status).toBe('applied')
+    const back = undoRequest(out, 'xe-r', ctx()).data
+    expect(back.routines.r1).toMatchObject({ cycle: 'daily', order: 6 })
+  })
+
   it('Claude が読んだ後にここで直されていたら当てずに conflict（changed）', () => {
     const rec = edit('xe-1', task, { due: '2026-11-27' })
     const edited = updateItem(dataWith({ items: [task] }), 't1', { memo: '先方に確認' }, T0 - 1).data
@@ -517,6 +539,36 @@ describe('ルーチンのチェック（19.4 の routineChecks）', () => {
     expect(remove.routineChecks['r1:2026-11'].dates).toEqual(['2026-11-03'])
     const tooOld = run(dataWith({ routines: [routine], routineChecks: [rc], inbox: [check(['2026-11-09'], revOf(rc))] })).data
     expect(tooOld.inbox['xe-c']).toMatchObject({ status: 'rejected', reason: 'invalid' })
+  })
+
+  it('今の記録の YYYY-MM-DD でない値（新しい版の形かもしれない値）は、付けても外しても後ろに残す。元に戻すとそのまま戻る（形3）', () => {
+    const unknown = ['2026-11-04T07:30', { day: '2026-11-05' }]
+    const rc = mkCheck('r1', '2026-11', ['2026-11-03', unknown[0], '2026-11-09', unknown[1]] as string[])
+    const add = run(
+      dataWith({
+        routines: [routine],
+        routineChecks: [rc],
+        inbox: [check(['2026-11-03', '2026-11-09', '2026-11-10'], revOf(rc))],
+      }),
+    ).data
+    expect(add.inbox['xe-c'].status).toBe('applied')
+    expect(add.routineChecks['r1:2026-11'].dates).toEqual(['2026-11-03', '2026-11-09', '2026-11-10', ...unknown])
+    const remove = run(dataWith({ routines: [routine], routineChecks: [rc], inbox: [check(['2026-11-03'], revOf(rc))] })).data
+    expect(remove.routineChecks['r1:2026-11'].dates).toEqual(['2026-11-03', ...unknown])
+    const undone = undoRequest(remove, 'xe-c', ctx())
+    expect(undone.result.status).toBe('done')
+    expect(undone.data.routineChecks['r1:2026-11'].dates).toEqual(rc.dates)
+  })
+
+  it('YYYY-MM-DD でない値のある記録に2台で同じ依頼を当てても、後の端末は「もう当たっていました」（競合にしない）', () => {
+    const rc = mkCheck('r1', '2026-11', ['2026-11-03', 'x-new'])
+    const data = dataWith({ routines: [routine], routineChecks: [rc], inbox: [check(['2026-11-03', '2026-11-10'], revOf(rc))] })
+    const a = run(data).data
+    expect(a.routineChecks['r1:2026-11'].dates).toEqual(['2026-11-03', '2026-11-10', 'x-new'])
+    // B には A が当てた記録だけが届き、受け取り箱の記録はまだ pending
+    const b = run({ ...data, routineChecks: a.routineChecks }, { now: T0 + 1000 }).data
+    expect(b.inbox['xe-c']).toMatchObject({ status: 'applied', message: 'もう当たっていました' })
+    expect(b.routineChecks).toEqual(a.routineChecks)
   })
 
   it('ルーチンが無ければ not_found、ゴミ箱にあれば in_trash', () => {
@@ -754,6 +806,16 @@ describe('提案（19.5 の提案・19.7 の例）', () => {
     const back = undoRequest(accepted, 'xp-1', ctx({ now: T0 + HOUR })).data
     expect(back.items[item.id].start).toBe('2026-12-03')
     expect(back.inbox['xp-1']).toMatchObject({ status: 'accepted', undoneAt: T0 + HOUR })
+  })
+
+  it('承認して元に戻した提案と同じ中身の提案（同じメールを読み直した）は previously_declined。対象がある間は 90日たっても消さない', () => {
+    const accepted = answerProposal(dataWith({ items: [item], inbox: [propose()] }), 'xp-1', 'accept', ctx()).data
+    const back = undoRequest(accepted, 'xp-1', ctx({ now: T0 + HOUR })).data
+    const again = propose({ id: 'xp-2', createdAt: T0 + 2 * HOUR, baseHash: revOf(back.items[item.id]) })
+    const out = run({ ...back, inbox: { ...back.inbox, 'xp-2': again } }, { now: T0 + 2 * HOUR }).data
+    expect(out.inbox['xp-2']).toMatchObject({ status: 'rejected', reason: 'previously_declined' })
+    const cleaned = cleanupInbox(back, ctx({ now: T0 + INBOX_KEEP_MS + DAY })).data
+    expect(cleaned.inbox['xp-1']).toBeDefined()
   })
 
   it('［拒否］→ 記録は変えずに declined。同じメールを読み直した同じ提案は previously_declined（19.7 の 4.・7.）', () => {
@@ -1085,6 +1147,71 @@ describe('元に戻す（18.5）', () => {
     })
     const done = undoRequest(later, 'xe-1', ctx(), { confirmed: true }).data
     expect(done.items.t1).toMatchObject({ due: '2026-11-30', title: '見積書' })
+  })
+
+  it('日付と時刻は組で戻す: その後に1つでも直されていたら、組のほかも戻さない（開始日が締め切り日の後にならない）', () => {
+    const item = mkItem({ start: '2026-11-20', due: '2026-11-22' })
+    const applied = run(dataWith({ items: [item], inbox: [edit('xe-1', item, { start: '2026-11-01', due: '2026-11-03' })] })).data
+    const later = updateItem(applied, 'i1', { due: '2026-11-02' }, T0 + 1).data
+    const ask = undoRequest(later, 'xe-1', ctx())
+    expect(ask.result).toEqual({
+      status: 'needsConfirm',
+      message: 'その後に直された項目（締め切り日）と、戻すと組み合わせが合わなくなる項目（開始日）は戻しません',
+      skipped: ['due', 'start'],
+    })
+    const done = undoRequest(later, 'xe-1', ctx(), { confirmed: true })
+    expect(done.data.items.i1).toMatchObject({ start: '2026-11-01', due: '2026-11-02' })
+    expect(done.result).toEqual({ status: 'done', message: '2項目は戻していません' })
+    // 時刻も同じ（1日の予定で 14:00-09:30 にしない）
+    const timed = mkItem({ id: 'i2', startTime: '14:00', endTime: '15:00' })
+    const a2 = run(dataWith({ items: [timed], inbox: [edit('xe-2', timed, { startTime: '09:00', endTime: '10:00' })] })).data
+    const l2 = updateItem(a2, 'i2', { endTime: '09:30' }, T0 + 1).data
+    const d2 = undoRequest(l2, 'xe-2', ctx(), { confirmed: true }).data.items.i2
+    expect([d2.startTime, d2.endTime]).toEqual(['09:00', '09:30'])
+  })
+
+  it('直されていなくても、戻すと決まりに合わなくなる項目は戻さず、確かめる（開始日の後の締め切り日・どこにも出ないタスク）', () => {
+    const item = mkItem({ start: '2026-11-20', due: '2026-11-22' })
+    const applied = run(dataWith({ items: [item], inbox: [edit('xe-1', item, { due: '2026-11-25' })] })).data
+    const later = updateItem(applied, 'i1', { start: '2026-11-24' }, T0 + 1).data
+    expect(undoRequest(later, 'xe-1', ctx()).result).toEqual({
+      status: 'needsConfirm',
+      message: '戻すと組み合わせが合わなくなる項目（締め切り日）は戻しません',
+      skipped: ['due'],
+    })
+    expect(undoRequest(later, 'xe-1', ctx(), { confirmed: true }).data.items.i1).toMatchObject({
+      start: '2026-11-24',
+      due: '2026-11-25',
+    })
+    const task = mkTask()
+    const a2 = run(dataWith({ items: [task], inbox: [edit('xe-2', task, { due: '2026-11-30' })] })).data
+    const l2 = updateItem(a2, 't1', { listed: false }, T0 + 1).data
+    const d2 = undoRequest(l2, 'xe-2', ctx(), { confirmed: true }).data.items.t1
+    expect([d2.due, d2.listed]).toEqual(['2026-11-30', false])
+  })
+
+  it('ルーチンの指定（種類・曜日・日・月日）は組で戻す', () => {
+    const routine = mkRoutine({ cycle: 'weekly', weekdays: [1] })
+    const rec = mkInbox({
+      id: 'xe-r',
+      op: 'update',
+      table: 'routines',
+      targetId: 'r1',
+      baseHash: revOf(routine),
+      patch: { cycle: 'monthly', weekdays: [], monthDay: 25 },
+      requestQuote: '毎月25日にして',
+      createdAt: T0 - HOUR,
+    })
+    const applied = run(dataWith({ routines: [routine], inbox: [rec] })).data
+    expect(applied.routines.r1).toMatchObject({ cycle: 'monthly', monthDay: 25 })
+    const later = { ...applied, routines: { r1: { ...applied.routines.r1, monthDay: 20, updatedAt: T0 + 1 } } }
+    const ask = undoRequest(later, 'xe-r', ctx())
+    expect(ask.result).toMatchObject({ status: 'needsConfirm', skipped: ['monthDay', 'cycle', 'weekdays'] })
+    expect(undoRequest(later, 'xe-r', ctx(), { confirmed: true }).data.routines.r1).toMatchObject({
+      cycle: 'monthly',
+      weekdays: [],
+      monthDay: 20,
+    })
   })
 
   it('長い値（指紋にした after）も、今の値の指紋と比べて戻す', () => {

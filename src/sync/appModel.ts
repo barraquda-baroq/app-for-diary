@@ -2,7 +2,8 @@
 // それを知らない古い版のアプリがクラウドへ書いて壊さないように、クラウドに「このデータを書いたアプリの形の版」を記録する。
 // - この版（DATA_MODEL）より低い・記録が無い: この版に上げる（下げることはない。アクセスルールでも下げられない）
 // - この版より高い: 受け取りは続け、送るのは止める（この端末の変更は送信待ちに残す）。画面で「要更新」と出す
-// - 読めない・書けない（アクセスルールを公開する前など）: 止めずにそのまま同期する（記録が無いのと同じ扱い）
+// - 読めない・書けない（アクセスルールを公開する前など）: 止めずにそのまま同期する（記録が無いのと同じ扱い）。見張りが誤りで止まった時は
+//   error を知らせ、エンジンが「確かめていない」扱いにして（送るトランザクションの中で読む）、少し後で見張り直す
 // 持ち主ごとの文書にする（データ users/{uid}/records と一緒に）。NS の src/sync/appModel.ts をそのまま写した。
 import { doc, onSnapshot, runTransaction, serverTimestamp, type Firestore, type Unsubscribe } from 'firebase/firestore'
 
@@ -22,9 +23,11 @@ export const appModelRef = (fs: Firestore, uid: string) => doc(fs, 'users', uid,
 
 /**
  * ok = 送ってよい、newer = 新しい版のアプリで書かれたデータがある（送らない）、
- * unknown = サーバーと確かめられなくなった（オフラインになった。つながってサーバーから届くまで送らない）
+ * unknown = サーバーと確かめられなくなった（オフラインになった。つながってサーバーから届くまで送らない）、
+ * error = 見張りが誤りで止まった（Firestore は誤りの後に見張りを閉じる。もう知らせは届かないので、確かめていない扱いにして
+ * 見張り直す。src/sync/engine.ts）
  */
-export type AppModelState = { state: 'ok' } | { state: 'unknown' } | { state: 'newer'; cloud: AppModel }
+export type AppModelState = { state: 'ok' } | { state: 'unknown' } | { state: 'error' } | { state: 'newer'; cloud: AppModel }
 
 /** 記録の内容（形の版が読めなければ null） */
 export const asModel = (data: unknown): AppModel | null => {
@@ -74,8 +77,9 @@ export function watchAppModel(fs: Firestore, uid: string, app: AppModel, onState
       if (!cur || cur.model < app.model) void raise()
     },
     (err) => {
+      // 「確かめた」とはしない（ok にすると、見張りが止まったまま、後で上がった版に気付かずに送り続ける）
       console.warn('データの形の版を読めませんでした', err)
-      onState({ state: 'ok' })
+      onState({ state: 'error' })
     },
   )
 }

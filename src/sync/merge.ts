@@ -12,7 +12,7 @@
 //   （呼び出し側がゴミ箱に「同期の競合で残した内容」として控える。パスワードを2つつながないように）
 import { contentEqual, deepEqual, stableStringify } from '../domain/equal'
 import { combineInboxOutcomes, inboxGroupFields } from '../domain/inbox'
-import { isYmd } from '../domain/dates'
+import { normalizeDatesKeeping, normalizeKeeping } from '../domain/routines'
 import type { InboxRecord, TableName } from '../domain/types'
 import type { Rec } from './codec'
 
@@ -69,22 +69,10 @@ export const FIELD_GROUPS: Partial<Record<TableName, readonly (readonly string[]
  */
 export const NORMALIZE: Partial<Record<TableName, Record<string, (v: unknown[]) => unknown[]>>> = {
   routines: { weekdays: (v) => normalizeKeeping(v, isWeekday, (a, b) => a - b) },
-  routineChecks: { dates: (v) => normalizeKeeping(v, isYmd, (a, b) => (a < b ? -1 : a > b ? 1 : 0)) },
+  routineChecks: { dates: normalizeDatesKeeping },
 }
 
 const isWeekday = (x: unknown): x is number => typeof x === 'number' && Number.isInteger(x) && x >= 0 && x <= 6
-
-/** 知っている形の値は小さい順・重なりなしに、知らない値は元の順のまま（重なりは除く）後ろに */
-function normalizeKeeping<T>(v: unknown[], known: (x: unknown) => x is T, compare: (a: T, b: T) => number): unknown[] {
-  const ok = new Map<string, T>()
-  const other = new Map<string, unknown>()
-  for (const x of v) {
-    const k = stableStringify(x)
-    if (known(x)) ok.set(k, x)
-    else if (!other.has(k)) other.set(k, x)
-  }
-  return [...[...ok.values()].sort(compare), ...other.values()]
-}
 
 const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
 
