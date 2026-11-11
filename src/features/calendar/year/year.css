@@ -1,0 +1,343 @@
+/* ===== イヤー（docs/SPEC.md の 8.・4.4・4.5・4.7・4.8・7.1〜7.4・7.9）。クラスは .yr- で始める =====
+   色は src/styles.css の変数だけを使う（画面で色を足さない）。カレンダーには影を付けない（今日の枠・今月の帯の輪はぼかしの無い線）。
+   休みの地（.cp-offday）・今日の印（.today-mark）は共通の物を使い、ここでは大きさと置き場所だけ */
+
+/* 画面の箱。上の余白はマンスリーの曜日の行と同じ 12px */
+.yr {
+  padding-top: 12px;
+}
+
+/* L: パネルの高さが決まっているので、縦に収まらない時はこの箱の中だけでスクロールする（CALENDAR-217）。測る箱（.cal-body）の
+   左右・下の余白（16px。src/features/calendar/common/frame.css）まで広げ、その分を内側の余白に戻す（スクロールバーがパネルの
+   端に出て、中身の幅は測った領域の幅と同じ）。測る箱そのものはスクロールしないので、スクロールバーが出ても測った幅は変わらない
+   （870px の境で並べ方が行ったり来たりしない。YearView.tsx） */
+.yr.is-scroll {
+  height: calc(100% + 16px);
+  margin: 0 -16px -16px;
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+}
+
+.yr.is-compact {
+  padding-top: 8px;
+}
+
+/* ---------- 日のマス（両方の並べ方。押すとその日の月のマンスリーへ。8.4） ---------- */
+.yr-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-hover);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 休みの日はマスの地を --off-fill（8.2。.cp-offday は src/features/calendar/common/parts/parts.css。上の地の無い指定より強くする） */
+.yr-cell.cp-offday {
+  background: var(--off-fill);
+}
+
+/* PC はマスに乗せると地を --surface-3 に（8.4）。休みの日の地（--off-fill）は乗せても替えない（休みかどうかが分からなくならないように） */
+@media (hover: hover) {
+  .yr-cell:not(.cp-offday):hover {
+    background: var(--surface-3);
+  }
+}
+
+/* フォーカスの枠はマスの外側に（内側の 2px は今日の枠。隣のマスより上に出す） */
+.yr-cell:focus-visible {
+  z-index: 1;
+  outline-offset: 0;
+}
+
+/* 日付（等幅 12px・400・行の高さ 1。4.7）と英字3文字の曜日（等幅 9px・500）。色は 7.1（日曜・祝日 --sun、土曜 --sat） */
+.yr-date {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.yr-wd {
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.yr-cell[data-tone='sun'] .yr-date,
+.yr-cell[data-tone='sun'] .yr-wd {
+  color: var(--sun);
+}
+
+.yr-cell[data-tone='sat'] .yr-date,
+.yr-cell[data-tone='sat'] .yr-wd {
+  color: var(--sat);
+}
+
+/* 今日: マスの内側に 2px の --accent の枠と、日付の太さ 600（地と日付の色は替えない。7.3・D07） */
+.yr-cell.is-today {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.yr-cell.is-today .yr-date {
+  font-weight: 600;
+}
+
+/* ●の決まった2つの場所（左＝仕事 --work-line・右＝プライベート --private-line。予定の無い区分も場所は空けたまま。全部完了なら
+   不透明度 0.35。8.2・7.9。ディープダークでは2色が同じ灰色なので、場所で見分ける） */
+.yr-dots {
+  display: flex;
+  gap: 2px;
+}
+
+.yr-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+}
+
+.yr-dot.is-work {
+  background: var(--work-line);
+}
+
+.yr-dot.is-private {
+  background: var(--private-line);
+}
+
+.yr-dot[data-state='none'] {
+  visibility: hidden;
+}
+
+.yr-dot[data-state='allDone'] {
+  opacity: 0.35;
+}
+
+/* ---------- 月を行・日を列（領域の幅 870px 以上。8.2） ----------
+   12行 × 31列。各行は、幅 64px の月の見出しの帯と、(領域の幅 − 64px − すき間) ÷ 31 の日のマス（すき間 2px）。行の間は 4px */
+.yr-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.yr-row {
+  display: grid;
+  grid-template-columns: 64px repeat(31, minmax(0, 1fr));
+  column-gap: 2px;
+}
+
+/* 月の見出しの帯（地 --surface-3・等幅の「NOV」13px・500 と「2026」10px を真ん中に。押すとその月の1日へ。8.2・8.4） */
+.yr-band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 52px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-3);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.yr-band-month {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.yr-band-year {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+/* 今月の帯は今日の印（地 --today-bg・字 --on-primary・1.5px の --today-ring の輪は .today-mark。7.3・8.2）。年の字も --on-primary */
+.yr-band.today-mark {
+  background: var(--today-bg);
+  color: var(--on-primary);
+}
+
+.yr-band.today-mark .yr-band-year {
+  color: inherit;
+}
+
+/* 乗せると月の名前に下線（押せることを示す。帯の地の色は替えない） */
+@media (hover: hover) {
+  .yr-band:hover .yr-band-month {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+/* 日のマス: 高さ 52px、上の線 2px の --rule-strong（8.2・4.4-3）。左上に日付、その下に曜日 */
+.yr-cell:not(.is-mini) {
+  height: 52px;
+  padding: 5px 3px 0;
+  border-top: 2px solid var(--rule-strong);
+}
+
+/* ●が右上（日付の高さの真ん中にそろえる） */
+.yr-cell.is-dots-top .yr-dots {
+  position: absolute;
+  top: 8px;
+  right: 3px;
+}
+
+/* マスが狭くて日付と●の間が取れない時は、●の2つの場所を曜日の下の段に下ろす（D28） */
+.yr-cell.is-dots-below .yr-dots {
+  margin-top: 7px;
+}
+
+/* ---------- 小さな月を並べる（領域の幅 870px 未満。M・S はいつも。8.3） ----------
+   列の数は floor(領域の幅 ÷ 170px) を 2〜4 に収めた数（S は2列。YearView が data-cols に入れる）。
+   マスは 22px 四方以上なので、小さな月の幅は 7 × 22 = 154px 以上。2列で領域が狭い時（幅 360px の S は 310px ほど）は、
+   月の間のすき間を 16px から 2px まで縮めて、マスを 22px に保つ */
+.yr-minis {
+  display: grid;
+  gap: 16px;
+}
+
+.yr-minis[data-cols='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(2px, 100% - 308px, 16px);
+}
+
+.yr-minis[data-cols='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.yr-minis[data-cols='4'] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* S: 小さな月の並びを .cal-body の左右の余白（8px）の中へ 4px ずつ広げる（幅 360px の S でも、マスを 22px に保ったまま月の間に
+   10px のすき間を取る。日付はマスの真ん中なので、端の日付とパネルの枠の間は 9px ほど残る） */
+.yr.is-compact .yr-minis {
+  row-gap: 12px;
+  margin: 0 -4px;
+}
+
+.yr-mini {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 月の名前（等幅 13px・500。今月は --accent。押すとその月の1日へ。8.3・8.4） */
+.yr-mini-name {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 4px -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--dur-hover);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.yr-mini-name.is-this-month {
+  color: var(--accent);
+}
+
+@media (hover: hover) {
+  .yr-mini-name:hover {
+    background: var(--surface-3);
+  }
+}
+
+/* 指で操作する端末・S・M は押せる所を 34px 以上に（4.11） */
+@media (max-width: 899px), (pointer: coarse) {
+  .yr-mini-name {
+    min-height: var(--tap);
+    margin-bottom: 0;
+  }
+}
+
+/* S は小さな月の並びを左右の余白へ広げた分（上の .yr-minis）だけ、名前の左の出っ張りを小さくする（.cal-body の余白の外へ出さない） */
+.yr.is-compact .yr-mini-name {
+  margin-left: -4px;
+  padding-left: 4px;
+}
+
+/* 曜日の頭文字の行（S M T W T F S。等幅 9px。日曜は --sun、土曜は --sat）と、7列 × 6行のマス */
+.yr-mini-head,
+.yr-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.yr-mini-head {
+  margin-bottom: 4px;
+}
+
+.yr-mini-wd {
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.yr-mini-wd[data-tone='sun'] {
+  color: var(--sun);
+}
+
+.yr-mini-wd[data-tone='sat'] {
+  color: var(--sat);
+}
+
+/* 小さな月のマス（22px 四方以上。日付は真ん中に等幅 11px。●は右上の決まった2つの場所に直径 4px。8.3） */
+.yr-cell.is-mini,
+.yr-slot {
+  aspect-ratio: 1;
+}
+
+.yr-cell.is-mini {
+  align-items: center;
+  justify-content: center;
+}
+
+.yr-cell.is-mini .yr-date {
+  font-size: 11px;
+}
+
+/* ●は右上。マスが大きい時は日付の字の少し上まで下ろす（字の上の端は真ん中 − 5.5px より 1.5px ほど下。●の下の端を字の上の端の
+   1px 上に。22px のマスでは上から 2px で、今日の内側の枠（2px）のすぐ下） */
+.yr-cell.is-mini .yr-dots {
+  position: absolute;
+  top: max(2px, 50% - 9px);
+  right: 2px;
+}
+
+.yr-cell.is-mini .yr-dot {
+  width: 4px;
+  height: 4px;
+}

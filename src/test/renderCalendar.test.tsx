@@ -6,7 +6,6 @@ import { mkItem } from '../domain/testData'
 import { MonthView } from '../features/calendar/month/MonthView'
 import { testIds } from '../features/calendar/common/testIds'
 import { useDayDrop, useItemDrag, WeekDnd } from '../features/calendar/week/dnd'
-import { YearView } from '../features/calendar/year/YearView'
 import { DetailSheet } from '../features/item/DetailSheet'
 import { RegisterSheet } from '../features/item/RegisterSheet'
 import { getData } from '../store/appStore'
@@ -107,11 +106,6 @@ describe('仮の画面（受け取る物は最後の形）', () => {
     expect(screen.getByTestId('calendar-month').getAttribute('data-rows')).toBe('6')
     expect(screen.getByTestId('calendar-month').classList.contains('is-compact')).toBe(true)
     expect(document.querySelector('.today-mark')).toBeNull()
-  })
-
-  it.each([['year', YearView]] as const)('%s は「段階2で作ります」の仮の画面', async (mode, View) => {
-    await renderView(View, viewProps({ mode }))
-    expect(screen.getByTestId(testIds.view(mode)).textContent).toContain('段階2で作ります')
   })
 
   it('ドラッグの部品は何もしない（掴めない・落とせない。中身をそのまま出す）', async () => {
