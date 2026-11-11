@@ -1,10 +1,11 @@
-// デイリーの E2E（docs/SPEC.md の 11.・7.3・4.3）: 本物のブラウザでしか確かめられない所だけ（開いた時の位置・今の時刻の線が
-// 動くこと・区切りの地の色・貼り付く開始のカード・重なりの列と「+n」・L/M の 4:6 と S の上下の積み方）。並びや表記は
-// dayModel.test.ts・DayView.test.tsx。データは作り物の e2e/fixtures/demoData.ts、今は 2026年11月10日（火）9:00
+// デイリーの E2E（docs/SPEC.md の 11.・7.3・4.3・12.1・12.5）: 本物のブラウザでしか確かめられない所だけ（開いた時の位置・今の時刻の
+// 線が動くこと・区切りの地の色・貼り付く開始のカード・重なりの列と「+n」の一覧・L/M の 4:6 と S の上下の積み方・空いた所を押した
+// 時の登録の画面・マンスリーの数字から来た時に目立たせること・●の完了と［元に戻す］・すばやく足す・指でなぞって次の日）。
+// 並びや表記は dayModel.test.ts・DayView.test.tsx。データは作り物の e2e/fixtures/demoData.ts、今は 2026年11月10日（火）9:00
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { testIds } from '../src/features/calendar/common/testIds'
 import { DEMO_IDS, DEMO_NOW, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar } from './helpers'
+import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, touchSwipe } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -23,6 +24,36 @@ async function box(target: Locator) {
   const b = await target.boundingBox()
   if (!b) throw new Error('要素が見えていません')
   return b
+}
+
+/**
+ * 小さな画面（登録・詳細）が開き終わるまで待つ（Esc を聞き始めるのは、中へフォーカスを移すのと同じ時。見えた直後に Esc を押すと
+ * まだ聞いていないことがある）
+ */
+async function sheetReady(page: Page) {
+  const sheet = page.getByTestId(testIds.itemSheet)
+  await expect(sheet).toBeVisible()
+  await expect.poll(() => sheet.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+}
+
+/** 今の行き先（# の後ろ）が path になるまで待つ */
+async function at(page: Page, path: string) {
+  await expect.poll(() => page.evaluate(() => window.location.hash.slice(1))).toBe(path)
+}
+
+/** タイムスケジュールの予定を置く所（時間の縞）の、その時刻（分）の所の、左の端から x px の点（画面の座標）。見える所まで動かす */
+async function slotPoint(page: Page, minute: number, x: number) {
+  const grid = page.getByTestId(testIds.dayTimeline).locator('.dy-grid')
+  const px = await hourPx(page)
+  await scroller(page).evaluate((e, y) => e.scrollTo(0, Math.max(0, y - 60)), (minute * px) / 60)
+  const g = await box(grid)
+  return { x: g.x + x, y: g.y + (minute * px) / 60 }
+}
+
+/** 予定の枠の幅と、予定を置ける所（時刻の欄の右）の幅の比 */
+async function widthRatio(page: Page, id: string) {
+  const events = await box(page.getByTestId(testIds.dayTimeline).locator('.dy-events'))
+  return (await box(page.getByTestId(testIds.dayEvent(id)))).width / events.width
 }
 
 /** CSS の変数の色を、ブラウザが計算した rgb() にする（トークンの値が変わってもテストを直さなくてよいように） */
@@ -55,7 +86,7 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     // 中を動かしてから詳細を開いて閉じても、位置はそのまま（開いた時の位置は当て直さない。AMB-ITEMS-31）
     await scroller(page).evaluate((e, y) => e.scrollTo(0, y), 6 * px)
     await page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly)).locator('.dy-ev-open').click()
-    await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
+    await sheetReady(page)
     await page.keyboard.press('Escape')
     await expect(page.getByTestId(testIds.itemSheet)).toHaveCount(0)
     expect(await scroller(page).evaluate((e) => e.scrollTop)).toBe(6 * px)
@@ -146,11 +177,72 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     await expect(more).toHaveText('+1')
     const m = await box(more)
     const last = boxes[3]
-    expect(m.x + m.width).toBeLessThanOrEqual(last.x + last.width)
-    expect(m.x).toBeGreaterThan(last.x)
+    // 札は最後の列のすぐ右（まとまりの右の端に空けた札の所）で、どの予定の枠にも重ならない（資料の送付の区分のアイコンも隠さない）
+    expect(m.x).toBeGreaterThanOrEqual(last.x + last.width)
+    expect(m.x - (last.x + last.width)).toBeLessThanOrEqual(4)
+    const events = await box(page.getByTestId(testIds.dayTimeline).locator('.dy-events'))
+    expect(m.x + m.width).toBeLessThanOrEqual(events.x + events.width)
+    const all = await page.getByTestId(testIds.dayTimeline).locator('.dy-event').all()
+    for (const ev of all) {
+      const b = await box(ev)
+      const apart = m.x >= b.x + b.width || b.x >= m.x + m.width || m.y >= b.y + b.height || b.y >= m.y + m.height
+      expect(apart, (await ev.getAttribute('data-testid')) ?? '').toBe(true)
+    }
     // 隠れた「社内の確認」は 14:45 から（14:30 の資料の送付の上の端より 15分下）
     expect(m.y - last.y).toBeGreaterThan(0)
     expect(m.y - last.y).toBeLessThan(await hourPx(page))
+    // 押すと隠れた予定の一覧、押すと詳細（ITEMS-148）
+    await more.click()
+    const item = page.getByRole('menuitem', { name: '社内の確認、14:45–15:30' })
+    await expect(item).toBeVisible()
+    await item.click()
+    await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
+    await expect(page.getByTestId(testIds.itemTitle)).toHaveValue('社内の確認')
+  })
+
+  test('空いた所（13:10）を押すと登録の画面（この日・13:00〜14:00・仕事）。「＋ 予定を足す」は Enter で足して開いたまま、Esc で閉じる（ITEMS-149・123）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/day/2026-11-10', { data: demoData() })
+    // 13:10 の、日をまたぐ予定（資料づくり）の列の線の右（押せない部分の入れ物の下の、空いた時間）
+    const p = await slotPoint(page, 13 * 60 + 10, 80)
+    await page.mouse.click(p.x, p.y)
+    const sheet = page.getByTestId(testIds.itemSheet)
+    await sheetReady(page)
+    await expect(page.getByTestId(testIds.itemStart)).toHaveText('11月10日（火）')
+    await expect(page.getByTestId(testIds.itemStartTime)).toHaveValue('13:00')
+    await expect(page.getByTestId(testIds.itemEndTime)).toHaveValue('14:00')
+    await expect(page.getByTestId(testIds.itemKind('work'))).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('Escape')
+    await expect(sheet).toHaveCount(0)
+    // すばやく足す（プライベートの区切り）
+    const area = page.getByTestId(testIds.dayArea('private'))
+    await page.getByTestId(testIds.dayAdd('private')).click()
+    const input = area.getByTestId(testIds.quickAddInput)
+    await expect(input).toBeFocused()
+    await input.fill('鉢植えの水やり')
+    await input.press('Enter')
+    await expect(area.locator('.dy-row', { hasText: '鉢植えの水やり' })).toBeVisible()
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    await input.press('Escape')
+    await expect(page.getByTestId(testIds.quickAddInput)).toHaveCount(0)
+    await expect(page.getByTestId(testIds.dayAdd('private'))).toBeVisible()
+  })
+
+  test('マンスリーの仕事の数字から来ると、仕事の区切りとタイムスケジュールの仕事の予定を目立たせる（ITEMS-124・CALENDAR-188）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
+    await page.getByTestId(testIds.monthCount('2026-11-10', 'work')).click()
+    await at(page, '/day/2026-11-10')
+    await expect(page.getByTestId(testIds.dayArea('work'))).toHaveClass(/\bflash\b/)
+    await expect(page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly))).toHaveClass(/\bflash\b/)
+    await expect(page.getByTestId(testIds.dayEvent(DEMO_IDS.materials))).toHaveClass(/\bflash\b/)
+    await expect(page.getByTestId(testIds.dayArea('private'))).not.toHaveClass(/\bflash\b/)
+    await expect(page.getByTestId(testIds.dayEvent(DEMO_IDS.dinner))).not.toHaveClass(/\bflash\b/)
+    // 目立たせるのは 1.2秒
+    await expect(page.getByTestId(testIds.dayArea('work'))).not.toHaveClass(/\bflash\b/, { timeout: 3000 })
   })
 })
 
@@ -163,6 +255,8 @@ test.describe('デイリー（M。768px）', { tag: ['@m'] }, () => {
     expect(Math.round(tl.x - (list.x + list.width))).toBe(16)
     expect(list.width / tl.width).toBeCloseTo(4 / 6, 1)
     expect(await hourPx(page)).toBe(48)
+    // 日をまたぐ予定（資料づくり）の列は 1/3。重ならない打ち合わせは残りの幅いっぱい（前は 1/3 で件名が切れていた）
+    expect(await widthRatio(page, DEMO_IDS.meeting)).toBeGreaterThan(0.6)
     await noHorizontalScroll(page)
   })
 })
@@ -186,17 +280,81 @@ test.describe('デイリー（S）', { tag: ['@s'] }, () => {
     expect(await page.locator('.dy-list').evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true)
     expect(await hourPx(page)).toBe(44)
     await expect(page.getByTestId(testIds.dayNow)).toBeVisible()
+    // 重ならない予定は、日をまたぐ予定の列の右の残りの幅いっぱい（見本の「打…」の直し）
+    expect(await widthRatio(page, DEMO_IDS.weekly)).toBeGreaterThan(0.6)
+    // 指の端末では点線の丸の押せる所が、枠の左上の角から 34px 四方（見える丸の押せる所 24px の外の、右下の所も丸。D08）
+    const weekly = await box(page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly)))
+    const hitId = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid^="done-"]')?.getAttribute('data-testid') ?? null,
+      { x: weekly.x + 31, y: weekly.y + 30 },
+    )
+    expect(hitId).toBe(testIds.done(DEMO_IDS.weekly))
     await noHorizontalScroll(page)
+  })
+
+  test('●を押すと完了にして［元に戻す］のお知らせ、［元に戻す］で戻る。すばやく足す。左へなぞると次の日、右へなぞると前の日（ITEMS-116・123・FRAME-073）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/day/2026-11-10', { data: demoData() })
+    const row = page.getByTestId(testIds.dayRow(DEMO_IDS.mail))
+    await row.getByTestId(testIds.done(DEMO_IDS.mail)).tap()
+    await expect(row).toHaveClass(/\bis-done\b/)
+    const toast = page.locator('.toast', { hasText: '『メールの返信』を完了にしました' })
+    await expect(toast).toBeVisible()
+    await toast.getByRole('button', { name: '元に戻す' }).tap()
+    await expect(row).not.toHaveClass(/\bis-done\b/)
+    // すばやく足す（仕事の区切り）
+    await page.getByTestId(testIds.dayAdd('work')).tap()
+    const input = page.getByTestId(testIds.dayArea('work')).getByTestId(testIds.quickAddInput)
+    await input.fill('伝票の整理')
+    await input.press('Enter')
+    await expect(page.getByTestId(testIds.dayArea('work')).locator('.dy-row', { hasText: '伝票の整理' })).toBeVisible()
+    await input.press('Escape')
+    // タイムスケジュールの上でなぞる
+    const tl = page.getByTestId(testIds.dayTimeline)
+    await touchSwipe(page, tl, -140, 6)
+    await at(page, '/day/2026-11-11')
+    await expect(page.getByTestId(testIds.dayHead)).toContainText('2026.11.11')
+    await touchSwipe(page, tl, 140, 0)
+    await at(page, '/day/2026-11-10')
+  })
+
+  test('空いた所を押すと登録の画面（押した所の 30分単位）、「+n」を押すと隠れた予定の一覧（ITEMS-148・149）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/day/2026-11-13', { data: demoData() })
+    // 16:20 の空いた時間 → 16:00〜17:00
+    const p = await slotPoint(page, 16 * 60 + 20, 120)
+    await page.touchscreen.tap(p.x, p.y)
+    await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
+    await expect(page.getByTestId(testIds.itemStart)).toHaveText('11月13日（金）')
+    await expect(page.getByTestId(testIds.itemStartTime)).toHaveValue('16:00')
+    await expect(page.getByTestId(testIds.itemEndTime)).toHaveValue('17:00')
+    await page.goBack()
+    await expect(page.getByTestId(testIds.itemSheet)).toHaveCount(0)
+    // S は3列と「+2」
+    await scroller(page).evaluate((e, y) => e.scrollTo(0, y), 13 * 44)
+    const more = page.getByTestId(testIds.dayMore)
+    await expect(more).toHaveText('+2')
+    await more.tap()
+    await expect(page.getByRole('menuitem')).toHaveCount(2)
+    await page.getByRole('menuitem', { name: '社内の確認、14:45–15:30' }).tap()
+    await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
+    await expect(page.getByTestId(testIds.itemTitle)).toHaveValue('社内の確認')
   })
 })
 
 test.describe('デイリー（iPhone）', { tag: ['@ios'] }, () => {
-  test('上下に積んで描き、今日は今の時刻の線を出す', async ({ page }) => {
+  test('上下に積んで描き、今日は今の時刻の線を出す。予定を押すと詳細', async ({ page }) => {
     await openCalendar(page, '/day/2026-11-10', { data: demoData() })
     const list = await box(page.getByTestId(testIds.dayArea('work')))
     const tl = await box(page.getByTestId(testIds.dayTimeline))
     expect(tl.y).toBeGreaterThan(list.y)
     await expect(page.getByTestId(testIds.dayNow)).toBeVisible()
     await expect(page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly))).toBeVisible()
+    // 予定を押すと詳細
+    await page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly)).locator('.dy-ev-open').click()
+    await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
+    await expect(page.getByTestId(testIds.itemTitle)).toHaveValue('定例ミーティング')
   })
 })

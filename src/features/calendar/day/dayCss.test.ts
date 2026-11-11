@@ -190,16 +190,69 @@ describe('タイムスケジュール（11.3・4.4-6・4.8）', () => {
     expect(day('.dy-piece.is-done .dy-span-line').get('background')).toBe('var(--done-text)')
   })
 
-  it('「+n」の札は 11px（等幅のクラスは部品）で、予定の上に重ねる（ITEMS-147・AMB-ITEMS-13）', () => {
+  it('予定の枠の位置: 予定を置ける幅（右に 8px の空き）の割合 --x・--w から、札の所 --more-room を --x-room・--w-room 個引く。列の間 2px', () => {
+    const box = day('.dy-event')
+    expect(box.get('left')).toBe('calc((100% - 8px) * var(--x) - var(--more-room) * var(--x-room) + 2px)')
+    expect(box.get('width')).toBe('calc((100% - 8px) * var(--w) - var(--more-room) * var(--w-room) - 2px)')
+    expect(day('.dy-piece').get('left')).toBe(box.get('left'))
+    expect(day('.dy-piece').get('width')).toBe(box.get('width'))
+  })
+
+  it('「+n」の札は 11px（等幅のクラスは部品）で、まとまりの右の端に空けた札の所に、最後の列と 2px 離して置く（予定に重ねない。ITEMS-147・AMB-ITEMS-13）', () => {
     const more = day('.dy-more')
     expect(more.get('font-size')).toBe('11px')
     expect(more.get('position')).toBe('absolute')
+    // 札の左の端 = 置ける幅の右の端 + 右の空き 8px − right − 札の幅 が、最後の列の右の端（置ける幅 − 札の所）より 2px 右
+    const px = (v: string | undefined) => Number(/^(\d+)px$/.exec(v ?? '')?.[1] ?? NaN)
+    const room = px(day('.dy-events').get('--more-room'))
+    const chip = px(more.get('min-width'))
+    expect(room).toBe(24)
+    expect(8 - px(more.get('right')) - chip + room).toBe(2)
+    // 2桁（「+10」）まで札の幅に入る（等幅 11px の3文字 ≒ 20px ＋ 余白 2px ×2 ＋ 線 1px ×2）
+    expect(more.get('padding')).toBe('0 2px')
+    expect(chip).toBeGreaterThanOrEqual(26)
+  })
+})
+
+describe('指の端末の押せる所（D08・4.11）', () => {
+  /** @media の中の規則の宣言 */
+  const inMedia = (selector: string) => {
+    const r = DAY_RULES.find(
+      (x) => x.at.includes('(pointer: coarse)') && x.selector.split(',').some((s) => s.trim() === selector),
+    )
+    return r?.decls ?? new Map<string, string>()
+  }
+
+  it('点線の丸の押せる所は、枠の左上の角から 34px 四方まで広げる（枠の外は枠の overflow で切れる）', () => {
+    const hit = inMedia('.dy-ring::before')
+    expect([hit.get('width'), hit.get('height'), hit.get('top'), hit.get('left')]).toEqual([
+      'var(--tap)',
+      'var(--tap)',
+      '0',
+      '-5px',
+    ])
+    expect(tokenOf('white', '--tap')).toBe('34px')
+    // 丸は枠の上の端・左から 5px（押せる所 24px）。広げた所の左の端が枠の左の端（5 − 5 = 0）
+    expect(day('.dy-ring').get('left')).toBe('5px')
+    expect(day('.dy-box').get('overflow')).toBe('hidden')
+  })
+
+  it('AI の札の押せる所は高さ 34px まで（予定の枠では上の端から下へ、リストの行では 40px の行の中で上下に）', () => {
+    expect(inMedia('.dy-ev-marks .cp-ai::after').get('inset')).toBe('-5px -6px -15px')
+    expect(inMedia('.dy-row-marks .cp-ai::after').get('inset')).toBe('-10px -6px')
+  })
+})
+
+describe('すばやく足す（12.1・D44）', () => {
+  it('入力欄は「＋ 予定を足す」の行と同じ 40px の高さに収める', () => {
+    expect(day('.dy-quick').get('min-height')).toBe('40px')
+    expect(day('.dy-add').get('min-height')).toBe('40px')
   })
 })
 
 describe('目立たせる所（4.9・useFlashTarget）', () => {
-  it('区切り・予定の枠・開始のカードには outline・animation を付けない（.flash の枠が隠れる）', () => {
-    const targets = ['.dy-area', '.dy-event', '.dy-start', '.dy-box', '.dy-piece']
+  it('区切り・行・予定の枠・開始のカードには outline・animation を付けない（.flash の枠が隠れる）', () => {
+    const targets = ['.dy-area', '.dy-row', '.dy-event', '.dy-start', '.dy-box', '.dy-piece']
     for (const r of DAY_RULES) {
       if (/:focus|::after|::before/.test(r.selector)) continue
       const hits = r.selector.split(',').some((s) => targets.some((t) => s.trim().split(/\s+/).at(-1)?.startsWith(t)))

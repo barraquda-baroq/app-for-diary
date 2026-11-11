@@ -4,7 +4,10 @@
 // - 見出し（28px）: 区分のアイコン＋等幅の「WORK」／「PRIVATE」＋「仕事」／「プライベート」＋まだ完了していない数
 // - 行（40px 以上・下に 1px の --rule）: 行頭の●（押すと完了。押せる所 40px）→ 件名（14px・2行まで）→ 右に印 → 複数日の右の端の表記
 //   （「━＞ 〜11/11」「━●」。━＞・━● は線の色、〜11/11 は --text-muted）。件名を押すと詳細
-// - いちばん下に「＋ 予定を足す」の行（押すとその日・その区分のすばやく足す。onAdd。つなぐのは段階2の後半 WP8B）
+// - いちばん下に「＋ 予定を足す」の行。押すとその行がその日・その区分のすばやく足す（QuickAdd。12.1）の入力欄に替わる
+//   （Esc・外を押すと元の行に戻る。書きかけは残る。足した予定は目立たせない。D44）
+// - マンスリー（L・M）の数字から来た時は、押した側の区切りを 1.2秒目立たせる（day-area:{区分}。4.9・11.2）。登録した予定の行も
+//   目立たせ、見える所まで動かす（item:{id}）
 // 行の形（D19）: 入れ物（div）の中に、「押すと詳細」のボタン（件名を包み、::after で行全体に広げる）と、その上に重ねた●・AI の札
 // （別のボタン）を並べる（ボタンの中にボタンを入れない）
 import { memo, useCallback } from 'react'
@@ -13,11 +16,13 @@ import { listTail } from '../../../domain/itemText'
 import { ITEM_KIND_LABELS } from '../../../domain/trash'
 import type { ItemKind } from '../../../domain/types'
 import { KindIcon, PlusIcon } from '../../../ui/icons'
-import { cls, DoneToggle, ItemMarks, ItemTitle, itemAttrs } from '../common/parts'
+import { cls, DoneToggle, flashKey, ItemMarks, ItemTitle, itemAttrs, QuickAdd, useFlashTarget } from '../common/parts'
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import type { DaySectionVM } from './dayModel'
 import './day.css'
+
+const noop = () => {}
 
 /** 見出しの英語（等幅） */
 const KIND_EN: Record<ItemKind, string> = { work: 'WORK', private: 'PRIVATE' }
@@ -25,15 +30,20 @@ const KIND_EN: Record<ItemKind, string> = { work: 'WORK', private: 'PRIVATE' }
 export interface UntimedAreaProps {
   date: string
   section: DaySectionVM
-  /** 「＋ 予定を足す」の行を押した（その日・その区分のすばやく足す。12.1。渡さない間は押しても何も変わらない） */
+  /** すばやく足す入力欄を開いている（「＋ 予定を足す」の行の所に出す） */
+  adding?: boolean
+  /** 「＋ 予定を足す」の行を押した（その日・その区分のすばやく足すを開く。12.1。渡さない間は押しても何も変わらない） */
   onAdd?: (kind: ItemKind) => void
+  /** すばやく足す入力欄を閉じる（Esc・外を押した時） */
+  onCloseAdd?: () => void
 }
 
-export function UntimedArea({ date, section, onAdd }: UntimedAreaProps) {
+export function UntimedArea({ date, section, adding = false, onAdd, onCloseAdd }: UntimedAreaProps) {
   const { kind, rows, undone } = section
   const headId = `dy-area-head-${kind}`
+  const flashRef = useFlashTarget<HTMLElement>(flashKey.dayArea(kind))
   return (
-    <section className="dy-area" data-kind={kind} aria-labelledby={headId} data-testid={testIds.dayArea(kind)}>
+    <section ref={flashRef} className="dy-area" data-kind={kind} aria-labelledby={headId} data-testid={testIds.dayArea(kind)}>
       <div className="dy-area-head" id={headId}>
         <KindIcon kind={kind} className="icon dy-area-icon" />
         <span className="head-en dy-area-en" aria-hidden="true">
@@ -53,15 +63,19 @@ export function UntimedArea({ date, section, onAdd }: UntimedAreaProps) {
             ))}
           </ul>
         ) : null}
-        <button
-          type="button"
-          className="dy-add"
-          onClick={onAdd ? () => onAdd(kind) : undefined}
-          data-testid={testIds.dayAdd(kind)}
-        >
-          <PlusIcon className="icon dy-add-icon" />
-          <span>予定を足す</span>
-        </button>
+        {adding ? (
+          <QuickAdd date={date} kind={kind} onClose={onCloseAdd ?? noop} className="dy-quick" />
+        ) : (
+          <button
+            type="button"
+            className="dy-add"
+            onClick={onAdd ? () => onAdd(kind) : undefined}
+            data-testid={testIds.dayAdd(kind)}
+          >
+            <PlusIcon className="icon dy-add-icon" />
+            <span>予定を足す</span>
+          </button>
+        )}
       </div>
     </section>
   )
@@ -79,9 +93,11 @@ export const DayRow = memo(function DayRow({ c, role, date }: DayRowProps) {
   const item = c.item
   const { openDetail } = useItemSheets()
   const open = useCallback(() => openDetail(item.id), [openDetail, item.id])
+  const flashRef = useFlashTarget<HTMLLIElement>(flashKey.item(item.id), { scroll: true })
   const tail = listTail(c, date)
   return (
     <li
+      ref={flashRef}
       className={cls('dy-row', item.done && 'is-done')}
       {...itemAttrs(item)}
       data-role={role}

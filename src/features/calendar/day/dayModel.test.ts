@@ -186,17 +186,27 @@ describe('タイムスケジュール（11.3・ITEMS-133・142〜147）', () => 
       ['c', 2, 4],
       ['d', 3, 4],
     ])
-    expect(l.more).toEqual([{ at: 14 * 60 + 45, top: 708, ids: ['e'] }])
+    expect(l.more).toMatchObject([{ at: 14 * 60 + 45, top: 708, ids: ['e'] }])
+    // 一覧に出す隠れた予定
+    expect(l.more[0].items.map((c) => c.item.id)).toEqual(['e'])
+    // 札を出すまとまりは右の端に札の所を1つ空けて等分する（札を予定に重ねない）
+    expect(l.boxes.map((b) => [b.x, b.xRoom, b.w, b.wRoom])).toEqual([
+      [0, 0, 0.25, 0.25],
+      [0.25, 0.25, 0.25, 0.25],
+      [0.5, 0.5, 0.25, 0.25],
+      [0.75, 0.75, 0.25, 0.25],
+    ])
     const s = buildTimeline(list, D, 'S')
     expect(s.boxes.map((b) => b.c.item.id)).toEqual(['a', 'b', 'c'])
-    expect(s.more).toEqual([{ at: 14 * 60 + 30, top: minuteToPx(14 * 60 + 30, 44), ids: ['d', 'e'] }])
+    expect(s.more).toMatchObject([{ at: 14 * 60 + 30, top: minuteToPx(14 * 60 + 30, 44), ids: ['d', 'e'] }])
+    expect(s.more[0].items.map((c) => c.item.id)).toEqual(['d', 'e'])
   })
 
   it('区分は混ぜて並べる（仕事とプライベートが同じまとまりに入る）', () => {
     const tl = buildTimeline(listOf(timed('w', '10:00', '11:00'), timed('p', '10:30', '11:30', { kind: 'private' })), D, 'L')
-    expect(tl.boxes.map((b) => [b.c.item.id, b.col, b.cols])).toEqual([
-      ['w', 0, 2],
-      ['p', 1, 2],
+    expect(tl.boxes.map((b) => [b.c.item.id, b.col, b.cols, b.x, b.w])).toEqual([
+      ['w', 0, 2, 0, 0.5],
+      ['p', 1, 2, 0.5, 0.5],
     ])
   })
 
@@ -272,15 +282,32 @@ describe('タイムスケジュール（11.3・ITEMS-133・142〜147）', () => 
     expect(buildTimeline(listOf(night), D, 'L').tailPx).toBe(8)
   })
 
-  it('日をまたぐ予定の間の日（0〜24）は、その日のどの予定とも同じまとまりになる（11.3 のとおり）', () => {
-    const middle = mkItem({ id: 'm', start: '2026-11-09', due: '2026-11-11', startTime: '10:00', endTime: '15:00' })
-    const tl = buildTimeline(listOf(middle, timed('a', '10:00', '11:00'), timed('b', '19:00', '20:00')), D, 'L')
-    expect(tl.boxes.map((b) => [b.c.item.id, b.col, b.cols])).toEqual([
-      ['m', 0, 2],
-      ['a', 1, 2],
-      ['b', 1, 2],
-    ])
-  })
+  it.each(['S', 'M', 'L'] as const)(
+    '%s: 日をまたぐ予定の間の日（0〜24）は左の列（1/3）。ほかの予定は、本当に重なる物（レビューと面談）だけが細くなる（見本の 11/10）',
+    (width) => {
+      const middle = mkItem({ id: 'm', start: '2026-11-09', due: '2026-11-12', startTime: '10:00', endTime: '18:00' })
+      const tl = buildTimeline(
+        listOf(
+          middle,
+          timed('weekly', '10:00', '11:30'),
+          timed('meeting', '13:00', null),
+          timed('review', '15:00', '16:00'),
+          timed('interview', '15:30', '17:00'),
+          timed('dinner', '19:00', '21:00', { kind: 'private' }),
+        ),
+        D,
+        width,
+      )
+      const w = Object.fromEntries(tl.boxes.map((b) => [b.c.item.id, b.w]))
+      expect(w.m).toBeCloseTo(1 / 3, 9)
+      // 前はどれも 1/3 だった（間の日がその日のすべての予定を1つのまとまりにしていた）
+      for (const id of ['weekly', 'meeting', 'dinner']) expect(w[id], id).toBeCloseTo(2 / 3, 9)
+      for (const id of ['review', 'interview']) expect(w[id], id).toBeCloseTo(1 / 3, 9)
+      expect(tl.boxes.find((b) => b.c.item.id === 'weekly')).toMatchObject({ xRoom: 0, wRoom: 0 })
+      expect(tl.boxes.find((b) => b.c.item.id === 'weekly')?.x).toBeCloseTo(1 / 3, 9)
+      expect(tl.more).toEqual([])
+    },
+  )
 
   it('完了した予定・ゴミ箱の物・時刻の無い物', () => {
     const tl = buildTimeline(listOf(timed('done', '10:00', '11:00', { done: true }), mkItem({ id: 'untimed' })), D, 'L')

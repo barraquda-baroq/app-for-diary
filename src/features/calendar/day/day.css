@@ -1,6 +1,6 @@
 /* デイリー（src/features/calendar/day/*。docs/SPEC.md の 11.・4.3〜4.9・7.3・7.4・7.7〜7.9）。クラスは .dy- で始める。
    色は src/styles.css の変数だけを使う（画面で色を足さない）。区分の色は data-kind の --kind-*、ラベルの色は data-label の --label。
-   目立たせる所（区切り .dy-area・予定の枠 .dy-event・.dy-start。4.9）には outline・animation を付けない（.flash の枠が隠れる）。
+   目立たせる所（区切り .dy-area・行 .dy-row・予定の枠 .dy-event・.dy-start。4.9）には outline・animation を付けない（.flash の枠が隠れる）。
    フォーカスの枠は「押すと詳細」のボタンの ::after（枠全体に広げた所）に出す */
 
 /* ===== 画面の全体: いちばん上に日の見出し、その下にリストとタイムスケジュール（11.1） ===== */
@@ -269,6 +269,13 @@
   outline-offset: -2px;
 }
 
+/* すばやく足す（「＋ 予定を足す」の行がその場でこの1行の入力欄に替わる。行と同じ 40px に収める。12.1・D44） */
+.dy-quick {
+  align-items: center;
+  min-height: 40px;
+  padding: 2px 8px 2px 4px;
+}
+
 /* ===== タイムスケジュール（右。11.3）: その中だけでスクロールする。0:00〜24:00（1時間 --hour-px） ===== */
 .dy-timeline {
   display: flex;
@@ -312,7 +319,9 @@
   white-space: nowrap;
 }
 
+/* --more-room: 「+n」の札の所（札を出すまとまりの右の端に空ける幅。札 26px と列との間 2px から、右の空き 8px の中の 4px を引いた物） */
 .dy-events {
+  --more-room: 24px;
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
@@ -350,12 +359,14 @@
   border-top: 2px solid var(--rule-strong);
 }
 
-/* ===== 予定の枠と、日をまたぐ予定の部分の位置: 列の数で等分（右に 8px の空きを残し、空いた時間を押せるようにする。列の間は 2px） ===== */
+/* ===== 予定の枠と、日をまたぐ予定の部分の位置（dayModel.ts の x・w）: 予定を置ける幅（右に 8px の空きを残し、空いた時間を押せるように
+   する）の割合 --x・--w から、「+n」の札の所を --x-room・--w-room 個分引く。日をまたぐ予定の部分は左の列、1日の予定はその右に、
+   まとまりの中の列の数で等分。列の間は 2px ===== */
 .dy-event,
 .dy-piece {
   position: absolute;
-  left: calc((100% - 8px) * var(--col) / var(--cols) + 2px);
-  width: calc((100% - 8px) / var(--cols) - 2px);
+  left: calc((100% - 8px) * var(--x) - var(--more-room) * var(--x-room) + 2px);
+  width: calc((100% - 8px) * var(--w) - var(--more-room) * var(--w-room) - 2px);
 }
 
 /* 予定の枠（1日の予定・日をまたぐ予定の開始のカード）: 地は --surface（区分で変えない）、1px の --border、ラベルの左の一辺 4px
@@ -418,6 +429,27 @@
 
 .dy-ev-time {
   line-height: 14px;
+}
+
+/* 指の端末（S・M も）: 点線の丸の押せる所を、枠の中で 34px 四方まで広げる（左上の角から。枠の外は枠の overflow で切れるので、
+   隣の予定・上の予定には掛からない）。AI の札の押せる所も 34px の高さまで広げる（枠の中・行の中で、隣の物には掛からない。D08） */
+@media (max-width: 899px), (pointer: coarse) {
+  .dy-ring::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -5px;
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .dy-ev-marks .cp-ai::after {
+    inset: -5px -6px -15px;
+  }
+
+  .dy-row-marks .cp-ai::after {
+    inset: -10px -6px;
+  }
 }
 
 /* 印（区分のアイコン 12px → 〆 → ロック → AI の札。右上）。押せるのは AI の札だけ */
@@ -519,15 +551,16 @@
   color: var(--done-text);
 }
 
-/* ===== 「+n」の札（列に入らない予定。等幅 11px。最後の列の右端に、隠れた予定のいちばん早い時刻の高さで重ねる。AMB-ITEMS-13） ===== */
+/* ===== 「+n」の札（列に入らない予定。等幅 11px。まとまりの右の端に空けた札の所（--more-room）に、隠れた予定のいちばん早い時刻の
+   高さで。最後の列の右の 2px 隣で、予定の枠には重ねない。AMB-ITEMS-13） ===== */
 .dy-more {
   position: absolute;
-  right: 12px;
+  right: 4px;
   z-index: 3;
   min-width: 26px;
   height: 18px;
   margin: 3px 0 0;
-  padding: 0 6px;
+  padding: 0 2px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: var(--surface);
