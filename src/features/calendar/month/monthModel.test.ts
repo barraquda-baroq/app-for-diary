@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { calendarItems, offDaySet, type CalItem } from '../../../domain/calendar'
 import { mkItem, mkOffDay, mkTask } from '../../../domain/testData'
 import type { Item } from '../../../domain/types'
-import { buildMonth, type MonthCellVM } from './monthModel'
+import { buildMonth, rovingIndex, type MonthCellVM } from './monthModel'
 
 const NOV = { y: 2026, m: 11 }
 const TODAY = '2026-11-10'
@@ -189,5 +189,41 @@ describe('読み上げ（4.12・9.3。FRAME-255・CALENDAR-243）', () => {
       expect(cellOf(weeks, '2026-11-23').label).toBe('11月23日（月）、仕事 1件、プライベート 2件、休み、勤労感謝の日')
       expect(cellOf(weeks, '2026-11-24').label).toBe('11月24日（火）、予定なし')
     }
+  })
+})
+
+describe('キーボードでマスの間を動く（rovingIndex。4.12・開発）', () => {
+  // 2026年11月は 35マス（5行）。0 = 11/1（日）、9 = 11/10（火）、34 = 12/5（土）
+  it.each([
+    ['ArrowRight', 9, 10],
+    ['ArrowLeft', 9, 8],
+    // 行の端では次・前の行へ続く（土曜 → 次の日曜、日曜 → 前の土曜）
+    ['ArrowRight', 6, 7],
+    ['ArrowLeft', 7, 6],
+    ['ArrowDown', 9, 16],
+    ['ArrowUp', 16, 9],
+    // Home・End はその週の日曜・土曜
+    ['Home', 9, 7],
+    ['End', 9, 13],
+    ['Home', 7, 7],
+    ['End', 13, 13],
+    // マス目の外へは出ない（端では動かない）
+    ['ArrowLeft', 0, 0],
+    ['ArrowRight', 34, 34],
+    ['ArrowUp', 3, 3],
+    ['ArrowDown', 30, 30],
+  ])('%s: %i → %i', (key, from, to) => {
+    expect(rovingIndex(from, key, 35)).toBe(to)
+  })
+
+  it('6行（2026年8月・42マス）と4行（2026年2月・28マス）の端', () => {
+    expect(rovingIndex(41, 'ArrowDown', 42)).toBe(41)
+    expect(rovingIndex(34, 'ArrowDown', 42)).toBe(41)
+    expect(rovingIndex(27, 'ArrowRight', 28)).toBe(27)
+    expect(rovingIndex(21, 'End', 28)).toBe(27)
+  })
+
+  it('受け持たないキー（Tab・Enter・Space・PageUp など）は null（ほかの部品に任せる）', () => {
+    for (const key of ['Tab', 'Enter', ' ', 'PageUp', 'PageDown', 'Escape', 'a']) expect(rovingIndex(9, key, 35)).toBeNull()
   })
 })

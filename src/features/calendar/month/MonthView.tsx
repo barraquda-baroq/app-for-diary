@@ -8,7 +8,11 @@
 //   どのマスを押しても（数字・前後の月の日も）その日の休みが付いたり外れたりする。［休み］をもう一度・［終わる］・Esc で終わる。
 //   ‹ ›・今日・スワイプ・［＋ 登録］では続き、マンスリーを離れると終わる（モードの切り替え・「戻る」・MIM・設定など、マンスリーを
 //   離れた時に終えるのは src/features/top/TopPage.tsx の useEndOffMode と useCalendarNav。ここでは終えない。D30）
-import { useCallback, useMemo } from 'react'
+// - キーボード（PC）: マス目の中で Tab で止まるのは1つのマス（初めは見ている日。フォーカスが来たマスに移る）のボタンと、その数字の
+//   ボタンだけ。マスの間は矢印キー・Home・End で動く（行き先は monthModel.ts の rovingIndex）。マス目の外へは出ない。
+//   受け持ったキーは preventDefault する（ページをスクロールしない。段階5で ← →（前後の期間。3.10）を入れる時は、
+//   preventDefault 済みの物（マス目の中で受けた物）を見送る）
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { parseYmd, todayYmd, WEEKDAYS_EN } from '../../../domain/dates'
 import type { ItemKind } from '../../../domain/types'
 import { actions } from '../../../store/actions'
@@ -18,7 +22,7 @@ import { testIds } from '../common/testIds'
 import type { ViewProps } from '../common/types'
 import { useCalendarNav } from '../common/useCalendarRoute'
 import { MonthCell } from './MonthCell'
-import { buildMonth, type MonthCellVM } from './monthModel'
+import { buildMonth, rovingIndex, type MonthCellVM } from './monthModel'
 import { OffModeBanner } from './OffModeBanner'
 import './month.css'
 
@@ -44,6 +48,31 @@ export function MonthView({ viewed, today, width }: ViewProps) {
   )
   const onCount = useCallback((date: string, kind: ItemKind) => nav.openDay(date, kind), [nav])
 
+  // Tab で止まるマス: フォーカスが来たマス（今のマス目にあれば）、無ければ見ている日（月の行き先では、いつもその月の日。D02）、
+  // それも無ければその月の1日
+  const dates = useMemo(() => weeks.flat().map((c) => c.date), [weeks])
+  const [focused, setFocused] = useState<string | null>(null)
+  const tabDate =
+    focused !== null && dates.includes(focused)
+      ? focused
+      : dates.includes(viewed)
+        ? viewed
+        : (weeks.flat().find((c) => !c.outside)?.date ?? dates[0])
+  const grid = useRef<HTMLDivElement>(null)
+  const onKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.nativeEvent.isComposing) return
+      const from = (e.target as HTMLElement).closest<HTMLElement>('[data-date]')?.dataset.date
+      const i = from === undefined ? -1 : dates.indexOf(from)
+      if (i < 0) return
+      const j = rovingIndex(i, e.key, dates.length)
+      if (j === null) return
+      e.preventDefault()
+      grid.current?.querySelector<HTMLElement>(`[data-date="${dates[j]}"] .mo-hit`)?.focus()
+    },
+    [dates],
+  )
+
   return (
     <div className="mo" data-testid={testIds.view('month')}>
       {offMode && <OffModeBanner onEnd={() => setOffMode(false)} />}
@@ -59,9 +88,18 @@ export function MonthView({ viewed, today, width }: ViewProps) {
             </span>
           ))}
         </div>
-        <div className="mo-grid">
+        <div ref={grid} className="mo-grid" onKeyDown={onKeyDown}>
           {weeks.flat().map((c) => (
-            <MonthCell key={c.date} cell={c} compact={compact} offMode={offMode} onCell={onCell} onCount={onCount} />
+            <MonthCell
+              key={c.date}
+              cell={c}
+              compact={compact}
+              offMode={offMode}
+              onCell={onCell}
+              onCount={onCount}
+              tabbable={c.date === tabDate}
+              onFocusCell={setFocused}
+            />
           ))}
         </div>
       </div>
