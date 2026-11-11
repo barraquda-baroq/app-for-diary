@@ -1,7 +1,7 @@
 // 登録・詳細の画面の欄の初めの値と「詳しく」を開いて出すかの決め方（docs/SPEC.md の 12.2・12.3・6.12。D11・D48・AMB-ITEMS-02・26）
 import { describe, expect, it } from 'vitest'
 import { mkItem, mkTask } from '../../domain/testData'
-import { detailForm, hasDetails, oneLine, registerForm } from './itemForm'
+import { detailForm, hasDetails, oneLine, rawTitleOf, registerForm } from './itemForm'
 
 describe('登録の画面の初めの値（12.2・ITEMS-172・177・183）', () => {
   it('件名は空・区分は仕事・開始日だけ・時刻なし・詳しくは全部空', () => {
@@ -67,6 +67,15 @@ describe('詳細の画面の初めの値', () => {
     expect(detailForm(shown, '  ').title).toBe('')
     expect(detailForm(shown, '（件名なし）').title).toBe('（件名なし）')
     expect(detailForm(shown).title).toBe('（件名なし）')
+  })
+
+  it('rawTitleOf: 記録が無ければ undefined、件名が文字でなければ空（null・項目が無い）', () => {
+    expect(rawTitleOf(undefined)).toBeUndefined()
+    expect(rawTitleOf({ title: 'a' })).toBe('a')
+    expect(rawTitleOf({ title: null })).toBe('')
+    expect(rawTitleOf({ title: 3 })).toBe('')
+    expect(rawTitleOf({})).toBe('')
+    expect(detailForm(mkItem({ title: '（件名なし）' }), rawTitleOf({ title: null })).title).toBe('')
   })
 })
 

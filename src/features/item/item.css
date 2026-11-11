@@ -75,14 +75,12 @@
   color: var(--text-muted);
 }
 
-/* 件名: 1行の欄（改行しない）。長い件名は折り返して高さを伸ばす（fields/useAutoGrow.ts） */
+/* 件名: 1行の欄（改行しない）。長い件名は折り返して高さを伸ばす（fields/useAutoGrow.ts）。余白と行の高さは .input のまま
+   （1行の時はほかの入力欄と同じ 36px・スマホ 40px。4.11） */
 .input.it-title {
   display: block;
   resize: none;
   overflow: hidden;
-  padding-top: 7px;
-  padding-bottom: 7px;
-  line-height: 1.45;
 }
 
 /* 区分の切り替え（［かばん 仕事｜家 プライベート］）。欄の幅いっぱいに伸ばさない */

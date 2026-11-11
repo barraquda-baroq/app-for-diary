@@ -28,6 +28,7 @@ async function settled(sheet: Locator): Promise<void> {
 }
 
 const background = (el: Locator) => el.evaluate((e) => getComputedStyle(e).backgroundColor)
+const height = (el: Locator) => el.evaluate((e) => e.getBoundingClientRect().height)
 const shadow = (el: Locator) => el.evaluate((e) => getComputedStyle(e).boxShadow)
 
 /** 詳細を開いた時と同じ履歴（同じ行き先に state.sheet を積む）を作って読み込み直す（読み込み直すと、予定があれば開き直す。D03） */
@@ -59,9 +60,13 @@ test.describe('登録の画面（PC）', { tag: ['@pc'] }, () => {
     expect(await sheet.evaluate((e) => getComputedStyle(e).borderTopLeftRadius)).toBe('14px')
     const title = page.getByTestId('item-title')
     await expect(title).toBeFocused()
-    // 仕事の地・帯なし
+    // 件名の欄（1行の textarea）もほかの入力欄と同じ高さ 36px（4.11・FRAME-252）
+    expect(await height(title)).toBe(36)
+    expect(await height(page.getByTestId('item-start-time'))).toBe(36)
+    // 仕事の地・帯なし。題の左の区分のアイコンはディープダークだけ（ほかの外観では出さない）
     expect(await background(sheet)).toBe(await tokenColor(page, '--work-sheet'))
     await expect(sheet).not.toHaveAttribute('data-label')
+    await expect(sheet.locator('.modal-title-icon')).toBeHidden()
     // プライベートを選ぶと地がプライベートの色に
     await page.getByTestId('item-kind-private').click()
     await expect(sheet).toHaveAttribute('data-kind', 'private')
@@ -121,6 +126,29 @@ test.describe('詳細の画面（PC）', { tag: ['@pc'] }, () => {
     await page.getByTestId('modal-close').click()
     await expect(sheet).toHaveCount(0)
   })
+
+  test('「詳しく」を閉じた詳細でも、Tab は画面の中を回る（畳んだ欄を飛ばし、最後の「詳しく」の次は［×］へ）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+    // メールの返信: 詳しくの中が空で Claude の行も無い（下の行に押せる物が無い）
+    await openDetailByHistory(page, DEMO_IDS.mail)
+    const details = page.getByTestId('item-details')
+    await expect(details).toHaveAttribute('aria-expanded', 'false')
+    await details.focus()
+    await page.keyboard.press('Tab')
+    await expect(page.getByTestId('modal-close')).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(details).toBeFocused()
+    // 開いて閉じた後も同じ（畳む動きが終わってから畳んだ欄を外す）
+    await details.click()
+    await details.click()
+    const memo = page.getByTestId('item-memo')
+    await expect.poll(() => memo.evaluate((e) => (e as HTMLElement).offsetParent === null)).toBe(true)
+    await details.focus()
+    await page.keyboard.press('Tab')
+    await expect(page.getByTestId('modal-close')).toBeFocused()
+  })
 })
 
 test.describe('登録の画面（スマホ）', { tag: ['@s'] }, () => {
@@ -141,6 +169,8 @@ test.describe('登録の画面（スマホ）', { tag: ['@s'] }, () => {
     })
     expect(radius).toEqual(['16px', '16px', '0px'])
     expect(await page.getByTestId('item-title').evaluate((e) => getComputedStyle(e).fontSize)).toBe('16px')
+    // 入力欄の高さはスマホで 40px（件名の欄も。4.11・FRAME-252）
+    expect(await height(page.getByTestId('item-title'))).toBe(40)
     // ラベルの丸は 24px で12個が1行に入る（「なし」は別の行。D35）
     const first = await page.getByTestId('item-label-rose-l').boundingBox()
     const last = await page.getByTestId('item-label-peony-l').boundingBox()

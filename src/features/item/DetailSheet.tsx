@@ -20,7 +20,7 @@ import { testIds } from '../calendar/common/testIds'
 import type { DetailSheetProps } from '../calendar/common/types'
 import { DetailFooter } from './DetailFooter'
 import { DetailForm } from './DetailForm'
-import { detailForm, hasDetails, type ItemForm } from './itemForm'
+import { detailForm, hasDetails, rawTitleOf, type ItemForm } from './itemForm'
 import { ItemSheet } from './ItemSheet'
 
 /** 詳細の画面の題（カレンダーから開いた時。Task List から開いた時の「タスク」は段階3。D46・D48） */
@@ -53,7 +53,7 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
   const labelNames = useApp((s) => s.data.labelNames)
   const detailsPref = usePrefs((s) => s.detailsOpen)
   const setPrefs = usePrefs((s) => s.setPrefs)
-  const [form, setForm] = useState<ItemForm>(() => detailForm(item, getRaw().items[item.id]?.title))
+  const [form, setForm] = useState<ItemForm>(() => detailForm(item, rawTitleOf(getRaw().items[item.id])))
   const [open, setOpen] = useState(() => hasDetails(form) || detailsPref)
   const change = (patch: Partial<ItemForm>) => setForm((f) => ({ ...f, ...patch }))
   const toggleDetails = () => {

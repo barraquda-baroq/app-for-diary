@@ -194,6 +194,26 @@ describe('件名が空の記録（D48・AMB-ITEMS-26）', () => {
     expect(title.value).toBe('')
     expect(title.placeholder).toBe('（件名なし）')
   })
+
+  it.each([
+    ['null', { title: null }],
+    ['項目が無い', { title: undefined }],
+  ])(
+    '端末の記録の件名が文字でない（%s）時も空の件名として、欄は空・プレースホルダ（「（件名なし）」を値にしない）',
+    async (_name, patch) => {
+      const odd = { ...mkItem({ id: 'z' }), ...patch } as unknown as Item
+      if (patch.title === undefined) delete (odd as Partial<Item>).title
+      await open([odd])
+      const title = byId(testIds.itemTitle) as HTMLTextAreaElement
+      expect(title.value).toBe('')
+      expect(title.placeholder).toBe('（件名なし）')
+    },
+  )
+
+  it('記録が「（件名なし）」という本当の件名なら、その字を出す', async () => {
+    await open([mkItem({ id: 'r', title: '（件名なし）' })])
+    expect((byId(testIds.itemTitle) as HTMLTextAreaElement).value).toBe('（件名なし）')
+  })
 })
 
 describe('完了（12.5）', () => {

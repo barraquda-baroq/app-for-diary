@@ -1,7 +1,7 @@
 // 予定の登録の画面（docs/SPEC.md の 12.2・3.8・4.3・4.6）: 題・欄の並び・件名にフォーカス・初めの値、区分とラベルを選び替えると
 // 地と帯の印（data-kind・data-label）がその場で替わる、「詳しく」の開閉を端末ごとに覚える、件名が空の間は［登録］を押せない、
 // ラベルの呼び名の出し方、ディープダークの題の左のアイコン
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { LABEL_DEFAULT_NAMES, LABEL_KEYS } from '../../domain/labels'
@@ -209,6 +209,19 @@ describe('「詳しく」の開閉は端末ごとに覚える（6.13・ITEMS-178
     unmount()
     await open()
     expect(byId(testIds.itemDetails).getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('畳んだ中身は、畳む動き（180ms）が終わってから表示なし（hidden）にし、開く時はすぐ出す（Tab が見えない欄へ行かないように）', async () => {
+    const { user } = await open()
+    const toggle = byId(testIds.itemDetails)
+    const content = () => document.getElementById(toggle.getAttribute('aria-controls') ?? '')?.firstElementChild as HTMLElement
+    expect(content().hidden).toBe(true)
+    await user.click(toggle)
+    expect(content().hidden).toBe(false)
+    await user.click(toggle)
+    // 畳む動きの間は残す（高さが縮む動きを見せる）
+    expect(content().hidden).toBe(false)
+    await waitFor(() => expect(content().hidden).toBe(true))
   })
 })
 

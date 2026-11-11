@@ -60,6 +60,16 @@ export function detailForm(item: Item, rawTitle?: unknown): ItemForm {
 }
 
 /**
+ * 端末の記録（raw）の件名を detailForm に渡す形にする: 記録が無ければ undefined（表示用の記録の件名のまま）、件名が文字でない
+ * （null・項目が無い・古い形）なら空の件名として ''（表示用の記録では「（件名なし）」になっている。D48）
+ */
+export function rawTitleOf(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const title = (raw as { title?: unknown }).title
+  return typeof title === 'string' ? title : ''
+}
+
+/**
  * 「詳しく」の中に入っている物があるか（詳細の画面は、あれば「詳しく」を開いて出す。D11・AMB-ITEMS-02）: ラベル・依頼者・ロック・
  * メモと、Task List にも出すが生まれの初めの値と違う時（calendar 生まれで出す・list 生まれで外した）
  */
