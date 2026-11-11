@@ -1,6 +1,7 @@
 // 小さな画面（docs/SPEC.md の 3.8・4.3・12.2・12.3）: 段階2で足した印（区分の地・ラベルの色の帯・題の左の区分のアイコン・
 // data-testid・クラス）。動き（Esc・背景・×で閉じる）は今までどおり
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useLayoutEffect } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BagIcon } from './icons'
 import { Modal } from './Modal'
@@ -68,6 +69,29 @@ describe('Modal の印（段階2）', () => {
     fireEvent.mouseDown(document.querySelector('.modal-backdrop')!)
     fireEvent.click(screen.getByTestId('modal-close'))
     expect(onClose).toHaveBeenCalledTimes(3)
+  })
+
+  it('開いた直後（描いたすぐ後・ブラウザが描く前）に押した Esc も聞き、その時にはもう中へフォーカスを移してある（開発）', () => {
+    const onClose = vi.fn()
+    const seen: boolean[] = []
+    /** Modal の後に置いた部品。Modal と同じ描画の useLayoutEffect（Modal の物の後）で、中にフォーカスがあるかを見て Esc を押す */
+    function PressEscRightAway() {
+      useLayoutEffect(() => {
+        seen.push(Boolean(document.querySelector('[data-testid="m"]')?.contains(document.activeElement)))
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      }, [])
+      return null
+    }
+    render(
+      <>
+        <Modal title="予定" onClose={onClose} testId="m">
+          <input aria-label="件名" />
+        </Modal>
+        <PressEscRightAway />
+      </>,
+    )
+    expect(seen).toEqual([true])
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('日本語の変換を取り消す Esc（isComposing・Safari の keyCode 229）では閉じない', () => {

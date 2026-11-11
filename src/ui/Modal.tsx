@@ -1,6 +1,8 @@
 // 小さな画面（L は真ん中・S/M は下からのシート）。NS の src/ui/Modal.tsx から。段階2で、予定の登録・詳細の画面の見た目
-// （区分の地・ラベルの色の帯・ディープダークの題の左の区分のアイコン。docs/SPEC.md の 4.3・12.2・12.3）のための印を足した（動きは同じ）
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+// （区分の地・ラベルの色の帯・ディープダークの題の左の区分のアイコン。docs/SPEC.md の 4.3・12.2・12.3）のための印を足した（動きは同じ）。
+// Esc・Tab を聞き始めるのと、開いた時に中へフォーカスを移すのは、描いたすぐ後（useLayoutEffect。ブラウザが画面を描く前）にする
+// （NS は useEffect。開いた直後に押した Esc を、聞き始める前で落とさないように。開発）
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { ItemKind } from '../domain/types'
 import { XIcon } from './icons'
@@ -67,7 +69,7 @@ export function Modal({
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const id = Symbol('modal')
     stack.push(id)
     if (stack.length === 1) setBackgroundLocked(true)
