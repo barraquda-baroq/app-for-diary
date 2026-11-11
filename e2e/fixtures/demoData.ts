@@ -12,7 +12,8 @@
 //   次の日にまたぐ夜の予定（翌日の「‹ 」）、URL の入ったメモ、長い件名
 // - 11/13 は時刻の重なる仕事の予定が5件（L は4列＋「+1」、S は3列＋「+2」）と、休みをまたぐ旅行
 // - 色の見本の週 11/15〜11/21: 仕事・プライベートのそれぞれに、24色のラベルを既定の呼び名の件名で1件ずつ（各日の上が淡・下が濃）と、
-//   ラベルなしを1件。11/19 は仕事 12件・プライベート 10件にして、S のマンスリーで「12/10」を出す
+//   ラベルなしを1件。土曜には、色合いの間がいちばん狭い桜と牡丹を隣に並べた組も（FRAME-190）。11/19 は仕事 12件・
+//   プライベート 10件にして、S のマンスリーで「12/10」を出す
 // - 混んだ週 11/22〜11/28: 重なる複数日の仕事が5件（S のレールは3本まで、4本目からは「● 件名」の行）、月をまたぐ物
 import type { AppData, Item, ItemKind, LabelName, OffDay } from '../../src/domain/types'
 import { LABEL_DEFAULT_NAMES, LABEL_KEYS, type LabelKey } from '../../src/domain/labels'
@@ -68,8 +69,16 @@ export const DEMO_IDS = {
 /** 色の見本の週のカードの id（区分・ラベルのキー。ラベルなしは 'none'） */
 export const paletteId = (kind: ItemKind, key: LabelKey | 'none') => `demo-${kind === 'work' ? 'w' : 'p'}-pal-${key}`
 
-/** 作った時刻の始まり（10/26 9:00。1件ごとに1分ずつ進め、並び（order）も同じ値にする） */
-const CREATED_FROM = Date.parse('2026-10-26T09:00:00+09:00')
+/**
+ * 色合いの間がいちばん狭い桜（10°）と牡丹（350°）を隣に並べる組（色の見本の週の土曜。FRAME-190・PLAN §6.2 の「桜の隣に牡丹」）。
+ * 24色の並び（4.6 の番号の順）では両端に離れるので、別に並べて見比べられるようにする
+ */
+export const DEMO_PAIR_KEYS: readonly LabelKey[] = ['rose-l', 'peony-l', 'rose-d', 'peony-d']
+/** 桜と牡丹を並べた組のカードの id */
+export const pairId = (kind: ItemKind, key: LabelKey) => `demo-${kind === 'work' ? 'w' : 'p'}-pair-${key}`
+
+/** 作った時刻の始まり（10/1 9:00。完了にした日がいちばん早い 10/14 の予定よりも前。1件ごとに1分ずつ進め、並び（order）も同じ値にする） */
+const CREATED_FROM = Date.parse('2026-10-01T09:00:00+09:00')
 /** 見本の今（ミリ秒） */
 const NOW_MS = Date.parse(DEMO_NOW)
 
@@ -121,7 +130,8 @@ function makeItem(spec: Spec, index: number): Item {
     ai: spec.connector ? 'claude' : null,
     via: spec.connector?.via ?? null,
     createdAt: created,
-    updatedAt: created,
+    // 完了にした物は、完了にした時に直した（作った時刻のままにしない）
+    updatedAt: doneAt ?? created,
   }
 }
 
@@ -282,7 +292,10 @@ function mainSpecs(): Spec[] {
   ]
 }
 
-/** 色の見本の週（11/15〜11/21）: 区分ごとに24色を1件ずつ（各日に淡2つ・濃2つ。上が淡）、土曜にラベルなし。11/19 は件数を増やす */
+/**
+ * 色の見本の週（11/15〜11/21）: 区分ごとに24色を1件ずつ（各日に淡2つ・濃2つ。上が淡）、土曜にラベルなしと、桜と牡丹を隣に並べた組
+ * （桜・淡 → 牡丹・淡 → 桜・濃 → 牡丹・濃）。11/19 は件数を増やす
+ */
 function paletteSpecs(): Spec[] {
   const days = ['2026-11-15', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20']
   const out: Spec[] = []
@@ -294,6 +307,8 @@ function paletteSpecs(): Spec[] {
         out.push({ id: paletteId(kind, key), kind, title: LABEL_DEFAULT_NAMES[key], start: date, label: key })
     })
     out.push({ id: paletteId(kind, 'none'), kind, title: 'ラベルなし', start: '2026-11-21' })
+    for (const key of DEMO_PAIR_KEYS)
+      out.push({ id: pairId(kind, key), kind, title: LABEL_DEFAULT_NAMES[key], start: '2026-11-21', label: key })
   }
   // 11/19: 仕事 4 + 8 = 12件、プライベート 4 + 6 = 10件（S のマンスリーの「12/10」）
   const moreWork = [

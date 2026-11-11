@@ -7,7 +7,7 @@
 import type { Locator, Page } from '@playwright/test'
 import { testIds } from '../../src/features/calendar/common/testIds'
 import { LABEL_KEYS } from '../../src/domain/labels'
-import { DEMO_IDS, DEMO_TODAY, DEMO_WEEKS, paletteId } from '../fixtures/demoData'
+import { DEMO_IDS, DEMO_PAIR_KEYS, DEMO_TODAY, DEMO_WEEKS, paletteId, pairId } from '../fixtures/demoData'
 
 export type Appearance = 'white' | 'dark' | 'deep-dark'
 export const APPEARANCES: readonly Appearance[] = ['white', 'dark', 'deep-dark']
@@ -44,10 +44,17 @@ async function scrollToTop(target: Locator): Promise<void> {
   await target.evaluate((e) => e.scrollIntoView({ block: 'start', inline: 'nearest' }))
 }
 
-/** 詳細を開く（ウィークリーの始点のカードを押す） */
+/**
+ * 書き換えられる件名の欄（入力欄。登録・詳細の画面の中身ができた印）。中身ができる前の仮の詳細の画面にも item-title はあるが、
+ * 字を出すだけの段落なので、これでは見つからない（仮の画面を見本として撮らない）
+ */
+export const editableTitle = (page: Page) => page.getByTestId(testIds.itemTitle).and(page.locator('input, textarea'))
+
+/** 詳細を開く（ウィークリーの始点のカードを押す）。欄が出るまで待つ */
 const openDetail = (id: string) => async (page: Page) => {
   await page.getByTestId(testIds.weekStart(id)).click()
   await page.getByTestId(testIds.itemSheet).waitFor()
+  await editableTitle(page).waitFor()
 }
 
 /**
@@ -211,12 +218,15 @@ export async function unionBox(page: Page, targets: Locator[], pad = 8): Promise
 
 const ids = (page: Page, list: readonly string[]) => list.map((id) => page.getByTestId(id))
 
+/** マンスリーの曜日の行の高さの上限（Q5 の切り抜きで、マス目の上に入れる高さ） */
+const WEEKDAY_ROW_MAX = 64
+
 /** 2026年11月の from 日〜to 日の日付（'YYYY-MM-DD'）の並び */
 const novDays = (from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, i) => `2026-11-${String(from + i).padStart(2, '0')}`)
 
 export const CROPS: readonly Crop[] = [
-  // Q2 色合いの間隔: 色の見本の週の仕事の段と、ラベルを選ぶ所
+  // Q2 色合いの間隔: 色の見本の週の仕事の段（24色と、土曜の桜と牡丹の組）と、ラベルを選ぶ所
   {
     question: 2,
     id: 'palette-work',
@@ -231,6 +241,10 @@ export const CROPS: readonly Crop[] = [
         ...ids(
           page,
           [...LABEL_KEYS, 'none' as const].map((k) => testIds.weekCard(paletteId('work', k))),
+        ),
+        ...ids(
+          page,
+          DEMO_PAIR_KEYS.map((k) => testIds.weekCard(pairId('work', k))),
         ),
       ]),
   },
@@ -274,7 +288,7 @@ export const CROPS: readonly Crop[] = [
     shot: { id: 'detail-work', size: 'L' },
     area: (page) => unionBox(page, [page.getByTestId(testIds.itemSheet)], 4),
   },
-  // Q4 件名の帯の形: デイリーのタイムスケジュールの 10:00〜17:00 ごろ
+  // Q4 件名の帯の形: デイリーのタイムスケジュールの 9:00（今の時刻の線）〜17:00（面談の終わり）
   {
     question: 4,
     id: 'timeline',
@@ -283,10 +297,10 @@ export const CROPS: readonly Crop[] = [
     area: async (page) => {
       const events = await unionBox(
         page,
-        ids(
-          page,
-          [DEMO_IDS.weekly, DEMO_IDS.meeting, DEMO_IDS.review, DEMO_IDS.interview].map((id) => testIds.dayEvent(id)),
-        ),
+        ids(page, [
+          testIds.dayNow,
+          ...[DEMO_IDS.weekly, DEMO_IDS.meeting, DEMO_IDS.review, DEMO_IDS.interview].map((id) => testIds.dayEvent(id)),
+        ]),
         24,
       )
       const tl = await unionBox(page, [page.getByTestId(testIds.dayTimeline)], 0)
@@ -308,8 +322,11 @@ export const CROPS: readonly Crop[] = [
         ),
         0,
       )
-      // 曜日の行（マス目の上）も入れる
-      return { ...cells, y: Math.max(0, cells.y - 32), height: cells.height + 32 }
+      // 曜日の行（マス目の上）も入れる。曜日の行には data-testid が無いので、カレンダーの中身の箱（calendar-body）の上の端から
+      // （曜日の行の高さを決め打ちにすると、行が高い時に曜日の字が切れる）。中身の箱の上に別の物があっても、マス目の上 64px まで
+      const body = await unionBox(page, [page.getByTestId(testIds.calendarBody)], 0)
+      const top = Math.max(body.y, cells.y - WEEKDAY_ROW_MAX)
+      return { ...cells, y: top, height: cells.y + cells.height - top }
     },
   },
   // Q6 グレーの差し色: 操作の列（［月］・［休み］を押した状態・［＋ 登録］）と休みの帯、今日の印、選んだ文字と押した区分
@@ -353,9 +370,15 @@ export const CROPS: readonly Crop[] = [
   {
     question: 6,
     id: 'register',
-    title: '登録の画面（選んだ文字・押した区分）',
+    // 主なボタン（--primary）は、操作の列の［＋ 登録］（ふつうのボタン）ではなく、登録の画面の［登録］
+    title: '登録の画面（選んだ文字・押した区分・［登録］）',
     shot: { id: 'register', size: 'L' },
-    area: (page) => unionBox(page, ids(page, [testIds.itemTitle, testIds.itemKind('work'), testIds.itemKind('private')]), 12),
+    area: (page) =>
+      unionBox(
+        page,
+        ids(page, [testIds.itemTitle, testIds.itemKind('work'), testIds.itemKind('private'), testIds.itemRegister]),
+        12,
+      ),
   },
 ]
 

@@ -25,12 +25,14 @@ import {
   HUES_30,
   HUES_NOW,
   LABEL_KEYS,
+  LABEL_NAMES,
   LABEL_RULES,
   QUESTIONS,
   SAMPLE_SELECTORS,
   THEMES,
   WEEKEND_MIN_DE,
   buildVariants,
+  checkPick,
   checkTheme,
   emitCss,
   emitSpec,
@@ -38,9 +40,12 @@ import {
   labelPalette,
   pickTokens,
   readThemes,
+  sameVariants,
+  scaledFrom,
   variantsJson,
   withTokens,
 } from './sample-variants.mjs'
+import { LABEL_DEFAULT_NAMES, LABEL_KEYS as APP_LABEL_KEYS } from '../src/domain/labels.ts'
 
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 const committed = readFileSync(new URL('../e2e/samples/variants.json', import.meta.url), 'utf8')
@@ -121,6 +126,20 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
       /--work-area は var\(--surface\)/,
     )
     expect(checkTheme('white', withTokens(w, { '--done-text': '#c8c8c8' })).join('\n')).toMatch(/--done-text \/ --surface/)
+    // 詳細の地が領域の地より淡い（逆さま）時は、そのとおりに書く
+    expect(checkTheme('white', withTokens(w, { '--work-area': '#ecf2fa' })).join('\n')).toMatch(
+      /--work-area の面との差が --work-sheet 以上/,
+    )
+    expect(checkTheme('deep-dark', withTokens(themes['deep-dark'], { '--work-soft': '#151619' })).join('\n')).toMatch(
+      /--work-soft と --private-soft が違う色/,
+    )
+  })
+
+  it('ラベルのキーと既定の呼び名は、アプリ（src/domain/labels.ts）と同じ', () => {
+    expect(LABEL_KEYS).toEqual([...APP_LABEL_KEYS])
+    LABEL_KEYS.forEach((key, i) => {
+      expect(`${LABEL_NAMES[i % 12]}・${key.endsWith('-l') ? '淡' : '濃'}`).toBe(LABEL_DEFAULT_NAMES[key])
+    })
   })
 
   it('4.6 の明るさ・彩度・色相から作り直すと、表の24色（3つの外観）と同じになる（1/255 以内）', () => {
@@ -139,7 +158,21 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
 
 describe('案（e2e/samples/variants.json）', () => {
   it('書き出したファイルは、今の src/styles.css から作った物と同じ（作り直し忘れが無い）', () => {
-    expect(committed).toBe(variantsJson(css))
+    expect(sameVariants(committed, variantsJson(css))).toBe(true)
+  })
+
+  it('同じ中身かは、空白と改行の違い（Prettier で整えた時など）を見ず、値の違いと読めない物は違いとする', () => {
+    const json = variantsJson(css)
+    // 配列を1行にまとめるなど、整え方だけが違う
+    const reformatted = JSON.stringify(JSON.parse(json), null, 4).replace(
+      /\[\s+"white",\s+"dark",\s+"deep-dark"\s+\]/g,
+      '["white", "dark", "deep-dark"]',
+    )
+    expect(reformatted).not.toBe(json)
+    expect(sameVariants(reformatted, json)).toBe(true)
+    expect(sameVariants(json.replace(options.hue30.tokens.white['--label-rose-l'], '#000000'), json)).toBe(false)
+    expect(sameVariants('{', json)).toBe(false)
+    expect(sameVariants(null, json)).toBe(false)
   })
 
   it('問い（Q2〜Q6）の選ぶ物は、どれも「今」か作った案', () => {
@@ -258,6 +291,40 @@ describe('Q3 A・C: 区分の地とハイライトの濃さ（depth-lighter・de
     expect(o.tokens['deep-dark']['--work-soft']).toBe(o.tokens['deep-dark']['--private-soft'])
   })
 
+  // 倍率を戻したのは、その倍率のままだと（ほかのトークンは書き出した値で）本当に決まりを割る時だけ。並べ方の都合
+  // （詳細の地をまだ動かす前に、領域の地を比べてしまう、など）で戻していない
+  it.each([
+    ['depth-lighter', 0.7],
+    ['depth-deeper', 1.4],
+  ])('%s: 倍率を戻したトークンは、倍率どおりだと決まりを割る', (id, k) => {
+    const o = options[id]
+    for (const theme of ['white', 'dark']) {
+      const surface = hexOf(themes[theme], '--surface')
+      const scale = bandScaleOf(id, theme)[theme]
+      for (const name of Object.keys(o.tokens[theme])) {
+        const noted = o.notes.some((n) => n.includes(`${name} `) && n.includes(theme === 'white' ? 'ホワイト' : 'ダーク'))
+        if (!noted) continue
+        const full = scaledFrom(surface, hexOf(themes[theme], name), k)
+        const problems = checkTheme(theme, withTokens(themes[theme], { ...o.tokens[theme], [name]: full.hex }), {
+          bandScale: { [theme]: { ...scale, [name]: full.k } },
+        })
+        expect(
+          problems.filter((p) => p.includes(name)),
+          `${theme} ${name}`,
+        ).not.toEqual([])
+      }
+    }
+  })
+
+  it('濃い案のホワイトの領域の地は、字の読みやすさを割らないので × 1.4 のまま', () => {
+    const o = options['depth-deeper']
+    const surface = hexOf(themes.white, '--surface')
+    for (const name of ['--work-area', '--private-area']) {
+      const ratio = deltaE(o.tokens.white[name], surface) / deltaE(hexOf(themes.white, name), surface)
+      expect(ratio, name).toBeCloseTo(1.4, 1)
+    }
+  })
+
   it('淡い案は今より面に近く、濃い案は今より面から遠い（ホワイトのハイライトは字の読みやすさのため、ほぼ今のまま）', () => {
     for (const theme of THEMES) {
       const surface = hexOf(themes[theme], '--surface')
@@ -319,6 +386,29 @@ describe('Q5 B: 土日祝の色をダークに合わせる（weekend-matched）'
     }
   })
 
+  // 区分の数字より面に近い側で 4.5:1 に届かず反対の側（平日の字 --text の側）にした時は、区分の数字からいちばん小さい差
+  // （0.10）にとどめ、平日の字からできるだけ離す（土日の色が平日の字の色に見えないように）
+  it.each(['white', 'deep-dark'])(
+    '%s: 反対の側にした土日の色は、区分の数字と ΔE 0.10 ほどにとどめ、平日の字から離す',
+    (theme) => {
+      for (const [a, b] of PAIRS) {
+        const far = o.notes.some(
+          (n) => n.includes(`${a} は`) && n.includes('反対の側') && n.startsWith(theme === 'white' ? 'ホワイト' : 'ディープ'),
+        )
+        if (!far) continue
+        const v = applied('weekend-matched', theme)
+        expect(deltaE(hexOf(v, a), hexOf(v, b)), `${a} / ${b}`).toBeLessThan(WEEKEND_MIN_DE + 0.006)
+        // 区分の数字に近い所にとどめたので、平日の字（--text）との差は 0.08 より大きい
+        expect(deltaE(hexOf(v, a), hexOf(v, '--text')), `${a} / --text`).toBeGreaterThan(0.08)
+      }
+    },
+  )
+
+  it('ホワイトの --sat・--sun は、区分の数字より面に近い側では作れないので、反対の側にしたことを書き残す', () => {
+    for (const a of ['--sat', '--sun'])
+      expect(o.notes.some((n) => n.startsWith(`ホワイトの ${a} は`) && n.includes('反対の側'))).toBe(true)
+  })
+
   it('今のホワイトの日曜の色はプライベートの数字に近すぎる（ΔE 0.03）ので、案では離れる', () => {
     expect(deltaE(hexOf(themes.white, '--sun'), hexOf(themes.white, '--private-text'))).toBeLessThan(0.05)
     expect(deltaE(o.tokens.white['--sun'], hexOf(themes.white, '--private-text'))).toBeGreaterThanOrEqual(WEEKEND_MIN_DE)
@@ -367,6 +457,42 @@ describe('選んだ案を書く形にする（段階2の終わりの --emit css|
     expect(() => pickTokens(variants, 'depth-deeper,depth-lighter')).toThrow(/両方/)
     expect(() => pickTokens(variants, 'nope')).toThrow(/知らない案/)
     expect(() => pickTokens(variants, 'hue30@sepia')).toThrow(/知らない外観/)
+    // その外観を変えない案を、その外観に選んだ時（Q5 B はダークを変えない）は、黙って何もしないのではなく止める
+    expect(() => pickTokens(variants, 'weekend-matched@dark')).toThrow(/ダーク.*変えません/)
+    expect(() => pickTokens(variants, 'highlight-full@deep-dark')).toThrow(/ディープダーク.*変えません/)
+  })
+
+  // 作者は問いごとに1つずつ（外観ごとに違ってもよい）選ぶので、どの組み合わせでも決まりを満たす
+  // （それぞれの案を今の値に重ねて確かめただけでは、組み合わせた時に割れないとは言えない）
+  const ANSWERS = {
+    2: ['now', 'hue30'],
+    3: ['depth-lighter', 'now', 'depth-deeper'],
+    4: ['now', 'highlight-full'],
+    5: ['now', 'weekend-matched'],
+    6: ['accent-lighter', 'now', 'accent-deeper'],
+  }
+  const combos = Object.values(ANSWERS).reduce((acc, ids) => acc.flatMap((c) => ids.map((id) => [...c, id])), [[]])
+  it.each(THEMES)('%s: 問い2〜6の答えのどの組み合わせ（72通り）でも、選んだ値は決まりを満たす（checkPick）', (theme) => {
+    expect(combos).toHaveLength(72)
+    for (const combo of combos) {
+      const pick = combo
+        .filter((id) => id !== 'now' && options[id].appearances.includes(theme))
+        .map((id) => `${id}@${theme}`)
+        .join(',')
+      expect(checkPick(variants, pick, css), `${theme}: ${pick}`).toEqual([])
+    }
+  })
+
+  it('checkPick: 選んだ値が決まりを割る時は、その文を返す（--emit はそれを出して止まる）', () => {
+    const bad = {
+      ...variants,
+      options: {
+        ...options,
+        bad: { ...options.hue30, tokens: { white: { '--text-faint': '#9a9a9a' } }, appearances: ['white'] },
+      },
+    }
+    expect(checkPick(bad, 'bad', css).join('\n')).toMatch(/ホワイト: --text-faint \/ --bg/)
+    expect(checkPick(variants, '', css)).toEqual([])
   })
 
   it('emitCss: 外観ごとの規則の中に書く行（とハイライトの形）', () => {

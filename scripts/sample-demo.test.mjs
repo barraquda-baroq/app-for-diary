@@ -8,17 +8,19 @@ import {
   DEMO_LABEL_NAMES,
   DEMO_NOW,
   DEMO_OFF_DAYS,
+  DEMO_PAIR_KEYS,
   DEMO_TODAY,
   DEMO_WEEKS,
   demoData,
+  pairId,
   paletteId,
 } from '../e2e/fixtures/demoData.ts'
-import { calendarItems, dayList, dayTimed } from '../src/domain/calendar.ts'
+import { calendarItems, dayList, dayTimed, weekSingles } from '../src/domain/calendar.ts'
 import { daysBetween, monthWeeks, weekdayOfYmd, weekStartOf } from '../src/domain/dates.ts'
 import { layoutPieces, minMinutesOf, piecesOn, timedInputs, HOUR_PX } from '../src/domain/dayLayout.ts'
 import { holidayName } from '../src/domain/holidays.ts'
 import { countOn, hasDueMark, itemProblems } from '../src/domain/items.ts'
-import { LABEL_KEYS } from '../src/domain/labels.ts'
+import { LABEL_DEFAULT_NAMES, LABEL_KEYS } from '../src/domain/labels.ts'
 import { repairData } from '../src/domain/repair.ts'
 import { assignLanes, laneParts, railSplit, weekLaneItems } from '../src/domain/tracks.ts'
 import { emptyData } from '../src/domain/types.ts'
@@ -56,6 +58,14 @@ describe('見本のデータの形', () => {
     expect(new Set(orders).size).toBe(orders.length)
     // 作った時刻はどれも見本の今より前
     for (const it of items) expect(it.createdAt).toBeLessThan(Date.parse(DEMO_NOW))
+  })
+
+  it('直した時刻は作った時刻より後で、完了にした物は完了にした時刻（直した時刻が完了より前にならない）', () => {
+    for (const it of items) {
+      expect(it.updatedAt, it.id).toBeGreaterThanOrEqual(it.createdAt)
+      expect(it.updatedAt, it.id).toBeLessThanOrEqual(Date.parse(DEMO_NOW))
+      if (it.done) expect(it.updatedAt, it.id).toBe(it.doneAt)
+    }
   })
 
   it('個人の情報を持たない（メールアドレス・人の名前の依頼者・本物の場所の URL が無い）', () => {
@@ -176,6 +186,25 @@ describe('ウィークリー（10.）で見せる物', () => {
     }
     expect(byId(paletteId('work', 'rose-l')).title).toBe('桜・淡')
     expect(byId(paletteId('private', 'peony-d')).title).toBe('牡丹・濃')
+  })
+
+  it('色合いの間がいちばん狭い桜と牡丹を、同じ日の続いたカードに並べる（淡どうし・濃どうし。FRAME-190）', () => {
+    expect([...DEMO_PAIR_KEYS]).toEqual(['rose-l', 'peony-l', 'rose-d', 'peony-d'])
+    for (const kind of ['work', 'private']) {
+      // 色の見本の週のウィークリーの1日のカードの並び（7.5。画面と同じ src/domain の計算）で、桜のすぐ次（下）が牡丹
+      const days = Object.values(weekSingles(list, DEMO_WEEKS.palette, kind))
+      for (const shade of ['l', 'd']) {
+        const next = days.some((day) => {
+          const labels = day.map((c) => c.item.label)
+          return labels.some((l, i) => l === `rose-${shade}` && labels[i + 1] === `peony-${shade}`)
+        })
+        expect(next, `${kind} ${shade}`).toBe(true)
+      }
+      for (const key of DEMO_PAIR_KEYS) {
+        const card = byId(pairId(kind, key))
+        expect([card.start, card.label, card.title]).toEqual(['2026-11-21', key, LABEL_DEFAULT_NAMES[key]])
+      }
+    }
   })
 
   it('どのラベルも、どこかの予定で使っている（仕事・プライベートの両方）', () => {

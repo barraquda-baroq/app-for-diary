@@ -268,20 +268,20 @@
         "white": {
           "--work-soft": "#dde8f6",
           "--private-soft": "#f9e1ea",
-          "--work-area": "#edf2fa",
-          "--private-area": "#fbeef3",
           "--work-sheet": "#e4edf8",
           "--private-sheet": "#f9e6ee",
+          "--work-area": "#ebf1f9",
+          "--private-area": "#fbebf1",
           "--work-marker": "#c8dcf5",
           "--private-marker": "#f5d1df"
         },
         "dark": {
           "--work-soft": "#1e2d40",
           "--private-soft": "#3e2330",
-          "--work-area": "#1b2532",
-          "--private-area": "#2c1d25",
           "--work-sheet": "#1e2a3c",
           "--private-sheet": "#34222b",
+          "--work-area": "#1b2532",
+          "--private-area": "#2c1d25",
           "--work-marker": "#2c405a",
           "--private-marker": "#5f3047"
         },
@@ -290,12 +290,10 @@
           "--private-soft": "#16171b"
         }
       },
-      "css": ":root[data-theme='white'] {\n  --work-soft: #dde8f6;\n  --private-soft: #f9e1ea;\n  --work-area: #edf2fa;\n  --private-area: #fbeef3;\n  --work-sheet: #e4edf8;\n  --private-sheet: #f9e6ee;\n  --work-marker: #c8dcf5;\n  --private-marker: #f5d1df;\n}\n:root[data-theme='dark'] {\n  --work-soft: #1e2d40;\n  --private-soft: #3e2330;\n  --work-area: #1b2532;\n  --private-area: #2c1d25;\n  --work-sheet: #1e2a3c;\n  --private-sheet: #34222b;\n  --work-marker: #2c405a;\n  --private-marker: #5f3047;\n}\n:root[data-theme='deep-dark'] {\n  --work-soft: #16171b;\n  --private-soft: #16171b;\n}\n",
+      "css": ":root[data-theme='white'] {\n  --work-soft: #dde8f6;\n  --private-soft: #f9e1ea;\n  --work-sheet: #e4edf8;\n  --private-sheet: #f9e6ee;\n  --work-area: #ebf1f9;\n  --private-area: #fbebf1;\n  --work-marker: #c8dcf5;\n  --private-marker: #f5d1df;\n}\n:root[data-theme='dark'] {\n  --work-soft: #1e2d40;\n  --private-soft: #3e2330;\n  --work-sheet: #1e2a3c;\n  --private-sheet: #34222b;\n  --work-area: #1b2532;\n  --private-area: #2c1d25;\n  --work-marker: #2c405a;\n  --private-marker: #5f3047;\n}\n:root[data-theme='deep-dark'] {\n  --work-soft: #16171b;\n  --private-soft: #16171b;\n}\n",
       "notes": [
         "ホワイトの --work-soft は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.27 にとどめた",
         "ホワイトの --private-soft は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.17 にとどめた",
-        "ホワイトの --work-area は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.32 にとどめた",
-        "ホワイトの --private-area は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.25 にとどめた",
         "ホワイトの --work-marker は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.26 にとどめた",
         "ホワイトの --private-marker は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.06 にとどめた",
         "ダークの --work-soft は × 1.4 だと字の読みやすさなどの決まりを割るので、× 1.26 にとどめた",
@@ -325,18 +323,18 @@
       ],
       "tokens": {
         "white": {
-          "--sat": "#213452",
-          "--sun": "#763140"
+          "--sat": "#263958",
+          "--sun": "#773241"
         },
         "deep-dark": {
           "--sat": "#838890",
           "--sun": "#98888a"
         }
       },
-      "css": ":root[data-theme='white'] {\n  --sat: #213452;\n  --sun: #763140;\n}\n:root[data-theme='deep-dark'] {\n  --sat: #838890;\n  --sun: #98888a;\n}\n",
+      "css": ":root[data-theme='white'] {\n  --sat: #263958;\n  --sun: #773241;\n}\n:root[data-theme='deep-dark'] {\n  --sat: #838890;\n  --sun: #98888a;\n}\n",
       "notes": [
-        "ホワイトの --sat は、--work-text より面に近い側では 4.5:1 に届かないので、反対の側（暗い側）にした",
-        "ホワイトの --sun は、--private-text より面に近い側では 4.5:1 に届かないので、反対の側（暗い側）にした"
+        "ホワイトの --sat は、--work-text より面に近い側では 4.5:1 に届かないので、反対の側（暗い側）にした。--work-text との差は 0.103、平日の字（--text）との差は 0.083",
+        "ホワイトの --sun は、--private-text より面に近い側では 4.5:1 に届かないので、反対の側（暗い側）にした。--private-text との差は 0.101、平日の字（--text）との差は 0.173"
       ]
     },
     "accent-lighter": {

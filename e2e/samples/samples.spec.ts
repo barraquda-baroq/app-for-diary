@@ -8,6 +8,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { openCalendar } from '../helpers'
 import { demoData } from '../fixtures/demoData'
+import { testIds } from '../../src/features/calendar/common/testIds'
 import {
   APPEARANCE_NAMES,
   APPEARANCES,
@@ -15,6 +16,7 @@ import {
   SHOTS,
   VIEWPORTS,
   cropName,
+  editableTitle,
   shotName,
   shotOf,
   type Appearance,
@@ -52,6 +54,8 @@ function record(name: string, entry: Record<string, unknown>): void {
 async function notBuiltYet(page: Page): Promise<boolean> {
   if (await page.getByText('ページが見つかりません').count()) return true
   if (await page.getByTestId('calendar-placeholder').count()) return true
+  // 仮の詳細の画面（件名を字で出すだけで、欄が無い。中身は WP9）
+  if ((await page.getByTestId(testIds.itemTitle).count()) > (await editableTitle(page).count())) return true
   return (await page.getByText(/段階2で(作ります|出します)/).count()) > 0
 }
 
@@ -114,6 +118,18 @@ test('見本のデータを置くと、直す所無くそのまま画面のデ�
   expect(shown.offDays).toEqual(data.offDays)
   expect(shown.labelNames).toEqual(data.labelNames)
   expect(raw.items).toEqual(data.items)
+})
+
+test('仮の詳細の画面（件名を字で出すだけ）は、まだ撮れない物として飛ばし、欄のある画面は撮る', async ({ page }) => {
+  // 見分け方だけを確かめるので、アプリを開かずに、その形の要素だけのページで
+  const sheet = (inner: string) => `<div data-testid="${testIds.itemSheet}">${inner}</div>`
+  await page.setContent(sheet(`<p data-testid="${testIds.itemTitle}">資料づくり</p>`))
+  expect(await notBuiltYet(page)).toBe(true)
+  await page.setContent(sheet(`<input data-testid="${testIds.itemTitle}" value="資料づくり">`))
+  expect(await notBuiltYet(page)).toBe(false)
+  await expect(editableTitle(page)).toHaveCount(1)
+  await page.setContent(sheet(`<textarea data-testid="${testIds.itemTitle}">資料づくり</textarea>`))
+  expect(await notBuiltYet(page)).toBe(false)
 })
 
 test.describe('案の CSS が効く', () => {

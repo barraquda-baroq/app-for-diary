@@ -79,7 +79,7 @@ export const LABEL_KEYS = [
   'peony-d',
 ]
 /** 既定の呼び名（4.6。仕様書の表の行を出す時に使う） */
-const LABEL_NAMES = ['桜', '珊瑚', '杏', '菜の花', '若葉', 'ミント', '青磁', '空', '瑠璃', '藤', '菫', '牡丹']
+export const LABEL_NAMES = ['桜', '珊瑚', '杏', '菜の花', '若葉', 'ミント', '青磁', '空', '瑠璃', '藤', '菫', '牡丹']
 
 /** ラベルの色の決まり（4.6: 外観ごと・淡（l）／濃（d）ごとの OKLCH の L と C） */
 export const LABEL_RULES = {
@@ -328,7 +328,8 @@ export function checkTheme(theme, vars, opts = {}) {
       if (vars.get(n) !== 'var(--surface)') out.push(`${name}: ${n} は var(--surface) のまま（${vars.get(n)}）`)
     for (const n of ['--work-marker', '--private-marker'])
       if (vars.get(n) !== 'transparent') out.push(`${name}: ${n} は transparent のまま（${vars.get(n)}）`)
-    if (hex('--work-soft') !== hex('--private-soft')) out.push(`${name}: --work-soft と --private-soft は同じ色`)
+    if (hex('--work-soft') !== hex('--private-soft'))
+      out.push(`${name}: --work-soft と --private-soft が違う色（ディープダークのカードの地は区分で変えない）`)
   } else {
     // 区分の地の、面からの差（FRAME-180）。案の倍率の分だけ幅を広げ・狭め、丸めの誤差を 0.002 まで見る
     const scale = opts.bandScale?.[theme] ?? 1
@@ -341,7 +342,10 @@ export function checkTheme(theme, vars, opts = {}) {
       }
       const area = deltaE(hex(`--${kind}-area`), hex('--surface'))
       const sheet = deltaE(hex(`--${kind}-sheet`), hex('--surface'))
-      if (!(area < sheet)) out.push(`${name}: --${kind}-sheet は --${kind}-area より濃い（面との差が大きい）`)
+      if (!(area < sheet))
+        out.push(
+          `${name}: --${kind}-area の面との差が --${kind}-sheet 以上（${fmt(area, 4)}・${fmt(sheet, 4)}。詳細の地は領域の地より濃くする）`,
+        )
     }
   }
   return out
@@ -385,7 +389,7 @@ function hue30() {
  * 面からの OKLab の差を k 倍にした色。sRGB に入らない時は、入る所まで倍率を 1 に近づける
  * （戻り値: { hex, k: 実際の倍率 }）
  */
-function scaledFrom(surface, color, k) {
+export function scaledFrom(surface, color, k) {
   const s = hexToOklab(surface)
   const c = hexToOklab(color)
   for (let t = 0; t <= 100; t++) {
@@ -409,10 +413,10 @@ function depth(themes, k) {
   for (const theme of THEMES) {
     const vars = themes[theme]
     const surface = hexOf(vars, '--surface')
-    const names =
-      theme === 'deep-dark'
-        ? ['--work-soft']
-        : ['soft', 'area', 'sheet', 'marker'].flatMap((p) => [`--work-${p}`, `--private-${p}`])
+    // 詳細の地は領域の地より濃いままにする（checkTheme）。後から動かす方が、もう動かした方と比べられるよう、濃くする時は詳細の地を、
+    // 淡くする時は領域の地を先に動かす（逆にすると、まだ今の値の詳細の地を越えないように、領域の地の倍率を余計に戻してしまう）
+    const parts = k > 1 ? ['soft', 'sheet', 'area', 'marker'] : ['soft', 'area', 'sheet', 'marker']
+    const names = theme === 'deep-dark' ? ['--work-soft'] : parts.flatMap((p) => [`--work-${p}`, `--private-${p}`])
     tokens[theme] = {}
     actual[theme] = {}
     for (const n of names) {
@@ -507,7 +511,9 @@ export const WEEKEND_MIN_DE = 0.1
  *   ディープダークは区分の数字がグレーなので、区分の数字の彩度の代わりに、ダークの区分の数字の彩度をラベルの24色と同じ割合
  *   （ディープダークの彩度 0.022 ÷ ダークの淡の彩度 0.075）で落とした物を使う
  * - 明るさ: 区分の数字との ΔE がダークと同じ（土 0.12・日 0.10 ほど。0.10 より小さくしない）になる所。ダークと同じく区分の数字より
- *   面に近い側（ホワイトは明るい側、ディープダークは暗い側）を先に試し、12 の地の上で 4.5:1 に届かなければ反対の側にする
+ *   面に近い側（ホワイトは明るい側、ディープダークは暗い側）を先に試し、12 の地の上で 4.5:1 に届かなければ反対の側にする。
+ *   反対の側は平日の字（--text）の側なので、区分の数字からいちばん小さい差（0.10）にとどめ、平日の字からできるだけ離す
+ *   （ダークと同じ差まで離すと、ホワイトの土曜の色が平日の字と ΔE 0.07 ほどになり、平日の日付と見分けにくい）
  */
 function weekendMatched(themes) {
   const tokens = { white: {}, 'deep-dark': {} }
@@ -543,9 +549,11 @@ function weekendMatched(themes) {
       }
       let chosen = null
       for (const side of [toward, -toward]) {
-        // ダークと同じ ΔE から、0.10 まで小さくしながら、12 の地の上で 4.5:1 に届く所を探す
+        // 面に近い側: ダークと同じ ΔE から 0.10 まで小さくしながら、12 の地の上で 4.5:1 に届く所を探す。
+        // 反対の側: 0.10 から大きくしながら探す（平日の字から離れた所を先に）
         for (let t = 0; t <= 20 && !chosen; t++) {
-          const de = targetDE - ((targetDE - WEEKEND_MIN_DE) * t) / 20
+          const step = ((targetDE - WEEKEND_MIN_DE) * t) / 20
+          const de = side === toward ? targetDE - step : WEEKEND_MIN_DE + step
           const hex = atDE(side, de + 0.001)
           if (hex && passes(hex) && deltaE(hex, kindHex) >= WEEKEND_MIN_DE) chosen = { hex, side }
         }
@@ -555,7 +563,8 @@ function weekendMatched(themes) {
       tokens[theme][tok] = chosen.hex
       if (chosen.side !== toward)
         notes.push(
-          `${THEME_NAMES[theme]}の ${tok} は、${kindTok} より面に近い側では 4.5:1 に届かないので、反対の側（${chosen.side > 0 ? '明るい' : '暗い'}側）にした`,
+          `${THEME_NAMES[theme]}の ${tok} は、${kindTok} より面に近い側では 4.5:1 に届かないので、反対の側（${chosen.side > 0 ? '明るい' : '暗い'}側）にした。` +
+            `${kindTok} との差は ${fmt(deltaE(chosen.hex, kindHex), 3)}、平日の字（--text）との差は ${fmt(deltaE(chosen.hex, hexOf(vars, '--text')), 3)}`,
         )
     }
   }
@@ -679,6 +688,18 @@ export function variantsJson(css) {
   return `${JSON.stringify(buildVariants(css), null, 2)}\n`
 }
 
+/**
+ * 書き出し済みの JSON の文字が、作り直した物と同じ中身か（空白・改行の違いは見ない。Prettier などで整えても、作り直し忘れとは
+ * 言わない）。読めない・無い時は違うとする
+ */
+export function sameVariants(text, json) {
+  try {
+    return text !== null && JSON.stringify(JSON.parse(text)) === JSON.stringify(JSON.parse(json))
+  } catch {
+    return false
+  }
+}
+
 // ---------- 選んだ案を書く形にする（段階2の終わり。WP14） ----------
 
 /**
@@ -698,6 +719,11 @@ export function pickTokens(variants, pick) {
     const themes = only ? only.split('+') : THEMES
     for (const t of themes) {
       if (!THEMES.includes(t)) throw new Error(`知らない外観: ${t}`)
+      // 外観を名指ししたのに、その案がその外観を変えない時（Q5 B のダークなど）は、黙って何もしないで済ませない
+      if (only && !opt.appearances.includes(t))
+        throw new Error(
+          `案 ${id} は${THEME_NAMES[t]}を変えません（${opt.appearances.map((a) => THEME_NAMES[a]).join('・')}だけ）`,
+        )
       for (const [k, v] of Object.entries(opt.tokens[t] ?? {})) {
         if (from[t][k] && from[t][k] !== id)
           throw new Error(`${THEME_NAMES[t]}の ${k} を ${from[t][k]} と ${id} の両方が書き換えます`)
@@ -705,6 +731,29 @@ export function pickTokens(variants, pick) {
         from[t][k] = id
       }
     }
+  }
+  return out
+}
+
+/**
+ * 選んだ案をまとめて今の src/styles.css に重ね、外観ごとに決まり（checkTheme）を確かめる。戻り値は満たさない所の文（空なら通った）。
+ * 案は1つずつ確かめてあるが、問いをまたいだ組み合わせ（地を濃くして差し色も淡くする、など）は、ここで初めて確かめる。
+ * 区分の地の差の幅（FRAME-180）は、地の濃さの案で動かしたトークンだけ、実際に動かした倍率で見る
+ */
+export function checkPick(variants, pick, css) {
+  const tokens = pickTokens(variants, pick)
+  const themes = readThemes(css)
+  const out = []
+  for (const t of THEMES) {
+    const vars = themes[t]
+    const surface = hexOf(vars, '--surface')
+    const scale = {}
+    for (const [k, v] of Object.entries(tokens[t])) {
+      if (!/^--(work|private)-(area|sheet)$/.test(k)) continue
+      const before = deltaE(hexOf(vars, k), surface)
+      if (before > 0) scale[k] = deltaE(v, surface) / before
+    }
+    out.push(...checkTheme(t, withTokens(vars, tokens[t]), { bandScale: { [t]: scale } }))
   }
   return out
 }
@@ -766,6 +815,8 @@ function main() {
   if (emit !== null) {
     const variants = JSON.parse(variantsJson(css))
     const pick = flag('--pick') ?? ''
+    const problems = checkPick(variants, pick, css)
+    if (problems.length) throw new Error(`選んだ案を合わせると決まりを満たしません:\n${problems.join('\n')}`)
     if (emit === 'css') process.stdout.write(emitCss(variants, pick))
     else if (emit === 'spec') process.stdout.write(emitSpec(variants, pick, css))
     else throw new Error(`--emit は css か spec です（${emit}）`)
@@ -775,7 +826,7 @@ function main() {
   const rel = path.relative(repoDir, VARIANTS_FILE)
   if (args.includes('--check')) {
     const now = fs.existsSync(VARIANTS_FILE) ? fs.readFileSync(VARIANTS_FILE, 'utf8') : null
-    if (now !== json) {
+    if (!sameVariants(now, json)) {
       console.error(`${rel} が src/styles.css と合っていません。node scripts/sample-variants.mjs で作り直してください`)
       process.exit(1)
     }
