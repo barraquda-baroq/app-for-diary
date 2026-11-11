@@ -5,6 +5,8 @@ rules_version = '2';
 // 持ち主の制限そのものは、同期のテスト（src/sync/sync.emu.test.ts・src/sync/upgrade.emu.test.ts）で本番のルールを読み込んで確かめる
 // （持ち主の記録 config/owner は、テストの最初に管理者の権限（エミュレーターの Authorization: Bearer owner）で作る。アプリからは作れない。形1）。
 // エミュレーターにつないだ開発サーバーは持ち主を確かめないので、エミュレーターに config/owner を作らなくてよい（docs/DEPLOY.md の 7）。
+// ただし2つのブラウザでの同期と持ち主の関所の E2E（playwright.sync.config.ts）は、VITE_E2E_OWNER_LOCK=1 で開発サーバーにも持ち主を
+// 確かめさせ、本番の firestore.rules を読み込み、config/owner を管理者の権限で作る（e2e/calendar.sync.spec.ts・e2e/owner-gate.sync.spec.ts）。
 // 本番のルールを変えた時は、こちらも同じように直す（段階6で Claude 用のコネクタの部分を足す）。
 service cloud.firestore {
   match /databases/{database}/documents {
