@@ -83,4 +83,36 @@ describe('Modal の印（段階2）', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('Tab の囲いは見えている物だけを数える（checkVisibility。visibility: hidden の畳んだ欄は最後の物にしない）', () => {
+    // jsdom は配置も checkVisibility も持たないので、見えるかどうかを data-shown で決める
+    const before = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'checkVisibility')
+    Object.defineProperty(HTMLElement.prototype, 'checkVisibility', {
+      configurable: true,
+      writable: true,
+      value(this: HTMLElement) {
+        return this.dataset.shown !== 'no'
+      },
+    })
+    try {
+      render(
+        <Modal title="予定" onClose={() => {}} testId="m">
+          <input aria-label="件名" />
+          <button type="button">詳しく</button>
+          <textarea aria-label="メモ" data-shown="no" />
+        </Modal>,
+      )
+      // 見えている最後の物（詳しく）から Tab で最初（×）へ戻る。見えないメモへは行かない
+      const more = screen.getByText('詳しく')
+      more.focus()
+      fireEvent.keyDown(document, { key: 'Tab' })
+      expect(document.activeElement).toBe(screen.getByTestId('modal-close'))
+      // 最初の物から Shift+Tab で、見えている最後の物へ
+      fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+      expect(document.activeElement).toBe(more)
+    } finally {
+      if (before) Object.defineProperty(HTMLElement.prototype, 'checkVisibility', before)
+      else Reflect.deleteProperty(HTMLElement.prototype, 'checkVisibility')
+    }
+  })
 })

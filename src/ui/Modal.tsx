@@ -88,10 +88,11 @@ export function Modal({
         onCloseRef.current()
         return
       }
-      // Tab でダイアログの外へ出ないようにする（最後の次は最初へ、最初の前は最後へ）
+      // Tab でダイアログの外へ出ないようにする（最後の次は最初へ、最初の前は最後へ）。見えている物だけを数える（visibility: hidden の
+      // 畳んだ中身も見えない物にする。checkVisibility の無いブラウザは offsetParent で見る）
       if (e.key === 'Tab' && el) {
         const items = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-          (x) => x.offsetParent !== null || x === document.activeElement,
+          (x) => (x.checkVisibility?.({ visibilityProperty: true }) ?? x.offsetParent !== null) || x === document.activeElement,
         )
         if (items.length === 0) return
         const first = items[0]
