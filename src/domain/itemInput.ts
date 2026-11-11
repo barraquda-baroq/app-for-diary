@@ -173,7 +173,7 @@ export function timeListAnchor(which: 'start' | 'end', value: string | null, sta
 /**
  * 登録の画面（12.2）の初めの値。start は開始日（デイリーからはその日、ほかは今日）、kind は開いた場所で決まる時の区分（無ければ仕事。
  * ITEMS-002・D50）、startTime・endTime はタイムスケジュールの空いた所を押した時の時刻、title・memo は段階3の Favorite の「予定にする」から。
- * src/features/calendar/common/types.ts の RegisterInit と同じ形（src/domain は features を読まないので、ここにも置く）
+ * src/features/calendar/common/types.ts はこの型をそのまま出す（形はここの1つだけ）
  */
 export interface RegisterInit {
   start: string

@@ -4,6 +4,9 @@
 // 日付は 'YYYY-MM-DD' の文字のまま比べる（Date の暦を使わないので、端末の時差を変えても予定の日はずれない。6.4）。
 // マンスリーの数は src/domain/items.ts の monthCounts・countOn・formatCount を使う（ここでは数え直さない）。
 import { compareYmd, eachDate, hmToMinutes, isYmd, weekDates, yearRange } from './dates'
+// 開始時刻だけの予定は「開始 + 30分」（24:00 まで）として比べる（11.3 の枠の終わりと同じ長さ。dayLayout.ts の物を使い、2つがずれないように。
+// dayLayout.ts はここの型だけを読むので、読み込みの輪にはならない）
+import { START_ONLY_MINUTES } from './dayLayout'
 import { periodOf } from './items'
 import { ITEM_KINDS, type AppData, type ID, type Item, type ItemKind } from './types'
 
@@ -38,9 +41,6 @@ export function overlapping(list: readonly CalItem[], from: string, to: string):
 }
 
 // ---------- 同じ日の中の並び（7.5） ----------
-
-/** 開始時刻だけの予定は「開始 + 30分」（24:00 まで）として比べる（11.3 の枠の終わりと同じ。開発） */
-const START_ONLY_MINUTES = 30
 
 /** 作った順（order の小さい順。同じ値は id の小さい順。どの端末でも同じ並び。6.1） */
 function byOrder(a: CalItem, b: CalItem): number {

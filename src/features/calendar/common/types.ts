@@ -1,7 +1,8 @@
 // カレンダーの画面どうしの約束の型（段階2。docs/SPEC.md の 2.9・3.1・3.8・12.2）。
 // 1つのモードの画面（year・month・week・day）が受け取る物、登録の画面の初めの値、小さな画面（登録・詳細）を開いている印。
 // 型だけを置く（React・ストアの中身を読まない）
-import type { ID, ItemKind } from '../../../domain/types'
+import type { RegisterInit } from '../../../domain/itemInput'
+import type { ID } from '../../../domain/types'
 import type { CalendarMode } from '../../../store/uiStore'
 import type { WidthClass } from '../../../ui/hooks'
 
@@ -26,19 +27,9 @@ export interface ViewProps {
   area: { width: number; height: number }
 }
 
-/**
- * 登録の画面（12.2）の初めの値。start は開始日（デイリーからはその日、ほかは今日）。kind は開いた場所で決まる時の区分
- * （無ければ仕事。D50）、startTime・endTime はタイムスケジュールの空いた所を押した時の時刻（'HH:MM'・'24:00'）、
- * title・memo は段階3の Favorite の「予定にする」から（1行目と残り）
- */
-export interface RegisterInit {
-  start: string
-  kind?: ItemKind
-  startTime?: string
-  endTime?: string
-  title?: string
-  memo?: string
-}
+// 登録の画面（12.2）の初めの値 RegisterInit（start・kind・startTime・endTime・title・memo）。形は src/domain/itemInput.ts に
+// 1つだけ置き（registerDefaults が読む）、ここからも同じ型を出す（2つの形がずれないように）
+export type { RegisterInit }
 
 /**
  * 小さな画面（登録・詳細）を開いている印。行き先は変えず、履歴の state.sheet に置く（「戻る」で閉じる。D03）。
