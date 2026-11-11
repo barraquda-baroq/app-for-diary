@@ -218,10 +218,10 @@ export function titleTextPx(text: string, fontPx = 12): number {
 const TITLE_FIT_MARGIN = 1
 
 /**
- * 始点のカードの並べ方（7.8・10.2。CSS のクラス is-two-lines・has-period・has-marks・is-marks-low）:
+ * 始点のカードの並べ方（7.8・10.2。CSS のクラス is-two-lines・has-period・has-marks・is-marks-low・is-period-hidden）:
  * - layout 'side': 10.2 のとおり（丸の右に件名 1行、下の行に期間。期間が入らない時は日付だけ。印が件名を細くしすぎる時は、印を
- *   期間の行の右の端へ。その時に期間の行に2字も残らない時は期間を出さない）
- * - layout 'wrap': 列が狭い時（startTwoLines。開発）。点線の丸はカードの左上、件名の1行目は丸の右から、2行目は丸の下へ回り込んで
+ *   期間の行の右の端へ。その時に期間の行に2字も残らない時は期間を出さない（件名は1行目のまま。is-period-hidden））
+ * - layout 'wrap': 列が狭い時（startTwoLines）と、印が丸の横の幅より広い時（〆・ロック・Claude の3つ。丸の下に入らないように）。開発。点線の丸はカードの左上、件名の1行目は丸の右から、2行目は丸の下へ回り込んで
  *   左の余白から。印は2行目の右の端（2行目はその分だけ短い）。期間は出さない（線と●で見え、時刻は詳細で見る。読み上げには残す）が、
  *   件名が1行目に入り、期間（日付だけでも）が2行目にそのまま入る時（短い件名）は2行目に期間。印が広くて2行目に2字も残らない時
  *   （AI の札「Claude」の付いた物の、とても狭い列）は、件名を1行目だけにして2行目は印だけ
@@ -240,7 +240,10 @@ export interface StartCardLook {
 export function startCardLook(c: CalItem, date: string, textPx: number): StartCardLook {
   const item = c.item
   const marks = marksPx(item)
-  if (!startTwoLines(textPx)) {
+  // 印が丸の横の幅より広い時（〆・ロック・Claude の3つ）は、期間の行の右に置くと丸の下まで入るので、広い列でも 'wrap'
+  // （丸は1行目、印は2行目をカードの幅いっぱいに使う）
+  const marksUnderRing = textPx > 0 && marks > textPx
+  if (!startTwoLines(textPx) && !marksUnderRing) {
     const marksLow = laneMarksBelow(textPx, item)
     const room = marksLow ? textPx - marks : textPx
     const period = marksLow && room < MIN_SECOND_LINE_PX ? 'hidden' : periodDatesOnly(c, date, textPx) ? 'dates' : 'full'

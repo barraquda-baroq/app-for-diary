@@ -224,6 +224,47 @@ test.describe('7日を横（PC）', { tag: ['@pc'] }, () => {
   })
 })
 
+test.describe('始点のカードの印（PC）', { tag: ['@pc'] }, () => {
+  test('印（〆・ロック・Claude）を2行目の右に置く始点のカードでも、件名は1行目に置いて印と重ねず、印は丸の下に入らない（1400・1180px。開発）', async ({
+    page,
+  }) => {
+    const base = demoData().items[I.materials]
+    const item = {
+      ...base,
+      id: 'e2e-marks',
+      title: '見積もりの確認と返送',
+      origin: 'list' as const,
+      start: '2026-12-08',
+      due: '2026-12-10',
+      startTime: null,
+      endTime: null,
+      label: null,
+      locked: true,
+      by: 'connector' as const,
+      ai: 'claude' as const,
+      via: 'メール: 見積もりについて',
+    }
+    await openCalendar(page, '/week/2026-12-06', { data: { items: { [item.id]: item }, offDays: {}, labelNames: {} } })
+    const card = page.getByTestId('week-start-e2e-marks')
+    // 1400px（列 142px）: 丸の右に件名・期間の行の右に印（期間は読み上げだけ）。1180px（列 110px）: 印が丸の横に入らないので2行の並べ方
+    for (const [width, twoLines] of [
+      [1400, false],
+      [1180, true],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 })
+      await expect(card).toHaveClass(/is-marks-low/)
+      await expect(card).toHaveClass(twoLines ? /is-two-lines/ : /is-period-hidden/)
+      const title = await box(card.locator('.cp-title'))
+      const marks = await box(card.locator('.wk-marks'))
+      const ring = await box(card.getByTestId('done-e2e-marks').locator('svg'))
+      expect(title.y + title.height / 2, `${width}px: 件名は印より上の行`).toBeLessThan(marks.y - 2)
+      expect(marks.x, `${width}px: 印はカードの中`).toBeGreaterThanOrEqual((await box(card)).x)
+      const underRing = marks.x < ring.x + ring.width && marks.y < ring.y + ring.height - 1.5
+      expect(underRing, `${width}px: 印は丸に重ならない`).toBe(false)
+    }
+  })
+})
+
 test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
   test('「＋」→ すばやく足す: その場で入力欄に替わり、Enter で2件続けて足し、Esc で閉じて「＋」に戻る（12.1・ITEMS-068・153〜156・161・D44）', async ({
     page,
@@ -483,5 +524,23 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await page.getByTestId('week-off-2026-11-10').tap()
     await expect(page.getByTestId('week-off-2026-11-10')).toBeChecked()
     await expect(col(page, '2026-11-10')).toHaveClass(/cp-offday/)
+  })
+
+  test('すばやく足すを開いたまま下のかたまりの予定を押すと、押した予定の詳細が開く（入力欄が閉じて並びが上へずれても、別の予定にならない）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    // 月曜の仕事の半分がかたまりの高さを決める: 入力欄（40px）は「＋」の行（28px）より高いので、閉じると下のかたまりが上へずれる
+    await page.getByTestId('week-add-2026-11-09-work').tap()
+    await expect(page.getByTestId('quick-add-input')).toBeFocused()
+    // 火曜の「展示会の手配」の下の端の近く（すぐ下は「定例ミーティング」）
+    const expo = page.getByTestId(`week-start-${I.expo}`)
+    await expo.scrollIntoViewIfNeeded()
+    await expect(page.getByTestId('quick-add-input')).toBeVisible()
+    const b = await box(expo)
+    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height - 4)
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await expect(page.getByTestId('item-title')).toHaveValue('展示会の手配')
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
   })
 })

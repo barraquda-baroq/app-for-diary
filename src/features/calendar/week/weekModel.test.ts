@@ -446,6 +446,27 @@ describe('列が狭い時の始点のカード・受けた表示（件名を2行
     })
   })
 
+  it('印（〆・ロック・Claude）が丸の横の幅より広い時は、広い列でも2行の並べ方（印が丸の下に入らないように。件名は1行目・2行目は印）', () => {
+    const three = withMarks({ origin: 'list', locked: true, by: 'connector', ai: 'claude' })
+    expect(marksPx(three.item)).toBe(77)
+    // 列 113px（丸の横 63px）: 印 77px は丸の横に入らない
+    expect(startCardLook(three, '2026-11-09', text(113))).toEqual({
+      layout: 'wrap',
+      titleLines: 1,
+      period: 'hidden',
+      marksLow: true,
+    })
+    // 列 127px（丸の横 77px）からは今までどおり（印は期間の行の右、期間は出さない）
+    expect(startCardLook(three, '2026-11-09', text(127))).toEqual({
+      layout: 'side',
+      titleLines: 1,
+      period: 'hidden',
+      marksLow: true,
+    })
+    // 幅が測れていない時は 10.2 のとおり
+    expect(startCardLook(three, '2026-11-09', 0).layout).toBe('side')
+  })
+
   it('狭い列で印が広くて2行目に2字も残らない時（AI の札・列 79px）は、件名を1行目だけにして2行目は印だけ', () => {
     // 2行目は 57px − 札 46px = 11px
     expect(startCardLook(withMarks({ by: 'connector', ai: 'claude' }), '2026-11-09', text(79))).toEqual({

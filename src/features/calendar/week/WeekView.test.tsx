@@ -2,7 +2,7 @@
 // 受けた表示・端の＞・終点の●・完了の見え方・印・休みの列・見出しの行の数・縦のレールと「● 件名」の行・「＋」の行、
 // 予定を押すと詳細が開く（丸・AI の札は別のボタン）、日付の見出し → デイリー・休みのチェック・「＋」→ すばやく足す（その場で
 // 入力欄に替わる）、列が狭い時の始点のカード・受けた表示の件名の2行
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mkItem, mkOffDay, mkTask, T0 } from '../../../domain/testData'
@@ -248,6 +248,34 @@ describe('7日を横（L・M。10.2）', () => {
     await renderWeek({}, { data })
     expect(screen.getByTestId(testIds.weekStart('lk')).classList.contains('is-marks-low')).toBe(false)
     expect(screen.getByTestId(testIds.weekReceived('cl')).classList.contains('is-marks-low')).toBe(false)
+  })
+
+  it('印を期間の行の右に置き、そこに期間が入らない始点のカード（〆・ロック・Claude）は、期間を読み上げだけにして件名は1行目のまま（印と重ねない）', async () => {
+    const data = {
+      items: items(
+        span('busy', '2026-11-10', '2026-11-12', {
+          title: '見積もりの確認と返送',
+          origin: 'list',
+          locked: true,
+          by: 'connector',
+          ai: 'claude',
+          via: 'メール',
+        }),
+        span('plain', '2026-11-10', '2026-11-12', { title: '資料づくり', locked: true }),
+      ),
+    }
+    // L の 1400px（列 142px）
+    await renderWeek({}, { data })
+    const card = screen.getByTestId(testIds.weekStart('busy'))
+    expect(card.classList.contains('is-two-lines')).toBe(false)
+    expect(card.classList.contains('is-marks-low')).toBe(true)
+    expect(card.classList.contains('is-period-hidden')).toBe(true)
+    expect(card.querySelector('.wk-period')).toBeNull()
+    expect(card.querySelector('.visually-hidden')?.textContent).toBe('〜11/12')
+    // 期間を出す時は付けない
+    const plain = screen.getByTestId(testIds.weekStart('plain'))
+    expect(plain.querySelector('.wk-period')?.textContent).toBe('〜11/12')
+    expect(plain.classList.contains('is-period-hidden')).toBe(false)
   })
 
   it('M の列（100px）では、始点のカードは件名を2行にして印を2行目の右の端へ、AI の札の付いた受けた表示は印を下の行へ', async () => {
@@ -517,6 +545,42 @@ describe('「＋」→ すばやく足す（12.1・ITEMS-068・D44）', () => {
     await user.click(screen.getByTestId(testIds.weekCard('meet')).querySelector('.wk-open') as HTMLElement)
     expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
     expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
+  })
+
+  it('入力欄の外を押した時は、押し終わる（click）まで閉じない（S で下のかたまりがずれて、指の下の別の予定が押されないように。開発）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-09', 'work')))
+    const open = screen.getByTestId(testIds.weekCard('meet')).querySelector('.wk-open') as HTMLElement
+    await user.pointer({ keys: '[MouseLeft>]', target: open })
+    // 押している間は入力欄のまま（並びが変わらない）
+    expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
+    await user.pointer({ keys: '[/MouseLeft]', target: open })
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
+  })
+
+  it('押した後に click が来ない時（なぞってスクロールした・長押しした）も閉じる。Esc はすぐ閉じる', async () => {
+    const user = userEvent.setup()
+    await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
+    const add = () => screen.getByTestId(testIds.weekAdd('2026-11-09', 'work'))
+    const card = screen.getByTestId(testIds.weekCard('meet'))
+    // なぞってスクロールした（ブラウザが pointercancel）
+    await user.click(add())
+    fireEvent.pointerDown(card)
+    expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
+    fireEvent.pointerCancel(card)
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    // 離しても click が来ない（長押し）: 少し待って閉じる
+    await user.click(add())
+    fireEvent.pointerDown(card)
+    fireEvent.pointerUp(card)
+    expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
+    await waitFor(() => expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull())
+    // 押していない時の Esc はすぐ
+    await user.click(add())
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
   })
 
   it('週を移ると閉じ、戻ってきても開き直さない', async () => {

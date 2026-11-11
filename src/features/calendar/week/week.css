@@ -681,6 +681,12 @@
   padding-right: var(--wk-marks-w, 0px);
 }
 
+/* 印の横に期間が2字も入らないので期間を出さない時（startCardLook の side・period 'hidden'。読み上げだけ）も、期間の行の高さ
+   （10px × 1.2）をあけて、件名を1行目に置く（真ん中へ下がって、期間の行の右の印と重ならないように） */
+.wk-card.is-start.is-period-hidden .wk-open {
+  padding-bottom: 12px;
+}
+
 /* 列が狭くて、丸の横の1行に件名が4字も入らない時（weekModel.ts の startCardLook の 'wrap'。L の 900〜1200px ほどのウインドウ・M）:
    件名を2行に。点線の丸はカードの左の端から 8px・1行目の高さに、1行目は丸の右から（text-indent 20px）、2行目は丸の下へ回り込んで
    左の余白 8px から。中身はいつも2行の高さ（28.8px）を取り、丸と1行目の高さをそろえる。期間は出さない（読み上げだけ）が、件名が

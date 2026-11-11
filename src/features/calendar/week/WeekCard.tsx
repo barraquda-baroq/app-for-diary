@@ -33,6 +33,7 @@ import {
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import { useItemDrag, type DragHandle, type WeekCtx } from './dnd'
+import { useCloseAfterPress } from './useCloseAfterPress'
 import { cardLayout, laneMarksBelow, marksPx, receivedTwoLines, startCardLook } from './weekModel'
 import './week.css'
 
@@ -134,6 +135,7 @@ export const StartCard = memo(function StartCard({ c, week, date, shrink = false
         two && look.period !== 'hidden' && 'has-period',
         two && marksPx(item) > 0 && 'has-marks',
         look.marksLow && 'is-marks-low',
+        !two && look.period === 'hidden' && 'is-period-hidden',
         item.done && 'is-done',
         drag.isDragging && 'is-dragging',
       )}
@@ -302,13 +304,15 @@ export interface AddRowProps {
 /**
  * いちばん下の「＋」の行（28px。7日を横の PC では列に乗せた時だけ出す。10.2・D43）。押すと、その場でその日・その段のすばやく足す
  * （1行の入力欄。12.1）に替わる（D44）。Esc で閉じた時は「＋」にフォーカスを戻す（キーボードで続けて操作できるように）。
- * 外を押して閉じた時は戻さない（押した所の操作のまま）
+ * 外を押して閉じた時は戻さない（押した所の操作のまま）。外を押した時は押し終わってから閉じる（S で下のかたまりがずれて、指の下の
+ * 別の予定が押されないように。useCloseAfterPress）
  */
 export function AddRow({ date, kind, open = false, onAdd, onClose }: AddRowProps) {
   const button = useRef<HTMLButtonElement>(null)
   /** Esc で閉じた（入力欄の Esc は下へ渡らないので、先に捕まえて覚える） */
   const byEsc = useRef(false)
   const wasOpen = useRef(open)
+  const close = useCloseAfterPress(open, () => onClose?.())
   useLayoutEffect(() => {
     if (wasOpen.current && !open && byEsc.current) button.current?.focus({ preventScroll: true })
     wasOpen.current = open
@@ -323,7 +327,7 @@ export function AddRow({ date, kind, open = false, onAdd, onClose }: AddRowProps
           byEsc.current = e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229
         }}
       >
-        <QuickAdd date={date} kind={kind} onClose={() => onClose?.()} />
+        <QuickAdd date={date} kind={kind} onClose={close} />
       </div>
     )
   }
