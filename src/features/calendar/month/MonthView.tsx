@@ -1,5 +1,6 @@
 // マンスリー（docs/SPEC.md の 9.）。中身（予定の数・休み・祝日・押した時。WP6）ができるまでの仮の画面: 段階0の空のマス目
-// （日付と今日の丸だけ。src/features/top/CalendarArea.tsx の MonthPlaceholder と同じ形・同じクラス）をそのまま出す。
+// （日付と今日の丸だけ。段階0の MonthPlaceholder（WP4 で消した src/features/top/CalendarArea.tsx）と同じ形・同じクラス。
+// CSS は src/features/top/top.css）をそのまま出す。
 // 受け取る物（ViewProps）は最後の形
 import { monthWeeks, parseYmd, sameDay, todayYmd, WEEKDAYS_EN } from '../../../domain/dates'
 import { testIds } from '../common/testIds'

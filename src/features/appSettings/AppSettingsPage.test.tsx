@@ -9,6 +9,9 @@ import { DEFAULT_PREFS, usePrefs } from '../../store/uiStore'
 import { fakeSignInForTest, resetSyncForTests } from '../../sync/controller'
 import { setTestWidth, TEST_WIDTHS } from '../../test/width'
 
+/** トップ #/ は前回のモード（初めはマンスリー）の今日を含む期間へ置き換わる（FRAME-001。このテストは時刻を決めない） */
+const THIS_MONTH = /^\/month\/\d{4}-\d{2}$/
+
 function renderAt(path: string) {
   setTestWidth(TEST_WIDTHS.L)
   const router = createMemoryRouter(routes, { initialEntries: [path] })
@@ -44,13 +47,13 @@ describe('AppSettingsPage', () => {
     const router = renderAt('/')
     await user.click(screen.getByTestId('open-settings'))
     await user.click(await screen.findByTestId('settings-back'))
-    expect(router.state.location.pathname).toBe('/')
+    expect(router.state.location.pathname).toMatch(THIS_MONTH)
     expect(router.state.historyAction).toBe('POP')
     cleanup()
 
     const direct = renderAt('/settings')
     await user.click(await screen.findByTestId('settings-back'))
-    expect(direct.state.location.pathname).toBe('/')
+    expect(direct.state.location.pathname).toMatch(THIS_MONTH)
     expect(direct.state.historyAction).toBe('REPLACE')
   })
 
@@ -61,7 +64,7 @@ describe('AppSettingsPage', () => {
     expect(router.state.location.pathname).toBe('/mim')
     expect(screen.getByTestId('mim-placeholder')).toBeTruthy()
     await user.click(screen.getByTestId('mim-back'))
-    expect(router.state.location.pathname).toBe('/')
+    expect(router.state.location.pathname).toMatch(THIS_MONTH)
     expect(screen.getByTestId('calendar')).toBeTruthy()
   })
 

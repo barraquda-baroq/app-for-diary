@@ -49,7 +49,8 @@ test(
     await page.evaluate((key) => localStorage.setItem(key, '1'), TEST_AUTH_KEY)
     await page.goto('/#/login')
     await expect(page.getByTestId('top-page')).toBeVisible()
-    await expect(page).toHaveURL(/#\/$/)
+    // トップ #/ は前回のモード（初めはマンスリー）の今日を含む期間へ置き換わる（FRAME-001）
+    await expect(page).toHaveURL(/#\/month\/\d{4}-\d{2}$/)
     await expect(overlay).toHaveCount(0)
     // 空のトップ画面: ヘッダー・カレンダーの操作の列・3つのリストの空の形
     await expect(page.getByTestId('app-header')).toBeVisible()

@@ -89,7 +89,8 @@ describe('ログインの関所', () => {
   it('持ち主だと確かめたアカウントでログインしたら、ログインの画面からトップへ', () => {
     useSync.setState({ auth: 'signedIn', user: { uid: 'u1', name: '', email: 'a@example.com' }, owner: 'ok', ownerSeen: true })
     const router = renderAt('/login')
-    expect(router.state.location.pathname).toBe('/')
+    // トップ #/ は前回のモード（初めはマンスリー）の今日を含む期間へ置き換わる（FRAME-001）
+    expect(router.state.location.pathname).toBe('/month/2026-11')
     expect(screen.getByTestId('top-page')).toBeTruthy()
   })
 

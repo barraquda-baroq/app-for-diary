@@ -73,7 +73,8 @@ describe('renderAt（アプリの行き先）', () => {
   it('ログインした状態で、端末の中のデータ・端末の設定を置いて描く', async () => {
     const item = mkItem({ id: 'a', title: '資料の確認', start: '2026-11-10' })
     const { router } = await renderAt('/', { data: { items: { a: item } }, prefs: { lastMode: 'week' } })
-    expect(router.state.location.pathname).toBe('/')
+    // トップ #/ は前回のモード（ここではウィークリー）の今日を含む期間へ置き換わる（FRAME-001）
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
     expect(screen.getByTestId('top-page')).toBeTruthy()
     expect(getData().items.a.title).toBe('資料の確認')
     expect(usePrefs.getState().lastMode).toBe('week')
@@ -84,7 +85,8 @@ describe('renderAt（アプリの行き先）', () => {
     expect(router.state.location.pathname).toBe('/settings')
     expect(router.state.location.state).toEqual({ from: 'test' })
     await act(() => router.navigate(-1))
-    expect(router.state.location.pathname).toBe('/')
+    // トップ #/ へ戻ると、前回のモード（マンスリー）の今日を含む期間へ置き換わる（FRAME-001）
+    expect(router.state.location.pathname).toBe('/month/2026-11')
   })
 
   it('時刻を渡すとその時刻で描く', async () => {

@@ -325,7 +325,9 @@ async function syntheticTouch(page: Page, points: Point[], holdMs: number, stepM
             bubbles: true,
             cancelable: true,
             composed: true,
-            pointerId: 7,
+            // 1（マウスの番号）にする。dnd-kit は掴んだ時に document.body.setPointerCapture(pointerId) を呼び、動いていない
+            // 番号だと NotFoundError で掴むのをやめる。1 はいつも動いている扱いなので何も起きない（WP11s の試し）
+            pointerId: 1,
             pointerType: 'touch',
             isPrimary: true,
             clientX: p.x,
