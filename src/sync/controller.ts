@@ -120,8 +120,22 @@ let faked = false
 
 setTrashClock(() => (faked ? Date.now() : trashPurgeTime(useSync.getState().auth, engine?.serverNow() ?? null, Date.now())))
 
-const firebaseModule = () => import('./firebase')
-const firestoreModule = () => import('./firestore')
+/**
+ * 後から読み込む部品は、読み込みを1つにまとめる（受け持ちを待つ間の形の版の見張りと同期の始まりが、同時に読み込むことがある。
+ * 読み込めなかった時は、次に呼んだ時に読み込み直す）。テストで部品を差し替える仕組み（vitest の vi.mock）は、同じ部品を同時に
+ * 読み込むと片方に本物を返すことがあるので、そこでも差し替えた物が使われるようにする
+ */
+function loadOnce<T>(load: () => Promise<T>): () => Promise<T> {
+  let loading: Promise<T> | null = null
+  return () =>
+    (loading ??= load().catch((e: unknown) => {
+      loading = null
+      throw e
+    }))
+}
+
+const firebaseModule = loadOnce(() => import('./firebase'))
+const firestoreModule = loadOnce(() => import('./firestore'))
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e)

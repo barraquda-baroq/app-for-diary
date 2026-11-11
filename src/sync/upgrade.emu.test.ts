@@ -38,6 +38,21 @@ import { encodeRecord } from './codec'
 import { canShowData, initSync, noteAppVisible, resetSyncForTests, syncNow, useSync, whenAuthKnown } from './controller'
 import { OWNER_MISSING_MESSAGE, useSyncView } from './syncView'
 
+// 同期を受け持つ画面を決める Web Locks（ブラウザと Node 24 にはある。Node 22 には無い）が無い時は、同じ順に1つずつ渡す物を置く。
+// 司令塔は、Web Locks がある時は受け持ちを待つ間に形の版の見張りも始める（ブラウザと同じ道筋を、どの Node でも確かめる）
+if (typeof navigator !== 'undefined' && !navigator.locks) {
+  const held = new Map<string, Promise<unknown>>()
+  const request = (name: string, cb: () => Promise<unknown>) => {
+    const run = (held.get(name) ?? Promise.resolve()).then(() => cb())
+    held.set(
+      name,
+      run.catch(() => undefined),
+    )
+    return run
+  }
+  Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true })
+}
+
 /** 司令塔が使う Firebase（ログインとクラウドの保存先）。テストごとに、エミュレーターにつないだアプリを入れる */
 const fb = vi.hoisted(() => ({
   services: null as { app: FirebaseApp; auth: Auth } | null,
