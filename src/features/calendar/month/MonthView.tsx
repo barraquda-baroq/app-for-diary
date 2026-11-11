@@ -3,21 +3,23 @@
 //   L は領域の高さを行の数で分け（88px 以上）、M は 88px、S は 56px 以上の行（D15）
 // - マスの中身は monthModel.ts が決め（日付・今日の丸・「休」・祝日名・件数・読み上げ）、マス（MonthCell）はそれを描くだけ
 // - 押した時（7.12・9.3）: L・M の数字はその区分を目立たせてデイリーへ、マスのほかの所はデイリーへ（目立たせない）。S はマスの
-//   どこを押してもデイリーへ（目立たせない。D32）。前後の月の日はその月のマンスリーへ
+//   どこを押してもデイリーへ（目立たせない。D32。前に数字から移った時のキーが残っていれば消してから）。前後の月の日はその月の
+//   マンスリーへ
 // - 休みを付ける状態（9.5。［休み］で入る・終わる。状態は useCalendarUi の offMode）: 操作の列の下に帯、マスの枠を点線にし、
 //   どのマスを押しても（数字・前後の月の日も）その日の休みが付いたり外れたりする。［休み］をもう一度・［終わる］・Esc で終わる。
 //   ‹ ›・今日・スワイプ・［＋ 登録］では続き、マンスリーを離れると終わる（モードの切り替え・「戻る」・MIM・設定など、マンスリーを
 //   離れた時に終えるのは src/features/top/TopPage.tsx の useEndOffMode と useCalendarNav。ここでは終えない。D30）
-// - キーボード（PC）: マス目の中で Tab で止まるのは1つのマス（初めは見ている日。フォーカスが来たマスに移る）のボタンと、その数字の
-//   ボタンだけ。マスの間は矢印キー・Home・End で動く（行き先は monthModel.ts の rovingIndex）。マス目の外へは出ない。
+// - キーボード（PC）: マス目の中で Tab で止まるのは1つのマス（初めは見ている日。フォーカスが来たマスに移り、‹ ›・今日などで見ている
+//   日が替わると見ている日に戻る）のボタンと、その数字のボタンだけ。マスの間は矢印キー・Home・End で動く（行き先は monthModel.ts の
+//   rovingIndex）。マス目の外へは出ない。
 //   受け持ったキーは preventDefault する（ページをスクロールしない。段階5で ← →（前後の期間。3.10）を入れる時は、
 //   preventDefault 済みの物（マス目の中で受けた物）を見送る）
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { parseYmd, todayYmd, WEEKDAYS_EN } from '../../../domain/dates'
-import type { ItemKind } from '../../../domain/types'
+import { ITEM_KINDS, type ItemKind } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { attempt, useCalendarUi } from '../../../store/uiStore'
-import { cls, useCalendarData } from '../common/parts'
+import { cls, flashKey, useCalendarData } from '../common/parts'
 import { testIds } from '../common/testIds'
 import type { ViewProps } from '../common/types'
 import { useCalendarNav } from '../common/useCalendarRoute'
@@ -25,6 +27,17 @@ import { MonthCell } from './MonthCell'
 import { buildMonth, rovingIndex, type MonthCellVM } from './monthModel'
 import { OffModeBanner } from './OffModeBanner'
 import './month.css'
+
+/**
+ * 数字から移った時に置いた、デイリーの区切り・予定を目立たせるキーがまだ残っていれば消す（マスから移る時は目立たせない。
+ * CALENDAR-189・190。キーは目立たせてから 1.2秒・どこにも出なければ 3秒で消えるので、その間に「戻る」でここへ戻ってマスを押すと、
+ * 前に押した数字の区分が目立ってしまう）
+ */
+function clearDayFlash(): void {
+  const { flash, clearFlash } = useCalendarUi.getState()
+  const dayKeys = ITEM_KINDS.flatMap((k) => [flashKey.dayArea(k), flashKey.dayEvents(k)])
+  if (flash && flash.keys.some((k) => dayKeys.includes(k))) clearFlash(flash.seq)
+}
 
 export function MonthView({ viewed, today, width }: ViewProps) {
   const v = parseYmd(viewed) ?? todayYmd()
@@ -42,16 +55,24 @@ export function MonthView({ viewed, today, width }: ViewProps) {
         return
       }
       if (c.outside) nav.openMonth(c.date)
-      else nav.openDay(c.date)
+      else {
+        clearDayFlash()
+        nav.openDay(c.date)
+      }
     },
     [nav],
   )
   const onCount = useCallback((date: string, kind: ItemKind) => nav.openDay(date, kind), [nav])
 
-  // Tab で止まるマス: フォーカスが来たマス（今のマス目にあれば）、無ければ見ている日（月の行き先では、いつもその月の日。D02）、
-  // それも無ければその月の1日
+  // Tab で止まるマス: マス目の中でフォーカスが来たマス（今のマス目にあり、その後で見ている日が替わっていなければ）、無ければ
+  // 見ている日（月の行き先では、いつもその月の日。D02）、それも無ければその月の1日。‹ ›・［今日］・スワイプ・前後の月の日で
+  // 見ている日が替わった後は、前に動いた先（次の月のマス目にもある前後の月の日など）ではなく、見ている日に戻す
+  // （見ている日が替わったら、描く時にフォーカスの来たマスを忘れる。› → ［今日］のように元の日へ戻った時も）
   const dates = useMemo(() => weeks.flat().map((c) => c.date), [weeks])
-  const [focused, setFocused] = useState<string | null>(null)
+  const [focus, setFocus] = useState<{ viewed: string; date: string | null }>({ viewed, date: null })
+  if (focus.viewed !== viewed) setFocus({ viewed, date: null })
+  const onFocusCell = useCallback((date: string) => setFocus((f) => (f.date === date ? f : { ...f, date })), [])
+  const focused = focus.viewed === viewed ? focus.date : null
   const tabDate =
     focused !== null && dates.includes(focused)
       ? focused
@@ -98,7 +119,7 @@ export function MonthView({ viewed, today, width }: ViewProps) {
               onCell={onCell}
               onCount={onCount}
               tabbable={c.date === tabDate}
-              onFocusCell={setFocused}
+              onFocusCell={onFocusCell}
             />
           ))}
         </div>

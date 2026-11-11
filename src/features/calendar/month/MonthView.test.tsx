@@ -152,6 +152,27 @@ describe('押した時（7.12・9.3）', () => {
     expect(useCalendarUi.getState().flash).toBeNull()
   })
 
+  it('数字からデイリーへ移って、目立たせるキーが消える前に「戻る」でマスを押しても、前の数字の区分は目立たせない（CALENDAR-189）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderAt('/month/2026-11', { data: sample() })
+    await user.click(count('2026-11-10', 'private'))
+    expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    await user.click(hit('2026-11-12'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
+    expect(useCalendarUi.getState().flash).toBeNull()
+  })
+
+  it('マスから移る時に消すのはデイリーの区切り・予定のキーだけ（登録した予定などのキーは残す）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderAt('/month/2026-11', { data: sample() })
+    act(() => useCalendarUi.getState().flashTarget('item:w3'))
+    await user.click(hit('2026-11-12'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
+    expect(useCalendarUi.getState().flash?.keys).toEqual(['item:w3'])
+  })
+
   it('S: マスのどこを押してもその日のデイリーへ（目立たせない。D32・CALENDAR-190・250）', async () => {
     const user = userEvent.setup()
     const { router } = await renderAt('/month/2026-11', { data: sample(), width: 'S' })
@@ -388,6 +409,25 @@ describe('キーボード（PC。マスの間は矢印キー。4.12・開発）'
     await user.click(screen.getByTestId(testIds.calNext))
     // 11/10 を見ていた 11月の次は 12/10
     expect(tabbable()).toEqual(['2026-12-10'])
+  })
+
+  it('前に動いた先が次の月のマス目にもある日でも、‹ ›・［今日］で見ている日が替わった後は見ている日が Tab で止まるマス', async () => {
+    const user = userEvent.setup()
+    await renderAt('/month/2026-11', { data: sample() })
+    // 12/3（11月のマス目の前後の月の日。12月のマス目にもある）へ動いてから ›
+    act(() => hit('2026-12-03').focus())
+    expect(tabbable()).toEqual(['2026-12-03'])
+    await user.click(screen.getByTestId(testIds.calNext))
+    expect(tabbable()).toEqual(['2026-12-10'])
+    // 12月のマス目の 11/30（11月にもある）へ動いてから ‹
+    act(() => hit('2026-11-30').focus())
+    await user.click(screen.getByTestId(testIds.calPrev))
+    expect(tabbable()).toEqual(['2026-11-10'])
+    // 11/20 へ動いて › → ［今日］
+    act(() => hit('2026-11-20').focus())
+    await user.click(screen.getByTestId(testIds.calNext))
+    await user.click(screen.getByTestId(testIds.calToday))
+    expect(tabbable()).toEqual(['2026-11-10'])
   })
 
   it('休みを付ける状態でも矢印キーで動き、Space・Enter でフォーカスのあるマスの休みが付いたり外れたりする', async () => {
