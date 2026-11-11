@@ -74,6 +74,19 @@ describe('表ごとに覚える（変わった表の分だけ作り直す）', (
     expect(last().off).toBe(afterOff.off)
   })
 
+  it('1件を直しても、ほかの予定の項目（CalItem）は同じ物のまま（記録ごとの React.memo が効く。FRAME-284）', async () => {
+    await renderProbe({
+      items: { a: mkItem({ id: 'a', start: '2026-11-10' }), b: mkItem({ id: 'b', start: '2026-11-11' }) },
+    })
+    const byId = (id: string) => last().list.find((c) => c.item.id === id)
+    const a0 = byId('a')
+    const b0 = byId('b')
+    act(() => actions.setItemDone('a', true))
+    expect(byId('a')).not.toBe(a0)
+    expect(byId('a')?.item.done).toBe(true)
+    expect(byId('b')).toBe(b0)
+  })
+
   it('何も変わらない描き直しでは同じ物を返す', async () => {
     const { setProps } = await renderProbe({ items: { a: mkItem({ id: 'a' }) } })
     const first = last()

@@ -4,9 +4,10 @@
 //   listed: false、order は今（足した予定はその日・その段の時刻の無い1日の予定のいちばん後に出る。7.5）。細かい項目は後で詳細で
 // - 足した後も開いたまま（空に戻り、フォーカスも残る）。足した予定は入力欄のすぐ上に出るので目立たせない
 // - 日本語の変換中の Enter（isComposing・Safari の keyCode 229）と、空白だけの件名では足さない
-// - Esc か入力欄の外を押すと閉じる（onClose）。Esc は下の小さな画面などへ渡さない
+// - Esc か入力欄の外を押すと閉じる（onClose）。Esc は下の小さな画面などへ渡さない。キーボード（Tab）でフォーカスを外の物へ
+//   移した時も閉じる（Esc の効かない入力欄を開いたまま残さない）。窓・アプリの切り替えで外れただけ（行き先の無い blur）では閉じない
 // - 書きかけは diary-studio:draft:quick:{日付}:{区分} に控え（閉じても残し、同じ日・同じ区分で開き直すと戻る）、足したら消す
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { shortDateLabel } from '../../../../domain/dates'
 import { ITEM_KIND_LABELS } from '../../../../domain/trash'
 import type { ItemKind } from '../../../../domain/types'
@@ -45,6 +46,13 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   const input = useRef<HTMLInputElement>(null)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  /** もう閉じると伝えた（外を押した時は pointerdown と、続くフォーカスの移りの両方が来るので、1回だけ伝える） */
+  const closing = useRef(false)
+  const close = () => {
+    if (closing.current) return
+    closing.current = true
+    closeRef.current()
+  }
 
   // 開いたらすぐ打てるように（押した出来事の中で描くので、iPhone でもキーボードが開く）。見える所まで出す
   useLayoutEffect(() => {
@@ -55,7 +63,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   // 入力欄の外を押したら閉じる（押した所の操作はそのまま。ほかの日の「＋」なら、そこの入力欄が開く）
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      if (box.current && e.target instanceof Node && !box.current.contains(e.target)) closeRef.current()
+      if (box.current && e.target instanceof Node && !box.current.contains(e.target)) close()
     }
     document.addEventListener('pointerdown', onDown, true)
     return () => document.removeEventListener('pointerdown', onDown, true)
@@ -90,8 +98,14 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     } else if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
-      closeRef.current()
+      close()
     }
+  }
+
+  // フォーカスが入力欄の外の物へ移った（Tab など）
+  const onBlur = (e: FocusEvent<HTMLInputElement>) => {
+    const next = e.relatedTarget
+    if (next instanceof Node && !box.current?.contains(next)) close()
   }
 
   return (
@@ -103,6 +117,10 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
         value={text}
         onChange={(e) => change(e.target.value)}
         onKeyDown={onKeyDown}
+        onFocus={() => {
+          closing.current = false
+        }}
+        onBlur={onBlur}
         placeholder="件名"
         aria-label={`${shortDateLabel(date)}の${ITEM_KIND_LABELS[kind]}の予定を足す`}
         enterKeyHint="enter"

@@ -57,9 +57,13 @@
   white-space: nowrap;
 }
 
-/* 祝日名は 1行（入らない時は「…」） */
+/* 祝日名は 1行（入らない時は「…」）。inline の span のままでは「…」が効かないので inline-block にし、置いた所の幅に収める
+   （画面が flex・grid の中に置いた時は、そのまま項目になる） */
 .cp-holiday {
+  display: inline-block;
+  max-width: 100%;
   min-width: 0;
+  vertical-align: top;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--sun);
@@ -138,7 +142,8 @@
   line-height: 1;
 }
 
-/* AI の札（Claude が足した物。枠だけの小さな札・10px。カードの中の別のボタン。7.7・D26） */
+/* AI の札（Claude が足した物。枠だけの小さな札・10px。カードの中の別のボタン。7.7・D26）。字は ui の書体
+   （等幅にするのは日付・曜日・月・時刻・件数・見出しの英語・締め切り日だけ。4.4-1・FRAME-147） */
 .cp-ai {
   position: relative;
   display: inline-flex;
@@ -150,7 +155,7 @@
   border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 10px;
   font-weight: 500;
   line-height: 1;

@@ -108,6 +108,13 @@ describe('休み・祝日名（7.2・7.4・4.7）', () => {
     expect(parts('.cp-off').get('color')).toBe('var(--off-text)')
   })
 
+  it('祝日名の「…」は、画面がどこに置いても効く（inline の span のままでは overflow・text-overflow が効かない）', () => {
+    const d = parts('.cp-holiday')
+    expect(d.get('display')).toBe('inline-block')
+    expect(d.get('max-width')).toBe('100%')
+    expect(d.get('overflow')).toBe('hidden')
+  })
+
   it('休みの日の地は --off-fill。ディープダークでは、その上の淡い字（--text-faint）を --text-muted で出す（FRAME-173・CALENDAR-084）', () => {
     expect(parts('.cp-offday').get('background')).toBe('var(--off-fill)')
     expect(parts(":root[data-theme='deep-dark'] .cp-offday").get('--text-faint')).toBe('var(--text-muted)')
@@ -181,6 +188,16 @@ describe('完了の丸・●（4.11・7.9）', () => {
     expect(parts('.cp-dot[data-label]').get('background')).toBe('var(--label)')
     expect(parts('.cp-dot.is-faded').get('background')).toBe('var(--done-text)')
     expect(COMMON).toMatch(/--dot-d:\s*10px/)
+  })
+})
+
+describe('等幅の字（4.4-1・FRAME-147）', () => {
+  it('parts.css は等幅の書体を自分で付けない（等幅は曜日の .caps と時刻の .mono-time だけ。AI の札「Claude」・〆・祝日名は ui）', () => {
+    const mono = PARTS_RULES.filter((r) =>
+      [...r.decls].some(([k, v]) => (k === 'font-family' || k === 'font') && v.includes('--font-mono')),
+    ).map((r) => r.selector)
+    expect(mono).toEqual([])
+    expect(parts('.cp-ai').get('font-family')).toBe('var(--font-ui)')
   })
 })
 

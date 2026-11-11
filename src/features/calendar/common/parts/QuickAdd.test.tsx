@@ -166,6 +166,20 @@ describe('閉じる（ITEMS-156・FRAME-103・CALENDAR-268）', () => {
     await user.click(screen.getByTestId('outside'))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('キーボードでフォーカスを外へ移した（Tab）時も閉じる（開いたまま Esc の効かない入力欄を残さない）', async () => {
+    const user = userEvent.setup()
+    const { onClose } = await open()
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(screen.getByTestId('outside'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('窓・アプリを切り替えてフォーカスが外れた（行き先の無い blur）だけでは閉じない', async () => {
+    const { input, onClose } = await open()
+    fireEvent.blur(input, { relatedTarget: null })
+    expect(onClose).not.toHaveBeenCalled()
+  })
 })
 
 describe('書きかけ（ITEMS-159・FRAME-264・D44）', () => {
