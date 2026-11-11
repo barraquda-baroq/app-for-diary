@@ -89,8 +89,20 @@ describe('日付の欄を決めた（6.3・12.4）', () => {
     expect(r.ok && r.hint).toBeNull()
   })
 
-  it('calendar 生まれの開始日は消せない（ITEMS-225）', () => {
+  it('calendar 生まれの開始日は消せない（ITEMS-210・225）', () => {
     expect(editDates(cal(), { start: null })).toEqual({ ok: false, message: 'カレンダーの予定には開始日が要ります' })
+    expect(editDates(cal({ due: '2026-11-12' }), { start: null, due: '2026-11-13' }).ok).toBe(false)
+  })
+
+  it('複製する日を選ぶ小さな画面の初め（calendar 生まれで開始日がまだ無い）は、締め切り日を先に選べる（12.7・ITEMS-259）', () => {
+    // 写す時刻で1日の予定の終了 < 開始になる物でも、開始日を選ぶまでは期間が決まらないので断らない
+    const empty = cal({ start: null, startTime: '23:00', endTime: '01:00' })
+    expect(editDates(empty, { due: '2026-11-19' })).toEqual({ ok: true, when: { ...empty, due: '2026-11-19' }, hint: null })
+    expect(okWhen(editDates(empty, { start: null }))).toEqual(empty)
+    // 開始日を選んだ後は、ふだんの決まり（そろえ方・断る）を当てる
+    const picked = okWhen(editDates(empty, { due: '2026-11-19' }))
+    expect(editDates(picked, { start: '2026-11-19' })).toEqual({ ok: false, message: DATE_REFUSED })
+    expect(okWhen(editDates(picked, { start: '2026-11-18' }))).toMatchObject({ start: '2026-11-18', due: '2026-11-19' })
   })
 
   it('undefined は渡していない欄として扱い、日付の欄の決まりでは時刻を変えない', () => {
@@ -240,6 +252,27 @@ describe('時刻の欄を決めた（6.4・12.4）', () => {
       cal(),
       { startTime: '09:07', endTime: '09:58' },
       { startTime: '09:07', endTime: '09:58' },
+      null,
+    ],
+    [
+      '年の終わりの 22:00〜02:00 は翌年の 1/1 まで',
+      cal({ start: '2026-12-31' }),
+      { startTime: '22:00', endTime: '02:00' },
+      { start: '2026-12-31', due: '2027-01-01' },
+      '翌日 02:00 まで',
+    ],
+    [
+      'うるう年の 2/28 の 23:00〜01:00 は 2/29 まで（list 生まれ）',
+      task({ due: '2028-02-28' }),
+      { startTime: '23:00', endTime: '01:00' },
+      { start: '2028-02-28', due: '2028-02-29' },
+      '翌日 01:00 まで',
+    ],
+    [
+      'うるう年の 3/1 で終わる複数日の終了に 00:00 → 2/29 の 24:00',
+      cal({ start: '2028-02-27', due: '2028-03-01', startTime: '09:00' }),
+      { endTime: '00:00' },
+      { start: '2028-02-27', due: '2028-02-29', endTime: '24:00' },
       null,
     ],
   ] as const)('%s', (_name, cur, patch, want, hint) => {
@@ -416,8 +449,48 @@ describe('複製する日（12.7・ITEMS-255・256）', () => {
     ],
     ['list 生まれの締め切り日だけの物は締め切り日を入れない', task({ due: '2026-11-12' }), '2026-11-17', ['2026-11-17', null]],
     ['開始日を空にすると両方空', cal({ due: '2026-11-12' }), null, [null, null]],
+    [
+      'うるう年の2月をまたぐ 2028/2/27〜3/1 で 2/28 を選ぶ → 2/28〜3/2',
+      cal({ start: '2028-02-27', due: '2028-03-01' }),
+      '2028-02-28',
+      ['2028-02-28', '2028-03-02'],
+    ],
   ] as const)('%s', (_name, src, picked, [start, due]) => {
     expect(duplicateDates(src, picked)).toEqual({ start, due })
+  })
+
+  it.each([
+    // [名前, 元, 選んだ開始日, 小さな画面の今の締め切り日, 結果]
+    [
+      '元が1日の予定: 先に選んだ締め切り日は消さない（list 生まれで締め切り日 → 開始日の順に選ぶと ③）',
+      task({ due: '2026-11-12' }),
+      '2026-11-18',
+      '2026-11-20',
+      ['2026-11-18', '2026-11-20'],
+    ],
+    [
+      '元が1日の予定: 選んだ開始日が締め切り日より後なら、締め切り日を開始日にそろえる（CALENDAR-018）',
+      cal(),
+      '2026-11-22',
+      '2026-11-20',
+      ['2026-11-22', '2026-11-22'],
+    ],
+    [
+      '元が複数日の予定: 開始日を選ぶと締め切り日を元と同じ日数に入れ直す（ITEMS-255）',
+      cal({ due: '2026-11-12' }),
+      '2026-11-17',
+      '2026-11-30',
+      ['2026-11-17', '2026-11-19'],
+    ],
+    [
+      'list 生まれで開始日を空にしても、締め切り日は残す（ITEMS-210・256）',
+      task({ start: '2026-11-10', due: '2026-11-12' }),
+      null,
+      '2026-11-20',
+      [null, '2026-11-20'],
+    ],
+  ] as const)('%s', (_name, src, picked, currentDue, [start, due]) => {
+    expect(duplicateDates(src, picked, currentDue)).toEqual({ start, due })
   })
 })
 

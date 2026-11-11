@@ -53,7 +53,8 @@ function oneDay(w: When): boolean {
  * - 開始日を締め切り日より後にしたら締め切り日を開始日に、締め切り日を開始日より前にしたら開始日を締め切り日にそろえる（1日の予定になる。
  *   list 生まれも同じ。CALENDAR-018..020）。両方を一度に渡して開始日が後なら、締め切り日を開始日にそろえる
  * - 締め切り日を消すと、calendar 生まれは開始日の1日の予定に、list 生まれはカレンダーから外れる（時刻は消さずに残す。ITEMS-213・272）
- * - calendar 生まれの開始日は消せない（ITEMS-225）
+ * - calendar 生まれの開始日は消せない（ITEMS-210・225）。複製する日を選ぶ小さな画面の初め（calendar 生まれで開始日がまだ無い。12.7）は、
+ *   期間が決まらないのでそろえず・断らず、選んだ締め切り日をそのまま返す（開始日を選んだ後に決まりを当てる。［複製する］は開始日を選ぶまで押せない）
  * - そろえた結果、1日の予定で終了 < 開始になる時は、その日付にはできない（DATE_REFUSED。翌日にはしない。CALENDAR-023・041・042）
  * - 1日の予定で終了 = 開始になる時は、終了時刻を空にする（複数日の予定ではそのまま。CALENDAR-022・D36）
  */
@@ -62,7 +63,9 @@ export function editDates(cur: When, patch: Partial<Pick<When, 'start' | 'due'>>
   if ((next.start !== null && !isYmd(next.start)) || (next.due !== null && !isYmd(next.due))) {
     return { ok: false, message: BAD_DATE }
   }
-  if (next.origin === 'calendar' && next.start === null) return { ok: false, message: START_REQUIRED }
+  if (next.origin === 'calendar' && next.start === null) {
+    return cur.start !== null ? { ok: false, message: START_REQUIRED } : { ok: true, when: next, hint: null }
+  }
   if (next.start !== null && next.due !== null && next.start > next.due) {
     if (patch.start !== undefined) next.due = next.start
     else next.start = next.due
@@ -196,15 +199,23 @@ export function registerDefaults(init: RegisterInit): When & { kind: ItemKind; t
 }
 
 /**
- * 複製する日を選ぶ小さな画面で、開始日を選んだ時の日付（12.7・ITEMS-255）。元が複数日の予定なら、締め切り日を元と同じ日数になるよう入れる
- * （11/10〜11/12 の予定で 11/17 を選ぶと 11/17〜11/19。直せる）。元が1日の予定（とカレンダーに出ていない物）は締め切り日を入れない（null）。
- * 開始日を空にした時は両方 null
+ * 複製する日を選ぶ小さな画面で、開始日を選んだ時の日付（12.7・ITEMS-255）。currentDue はその小さな画面の今の締め切り日（無ければ null）。
+ * - 元が複数日の予定なら、締め切り日を元と同じ日数になるよう入れ直す（11/10〜11/12 の予定で 11/17 を選ぶと 11/17〜11/19。直せる）
+ * - 元が1日の予定（とカレンダーに出ていない物）は、締め切り日は今の値のまま（先に選んだ締め切り日を消さない）。選んだ開始日より前なら
+ *   開始日にそろえる（CALENDAR-018）
+ * - 開始日を空にした時（list 生まれは開始日も任意）は、締め切り日は今の値のまま
+ * 時刻はここでは見ない: 写す時刻で1日の予定の終了 < 開始になるかは、結果を editDates(写した物, {}) に通して確かめる（ITEMS-259・AMB-ITEMS-22）
  */
-export function duplicateDates(src: When, pickedStart: string | null): { start: string | null; due: string | null } {
-  if (pickedStart === null || !isYmd(pickedStart)) return { start: null, due: null }
+export function duplicateDates(
+  src: When,
+  pickedStart: string | null,
+  currentDue: string | null = null,
+): { start: string | null; due: string | null } {
+  const due = currentDue !== null && isYmd(currentDue) ? currentDue : null
+  if (pickedStart === null || !isYmd(pickedStart)) return { start: null, due }
   const p = periodOf(src)
-  if (!p || p.from === p.to) return { start: pickedStart, due: null }
-  return { start: pickedStart, due: addDaysYmd(pickedStart, daysBetween(p.from, p.to)) }
+  if (p && p.from < p.to) return { start: pickedStart, due: addDaysYmd(pickedStart, daysBetween(p.from, p.to)) }
+  return { start: pickedStart, due: due !== null && due < pickedStart ? pickedStart : due }
 }
 
 /**

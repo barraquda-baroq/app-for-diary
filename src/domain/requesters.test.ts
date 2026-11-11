@@ -58,6 +58,13 @@ describe('依頼者の候補（ITEMS-180）', () => {
     expect(requesterCandidates(items, T0, 'sa')).toEqual(['Sales'])
     expect(requesterCandidates(items, T0, 'ＳＡ')).toEqual(['Sales'])
     expect(requesterCandidates(items, T0, '業')).toEqual([])
+    // 絞る前の順で 9番目より後の名前も、絞った後の 8つには入る
+    const many = itemsOf([
+      ...['一課', '二課', '三課', '四課', '五課', '六課', '七課', '八課', '九課'].map((n, i) => used(n, T0 - i * DAY)),
+      used('営業部', T0 - 20 * DAY),
+    ])
+    expect(requesterCandidates(many, T0, '')).not.toContain('営業部')
+    expect(requesterCandidates(many, T0, '営')).toEqual(['営業部'])
   })
 
   it('ゴミ箱の物は数えない（data.items に無い）', () => {
