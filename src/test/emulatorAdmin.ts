@@ -1,5 +1,6 @@
 // 同期のテスト（*.emu.test.ts）の、Firebase エミュレーターの管理者の道具。Authorization: Bearer owner はエミュレーターの管理者で、
-// アクセスルールを通さない（作者が Firebase の画面で操作するのと同じ）。src/sync/sync.emu.test.ts・src/sync/upgrade.emu.test.ts から使う。
+// アクセスルールを通さない（作者が Firebase の画面で操作するのと同じ）。src/sync/sync.emu.test.ts・src/sync/upgrade.emu.test.ts と、
+// 同期の E2E（e2e/*.sync.spec.ts。Playwright の Node の側で動く）から使う。
 
 /** エミュレーターのプロジェクト（firebase.emu.json・src/sync/firebaseConfig.ts の EMULATOR_PROJECT_ID） */
 export const EMU_PROJECT = 'demo-diary-studio'
@@ -68,4 +69,28 @@ export async function adminExists(path: string): Promise<boolean> {
   if (res.status === 404) return false
   if (!res.ok) throw new Error(`GET ${path}: ${res.status} ${await res.text()}`)
   return true
+}
+
+const AUTH = 'http://127.0.0.1:9099'
+
+/**
+ * エミュレーターの仮の Google アカウントを作り（あれば、そのアカウントで入り直し）、その uid を返す。ブラウザでログインする前に
+ * uid を知り、持ち主の記録 config/owner を作っておくため（同期の E2E。e2e/*.sync.spec.ts）。sub・email はブラウザの
+ * window.__ds.signInForTest(sub)（src/sync/firebase.ts の signInForTest）と同じにする（同じ sub なら同じアカウント）
+ */
+export async function adminGoogleUser(sub: string, email = `${sub}@example.com`): Promise<string> {
+  const idToken = JSON.stringify({ sub, email, email_verified: true, name: sub })
+  const res = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=emulator`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      postBody: `id_token=${encodeURIComponent(idToken)}&providerId=google.com`,
+      requestUri: 'http://localhost',
+      returnSecureToken: true,
+    }),
+  })
+  if (!res.ok) throw new Error(`signInWithIdp ${sub}: ${res.status} ${await res.text()}`)
+  const body = (await res.json()) as { localId?: string }
+  if (!body.localId) throw new Error(`signInWithIdp ${sub}: uid がありません`)
+  return body.localId
 }

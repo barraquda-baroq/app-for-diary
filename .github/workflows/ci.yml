@@ -2,7 +2,7 @@ name: CI
 
 # 型の確かめ・単体テスト・同期のテスト（Firebase エミュレーター）・ビルド・E2E（docs/SPEC.md の 2.10・21.）。NS の .github/workflows/ci.yml から、
 # iPhone・Android のアプリ（android・ios の仕事）・GitHub Pages の公開・Claude 用のコネクタの部分を外した物。
-# 2つのブラウザでの同期の E2E（NS の test:e2e:sync）は、画面ができる段階で足す。
+# 2つのブラウザでの同期と持ち主の関所の E2E（NS の test:e2e:sync）は、別の仕事 e2e-sync で test と同時に流す（段階2。D13）。
 on:
   push:
     branches: [main, master, 'claude/**']
@@ -49,10 +49,11 @@ jobs:
         run: npm run test:sync
       - name: ビルド
         run: npm run build
-      # 公開するビルドに、テスト用の入口（ログインの印・開発用フック window.__ds・エミュレーターのプロジェクト名）が残っていない
+      # 公開するビルドに、テスト用の入口（ログインの印・開発用フック window.__ds・エミュレーターのプロジェクト名・E2E で持ち主を
+      # 確かめさせる VITE_E2E_OWNER_LOCK）が残っていない
       # （docs/SPEC.md の 2.10。ビルドした物で印を置いても効かないことは e2e/offline.spec.ts でも確かめる）
       - name: ビルドにテスト用の入口が無いことの確かめ
-        run: "! grep -rqE 'diary-studio:test-auth|fakeSignIn|showUpdateBanner|__ds|demo-diary-studio' dist/"
+        run: "! grep -rqE 'diary-studio:test-auth|fakeSignIn|showUpdateBanner|__ds|demo-diary-studio|VITE_E2E_OWNER_LOCK' dist/"
       # ふだんは1分半ほど。GitHub の機械が Ubuntu の置き場（archive.ubuntu.com）の名前を引けない時、apt が1つずつ待ち続けて
       # 30分の期限まで止まったことがある（2026-11-11）。1回を8分で打ち切り、1分おいてもう1回だけやり直す。
       # 打ち切っても、sudo の下の apt-get は残って dpkg の鍵を持ち続ける（2回目が「Could not get lock」で落ちた）ので、
@@ -70,10 +71,10 @@ jobs:
             sleep 60
           done
           exit 1
-      # PC 1400×900・Pixel 7（Chromium）。
+      # PC 1400×900・Pixel 7・タブレット 768×1024（Chromium。どの端末で流すかはテストの印 @pc・@s・@m。playwright.config.ts）。
       # E2E_PREVIEW: 上でビルドした dist/ を vite preview でも出し、オフラインで開けて書体も出ることを確かめる（e2e/offline.spec.ts）
-      - name: E2E テスト（PC・Android の Chromium）
-        run: npm run test:e2e -- --project=desktop --project=mobile
+      - name: E2E テスト（PC・Android・タブレットの Chromium）
+        run: npm run test:e2e -- --project=desktop --project=mobile --project=tablet
         env:
           E2E_PREVIEW: '1'
       # iPhone 14（WebKit。iOS の Chrome も Safari も中身は WebKit）。CI の WebKit はソフトウェアの描画でとても重く、
@@ -93,6 +94,52 @@ jobs:
         if: failure()
         with:
           name: e2e-results
+          path: e2e/artifacts
+          retention-days: 7
+
+  # 2つのブラウザでの同期と、持ち主の関所の E2E（docs/SPEC.md の 2.10・D13。CALENDAR-272）。Firebase エミュレーターにつないだ
+  # 開発サーバーで、同じアカウントの2台の端末に見立てた2つのブラウザ（e2e/calendar.sync.spec.ts）と、別のアカウント・まだ持ち主だと
+  # 確かめていないアカウントで電波が無い時（e2e/owner-gate.sync.spec.ts）を Chromium で流す（playwright.sync.config.ts。
+  # 開発サーバーだけの VITE_E2E_OWNER_LOCK=1 で、エミュレーターでも本番と同じに持ち主を確かめる）。test の仕事と同時に流す
+  e2e-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Firebase エミュレーター（firebase-tools 15）は Java 21 以上が要る（test の仕事と同じ）
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Firebase エミュレーターのキャッシュ
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('package-lock.json') }}
+      # test の仕事の「E2E テスト用ブラウザ」と同じやり直し方（Ubuntu の置き場の名前を引けない時に止まり続けないように。Chromium だけ）
+      - name: E2E テスト用ブラウザ（Chromium）
+        timeout-minutes: 18
+        run: |
+          for attempt in 1 2; do
+            if timeout 480 npx playwright install --with-deps chromium; then exit 0; fi
+            echo "ブラウザを入れられなかった（${attempt}回目）"
+            [ "$attempt" = 2 ] && break
+            sudo pkill -x apt-get || true
+            for i in $(seq 30); do pgrep -x apt-get > /dev/null || break; sleep 2; done
+            sleep 60
+          done
+          exit 1
+      - name: 同期と持ち主の関所の E2E（Firebase エミュレーター）
+        run: npm run test:e2e:sync
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-sync-results
           path: e2e/artifacts
           retention-days: 7
 
