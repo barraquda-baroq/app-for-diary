@@ -1,6 +1,7 @@
 // デイリーのタイムスケジュールの並べ方（docs/SPEC.md の 11.3・6.4・2.10）: その日の部分（開始時刻だけは +30分・24:00 まで、日をまたぐ
 // 物は初日・間の日・最終日）・重なりの列（見えている高さでまとめる・始まりの早い順 → 長い順・いちばん左の空いた列・L・M は4列、
-// S は3列で「+n」）・空いた所を押した時の時刻・開いた時の位置・開始のカードの高さ
+// S は3列で「+n」と札の所。日をまたぐ予定の部分は左の列に置き、1日の予定は1日の予定どうしの重なりだけでまとめる）・
+// 空いた所を押した時の時刻・開いた時の位置・開始のカードの高さ
 import { describe, expect, it } from 'vitest'
 import { calendarItems, dayTimed } from './calendar'
 import { hmToMinutes } from './dates'
@@ -18,6 +19,7 @@ import {
   timedInputs,
   type Overflow,
   type Piece,
+  type Placed,
   type TimedInput,
 } from './dayLayout'
 import { T0, mkItem } from './testData'
@@ -47,6 +49,13 @@ const S = { maxCols: 3, minMinutes: minMinutesOf(HOUR_PX.S) } as const
 /** id → [列, 列の数] */
 const cols = (r: { placed: { id: string; col: number; cols: number }[] }) =>
   Object.fromEntries(r.placed.map((p) => [p.id, [p.col, p.cols]]))
+/** 小数の端を丸める（1/3 などの比べ） */
+const round = (n: number) => Math.round(n * 1e9) / 1e9 + 0
+/** id → [左の端の割合, 左の端の札の所の数, 幅の割合, 幅の札の所の数] */
+const geo = (r: { placed: Placed[] }) =>
+  Object.fromEntries(r.placed.map((p) => [p.id, [round(p.x.f), round(p.x.room), round(p.w.f), round(p.w.room)]]))
+/** 比べる値も同じく丸める */
+const rounded = (o: Record<string, number[]>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.map(round)]))
 
 describe('その日の部分（6.4・11.3。CALENDAR-032・ITEMS-133・142）', () => {
   it('1日の予定は開始〜終了の枠', () => {
@@ -292,19 +301,197 @@ describe('重なりの並べ方（11.3。ITEMS-146・147）', () => {
     ])
   })
 
-  it('日をまたぐ予定の部分も重なりに入る（間の日の 0:00〜24:00 はその日のすべての予定と重なる）', () => {
-    const p = [
-      pc('a', '09:00', '10:00'),
-      { id: 'trip', start: 0, end: DAY_MINUTES, part: 'middle' as const },
-      pc('b', '15:00', '16:00'),
-    ]
-    const r = layoutPieces(p, LM)
-    expect(cols(r)).toEqual({ trip: [0, 2], a: [1, 2], b: [1, 2] })
-    expect(r.placed.find((x) => x.id === 'trip')?.part).toBe('middle')
+  it('1日の予定だけの日の位置: 左の端は列 ÷ 列の数、幅は 1 ÷ 列の数（札の所は空けない）', () => {
+    const r = layoutPieces([pc('a', '10:00', '11:00'), pc('b', '10:30', '11:30'), pc('c', '13:00', '14:00')], LM)
+    expect(geo(r)).toEqual(rounded({ a: [0, 0, 0.5, 0], b: [0.5, 0, 0.5, 0], c: [0, 0, 1, 0] }))
+  })
+
+  it('札を出すまとまりは、右の端に札の所を1つ空けて等分する（札を予定に重ねない）。ほかのまとまりは空けない', () => {
+    const r = layoutPieces([...five, pc('late', '18:00', '19:00')], LM)
+    expect(geo(r)).toEqual(
+      rounded({
+        a: [0, 0, 0.25, 0.25],
+        b: [0.25, 0.25, 0.25, 0.25],
+        c: [0.5, 0.5, 0.25, 0.25],
+        d: [0.75, 0.75, 0.25, 0.25],
+        late: [0, 0, 1, 0],
+      }),
+    )
   })
 
   it('予定の無い日は何も並べない', () => {
     expect(layoutPieces([], LM)).toEqual({ placed: [], overflow: [] })
+  })
+})
+
+describe('日をまたぐ予定の部分は左の列に、1日の予定は1日の予定どうしの重なりだけで並べる（11.3・D39。見本の 11/10 の直し）', () => {
+  /** 間の日（0:00〜24:00） */
+  const middle = (id: string): Piece => ({ id, start: 0, end: DAY_MINUTES, part: 'middle' })
+  /** 見本の 11/10: 資料づくりの間の日、定例 10:00〜11:30、打ち合わせ 13:00（開始だけ）、レビュー 15:00〜16:00、面談 15:30〜17:00、夕食 */
+  const sample = [
+    middle('materials'),
+    pc('weekly', '10:00', '11:30'),
+    pc('meeting', '13:00', '13:30'),
+    pc('review', '15:00', '16:00'),
+    pc('interview', '15:30', '17:00'),
+    pc('dinner', '19:00', '21:00'),
+  ]
+
+  it.each([
+    ['L・M', LM],
+    ['S', S],
+  ] as const)(
+    '%s: 間の日はいちばん左の列（幅 1/3）。重ならない予定は残りの幅いっぱい（2/3）、重なるレビューと面談だけが半分ずつ',
+    (_, o) => {
+      const r = layoutPieces(sample, o)
+      expect(r.overflow).toEqual([])
+      const t = 1 / 3
+      expect(geo(r)).toEqual(
+        rounded({
+          materials: [0, 0, t, 0],
+          weekly: [t, 0, 1 - t, 0],
+          meeting: [t, 0, 1 - t, 0],
+          review: [t, 0, (1 - t) / 2, 0],
+          interview: [t + (1 - t) / 2, 0, (1 - t) / 2, 0],
+          dinner: [t, 0, 1 - t, 0],
+        }),
+      )
+      expect(cols(r)).toEqual({
+        materials: [0, 3],
+        weekly: [0, 1],
+        meeting: [0, 1],
+        review: [0, 2],
+        interview: [1, 2],
+        dinner: [0, 1],
+      })
+    },
+  )
+
+  it('前は間の日がその日のすべての予定を1つのまとまりにし、どの予定も 1/3 の幅だった（同じ日で、1日の予定の幅が 1/3 より広い）', () => {
+    const r = layoutPieces(sample, S)
+    const single = r.placed.filter((p) => p.part === 'single' && p.id !== 'review' && p.id !== 'interview')
+    expect(single.length).toBe(3)
+    for (const p of single) expect(p.w.f).toBeGreaterThan(0.6)
+  })
+
+  it('日をまたぐ予定だけの日は幅いっぱい', () => {
+    expect(geo(layoutPieces([middle('trip')], LM))).toEqual(rounded({ trip: [0, 0, 1, 0] }))
+  })
+
+  it('日をまたぐ予定と重ならない時間の1日の予定は、幅いっぱい（初日 22:00〜24:00 は朝の予定を細くしない）', () => {
+    const r = layoutPieces([pc('bus', '22:00', '24:00', 'first'), pc('gym', '07:00', '08:00'), pc('tea', '22:30', '23:00')], LM)
+    expect(geo(r)).toEqual(rounded({ gym: [0, 0, 1, 0], bus: [0, 0, 0.5, 0], tea: [0.5, 0, 0.5, 0] }))
+  })
+
+  it('日をまたぐ予定どうしは重なる時だけ横に並べる（長い物が左。列の幅はその日の列の数で等分）', () => {
+    // 11/12: 資料づくりの最終日 0:00〜18:00、夜行バスの最終日 0:00〜2:00、ジム 7:00〜8:00
+    const r = layoutPieces(
+      [pc('bus', '00:00', '02:00', 'last'), pc('materials', '00:00', '18:00', 'last'), pc('gym', '07:00', '08:00')],
+      LM,
+    )
+    expect(geo(r)).toEqual(rounded({ materials: [0, 0, 0.5, 0], bus: [0.5, 0, 0.5, 0], gym: [0.5, 0, 0.5, 0] }))
+    expect(r.placed.map((p) => p.id)).toEqual(['materials', 'bus', 'gym'])
+  })
+
+  it('列は日をまたぐ予定の列と合わせて S は3つまで: 間の日の横に3つ重なると、2つと「+1」（札の所を空ける）', () => {
+    const r = layoutPieces([middle('m'), pc('a', '10:00', '11:00'), pc('b', '10:00', '11:00'), pc('c', '10:15', '11:00')], S)
+    const t = 1 / 3
+    expect(r.overflow).toEqual([{ at: m('10:15'), ids: ['c'] }])
+    expect(geo(r)).toEqual(rounded({ m: [0, 0, t, 0], a: [t, 0, (1 - t) / 2, 0.5], b: [t + (1 - t) / 2, 0.5, (1 - t) / 2, 0.5] }))
+  })
+
+  it('L・M は4つまで: 間の日の横に3つ重なる日は、その日の列の数が 4（間の日の幅 1/4）', () => {
+    const r = layoutPieces([middle('m'), pc('a', '10:00', '11:00'), pc('b', '10:00', '11:00'), pc('c', '10:15', '11:00')], LM)
+    expect(r.overflow).toEqual([])
+    expect(geo(r)).toEqual(rounded({ m: [0, 0, 0.25, 0], a: [0.25, 0, 0.25, 0], b: [0.5, 0, 0.25, 0], c: [0.75, 0, 0.25, 0] }))
+  })
+
+  it('日をまたぐ予定が列より多い日: 隠した分は「+n」、どの列も札の所を除いた幅に並べ、重なる札は1つにまとめる', () => {
+    const r = layoutPieces([middle('m1'), middle('m2'), middle('m3'), middle('m4'), pc('a', '00:00', '01:00')], S)
+    expect(r.overflow).toEqual([{ at: 0, ids: ['m4', 'a'] }])
+    const t = 1 / 3
+    expect(geo(r)).toEqual(rounded({ m1: [0, 0, t, t], m2: [t, t, t, t], m3: [2 * t, 2 * t, t, t] }))
+  })
+
+  it.each([
+    ['L・M（4列）', LM, ['m1', 'm2', 'm3', 'm4']],
+    ['S（3列）', S, ['m1', 'm2', 'm3']],
+  ] as const)(
+    '%s: 日をまたぐ予定の列が上限まで埋めた時間の1日の予定を隠した日は、日をまたぐ予定の列の右の端に札の所を空ける（貼り付く開始のカードに札を重ねない）',
+    (_, o, ids) => {
+      // 最終日 0:00〜12:00 の部分が列を埋め、10:00 の予定は隠れる。15:00 の予定は日をまたぐ予定と重ならないので幅いっぱい
+      const r = layoutPieces(
+        [...ids.map((id) => pc(id, '00:00', '12:00', 'last')), pc('a', '10:00', '11:00'), pc('b', '15:00', '16:00')],
+        o,
+      )
+      expect(r.overflow).toEqual([{ at: m('10:00'), ids: ['a'] }])
+      const t = 1 / ids.length
+      expect(geo(r)).toEqual(rounded({ ...Object.fromEntries(ids.map((id, i) => [id, [i * t, i * t, t, t]])), b: [0, 0, 1, 0] }))
+    },
+  )
+
+  it('並べた物も札も、互いに重ならない（いろいろな日を作って確かめる）', () => {
+    const U = 300
+    const R = 24
+    // 決まった種から作る乱数（mulberry32。下の桁に偏りが出ないように）
+    let seed = 7
+    const rand = (n: number) => {
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * n)
+    }
+    const multiDays = [0, 0, 0, 0, 0, 0]
+    for (let day = 0; day < 300; day++) {
+      const pieces: Piece[] = []
+      // 0〜5件（L・M の4列・S の3列を超える日も作る）
+      const nMulti = rand(6)
+      multiDays[nMulti]++
+      for (let i = 0; i < nMulti; i++) {
+        const kind = rand(3)
+        const t = rand(48) * 30
+        pieces.push(
+          kind === 0
+            ? { id: `m${i}`, start: 0, end: DAY_MINUTES, part: 'middle' }
+            : kind === 1
+              ? { id: `m${i}`, start: t, end: DAY_MINUTES, part: 'first' }
+              : { id: `m${i}`, start: 0, end: Math.max(10, t), part: 'last' },
+        )
+      }
+      const nSingle = rand(9)
+      for (let i = 0; i < nSingle; i++) {
+        const start = rand(96) * 15
+        pieces.push({ id: `s${i}`, start, end: Math.min(DAY_MINUTES, start + 10 + rand(12) * 15), part: 'single' })
+      }
+      for (const o of [LM, S]) {
+        const r = layoutPieces(pieces, o)
+        const ve = (p: Piece) => Math.max(p.end, p.start + o.minMinutes)
+        const px = (sp: { f: number; room: number }) => sp.f * U - sp.room * R
+        const rects = r.placed.map((p) => ({ id: p.id, x0: px(p.x), x1: px(p.x) + px(p.w), y0: p.start, y1: ve(p) }))
+        const chips = r.overflow.map((ov) => ({
+          id: `+${ov.at}`,
+          x0: U - R + 1,
+          x1: U,
+          y0: ov.at,
+          y1: ov.at + o.minMinutes * 0.9,
+        }))
+        const hit = (a: (typeof rects)[number], b: (typeof rects)[number]) =>
+          a.x0 < b.x1 - 1e-6 && b.x0 < a.x1 - 1e-6 && a.y0 < b.y1 && b.y0 < a.y1
+        for (const a of rects) expect(a.x1 - a.x0, `${day} ${a.id} の幅`).toBeGreaterThan(0)
+        for (let i = 0; i < rects.length; i++)
+          for (const b of [...rects.slice(i + 1), ...chips])
+            expect(hit(rects[i], b), `${day} ${rects[i].id} と ${b.id}`).toBe(false)
+        for (let i = 0; i < chips.length; i++)
+          for (const b of chips.slice(i + 1)) expect(hit(chips[i], b), `${day} ${chips[i].id} と ${b.id}`).toBe(false)
+        // どの部分も、並べた物か札のどちらか1つに入る
+        const seen = [...r.placed.map((p) => p.id), ...r.overflow.flatMap((ov) => ov.ids)].sort()
+        expect(seen, `${day}`).toEqual(pieces.map((p) => p.id).sort())
+        // 列の数の上限
+        for (const p of r.placed) expect(px(p.x) + px(p.w), `${day} ${p.id}`).toBeLessThanOrEqual(U + 1e-6)
+      }
+    }
+    // 日をまたぐ予定の数がどれも作られている（乱数が偏って、日をまたぐ予定の無い日ばかりにならない）
+    for (const [k, count] of multiDays.entries()) expect(count, `日をまたぐ予定 ${k}件の日`).toBeGreaterThan(20)
   })
 })
 

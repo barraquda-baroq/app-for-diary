@@ -1,12 +1,13 @@
 // デイリーの画面（DayView。docs/SPEC.md の 11.1〜11.3・7.3・7.4・7.7〜7.9・4.3・D21・D39・D40）。描いた物（クラス・data-*・字・
 // 位置の style・読み上げ）と、押した時に呼ぶ物を確かめる。CSS の色・大きさの見え方は E2E（e2e/day.spec.ts）で見る
-import { act, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mkItem, mkOffDay, mkTask, T0 } from '../../../domain/testData'
 import type { AppData, Item } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
+import { useCalendarUi, useToasts } from '../../../store/uiStore'
 import { renderView, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
 import { testIds } from '../common/testIds'
 import type { SheetLocationState, ViewProps, WidthClass } from '../common/types'
@@ -28,15 +29,22 @@ async function renderDay(data: Partial<AppData>, over: Partial<ViewProps> & { wi
   return renderView(DayView, props, { data, width: props.width })
 }
 
-/** 予定の枠の style の数（top・height は px、--col・--cols は数） */
+/** 予定の枠の style の数（top・height は px。--x・--w は予定を置ける幅の割合、--x-room・--w-room は引く札の所の数） */
 function boxStyle(el: HTMLElement) {
+  const num = (name: string) => Math.round(Number(el.style.getPropertyValue(name)) * 1e6) / 1e6
   return {
     top: el.style.top,
     height: el.style.height,
-    col: el.style.getPropertyValue('--col'),
-    cols: el.style.getPropertyValue('--cols'),
+    x: num('--x'),
+    w: num('--w'),
+    xRoom: num('--x-room'),
+    wRoom: num('--w-room'),
   }
 }
+
+/** 開いている小さな画面（履歴の state.sheet） */
+const sheetOf = (router: { state: { location: { state: unknown } } }) =>
+  (router.state.location.state as SheetLocationState | null)?.sheet ?? null
 
 describe('日の見出し（11.1・D21・D40）', () => {
   it('曜日の丸いラベル（今日の印）＋等幅の「2026.11.10」。祝日でも休みでもない日は名前も「休」も無い', async () => {
@@ -190,7 +198,14 @@ describe('タイムスケジュール（11.3）', () => {
   it('1日の予定の枠の位置と高さは時刻から（L・M 48px、S 44px。開始だけは +30分。ITEMS-127・133）', async () => {
     const data = itemsOf(timed('a', '10:00', '11:30'), timed('b', '13:00', null))
     const l = await renderDay(data)
-    expect(boxStyle(screen.getByTestId(testIds.dayEvent('a')))).toEqual({ top: '480px', height: '72px', col: '0', cols: '1' })
+    expect(boxStyle(screen.getByTestId(testIds.dayEvent('a')))).toEqual({
+      top: '480px',
+      height: '72px',
+      x: 0,
+      w: 1,
+      xRoom: 0,
+      wRoom: 0,
+    })
     expect(boxStyle(screen.getByTestId(testIds.dayEvent('b')))).toMatchObject({ top: '624px', height: '24px' })
     l.unmount()
     await renderDay(data, { width: 'S' })
@@ -250,8 +265,17 @@ describe('タイムスケジュール（11.3）', () => {
       timed('e', '14:45', '15:30'),
     )
     const l = await renderDay(data)
-    expect(['a', 'b', 'c', 'd'].map((id) => boxStyle(screen.getByTestId(testIds.dayEvent(id))).col)).toEqual(['0', '1', '2', '3'])
-    expect(boxStyle(screen.getByTestId(testIds.dayEvent('a'))).cols).toBe('4')
+    // 4列を等分し、右の端に札の所を1つ空ける（札を予定に重ねない）
+    expect(['a', 'b', 'c', 'd'].map((id) => boxStyle(screen.getByTestId(testIds.dayEvent(id))))).toEqual(
+      [0, 0.25, 0.5, 0.75].map((x) => ({
+        top: expect.any(String),
+        height: expect.any(String),
+        x,
+        w: 0.25,
+        xRoom: x,
+        wRoom: 0.25,
+      })),
+    )
     expect(screen.queryByTestId(testIds.dayEvent('e'))).toBeNull()
     const more = screen.getByTestId(testIds.dayMore)
     expect(more.textContent).toBe('+1')
@@ -331,6 +355,226 @@ describe('タイムスケジュール（11.3）', () => {
     const { router } = await renderDay(itemsOf(timed('a', '10:00', '11:00', { title: '定例' })))
     await user.click(within(screen.getByTestId(testIds.dayEvent('a'))).getByText('定例'))
     expect((router.state.location.state as SheetLocationState).sheet).toEqual({ kind: 'detail', id: 'a' })
+  })
+})
+
+describe('日をまたぐ予定の部分は左の列、ほかの予定は本当に重なる物だけ細く（11.3・D39。見本の 11/10 の直し）', () => {
+  it.each(['S', 'M'] as const)(
+    '%s: 間の日は幅 1/3 の左の列、定例・打ち合わせ・夕食は残りの 2/3、重なるレビューと面談は 1/3 ずつ',
+    async (width) => {
+      await renderDay(
+        itemsOf(
+          mkItem({ id: 'm', title: '資料づくり', start: '2026-11-09', due: '2026-11-12', startTime: '10:00', endTime: '18:00' }),
+          timed('weekly', '10:00', '11:30'),
+          timed('meeting', '13:00', null),
+          timed('review', '15:00', '16:00'),
+          timed('interview', '15:30', '17:00'),
+          timed('dinner', '19:00', '21:00', { kind: 'private' }),
+        ),
+        { width },
+      )
+      const geo = (id: string) => {
+        const el = screen.getByTestId(testIds.dayEvent(id))
+        return boxStyle(id === 'm' ? (el.parentElement as HTMLElement) : el)
+      }
+      const third = Math.round((1 / 3) * 1e6) / 1e6
+      const twoThirds = Math.round((2 / 3) * 1e6) / 1e6
+      expect(geo('m')).toMatchObject({ x: 0, w: third })
+      for (const id of ['weekly', 'meeting', 'dinner']) expect(geo(id), id).toMatchObject({ x: third, w: twoThirds })
+      expect(geo('review')).toMatchObject({ x: third, w: third })
+      expect(geo('interview')).toMatchObject({ x: twoThirds, w: third })
+      expect(screen.queryByTestId(testIds.dayMore)).toBeNull()
+    },
+  )
+})
+
+describe('押した時の動き（WP8B）', () => {
+  const grid = () => screen.getByTestId(testIds.dayTimeline).querySelector('.dy-grid') as HTMLElement
+  /** 一覧の項目の件名と時刻 */
+  const menuText = (el: HTMLElement) =>
+    `${el.querySelector('.pm-label')?.textContent ?? ''} ${el.querySelector('.pm-hint')?.textContent ?? ''}`
+
+  it('空いた所を押すと登録の画面: この日・押した所を 30分単位に切り捨てた時刻〜60分後・仕事（13:10 → 13:00〜14:00。ITEMS-149）', async () => {
+    const { router } = await renderDay({})
+    // jsdom の四角は 0 なので、clientY がそのまま 0:00 からの px（L は 1時間 48px）
+    fireEvent.click(grid(), { clientY: (13 * 60 + 10) * 0.8 })
+    expect(sheetOf(router)).toEqual({
+      kind: 'register',
+      init: { start: D, startTime: '13:00', endTime: '14:00', kind: 'work' },
+    })
+  })
+
+  it('S（1時間 44px）で 23:40 を押すと 23:30〜24:00、ほかの日ならその日が開始日', async () => {
+    const { router } = await renderDay({}, { width: 'S', viewed: '2026-11-12' })
+    fireEvent.click(grid(), { clientY: ((23 * 60 + 40) * 44) / 60 })
+    expect(sheetOf(router)).toEqual({
+      kind: 'register',
+      init: { start: '2026-11-12', startTime: '23:30', endTime: '24:00', kind: 'work' },
+    })
+  })
+
+  it('予定を押した時は登録の画面を開かずに詳細（空いた所だけが登録）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderDay(itemsOf(timed('a', '13:00', '14:00', { title: '定例' })))
+    await user.click(within(screen.getByTestId(testIds.dayEvent('a'))).getByText('定例'))
+    expect(sheetOf(router)).toEqual({ kind: 'detail', id: 'a' })
+  })
+
+  it('「+n」の札を押すと隠れた予定の一覧（区分のアイコン・件名・時刻）、一覧の予定を押すと詳細（ITEMS-148）', async () => {
+    const user = userEvent.setup()
+    const data = itemsOf(
+      timed('a', '14:00', '15:30'),
+      timed('b', '14:00', '15:30'),
+      timed('c', '14:15', '15:30'),
+      timed('d', '14:30', '15:30', { title: '資料の送付' }),
+      timed('e', '14:45', '15:30', { title: '社内の確認', kind: 'private' }),
+    )
+    const { router, unmount } = await renderDay(data)
+    const more = screen.getByTestId(testIds.dayMore)
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    await user.click(more)
+    const menu = screen.getByRole('menu', { name: 'ほかに 1件の予定' })
+    expect(more.getAttribute('aria-expanded')).toBe('true')
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items.map(menuText)).toEqual(['社内の確認 14:45–15:30'])
+    expect(items[0].getAttribute('aria-label')).toBe('社内の確認、14:45–15:30')
+    expect(within(items[0]).getByTitle('プライベート')).toBeTruthy()
+    await user.click(items[0])
+    expect(sheetOf(router)).toEqual({ kind: 'detail', id: 'e' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    unmount()
+    // S は3列で、隠れた2件（早い順）
+    await renderDay(data, { width: 'S' })
+    await user.click(screen.getByTestId(testIds.dayMore))
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map(menuText)).toEqual([
+      '資料の送付 14:30–15:30',
+      '社内の確認 14:45–15:30',
+    ])
+    // Esc で閉じ、札へフォーカスを戻す
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByTestId(testIds.dayMore))
+  })
+
+  it('一覧に同じ件名が並ぶ時は、後の物に番号を付けて見分ける', async () => {
+    const user = userEvent.setup()
+    await renderDay(
+      itemsOf(
+        ...['a', 'b', 'c', 'd', 'e'].map((id) => timed(id, '14:00', '15:00', { title: '電話', order: T0 + id.charCodeAt(0) })),
+      ),
+      { width: 'S' },
+    )
+    await user.click(screen.getByTestId(testIds.dayMore))
+    expect(
+      within(screen.getByRole('menu'))
+        .getAllByRole('menuitem')
+        .map((i) => i.getAttribute('aria-label')),
+    ).toEqual(['電話、14:00–15:00', '電話（2）、14:00–15:00'])
+  })
+
+  it('タイムスケジュールの点線の丸を押すと完了にし、「『件名』を完了にしました［元に戻す］」。［元に戻す］で戻る（12.5・ITEMS-139）', async () => {
+    const user = userEvent.setup()
+    await renderDay(itemsOf(timed('a', '10:00', '11:00', { title: '定例' })))
+    await user.click(within(screen.getByTestId(testIds.dayEvent('a'))).getByTestId(testIds.done('a')))
+    expect(getData().items.a.done).toBe(true)
+    const [toast] = useToasts.getState().toasts
+    expect(toast.message).toBe('『定例』を完了にしました')
+    expect(toast.action?.label).toBe('元に戻す')
+    act(() => toast.action?.run())
+    expect(getData().items.a.done).toBe(false)
+    expect(screen.getByTestId(testIds.dayEvent('a')).classList.contains('is-done')).toBe(false)
+  })
+})
+
+describe('マンスリーの数字から来た時・登録した時に目立たせる（4.9・11.2・ITEMS-124・CALENDAR-188）', () => {
+  const data = itemsOf(
+    mkItem({ id: 'w-row', title: 'メールの返信' }),
+    mkItem({ id: 'p-row', title: '本を返す', kind: 'private' }),
+    timed('w-ev', '10:00', '11:00'),
+    timed('w-done', '12:00', '13:00', { done: true, doneAt: T0, doneOn: D }),
+    timed('p-ev', '19:00', '20:00', { kind: 'private' }),
+    mkItem({ id: 'w-multi', start: '2026-11-09', due: '2026-11-11', startTime: '10:00', endTime: '15:00' }),
+  )
+  const flashed = (el: Element | null) => Boolean(el?.classList.contains('flash'))
+
+  it('押した側の区切りと、タイムスケジュールのその区分の予定の枠（完了した物・日をまたぐ予定の開始のカードも）を目立たせる', async () => {
+    await renderDay(data)
+    act(() => useCalendarUi.getState().flashTarget('day-area:work', 'day-events:work'))
+    expect(flashed(screen.getByTestId(testIds.dayArea('work')))).toBe(true)
+    expect(flashed(screen.getByTestId(testIds.dayArea('private')))).toBe(false)
+    for (const id of ['w-ev', 'w-done', 'w-multi']) expect(flashed(screen.getByTestId(testIds.dayEvent(id))), id).toBe(true)
+    expect(flashed(screen.getByTestId(testIds.dayEvent('p-ev')))).toBe(false)
+    // 行は1件ずつは目立たせない（区切りが目立つ）
+    expect(flashed(screen.getByTestId(testIds.dayRow('w-row')))).toBe(false)
+  })
+
+  it('プライベートの数字からなら、プライベートの区切りと予定だけ', async () => {
+    await renderDay(data)
+    act(() => useCalendarUi.getState().flashTarget('day-area:private', 'day-events:private'))
+    expect(flashed(screen.getByTestId(testIds.dayArea('private')))).toBe(true)
+    expect(flashed(screen.getByTestId(testIds.dayEvent('p-ev')))).toBe(true)
+    expect(flashed(screen.getByTestId(testIds.dayArea('work')))).toBe(false)
+    expect(flashed(screen.getByTestId(testIds.dayEvent('w-ev')))).toBe(false)
+  })
+
+  it('登録した予定（item:{id}）は、その行・その枠を目立たせて見える所まで動かす', async () => {
+    await renderDay(data)
+    const scrolled = vi.mocked(Element.prototype.scrollIntoView)
+    scrolled.mockClear()
+    act(() => useCalendarUi.getState().flashTarget('item:p-row'))
+    expect(flashed(screen.getByTestId(testIds.dayRow('p-row')))).toBe(true)
+    expect(flashed(screen.getByTestId(testIds.dayArea('private')))).toBe(false)
+    expect(scrolled.mock.contexts).toContain(screen.getByTestId(testIds.dayRow('p-row')))
+    act(() => useCalendarUi.getState().flashTarget('item:w-ev'))
+    expect(flashed(screen.getByTestId(testIds.dayEvent('w-ev')))).toBe(true)
+    expect(flashed(screen.getByTestId(testIds.dayEvent('p-ev')))).toBe(false)
+  })
+
+  it('キーを置いた後に開いたデイリーでも目立たせる（マンスリーから移った時は、キーが先に置かれる）', async () => {
+    act(() => useCalendarUi.getState().flashTarget('day-area:work', 'day-events:work'))
+    await renderDay(data)
+    expect(flashed(screen.getByTestId(testIds.dayArea('work')))).toBe(true)
+    expect(flashed(screen.getByTestId(testIds.dayEvent('w-ev')))).toBe(true)
+  })
+})
+
+describe('すばやく足す（「＋ 予定を足す」。12.1・ITEMS-123・D44）', () => {
+  const input = () => screen.queryByTestId(testIds.quickAddInput) as HTMLInputElement | null
+
+  it('押すとその区切りの「＋ 予定を足す」の行が入力欄に替わり、Enter でその日・その区分に足す。足した後も開いたまま、Esc で閉じる', async () => {
+    const user = userEvent.setup()
+    await renderDay({})
+    await user.click(screen.getByTestId(testIds.dayAdd('private')))
+    const area = screen.getByTestId(testIds.dayArea('private'))
+    expect(within(area).getByTestId(testIds.quickAddInput)).toBe(document.activeElement)
+    expect(within(area).queryByTestId(testIds.dayAdd('private'))).toBeNull()
+    // 仕事の区切りの行はそのまま
+    expect(screen.getByTestId(testIds.dayAdd('work'))).toBeTruthy()
+    await user.type(input() as HTMLInputElement, '本を返す{Enter}')
+    const added = Object.values(getData().items).find((it) => it.title === '本を返す')
+    expect(added).toMatchObject({ start: D, due: null, kind: 'private', origin: 'calendar', startTime: null })
+    expect(within(area).getByText('本を返す')).toBeTruthy()
+    expect(input()?.value).toBe('')
+    expect(document.activeElement).toBe(input())
+    await user.keyboard('{Escape}')
+    expect(input()).toBeNull()
+    expect(within(area).getByTestId(testIds.dayAdd('private'))).toBeTruthy()
+  })
+
+  it('開いているのは1つだけ（ほかの区切りの行を押すと、そちらに替わる）。見ている日が替わったら閉じる', async () => {
+    const user = userEvent.setup()
+    const r = await renderDay({})
+    await user.click(screen.getByTestId(testIds.dayAdd('work')))
+    expect(within(screen.getByTestId(testIds.dayArea('work'))).getByTestId(testIds.quickAddInput)).toBeTruthy()
+    await user.click(screen.getByTestId(testIds.dayAdd('private')))
+    expect(screen.getAllByTestId(testIds.quickAddInput)).toHaveLength(1)
+    expect(within(screen.getByTestId(testIds.dayArea('private'))).getByTestId(testIds.quickAddInput)).toBeTruthy()
+    r.setProps(dayProps({ viewed: '2026-11-11' }))
+    expect(input()).toBeNull()
+    expect(screen.getByTestId(testIds.dayAdd('private'))).toBeTruthy()
+    // 元の日へ戻っても開き直さない
+    r.setProps(dayProps())
+    expect(input()).toBeNull()
   })
 })
 

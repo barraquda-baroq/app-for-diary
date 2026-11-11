@@ -2,8 +2,9 @@
 // useMemo で作って描くだけにする。React・ストアを読まない純粋な関数だけ（src/features/calendar/purity.test.ts）。
 // - 日の見出し（11.1）: 「2026.11.10」・今日か・休みか・祝日名
 // - 時間指定なしのリスト（11.2）: 上＝仕事・下＝プライベートの区切りごとの行（7.5 の並び・複数日の右の端の表記）と、まだ完了していない数
-// - タイムスケジュール（11.3）: 時刻のある予定のその日の部分を、重なりの列（L・M は4列、S は3列）に並べた枠の位置と高さ（px）、
-//   列に入らない分の「+n」の札、開いた時の位置、押した所の時刻
+// - タイムスケジュール（11.3）: 時刻のある予定のその日の部分を、重なりの列（L・M は4列、S は3列。日をまたぐ予定の部分は左の列、
+//   1日の予定は1日の予定どうしの重なりだけでまとめてその右に）に並べた枠の位置と高さ（px）、列に入らない分の「+n」の札（札の所を
+//   空けて、予定に重ねない）、開いた時の位置、押した所の時刻
 // 時刻の計算（その日の部分・重なり・開始のカードの高さ）は src/domain/dayLayout.ts、並びは src/domain/calendar.ts にあり、ここでは
 // 1時間の高さ（L・M 48px、S 44px）で px に直し、枠の中の出し方（1行にまとめるか・件名を何行まで出すか・線と●／矢印）を決める
 import { dayList, dayTimed, dayUndone, type CalItem, type DayRow } from '../../../domain/calendar'
@@ -19,6 +20,7 @@ import {
   startCardHeightPx,
   timedInputs,
   type Piece,
+  type Placed,
 } from '../../../domain/dayLayout'
 import { holidayName } from '../../../domain/holidays'
 import { listTail, type ListTail } from '../../../domain/itemText'
@@ -114,7 +116,7 @@ export interface DaySectionVM {
 
 /**
  * タイムスケジュールの1つの枠（1日の予定の枠、または日をまたぐ予定のその日の部分）。位置は px（タイムスケジュールの上から）、
- * 横は列（col）と列の数（cols）で、幅は列の数で等分する
+ * 横は予定を置ける幅に掛ける割合と、そこから引く「+n」の札の所の数（day.css が left・width にする。src/domain/dayLayout.ts の Span）
  */
 export interface TimedBoxVM {
   c: CalItem
@@ -122,8 +124,15 @@ export interface TimedBoxVM {
   /** その日の部分（0:00 からの分） */
   start: number
   end: number
+  /** 列（1日の予定はまとまりの中、日をまたぐ予定は左から何本目か）と列の数 */
   col: number
   cols: number
+  /** 左の端（予定を置ける幅の x 倍 − 札の所 xRoom 個） */
+  x: number
+  xRoom: number
+  /** 幅（予定を置ける幅の w 倍 − 札の所 wRoom 個） */
+  w: number
+  wRoom: number
   /** 上の端（px） */
   top: number
   /**
@@ -150,13 +159,18 @@ export interface TimedBoxVM {
   lines: number
 }
 
-/** 列に入らなかった予定の「+n」の札（最後の列の右端に、隠れた予定のいちばん早い時刻の高さで。AMB-ITEMS-13） */
+/**
+ * 列に入らなかった予定の「+n」の札（まとまりの右の端に空けた札の所に、隠れた予定のいちばん早い時刻の高さで。予定の上に重ねない。
+ * AMB-ITEMS-13）。押すと隠れた予定の一覧（11.3）
+ */
 export interface MoreChipVM {
   /** 隠れた予定のいちばん早い始まり（分） */
   at: number
   /** 上の端（px） */
   top: number
   ids: ID[]
+  /** 隠れた予定（一覧に出す物。並べ方の順） */
+  items: CalItem[]
 }
 
 export interface TimelineVM {
@@ -190,9 +204,10 @@ function titleLines(heightPx: number): number {
 }
 
 /** その日の部分を、枠の位置と出し方にする */
-function boxOf(c: CalItem, p: Piece & { col: number; cols: number }, hourPx: number): TimedBoxVM {
+function boxOf(c: CalItem, p: Placed, hourPx: number): TimedBoxVM {
   const top = minuteToPx(p.start, hourPx)
   const piecePx = minuteToPx(p.end - p.start, hourPx)
+  const across = { col: p.col, cols: p.cols, x: p.x.f, xRoom: p.x.room, w: p.w.f, wRoom: p.w.room }
   if (p.part === 'single') {
     const height = Math.max(EVENT_MIN_PX, piecePx)
     const compact = height < TWO_ROWS_PX
@@ -201,8 +216,7 @@ function boxOf(c: CalItem, p: Piece & { col: number; cols: number }, hourPx: num
       part: p.part,
       start: p.start,
       end: p.end,
-      col: p.col,
-      cols: p.cols,
+      ...across,
       top,
       height,
       card: height,
@@ -220,8 +234,7 @@ function boxOf(c: CalItem, p: Piece & { col: number; cols: number }, hourPx: num
     part: p.part,
     start: p.start,
     end: p.end,
-    col: p.col,
-    cols: p.cols,
+    ...across,
     top,
     height: Math.max(card, piecePx),
     card,
@@ -255,7 +268,12 @@ export function buildTimeline(list: readonly CalItem[], date: string, width: Wid
   const bottom = boxes.reduce((max, b) => Math.max(max, b.top + b.height), dayPx)
   return {
     boxes,
-    more: overflow.map((o) => ({ at: o.at, top: minuteToPx(o.at, hourPx), ids: o.ids })),
+    more: overflow.map((o) => ({
+      at: o.at,
+      top: minuteToPx(o.at, hourPx),
+      ids: o.ids,
+      items: o.ids.flatMap((id) => byId.get(id) ?? []),
+    })),
     hourPx,
     dayPx,
     tailPx: Math.ceil(bottom - dayPx),
