@@ -14,11 +14,15 @@ import { collectDiagnosticsOnFailure, openCalendar, openItemMore, rawItem, sheet
 
 collectDiagnosticsOnFailure()
 
-/** 行き先を移る（# だけを替える。同じページのまま積む）。そのモードの画面が出るまで待つ */
+/**
+ * 行き先を移る（# だけを替える。同じページのまま積む）。行き先が替わり、そのモードの画面が出るまで待つ（同じモードの中で移る時も、
+ * 前の日の画面を確かめないように）
+ */
 async function go(page: Page, mode: 'year' | 'month' | 'week' | 'day', path: string) {
   await page.evaluate((p) => {
     window.location.hash = p
   }, path)
+  await expect.poll(() => page.evaluate(() => window.location.hash.slice(1))).toBe(path)
   await expect(page.getByTestId(testIds.view(mode))).toBeVisible()
 }
 

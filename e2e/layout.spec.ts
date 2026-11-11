@@ -1,7 +1,7 @@
 // 画面の並べ方の E2E（どのモードにもまたがる所。docs/SPEC.md の 3.2・3.4・4.11・4.12。FRAME-026・036・244・253・256・CALENDAR-226）:
-// - 4つのモード（イヤー・マンスリー・ウィークリー・デイリー）と、登録・詳細・確かめの小さな画面が、幅 360・390・412・768・960・1400 の
-//   どれでも横にスクロールしない
-// - L は、予定を 60件入れた週・日でもページ全体がスクロールしない（カレンダーの領域の中だけ）
+// - 4つのモード（イヤー・マンスリー・ウィークリー・デイリー）と、登録・詳細・確かめの小さな画面が、幅 360・390・412・600・768・960・
+//   1400 のどれでも横にスクロールしない（ページも、カレンダーの領域や小さな画面の中のスクロールする所も）
+// - L は、予定を 60件入れた週・日でもページ全体がスクロールせず、カレンダーの下が切れない（カレンダーの領域の中だけ）
 // - 指で操作する端末では、押せる所が 34px 以上（区切りの中の大きさが勝つ所は D08 の例外。下の SMALL_OK に1つずつ理由を書く）
 // - ディープダーク: 区分は位置とアイコン、休みは「休」の字、完了は斜線と✓、今日は太さ・輪でも分かる
 // - Tab で日の見出し・カード・丸・●・数字のボタンへ動け、どれにも見える枠が出る（マンスリーのマス目は Tab で1つだけ止まる）
@@ -23,26 +23,50 @@ const MODES = [
   ['day', '/day/2026-11-10'],
 ] as const
 
-/** 行き先を移る（# だけを替える。同じページのまま積む）。そのモードの画面が出るまで待つ */
+/**
+ * 行き先を移る（# だけを替える。同じページのまま積む）。行き先が替わり、そのモードの画面が出るまで待つ（同じモードの中で移る時も、
+ * 前の期間の画面を測らないように）
+ */
 async function go(page: Page, mode: (typeof MODES)[number][0], path: string) {
   await page.evaluate((p) => {
     window.location.hash = p
   }, path)
+  await expect.poll(() => page.evaluate(() => window.location.hash.slice(1))).toBe(path)
   await expect(page.getByTestId(testIds.view(mode))).toBeVisible()
 }
 
-/** ページも小さな画面の中も横にはみ出していない（FRAME-026） */
+/**
+ * 横にスクロールする所（ページと、overflow-x が auto・scroll の物）のうち、中身が幅を超えている物。モードの中身がはみ出すと、
+ * ページではなくカレンダーの領域（.cal-body は縦にスクロールするので横も auto）の中が横にスクロールするので、ページの幅だけでは
+ * 見つからない
+ */
+const sideScrollers = (page: Page) =>
+  page.evaluate(() => {
+    const out: string[] = []
+    const doc = document.documentElement
+    if (doc.scrollWidth > window.innerWidth) out.push(`ページ ${doc.scrollWidth} > ${window.innerWidth}`)
+    for (const e of document.body.querySelectorAll('*')) {
+      const ox = getComputedStyle(e).overflowX
+      if ((ox === 'auto' || ox === 'scroll') && e.scrollWidth > e.clientWidth + 1)
+        out.push(
+          `${e.tagName.toLowerCase()}.${String(e.className).trim().replace(/\s+/g, '.')} ${e.scrollWidth} > ${e.clientWidth}`,
+        )
+    }
+    return out
+  })
+
+/** ページも、カレンダーの領域や小さな画面の中のスクロールする所も、横にはみ出していない（FRAME-026） */
 async function noSideScroll(page: Page, label: string, sheet?: Locator) {
-  const [scroll, width] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth])
-  expect(scroll, `${label}: ページの幅`).toBeLessThanOrEqual(width)
+  expect(await sideScrollers(page), `${label}: 横にスクロールする所`).toEqual([])
   if (!sheet) return
   const m = await sheet.evaluate((e) => ({
     scroll: e.scrollWidth,
     client: e.clientWidth,
     right: e.getBoundingClientRect().right,
+    width: window.innerWidth,
   }))
   expect(m.scroll, `${label}: 小さな画面の中の幅`).toBeLessThanOrEqual(m.client + 1)
-  expect(m.right, `${label}: 小さな画面の右の端`).toBeLessThanOrEqual(width + 0.5)
+  expect(m.right, `${label}: 小さな画面の右の端`).toBeLessThanOrEqual(m.width + 0.5)
 }
 
 /** 小さな画面を Esc で閉じる（開き終わってから。閉じ終わるまで待つ） */
@@ -147,6 +171,16 @@ test.describe('横にスクロールしない・ページがスクロールし�
       expect(m.scrollH, `${mode}: ページの高さ`).toBeLessThanOrEqual(m.innerH)
       expect(m.y, `${mode}: ページのスクロール`).toBe(0)
       expect((await toolbar.boundingBox())!.y, `${mode}: 操作の列は動かない`).toBe(bar.y)
+      // カレンダーの領域とトップ画面は中身を隠す（overflow: hidden）ので、ページがスクロールしなくても、モードの画面が高すぎると
+      // 下が切れて見えない。どちらも中身が収まっていて、カレンダーは窓の下の端から 16px 以上離れて終わる（3.4・確かめ A16。D15）
+      const fit = await page.evaluate(() =>
+        ['top-page', 'calendar-area', 'calendar'].map((tid) => {
+          const e = document.querySelector(`[data-testid="${tid}"]`)!
+          return { tid, over: e.scrollHeight - e.clientHeight, bottom: e.getBoundingClientRect().bottom }
+        }),
+      )
+      for (const f of fit) expect(f.over, `${mode}: ${f.tid} の中身が収まる`).toBeLessThanOrEqual(1)
+      expect(m.innerH - fit[2].bottom, `${mode}: カレンダーの下の余白`).toBeGreaterThanOrEqual(16)
     }
     // 中身は領域より高い（週の段・デイリーのリストが、それぞれの中でスクロールする）
     await go(page, 'week', '/week/2026-11-08')
@@ -393,8 +427,11 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
 })
 
 test.describe('横にスクロールしない・押せる所の大きさ（M）', { tag: ['@m'] }, () => {
-  test('768px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない（FRAME-026）', async ({ page }) => {
+  test('600・768px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない（600px は S と M の境。FRAME-026・計画の R5）', async ({
+    page,
+  }) => {
     await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
+    await sweep(page, 600, 1024)
     await sweep(page, 768, 1024)
   })
 
@@ -440,7 +477,22 @@ test.describe('ディープダーク（PC）', { tag: ['@pc'] }, () => {
   test('区分は位置（仕事が先）とアイコン、休みは「休」の字、完了は✓と斜線、今日は太さと輪で分かる（FRAME-253・4.12・7.9）', async ({
     page,
   }) => {
-    await openCalendar(page, '/month/2026-11', { appearance: 'deep-dark', data: demoData() })
+    // 見本のデータに、11/10 の済んだ時刻のある予定を1件足す（タイムスケジュールの完了の見え方。見本の 11/10 の済んだ物は時刻が無い）
+    const base = demoData()
+    const doneTimed: Item = {
+      ...base.items![I.weekly],
+      id: 'e2e-dd-done-timed',
+      title: '済んだ面談',
+      startTime: '15:00',
+      endTime: '16:00',
+      done: true,
+      doneAt: Date.parse('2026-11-10T08:00:00+09:00'),
+      doneOn: '2026-11-10',
+    }
+    await openCalendar(page, '/month/2026-11', {
+      appearance: 'deep-dark',
+      data: { ...base, items: { ...base.items, [doneTimed.id]: doneTimed } },
+    })
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'deep-dark')
 
     // マンスリー: 仕事の数が左、休みの日に「休」、今日の日付は太さと輪
@@ -483,6 +535,13 @@ test.describe('ディープダーク（PC）', { tag: ['@pc'] }, () => {
     expect(await styleOf(page.getByTestId(testIds.dayRow(I.mail)).locator('.cp-title'), 'text-decoration-line')).not.toContain(
       'line-through',
     )
+    // タイムスケジュールの済んだ予定も斜線と丸の✓（7.9）。済んでいない予定には無い
+    const doneEvent = page.getByTestId(testIds.dayEvent(doneTimed.id))
+    expect(await styleOf(doneEvent.locator('.cp-title'), 'text-decoration-line')).toContain('line-through')
+    expect(await checkMarks(doneEvent.getByTestId(testIds.done(doneTimed.id))), '済んだ予定の丸に✓').toBeGreaterThan(0)
+    const openEvent = page.getByTestId(testIds.dayEvent(I.weekly))
+    expect(await styleOf(openEvent.locator('.cp-title'), 'text-decoration-line')).not.toContain('line-through')
+    expect(await checkMarks(openEvent.getByTestId(testIds.done(I.weekly))), '済んでいない予定の丸').toBe(0)
     const dayPill = page.getByTestId(testIds.dayHead).locator('.pill.is-today')
     await todayLook(dayPill, dayPill.locator('.caps'), 'デイリーの今日')
 

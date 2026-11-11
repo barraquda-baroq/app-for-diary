@@ -14,6 +14,12 @@ test.beforeAll(async () => {
   await useRules(readFileSync('firestore.rules', 'utf8'))
 })
 
+// 端末に見立てて開いた文脈（syncDevice）は、テストごとに閉じる（前のテストのアカウントの同期が、次のテストの間も動き続けないように。
+// このファイルのテストは page を使わないので、閉じるのは syncDevice で開いた物だけ）
+test.afterEach(async ({ browser }) => {
+  await Promise.all(browser.contexts().map((c) => c.close()))
+})
+
 /** 行き先を移る（# だけを替える。同じページのまま） */
 async function go(page: Page, path: string) {
   await page.evaluate((p) => {
