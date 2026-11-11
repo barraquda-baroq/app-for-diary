@@ -749,6 +749,17 @@ describe('複製・削除の入口と、重なった小さな画面（12.7・12.
     expect(useToasts.getState().toasts).toEqual([])
   })
 
+  it('削除の確かめは開くと中にフォーカスがあり、［やめる］で閉じると「…」へ戻る（詳細はそのまま）', async () => {
+    const { user, onClose } = await open([materials])
+    await user.click(byId(testIds.itemMore))
+    await user.click(byId(testIds.itemDelete))
+    const dialog = screen.getByRole('dialog', { name: '『資料づくり』を削除しますか？' })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    await user.click(within(dialog).getByRole('button', { name: 'やめる' }))
+    expect(document.activeElement).toBe(byId(testIds.itemMore))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['Task List に出ていない', { listed: false }],
     ['済んで 7日を過ぎて Task List に見えない', { listed: true, done: true, doneAt: T0 - 8 * DAY, doneOn: '2026-11-02' }],

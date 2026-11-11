@@ -1,7 +1,7 @@
 // 小さな画面（docs/SPEC.md の 3.8・4.3・12.2・12.3）: 段階2で足した印（区分の地・ラベルの色の帯・題の左の区分のアイコン・
 // data-testid・クラス）。動き（Esc・背景・×で閉じる）は今までどおり
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { useLayoutEffect } from 'react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useEffect, useLayoutEffect } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BagIcon } from './icons'
 import { Modal } from './Modal'
@@ -82,8 +82,13 @@ describe('Modal の印（段階2）', () => {
       }, [])
       return null
     }
-    render(
+    // 開いたボタン（カードなど）にフォーカスがある所から開く
+    const opener = <button type="button">開く</button>
+    const { rerender } = render(opener)
+    act(() => screen.getByText('開く').focus())
+    rerender(
       <>
+        {opener}
         <Modal title="予定" onClose={onClose} testId="m">
           <input aria-label="件名" />
         </Modal>
@@ -92,6 +97,38 @@ describe('Modal の印（段階2）', () => {
     )
     expect(seen).toEqual([true])
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('開いた物（メニューの項目）が同じ描画で外れた時は、ほかの部品がフォーカスを戻した所（メニューを開いたボタン）を、閉じた後に戻る先にする', () => {
+    /** メニュー（src/ui/PopupMenu と同じく、外れる時にフォーカスが body に落ちていれば開いたボタンへ戻す） */
+    function Menu({ back }: { back: () => HTMLElement | null }) {
+      useEffect(
+        () => () => {
+          if (document.activeElement === document.body) back()?.focus()
+        },
+        [back],
+      )
+      return <button type="button">削除</button>
+    }
+    const back = () => screen.queryByText('…')
+    const view = (menu: boolean, dialog: boolean) => (
+      <>
+        <button type="button">…</button>
+        {menu ? <Menu back={back} /> : null}
+        {dialog ? (
+          <Modal title="削除しますか？" onClose={() => {}} testId="m">
+            <button type="button">やめる</button>
+          </Modal>
+        ) : null}
+      </>
+    )
+    const { rerender } = render(view(true, false))
+    act(() => screen.getByText('削除').focus())
+    // メニューの項目を押した: メニューを閉じて、確かめを開く（同じ描画）
+    rerender(view(false, true))
+    expect(screen.getByTestId('m').contains(document.activeElement)).toBe(true)
+    rerender(view(false, false))
+    expect(document.activeElement).toBe(screen.getByText('…'))
   })
 
   it('日本語の変換を取り消す Esc（isComposing・Safari の keyCode 229）では閉じない', () => {
