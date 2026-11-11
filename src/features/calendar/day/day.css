@@ -387,6 +387,8 @@
   background: var(--surface);
   color: var(--text);
   overflow: hidden;
+  /* 中の重なり（点線の丸・印・「押すと詳細」）の順は枠の中だけで決める（今の時刻の線・「+n」の札など、枠の外の物との順は変えない） */
+  isolation: isolate;
 }
 
 .dy-box.no-ring {
@@ -404,12 +406,14 @@
   color: var(--done-text);
 }
 
-/* 左上の点線の丸（16px。押せる所 24px。押すと完了） */
+/* 左上の点線の丸（16px。押せる所 24px。押すと完了）。印（.dy-ev-marks）より上に重ねる: 狭い枠・1行にまとめた枠では、AI の札の押せる所
+   （指の端末で左右に 6px 広げる。札の幅は書体で変わる）が丸の押せる所に掛かることがあるので、重なった所は丸が勝つ（ウィークリーの
+   カードと同じ） */
 .dy-ring {
   position: absolute;
   top: 0;
   left: 5px;
-  z-index: 1;
+  z-index: 2;
 }
 
 .dy-ev-open {

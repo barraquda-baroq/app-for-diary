@@ -107,7 +107,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     close(reason)
   }
 
-  // 開いたらすぐ打てるように（押した出来事の中で描くので、iPhone でもキーボードが開く）。見える所まで出す
+  // 開いたらすぐ打てるように（押した出来事の中で描くので、iPhone でもキーボードが開く）。見える所まで出す。打つ欄は全部見えている
+  // ことが大事なので、ここはページも動かしてよい（scrollIntoView。S・M の週・日の下の端は画面の下に少し出ている。ドラッグの後・
+  // 目立たせる時はページを動かさない src/ui/scrollWithin.ts を使う）
   useLayoutEffect(() => {
     input.current?.focus({ preventScroll: true })
     input.current?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })

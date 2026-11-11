@@ -199,14 +199,15 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
       // 動かさなかった時は、浮いたカードが元の場所へ戻る
       if (feedback) feedback.dropAnimation = moved ? null : SETTLE_BACK
       if (moved && data) {
-        // 移った先の要素（始点・●を動かして1日の予定になった時は、カード。元の要素は外れている）を収め、見える所まで出す
+        // 移った先の要素（始点・●を動かして1日の予定になった時は、カード。元の要素は外れている）を見える所まで出し、収める
         const ids = [source?.id, dragId(data.item.id, 'card')]
         requestAnimationFrame(() => {
           const el = ids
             .map((id) => (id === undefined ? undefined : manager.registry.draggables.get(id)?.element))
             .find((x) => x?.isConnected)
-          settle(el)
+          // 出す所は、収める動き（1.03倍から）を掛ける前の大きさで測る
           reveal(el)
+          settle(el)
         })
       }
     },

@@ -436,9 +436,12 @@
 /* ===================== 予定の部品（WeekCard.tsx） ===================== */
 
 /* カード（10.2）: 幅は列の幅 − 8px、高さ 44px 以上、角丸 6px、余白 上下 6px・左 12px（点線の丸 16px と間 6px を足して 34px）・右 8px、
-   地は土台の色、ラベルの左の一辺 4px。文字の選択と iPhone の長押しのメニューを止める（7.11） */
+   地は土台の色、ラベルの左の一辺 4px。文字の選択と iPhone の長押しのメニューを止める（7.11）。
+   中の重なり（点線の丸・印・「押すと詳細」）の順はカードの中だけで決める（isolation。上に固定した段の名札などの、カードの外の物との
+   順は変えない。transform などと違い、掴んだカードの位置はずれない（G9）） */
 .wk-card {
   position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: 'open marks';
@@ -490,10 +493,13 @@
   color: var(--done-text);
 }
 
-/* 点線の丸（16px）: 左上。押せる所は丸の周りに、カードの枠の中だけ（32 × 28px。4.11・D08） */
+/* 点線の丸（16px）: 左上。押せる所は丸の周りに、カードの枠の中だけ（32 × 28px。4.11・D08）。大きさは決まった値で、字の幅で変わらない。
+   右上の印（.wk-marks）より上に重ねる: 列が狭くて印を丸の行に置いた時（is-stacked）、AI の札の押せる所（指の端末で左右に 6px 広げる）が
+   丸の押せる所に掛かることがあり、札の幅は書体で変わる（「Claude」は 42px の見込みより広いことがある）ので、重なった所は丸が勝つ
+   （CI の書体で丸の押せる所が 29.25px に縮んだ） */
 .wk-card .wk-done {
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   left: 4px;
   top: 0;
   width: 32px;

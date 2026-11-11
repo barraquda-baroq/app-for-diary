@@ -441,6 +441,17 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
     await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
     expect(await tapSizes(page)).toEqual([])
   })
+
+  test('字の幅が広い書体でも、点線の丸の押せる所は D08 の大きさのまま（AI の札の押せる所が丸に掛かっても丸が勝つ。CI の書体で 29.25px に縮んだ）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
+    // 端末の書体の違い（CI の Linux の書体では「Claude」の札が手元より 1px ほど広い）より大きく、札の字の幅を 6px 広げる。並べ方は
+    // weekModel.ts の marksPx が札の幅のおおよそ（42px）で決めるので、札が見込みより広い書体と同じになる（768px の狭い列のカードでは、
+    // 丸の行の右に置いた札の押せる所が丸の押せる所に掛かる）
+    await page.addStyleTag({ content: '.cp-ai { letter-spacing: 1px; }' })
+    expect(await tapSizes(page, { modes: [MODES[2], MODES[3]], sheets: false })).toEqual([])
+  })
 })
 
 test.describe('押せる所の大きさ（iPhone）', { tag: ['@ios'] }, () => {

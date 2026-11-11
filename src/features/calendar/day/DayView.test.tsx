@@ -9,9 +9,13 @@ import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
 import { useCalendarUi, useToasts } from '../../../store/uiStore'
 import { renderView, resizeObserved, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
+import { scrollIntoViewWithin } from '../../../ui/scrollWithin'
 import { testIds } from '../common/testIds'
 import type { SheetLocationState, ViewProps, WidthClass } from '../common/types'
 import { DayView } from './DayView'
+
+// 目立たせる物を見える所まで動かすのは src/ui/scrollWithin.ts（中身はそのまま動かし、呼ばれた物を見る）
+vi.mock('../../../ui/scrollWithin', { spy: true })
 
 setupCalendarTests()
 
@@ -522,12 +526,12 @@ describe('マンスリーの数字から来た時・登録した時に目立た�
 
   it('登録した予定（item:{id}）は、その行・その枠を目立たせて見える所まで動かす', async () => {
     await renderDay(data)
-    const scrolled = vi.mocked(Element.prototype.scrollIntoView)
+    const scrolled = vi.mocked(scrollIntoViewWithin)
     scrolled.mockClear()
     act(() => useCalendarUi.getState().flashTarget('item:p-row'))
     expect(flashed(screen.getByTestId(testIds.dayRow('p-row')))).toBe(true)
     expect(flashed(screen.getByTestId(testIds.dayArea('private')))).toBe(false)
-    expect(scrolled.mock.contexts).toContain(screen.getByTestId(testIds.dayRow('p-row')))
+    expect(scrolled.mock.calls.map(([el]) => el)).toContain(screen.getByTestId(testIds.dayRow('p-row')))
     act(() => useCalendarUi.getState().flashTarget('item:w-ev'))
     expect(flashed(screen.getByTestId(testIds.dayEvent('w-ev')))).toBe(true)
     expect(flashed(screen.getByTestId(testIds.dayEvent('p-ev')))).toBe(false)

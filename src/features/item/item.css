@@ -342,6 +342,8 @@
 
 .it-label-none {
   flex: none;
+  /* 幅は字の幅で決まるので、書体が変わっても押せる所が 34px を下回らないように */
+  min-width: var(--tap);
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border-strong);

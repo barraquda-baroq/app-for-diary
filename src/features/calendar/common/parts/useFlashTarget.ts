@@ -12,6 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type { ID, ItemKind } from '../../../../domain/types'
 import { flashMatches, useCalendarUi, type FlashTarget } from '../../../../store/uiStore'
 import { FLASH_MS, flash, scrollBehavior } from '../../../../ui/motion'
+import { scrollIntoViewWithin } from '../../../../ui/scrollWithin'
 
 /** 目立たせる所のキー（目立たせる側・目立たせられる側が同じ物を使う） */
 export const flashKey = {
@@ -57,7 +58,10 @@ function matchedSeq(f: FlashTarget | null, joined: string): number {
 }
 
 export interface FlashOptions {
-  /** 目立たせる時に、要素を見える所まで動かす（スクロールの中の要素。視差効果を減らす設定ではすぐに） */
+  /**
+   * 目立たせる時に、要素を見える所まで動かす（カレンダーの中のスクロールだけを動かし、ページは動かさない。src/ui/scrollWithin.ts。
+   * 視差効果を減らす設定ではすぐに）
+   */
   scroll?: boolean
 }
 
@@ -86,7 +90,7 @@ export function useFlashTarget<T extends Element = HTMLElement>(
     done.current = s
     flash(el)
     until.current = Date.now() + FLASH_MS
-    if (scroll) el.scrollIntoView?.({ block: 'nearest', behavior: scrollBehavior() })
+    if (scroll) scrollIntoViewWithin(el, { behavior: scrollBehavior() })
     clearAfter(s, FLASH_MS)
   }, [])
 
