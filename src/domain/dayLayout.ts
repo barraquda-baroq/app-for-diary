@@ -140,7 +140,8 @@ const times = (a: Span, k: number): Span => span(a.f * k, a.room * k)
  *   列」の数の、いちばん多い物）で等分した幅
  * - 列は日をまたぐ予定の列と合わせて maxCols（L・M は 4、S は 3）まで。それより右の列が要る部分は placed に入れず、まとまりごとに
  *   overflow へ。札を出すまとまりは右の端に札の所を空け（予定の上に札を重ねない）、札はそこに、隠れた予定のいちばん早い時刻の高さで
- *   出す（AMB-ITEMS-13）。日をまたぐ予定を隠した日は、どのまとまりも右の端に札の所を空ける
+ *   出す（AMB-ITEMS-13）。日をまたぐ予定を隠した日は、どのまとまりも右の端に札の所を空ける。日をまたぐ予定の列が上限まで埋めた時間の
+ *   1日の予定を隠した日（札がいちばん右の列の上に出る）も、日をまたぐ予定の列の右の端に札の所を空ける
  */
 export function layoutPieces(
   pieces: readonly Piece[],
@@ -192,8 +193,10 @@ export function layoutPieces(
     o.maxCols,
     groups.reduce((n, gr) => (gr.left > 0 && gr.cols > 0 ? Math.max(n, gr.left + gr.cols) : n), Math.max(1, laneCount)),
   )
-  // 日をまたぐ予定を隠した日は、札の所を除いた幅に列を並べる
-  const laneUnit = span(1 / g, laneHidden ? 1 / g : 0)
+  // 日をまたぐ予定を隠した日と、日をまたぐ予定の列が列の上限まで埋めた時間の1日の予定を隠した日（札がいちばん右の列の上に出る。
+  // 開始のカードは部分の中を貼り付いて動くので、どの時刻でも札に重なりうる）は、日をまたぐ予定の列を札の所を除いた幅に並べる
+  const laneRoom = laneHidden || groups.some((gr) => gr.room && gr.cols === 0)
+  const laneUnit = span(1 / g, laneRoom ? 1 / g : 0)
 
   const placedOf = new Map<Piece, Placed>()
   for (const { p, lane } of lanes) {

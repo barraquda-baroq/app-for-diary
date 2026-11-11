@@ -282,13 +282,20 @@ test.describe('デイリー（S）', { tag: ['@s'] }, () => {
     await expect(page.getByTestId(testIds.dayNow)).toBeVisible()
     // 重ならない予定は、日をまたぐ予定の列の右の残りの幅いっぱい（見本の「打…」の直し）
     expect(await widthRatio(page, DEMO_IDS.weekly)).toBeGreaterThan(0.6)
-    // 指の端末では点線の丸の押せる所が、枠の左上の角から 34px 四方（見える丸の押せる所 24px の外の、右下の所も丸。D08）
+    // 指の端末では点線の丸の押せる所が、枠の左上の角から高さ 34px・幅は件名の始まりまで（見える丸の押せる所 24px の下の所も丸）。
+    // 件名の始まりは「押すと詳細」のまま（隣と重ならない所だけ広げる。D08・AMB-CAL-14）
     const weekly = await box(page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly)))
-    const hitId = await page.evaluate(
-      ({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid^="done-"]')?.getAttribute('data-testid') ?? null,
-      { x: weekly.x + 31, y: weekly.y + 30 },
-    )
-    expect(hitId).toBe(testIds.done(DEMO_IDS.weekly))
+    const hitAt = (x: number, y: number) =>
+      page.evaluate(
+        (p) => {
+          const el = document.elementFromPoint(p.x, p.y)
+          const done = el?.closest('[data-testid^="done-"]')?.getAttribute('data-testid')
+          return done ?? (el?.closest('.dy-ev-open') ? 'open' : null)
+        },
+        { x: weekly.x + x, y: weekly.y + y },
+      )
+    expect(await hitAt(28, 30)).toBe(testIds.done(DEMO_IDS.weekly))
+    expect(await hitAt(33, 12)).toBe('open')
     await noHorizontalScroll(page)
   })
 

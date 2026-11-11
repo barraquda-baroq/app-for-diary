@@ -413,17 +413,40 @@ describe('日をまたぐ予定の部分は左の列に、1日の予定は1日�
     expect(geo(r)).toEqual(rounded({ m1: [0, 0, t, t], m2: [t, t, t, t], m3: [2 * t, 2 * t, t, t] }))
   })
 
+  it.each([
+    ['L・M（4列）', LM, ['m1', 'm2', 'm3', 'm4']],
+    ['S（3列）', S, ['m1', 'm2', 'm3']],
+  ] as const)(
+    '%s: 日をまたぐ予定の列が上限まで埋めた時間の1日の予定を隠した日は、日をまたぐ予定の列の右の端に札の所を空ける（貼り付く開始のカードに札を重ねない）',
+    (_, o, ids) => {
+      // 最終日 0:00〜12:00 の部分が列を埋め、10:00 の予定は隠れる。15:00 の予定は日をまたぐ予定と重ならないので幅いっぱい
+      const r = layoutPieces(
+        [...ids.map((id) => pc(id, '00:00', '12:00', 'last')), pc('a', '10:00', '11:00'), pc('b', '15:00', '16:00')],
+        o,
+      )
+      expect(r.overflow).toEqual([{ at: m('10:00'), ids: ['a'] }])
+      const t = 1 / ids.length
+      expect(geo(r)).toEqual(rounded({ ...Object.fromEntries(ids.map((id, i) => [id, [i * t, i * t, t, t]])), b: [0, 0, 1, 0] }))
+    },
+  )
+
   it('並べた物も札も、互いに重ならない（いろいろな日を作って確かめる）', () => {
     const U = 300
     const R = 24
+    // 決まった種から作る乱数（mulberry32。下の桁に偏りが出ないように）
     let seed = 7
     const rand = (n: number) => {
-      seed = (seed * 1103515245 + 12345) % 2147483648
-      return seed % n
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * n)
     }
+    const multiDays = [0, 0, 0, 0, 0, 0]
     for (let day = 0; day < 300; day++) {
       const pieces: Piece[] = []
-      const nMulti = rand(4)
+      // 0〜5件（L・M の4列・S の3列を超える日も作る）
+      const nMulti = rand(6)
+      multiDays[nMulti]++
       for (let i = 0; i < nMulti; i++) {
         const kind = rand(3)
         const t = rand(48) * 30
@@ -458,6 +481,8 @@ describe('日をまたぐ予定の部分は左の列に、1日の予定は1日�
         for (let i = 0; i < rects.length; i++)
           for (const b of [...rects.slice(i + 1), ...chips])
             expect(hit(rects[i], b), `${day} ${rects[i].id} と ${b.id}`).toBe(false)
+        for (let i = 0; i < chips.length; i++)
+          for (const b of chips.slice(i + 1)) expect(hit(chips[i], b), `${day} ${chips[i].id} と ${b.id}`).toBe(false)
         // どの部分も、並べた物か札のどちらか1つに入る
         const seen = [...r.placed.map((p) => p.id), ...r.overflow.flatMap((ov) => ov.ids)].sort()
         expect(seen, `${day}`).toEqual(pieces.map((p) => p.id).sort())
@@ -465,6 +490,8 @@ describe('日をまたぐ予定の部分は左の列に、1日の予定は1日�
         for (const p of r.placed) expect(px(p.x) + px(p.w), `${day} ${p.id}`).toBeLessThanOrEqual(U + 1e-6)
       }
     }
+    // 日をまたぐ予定の数がどれも作られている（乱数が偏って、日をまたぐ予定の無い日ばかりにならない）
+    for (const [k, count] of multiDays.entries()) expect(count, `日をまたぐ予定 ${k}件の日`).toBeGreaterThan(20)
   })
 })
 

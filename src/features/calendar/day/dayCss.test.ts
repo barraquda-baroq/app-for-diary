@@ -223,18 +223,18 @@ describe('指の端末の押せる所（D08・4.11）', () => {
     return r?.decls ?? new Map<string, string>()
   }
 
-  it('点線の丸の押せる所は、枠の左上の角から 34px 四方まで広げる（枠の外は枠の overflow で切れる）', () => {
+  it('点線の丸の押せる所は、枠の左上の角から高さ 34px・幅は件名の始まりまで広げる（枠の外は枠の overflow で切れる。件名には掛けない）', () => {
     const hit = inMedia('.dy-ring::before')
-    expect([hit.get('width'), hit.get('height'), hit.get('top'), hit.get('left')]).toEqual([
-      'var(--tap)',
-      'var(--tap)',
-      '0',
-      '-5px',
-    ])
+    expect([hit.get('height'), hit.get('top'), hit.get('left')]).toEqual(['var(--tap)', '0', '-5px'])
     expect(tokenOf('white', '--tap')).toBe('34px')
     // 丸は枠の上の端・左から 5px（押せる所 24px）。広げた所の左の端が枠の左の端（5 − 5 = 0）
     expect(day('.dy-ring').get('left')).toBe('5px')
     expect(day('.dy-box').get('overflow')).toBe('hidden')
+    // 右の端は件名・時刻の始まり（枠の左の余白）と同じ。そこより右は「押すと詳細」（隣と重ならない所だけ広げる。D08・AMB-CAL-14）
+    const padLeft = day('.dy-box').get('padding')?.split(/\s+/)[3]
+    expect(padLeft).toBe('30px')
+    const n = (v: string | undefined) => Number.parseFloat(v ?? '')
+    expect(n(day('.dy-ring').get('left')) + n(hit.get('left')) + n(hit.get('width'))).toBe(n(padLeft))
   })
 
   it('AI の札の押せる所は高さ 34px まで（予定の枠では上の端から下へ、リストの行では 40px の行の中で上下に）', () => {
