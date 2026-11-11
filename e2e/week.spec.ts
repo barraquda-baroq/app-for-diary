@@ -6,7 +6,7 @@
 // （今日は 2026年11月10日（火）9:00。いつもの週 11/8〜11/14、混んだ週 11/22〜11/28。休みは 11/11・11/14・11/23）
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, touchSwipe } from './helpers'
+import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, sheetReady, touchSwipe } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -275,6 +275,8 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     await page.getByTestId('week-add-2026-11-12-work').click()
     const input = page.getByTestId('quick-add-input')
     await expect(input).toBeFocused()
+    // 入力欄は決まりの大きさ（PC は高さ 36px・字 15px。4.7・4.8・FRAME-252。開発: L の狭い列でも小さくしない）
+    expect(await input.evaluate((e) => [e.getBoundingClientRect().height, getComputedStyle(e).fontSize])).toEqual([36, '15px'])
     // 「＋」の行の所（列のいちばん下）に開く
     await expect(page.getByTestId('week-add-2026-11-12-work')).toHaveCount(0)
     expect(await target.evaluate((e, el) => e.lastElementChild?.contains(el) ?? false, await input.elementHandle())).toBe(true)
@@ -374,6 +376,27 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     await page.getByTestId(`week-card-${I.expenses}`).getByTestId(`done-${I.expenses}`).click()
     await expect(page.getByTestId(`week-card-${I.expenses}`)).not.toHaveClass(/is-done/)
     await expect(page.locator('.toast', { hasText: '経費の精算' })).toHaveCount(0)
+  })
+
+  test('［＋ 登録］で足した予定のカードは、目立たせて、段の中で見える所まで動かす（4.9・12.2。デイリー・落とした時と同じ。開発）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    // 仕事の段はスクロールする（11/10 の列は下まで見えていない）。いちばん上に戻しておく
+    const body = page.locator('[data-tier="work"] .wk-tier-body')
+    await body.evaluate((e) => e.scrollTo(0, 0))
+    await page.getByTestId('cal-add').click()
+    await sheetReady(page)
+    // 開始日は今日（11/10）・区分は仕事。新しいカードはその日の列のいちばん下
+    await page.getByTestId('item-title').fill('見積書の送付')
+    await page.getByTestId('item-register').click()
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    const added = await itemByTitle(page, '見積書の送付')
+    expect(added).toMatchObject({ start: '2026-11-10', kind: 'work' })
+    const card = page.getByTestId(`week-card-${added?.id}`)
+    await expect(card).toHaveClass(/\bflash\b/)
+    await expect(card).toBeInViewport({ ratio: 1 })
+    expect(await body.evaluate((e) => e.scrollTop)).toBeGreaterThan(0)
   })
 
   test('日付の見出しを押すと、その日のデイリーへ（積む。「戻る」で週へ。ITEMS-055・CALENDAR-192）', async ({ page }) => {

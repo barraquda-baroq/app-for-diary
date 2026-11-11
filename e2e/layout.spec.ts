@@ -260,8 +260,6 @@ const SMALL_OK: readonly SmallOk[] = [
   { sel: '.wk-card.is-start.is-two-lines .wk-done', w: 28, h: 20 },
   // 「＋」の行: 高さ 28px（列の幅いっぱい。WP7 第2波。D08）
   { sel: '.wk-add', w: 34, h: 28 },
-  // ウィークリーのすばやく足すの入力欄: L のマウスでは高さ 30px（WP7 第3波の (s)。指の端末では 34px 以上なので、ここでは当たらない）
-  { sel: '.wk-quick input', w: 34, h: 30 },
   // 終点の●: 28×28（D08 の「終点の● 28px」）
   { sel: '.wk-lane > .wk-end', w: 28, h: 28 },
   // 7日を縦のレールの中の締め切り日の●: 18×28（隣の半分・カードに掛からない大きさ。WP7 第2波。D08）。左の端のレールは

@@ -946,8 +946,8 @@
   outline-offset: -2px;
 }
 
-/* すばやく足す（12.1）: 押した「＋」の行が、その場で1行の入力欄に替わる（D44。共通の部品 QuickAdd）。PC の L は字を 13px・
-   高さ 30px に（狭い列でも打った字が見えるように）。指の端末・S・M は入力欄の決まりのまま（40px・16px。iOS のズームを防ぐ） */
+/* すばやく足す（12.1）: 押した「＋」の行が、その場で1行の入力欄に替わる（D44。共通の部品 QuickAdd）。入力欄は決まりのまま
+   （PC 36px・15px、スマホ 40px・16px。4.7・4.8・4.11） */
 .wk-quick {
   flex: none;
   margin: 4px 4px 0;
@@ -955,14 +955,6 @@
 
 .wk-v .wk-quick {
   margin: 0;
-}
-
-@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
-  .wk-quick .input {
-    min-height: 30px;
-    padding: 4px 6px;
-    font-size: 13px;
-  }
 }
 
 /* 7日を横の PC（上に載せられる端末）では、列に乗せた時（・中にフォーカスがある時）だけ出す。指の端末ではいつも（D43） */
