@@ -137,6 +137,21 @@ function loadOnce<T>(load: () => Promise<T>): () => Promise<T> {
 const firebaseModule = loadOnce(() => import('./firebase'))
 const firestoreModule = loadOnce(() => import('./firestore'))
 
+/**
+ * E2E の持ち主の関所の確かめ用（開発サーバーだけ）: VITE_E2E_OWNER_LOCK=1 で開いた開発サーバーは、エミュレーターにつないでいても
+ * 本番と同じに持ち主を確かめる（config/owner はテストが管理者の権限で作る。playwright.sync.config.ts・e2e/owner-gate.sync.spec.ts）。
+ * 公開するビルドでは import.meta.env.DEV が false なので false に決まり、この分岐はビルドで消える（本番の動きは変わらない）
+ */
+const e2eOwnerLock = import.meta.env.DEV && import.meta.env.VITE_E2E_OWNER_LOCK === '1'
+
+/**
+ * 持ち主を確かめずに進める（エミュレーターにつないだ開発サーバー。エミュレーターには config/owner が無いため。docs/SPEC.md の 2.5。
+ * E2E の持ち主の関所の確かめの時は確かめる）。公開するビルドではエミュレーターを使わないので、いつも確かめる
+ */
+function skipsOwnerCheck(fb: { usingEmulator: boolean }): boolean {
+  return fb.usingEmulator && !e2eOwnerLock
+}
+
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
@@ -351,8 +366,9 @@ function startEngine(uid: string): void {
       uid,
       deviceId: await deviceId(),
       target: storeTarget(),
-      // エミュレーターにつないだ開発サーバーでは、持ち主の記録を確かめない（エミュレーターには config/owner が無い）
-      ownerLock: !fb.usingEmulator,
+      // エミュレーターにつないだ開発サーバーでは、持ち主の記録を確かめない（エミュレーターには config/owner が無い。
+      // E2E の持ち主の関所の確かめの時は確かめる。skipsOwnerCheck）
+      ownerLock: !skipsOwnerCheck(fb),
       appModel: { model: model.DATA_MODEL, appVersion: model.APP_VERSION },
       onNotice: (text) => notify(text),
       onStatus: (status) => {
@@ -474,7 +490,7 @@ async function verifyOwner(user: SyncUser): Promise<void> {
   const fb = await firebaseModule()
   const seen = (await p?.getMeta<string>('ownerSeen')) === user.uid
   if (token !== ownerToken) return
-  if (seen || fb.usingEmulator) {
+  if (seen || skipsOwnerCheck(fb)) {
     await startAfterOwner(user, token)
     return
   }
@@ -545,7 +561,7 @@ function boot(): Promise<void> {
           void (async () => {
             // この端末で持ち主だと確かめたアカウントかを先に読む（起動のたびにログインの画面が一瞬出ないように、ログインした状態と
             // 一緒に入れる）
-            const seen = fb.usingEmulator || (await getPersistence()?.getMeta<string>('ownerSeen')) === u.uid
+            const seen = skipsOwnerCheck(fb) || (await getPersistence()?.getMeta<string>('ownerSeen')) === u.uid
             // 前に別のアカウントで使っていた端末なら、その確かめ（2.5 の 4）も一緒に入れる（データの画面が一瞬出ないように）
             const mismatch = seen ? await previousAccount(u.uid) : null
             if (token !== ownerToken || faked) return

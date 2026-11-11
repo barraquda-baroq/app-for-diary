@@ -407,3 +407,52 @@ export async function touchSwipe(
   if (touchVia(page, via) === 'cdp') await cdpTouch(page, points, 0, stepMs)
   else await syntheticTouch(page, points, 0, stepMs)
 }
+
+// ---------- 段階2: 同期の E2E（playwright.sync.config.ts。Firebase エミュレーター）・小さな画面 ----------
+
+/**
+ * 同期の E2E の1台の端末: 新しいブラウザの文脈（保存も Firebase のログインの状態も別）でアプリを開き、ログインの画面が出るまで待つ
+ * （テスト用の印 diary-studio:test-auth は置かない。ログインはエミュレーターの本物の流れ。signInSync）
+ */
+export async function syncDevice(browser: { newContext: () => Promise<{ newPage: () => Promise<Page> }> }): Promise<Page> {
+  const ctx = await browser.newContext()
+  const page = await ctx.newPage()
+  await page.goto('/#/')
+  await page.waitForFunction(() => Boolean(window.__ds))
+  await expect(page.getByTestId('login-page')).toBeVisible()
+  return page
+}
+
+/**
+ * エミュレーターの仮の Google アカウント（sub）でログインする（window.__ds.signInForTest。開発サーバーだけ）。データの画面まで
+ * 進むと決まっている時（持ち主の記録 config/owner がこのアカウント）は shown で、トップ画面と同期の表示「同期済み」まで待つ
+ */
+export async function signInSync(page: Page, sub: string, { shown = true }: { shown?: boolean } = {}): Promise<void> {
+  await page.evaluate((s) => window.__ds.signInForTest(s), sub)
+  if (!shown) return
+  await expect(page.getByTestId('top-page')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('sync-indicator')).toHaveAttribute('data-tone', 'ok', { timeout: 20_000 })
+}
+
+/**
+ * 小さな画面（登録・詳細）が開き終わるまで待つ（Esc を聞き始めるのは、中へフォーカスを移すのと同じ時。見えた直後に Esc を押すと
+ * まだ聞いていないことがある。e2e/day.spec.ts の sheetReady と同じ）
+ */
+export async function sheetReady(page: Page): Promise<Locator> {
+  const sheet = page.getByTestId('item-sheet')
+  await expect(sheet).toBeVisible()
+  await expect.poll(() => sheet.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+  return sheet
+}
+
+/**
+ * 詳細の［…］（ほかの操作）のメニューを開く。メニューはどこかがスクロールすると閉じる（src/ui/PopupMenu.tsx）ので、押した直後に
+ * 届いたスクロール（押す前に画面へ送った分など）で閉じた時は、もう一度押す（開いている時は押さない。押すと閉じるため）
+ */
+export async function openItemMore(page: Page): Promise<void> {
+  const item = page.getByTestId('item-delete')
+  await expect(async () => {
+    if (!(await item.isVisible())) await page.getByTestId('item-more').click()
+    await expect(item).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: 10_000 })
+}
