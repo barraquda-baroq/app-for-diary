@@ -247,6 +247,22 @@ describe('タイムスケジュール（11.3・ITEMS-133・142〜147）', () => 
     expect(buildTimeline(listOf(long), D, 'L').boxes[0]).toMatchObject({ height: 96, card: 40, line: true })
   })
 
+  it.each([
+    // [その日, 開始, 終了, 部分の px, 線を引くか]
+    ['最終日 0:55 まで', '2026-11-09', D, '22:00', '00:55', 44, false],
+    ['最終日 1:00 まで', '2026-11-09', D, '22:00', '01:00', 48, false],
+    ['最終日 1:10 まで', '2026-11-09', D, '22:00', '01:10', 56, true],
+    ['初日 23:05 から', D, '2026-11-11', '23:05', '01:00', 44, false],
+    ['初日 22:50 から', D, '2026-11-11', '22:50', '01:00', 56, true],
+  ])(
+    '部分がカードより少しだけ長い時（%s）も、カードの下に●・矢印を出す所が無ければ線を引かず、印をカードの中に（AMB-ITEMS-11）',
+    (_, start, due, startTime, endTime, piecePx, line) => {
+      const item = mkItem({ id: 'x', start, due, startTime, endTime })
+      const [b] = buildTimeline(listOf(item), D, 'L').boxes
+      expect(b).toMatchObject({ height: piecePx, card: 40, line })
+    },
+  )
+
   it('24:00 の近くの短い予定は、24:00 の下へ出る分だけ下に余白を足す（枠を動かさない。layoutPieces と同じ見え方）', () => {
     const tl = buildTimeline(listOf(timed('late', '23:50', null)), D, 'L')
     expect(tl.boxes[0]).toMatchObject({ top: 1144, height: 24 })

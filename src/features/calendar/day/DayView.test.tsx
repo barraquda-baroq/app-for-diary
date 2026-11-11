@@ -309,6 +309,23 @@ describe('タイムスケジュール（11.3）', () => {
     expect(card.querySelector('.dy-ev-marks .cp-dot')).not.toBeNull()
   })
 
+  it('部分がカードより少しだけ長く、カードの下に●・矢印を出す所が無い時も、印はカードの中に（隠れないように）', async () => {
+    await renderDay(
+      itemsOf(
+        mkItem({ id: 'last', start: '2026-11-09', due: D, startTime: '22:00', endTime: '00:55' }),
+        mkItem({ id: 'first', start: D, due: '2026-11-11', startTime: '23:05', endTime: '01:00' }),
+      ),
+    )
+    const last = screen.getByTestId(testIds.dayEvent('last'))
+    expect(last.style.height).toBe('40px')
+    expect(last.parentElement?.style.height).toBe('44px')
+    expect(last.parentElement?.querySelector('.dy-span-line, .dy-span-end')).toBeNull()
+    expect(last.querySelector('.dy-ev-marks .cp-dot')).not.toBeNull()
+    const first = screen.getByTestId(testIds.dayEvent('first'))
+    expect(first.parentElement?.querySelector('.dy-span-line, .dy-span-end')).toBeNull()
+    expect(first.querySelector('.dy-ev-marks .dy-end-arrow')).not.toBeNull()
+  })
+
   it('予定（丸と札の外）を押すと詳細（ITEMS-141）', async () => {
     const user = userEvent.setup()
     const { router } = await renderDay(itemsOf(timed('a', '10:00', '11:00', { title: '定例' })))

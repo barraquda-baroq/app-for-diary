@@ -40,6 +40,12 @@ export const EVENT_TITLE_LINE = 16
 export const EVENT_COMPACT_LINE = 14
 /** 予定の時刻の1行の高さ（等幅 11px） */
 export const EVENT_TIME_LINE = 14
+/**
+ * 日をまたぐ予定で、開始のカードの下に線と終わりの印（● 10px・矢印 12px）を出すのに要る高さ。部分がカードよりこれだけ長くない時は、
+ * 線を引かずに印をカードの右端の中に置く（AMB-ITEMS-11 の「部分がカードより短い時」を、印の分まで広げた物。カードのすぐ下に印を
+ * 出すと、印の大半がカードに隠れる）
+ */
+export const END_MARK_ROOM_PX = 16
 
 /** 1時間の高さ（L・M 48px、S 44px。11.3） */
 export function hourPxOf(width: WidthClass): number {
@@ -127,7 +133,10 @@ export interface TimedBoxVM {
   height: number
   /** 日をまたぐ予定の開始のカードの高さ（max(24, min(40, 部分の高さ))。D39）。1日の予定は枠の高さと同じ */
   card: number
-  /** 日をまたぐ予定: カードの下から部分の終わりまで線を引くか（部分がカードより長い時だけ。AMB-ITEMS-11） */
+  /**
+   * 日をまたぐ予定: カードの下から部分の終わりまで線を引くか（部分がカードより END_MARK_ROOM_PX 以上長い時だけ。そうでない時は
+   * ●・矢印をカードの中に置く。AMB-ITEMS-11）
+   */
   line: boolean
   /** 日をまたぐ予定の部分の終わりの印（最終日は●、ほかは下向きの矢印。1日の予定は null） */
   endMark: 'dot' | 'arrow' | null
@@ -216,7 +225,7 @@ function boxOf(c: CalItem, p: Piece & { col: number; cols: number }, hourPx: num
     top,
     height: Math.max(card, piecePx),
     card,
-    line: piecePx > card,
+    line: piecePx - card >= END_MARK_ROOM_PX,
     endMark: p.part === 'last' ? 'dot' : 'arrow',
     ring: p.part === 'first',
     received: p.part !== 'first',
