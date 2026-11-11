@@ -109,6 +109,10 @@ export interface SyncTarget {
   localKeys(): Promise<Set<string>>
   getMeta<T>(key: string): Promise<T | undefined>
   setMeta(key: string, value: unknown): Promise<void>
+  /** 復元の印（_meta の authoritative）がまだ stamp の時だけ、境（authoritativeFrom）を書く（1つのトランザクション）。書いたら true */
+  setAuthoritativeFrom(stamp: unknown, bound: unknown): Promise<boolean>
+  /** 復元の印がまだ stamp の時だけ、印と残す物（authoritativeKeep）を外す（1つのトランザクション）。外したら true */
+  finishAuthoritative(stamp: unknown): Promise<boolean>
   /** 月の束に入っている項目（id → 月）と、その書き直し・消去（6.11） */
   packsOf(): Promise<Map<string, string>>
   setPacks(entries: Iterable<readonly [string, string | null]>): Promise<void>
@@ -1206,7 +1210,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
    * 終わったら、記録した位置から受け取り直す。
    */
   async function pushAuthoritative(): Promise<void> {
-    // 復元・すべて削除をした時刻（replaceAll）。当てている間にもう一度復元したかを、終わる時に比べて確かめる
+    // 復元・すべて削除をした時刻（replaceAll）。当てている間にもう一度復元したかを、境を書く時と終わる時に比べて確かめる
     const stamp = await target.getMeta<unknown>('authoritative')
     if (!stamp) return
     deferred = true
@@ -1238,7 +1242,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         if (at && later(at, newest)) newest = at
       }
       bound = newest ?? { s: 0, n: 0 }
-      await target.setMeta('authoritativeFrom', bound)
+      // 境は、印がまだこの復元の物の時だけ書く（クラウドを読んでいる間にもう一度復元・すべて削除をした時に、前の復元の時刻の境を
+      // 後の復元の境として残さないように。後の復元の内容で、境から当て直す）
+      if (!(await target.setAuthoritativeFrom(stamp, bound))) return pushAuthoritative()
     }
     const until: StoredCursor = bound
     restoreBound = until
@@ -1353,10 +1359,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     }
     await target.clearPacks()
     // 当てている間に、もう一度復元・すべて削除をした: 印を残したまま、その内容で当て直す（前の復元の境・残す物で当てて印を外すと、
-    // 後の復元を始める前にほかの端末が書いた記録を消さないまま、後の復元の「必ず上書き」の送信待ちを送ってしまう）
-    if ((await target.getMeta<unknown>('authoritative')) !== stamp) return pushAuthoritative()
-    await target.setMeta('authoritative', null)
-    await target.setMeta('authoritativeKeep', null)
+    // 後の復元を始める前にほかの端末が書いた記録を消さないまま、後の復元の「必ず上書き」の送信待ちを送ってしまう）。
+    // 印を比べるのと外すのは1つのトランザクションでする（比べた後・外す前に入った復元の印や残す物を外さないように）
+    if (!(await target.finishAuthoritative(stamp))) return pushAuthoritative()
   }
 
   function uploadAll(): Promise<void> {

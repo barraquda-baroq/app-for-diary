@@ -157,6 +157,8 @@ function storeTarget(): SyncTarget {
     localKeys: () => p.localKeys(),
     getMeta: (k) => p.getMeta(k),
     setMeta: (k, v) => p.setMeta(k, v),
+    setAuthoritativeFrom: (stamp, bound) => p.setAuthoritativeFrom(stamp, bound),
+    finishAuthoritative: (stamp) => p.finishAuthoritative(stamp),
     packsOf: () => p.packsOf(),
     setPacks: (entries) => p.setPacks(entries),
     clearPacks: () => p.clearPacks(),

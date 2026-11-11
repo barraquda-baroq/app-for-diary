@@ -220,10 +220,10 @@ describe('復元', () => {
     await a.restore(wrong)
     // 前の復元の境を決めた直後に、B が足し、A がもう一度復元した
     let laterId = ''
-    const setMeta = a.p.setMeta.bind(a.p)
-    a.p.setMeta = async (key, value) => {
-      await setMeta(key, value)
-      if (key !== 'authoritativeFrom' || laterId) return
+    const setFrom = a.p.setAuthoritativeFrom.bind(a.p)
+    a.p.setAuthoritativeFrom = async (stamp, bound) => {
+      const wrote = await setFrom(stamp, bound)
+      if (laterId) return wrote
       await b.edit((d) => {
         const r = O.addFavorite(d, '後で足した')
         laterId = r.result
@@ -233,6 +233,7 @@ describe('復元', () => {
       // 復元の印は復元した時刻（ms）なので、前の復元と同じ時刻にならないように
       await new Promise((r) => setTimeout(r, 5))
       await a.restore(right)
+      return wrote
     }
     await a.pushAuthoritative()
     expect(laterId).not.toBe('')
@@ -241,6 +242,84 @@ describe('復元', () => {
     expect(await sameData(a, b)).toBe(true)
     expect(Object.values((await b.load()).favorites).map((f) => f.text)).toEqual(['残す'])
   })
+
+  // 前の復元の境を書く前（クラウドを読んでいる間）に、ほかの端末が足し、もう一度復元した。前の復元の時刻の境を後の復元の境として
+  // 残すと、後の復元を始める前にほかの端末が足した記録を「復元を始めた後に書いた」とみなして消さない
+  it('境を書く前にもう一度復元したら、前の復元の境を使わずに、後の復元の内容で当て直す', async () => {
+    const { a, b } = await pair()
+    await a.edit((d) => O.addFavorite(d, '残す').data)
+    await settle(a, b)
+    const right = await a.load()
+    await a.edit((d) => O.addFavorite(d, '違うファイルの物').data)
+    await settle(a, b)
+    const wrong = await a.load()
+    a.offline()
+    await a.restore(wrong)
+    let laterId = ''
+    const setFrom = a.p.setAuthoritativeFrom.bind(a.p)
+    a.p.setAuthoritativeFrom = async (stamp, bound) => {
+      if (!laterId) {
+        await b.edit((d) => {
+          const r = O.addFavorite(d, '後で足した')
+          laterId = r.result
+          return r.data
+        })
+        await b.sync()
+        await new Promise((r) => setTimeout(r, 5))
+        await a.restore(right)
+      }
+      return setFrom(stamp, bound)
+    }
+    await a.pushAuthoritative()
+    expect(laterId).not.toBe('')
+    expect(await a.p.getMeta('authoritative')).toBeNull()
+    await settle(a, b)
+    expect(await sameData(a, b)).toBe(true)
+    expect(Object.values((await b.load()).favorites).map((f) => f.text)).toEqual(['残す'])
+  })
+
+  // 復元を当て終えて印を外す、その読み書きと同じ時に、このタブ・ほかのタブでもう一度復元した（印を比べるのと外すのが別々だと、後の
+  // 復元の印を外してクラウドに当てない・MIM を含まないファイルの残す物を外して、ほかの端末の MIM を消す。形4）
+  for (const mim of [false, true]) {
+    it(`印を外すのと同じ時にもう一度復元しても、後の復元をクラウドに当てる${mim ? '（MIM を含まないファイル）' : ''}`, async () => {
+      const { a, b } = await pair()
+      await a.edit((d) => O.addFavorite(d, '残す').data)
+      await settle(a, b)
+      const right = await a.load()
+      await a.edit((d) => O.addFavorite(d, '違うファイルの物').data)
+      await settle(a, b)
+      const wrong = await a.load()
+      a.offline()
+      await a.restore(wrong)
+      let laterId = ''
+      let again: Promise<unknown> | null = null
+      const finish = a.p.finishAuthoritative.bind(a.p)
+      a.p.finishAuthoritative = async (stamp) => {
+        if (again) return finish(stamp)
+        // 前の復元を当てた後に、B が足した（A はまだ受け取っていない）
+        await b.edit((d) => {
+          const r = mim ? O.addMimNote(d, { title: 'Bの金庫' }) : O.addFavorite(d, '後で足した')
+          laterId = r.result
+          return r.data
+        })
+        await b.sync()
+        await new Promise((r) => setTimeout(r, 5))
+        // 印を外す読み書きを出した直後（終わるのを待つ前）に、もう一度復元した
+        const done = finish(stamp)
+        again = a.p.replaceAll(right, mim ? { tables: ['mimNotes'], keys: [], keepMimTrash: true } : {})
+        return done
+      }
+      await a.pushAuthoritative()
+      await again
+      expect(laterId).not.toBe('')
+      await settle(a, b)
+      expect(await a.p.getMeta('authoritative')).toBeNull()
+      expect(await sameData(a, b)).toBe(true)
+      expect(Object.values((await b.load()).favorites).map((f) => f.text)).toEqual(['残す'])
+      if (mim) expect(((await b.load()).mimNotes[laterId] as MimNote | undefined)?.title).toBe('Bの金庫')
+      else expect((await b.load()).favorites[laterId]).toBeUndefined()
+    })
+  }
 
   it('MIM を含まないファイルの復元は、ほかの端末で直した MIM を上書きしない（形4）', async () => {
     const { a, b } = await pair()

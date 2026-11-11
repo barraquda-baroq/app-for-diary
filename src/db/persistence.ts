@@ -321,6 +321,16 @@ export interface Persistence {
   localKeys(): Promise<Set<string>>
   getMeta<T>(key: string): Promise<T | undefined>
   setMeta(key: string, value: unknown): Promise<void>
+  /**
+   * 復元・すべて削除の印（_meta の authoritative）がまだ stamp の時だけ、クラウドに当てる境（authoritativeFrom）を bound にする。
+   * 印を比べるのと書くのを1つのトランザクションでする（その間に次の復元が入らないように）。書いたら true（6.16）
+   */
+  setAuthoritativeFrom(stamp: unknown, bound: unknown): Promise<boolean>
+  /**
+   * 復元・すべて削除をクラウドに当て終えた: 印（authoritative）がまだ stamp の時だけ、印と残す物（authoritativeKeep）を外す。
+   * 比べるのと外すのを1つのトランザクションでする。外したら true（当てている間にもう一度復元した時は、何もせずに false。6.16）
+   */
+  finishAuthoritative(stamp: unknown): Promise<boolean>
   /** 内容から作った id の削除の印を受け取った・書いた記録のキー（19.5 の previously_deleted） */
   goneKeys(): Promise<Set<string>>
   /** 月の束に入っている項目（id → 月。6.11） */
@@ -1049,6 +1059,25 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
 
     async setMeta(key, value) {
       await db.meta.put({ key, value })
+    },
+
+    setAuthoritativeFrom(stamp, bound) {
+      return db.transaction('rw', db.meta, async () => {
+        if ((await db.meta.get('authoritative'))?.value !== stamp) return false
+        await db.meta.put({ key: 'authoritativeFrom', value: bound })
+        return true
+      })
+    },
+
+    finishAuthoritative(stamp) {
+      return db.transaction('rw', db.meta, async () => {
+        if ((await db.meta.get('authoritative'))?.value !== stamp) return false
+        await db.meta.bulkPut([
+          { key: 'authoritative', value: null },
+          { key: 'authoritativeKeep', value: null },
+        ])
+        return true
+      })
     },
 
     async goneKeys() {

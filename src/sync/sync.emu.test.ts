@@ -252,6 +252,8 @@ async function makeDevice(
     localKeys: () => p.localKeys(),
     getMeta: (k) => p.getMeta(k),
     setMeta: (k, v) => p.setMeta(k, v),
+    setAuthoritativeFrom: (stamp, bound) => p.setAuthoritativeFrom(stamp, bound),
+    finishAuthoritative: (stamp) => p.finishAuthoritative(stamp),
     packsOf: () => p.packsOf(),
     setPacks: (e) => p.setPacks(e),
     clearPacks: () => p.clearPacks(),
@@ -950,6 +952,119 @@ describe('同期（エミュレーター）', () => {
     expect(Object.keys((await b.load()).items)).toEqual([keepId])
     expect(await a.p.getMeta('authoritative')).toBeNull()
   })
+
+  // 前の復元の境を書く前（クラウドを読んでいる間）に、B が足し、A がもう一度復元した。前の復元の時刻の境を後の復元の境として残すと、
+  // B が後で足した予定を「後の復元を始めた後に書いた」とみなして消さない（境を書いた後に送れなくなって、やり直した時も）
+  for (const fail of [false, true]) {
+    it(`復元の境を書く前にもう一度復元したら、前の復元の境を使わずに後の復元を当てる${fail ? '（その後に送れなくなって、やり直した時も）' : ''}`, async () => {
+      const who = account()
+      const a = await makeDevice('a', who)
+      const b = await makeDevice('b', who)
+      await a.online()
+      await b.online()
+      let keepId = ''
+      await a.edit((d) => {
+        const r = addItem(d, { title: '残す予定' })
+        keepId = r.id
+        return r.data
+      })
+      await settle(a, b)
+      const right = await a.load()
+      await a.edit((d) => addItem(d, { title: '違うファイルの予定' }).data)
+      await settle(a, b)
+      const wrong = await a.load()
+      a.offline()
+      await b.edit((d) => addItem(d, { title: 'B が前に足した予定' }).data)
+      await settle(b)
+      await a.restore(wrong)
+      let hooked = false
+      const setFrom = a.p.setAuthoritativeFrom.bind(a.p)
+      a.p.setAuthoritativeFrom = async (stamp, bound) => {
+        if (!hooked) {
+          hooked = true
+          await b.edit((d) => addItem(d, { title: 'B が後で足した予定' }).data)
+          await settle(b)
+          // 復元の印は復元した時刻（ms）なので、前の復元と同じ時刻にならないように
+          await new Promise((r) => setTimeout(r, 5))
+          await a.restore(right)
+          // 次の書き込み（削除の印のトランザクション）を1回だけ通信の誤りにする
+          if (fail)
+            listen.beforeWrite.set(a.fs, async () => {
+              throw Object.assign(new Error('通信できません（テスト）'), { name: 'FirebaseError', code: 'unavailable' })
+            })
+        }
+        return setFrom(stamp, bound)
+      }
+      await a.online()
+      await settle(a, b)
+      expect(hooked).toBe(true)
+      expect(listen.beforeWrite.has(a.fs)).toBe(false)
+      expect(Object.keys((await b.load()).items)).toEqual([keepId])
+      expect(await a.p.getMeta('authoritative')).toBeNull()
+    })
+  }
+
+  // 復元を当て終えて印を外す、その読み書きと同じ時に、このタブ・ほかのタブでもう一度復元した。印を比べるのと外すのが別々だと、後の復元の
+  // 印を外してクラウドに当てない・MIM を含まないファイルの残す物を外して、A に届いていないほかの端末の MIM を消す（形4）
+  for (const mim of [false, true]) {
+    it(`復元の印を外すのと同じ時にもう一度復元しても、後の復元をクラウドに当てる${mim ? '（MIM を含まないファイルは、ほかの端末の MIM を消さない）' : ''}`, async () => {
+      const who = account()
+      const a = await makeDevice('a', who)
+      const b = await makeDevice('b', who)
+      await a.online()
+      await b.online()
+      let keepId = ''
+      await a.edit((d) => {
+        const r = addItem(d, { title: '残す予定' })
+        keepId = r.id
+        return r.data
+      })
+      await settle(a, b)
+      const right = await a.load()
+      await a.edit((d) => addItem(d, { title: '違うファイルの予定' }).data)
+      await settle(a, b)
+      const wrong = await a.load()
+      a.offline()
+      await a.restore(wrong)
+      // 前の復元をクラウドに当てた後（印を外す前）に、B が足した（A はまだ受け取っていない）
+      let laterId = ''
+      const clearPacks = a.p.clearPacks.bind(a.p)
+      a.p.clearPacks = async () => {
+        if (!laterId) {
+          await b.edit((d) => {
+            if (!mim) {
+              const r = addItem(d, { title: 'B が後で足した予定' })
+              laterId = r.id
+              return r.data
+            }
+            const m = O.addMimNote(d, { title: 'B のパスワード' })
+            laterId = m.result
+            return m.data
+          })
+          await settle(b)
+          await new Promise((r) => setTimeout(r, 5))
+        }
+        return clearPacks()
+      }
+      // 印を外す読み書きを出した直後（終わるのを待つ前）に、もう一度復元した
+      let again: Promise<unknown> | null = null
+      const finish = a.p.finishAuthoritative.bind(a.p)
+      a.p.finishAuthoritative = (stamp) => {
+        const done = finish(stamp)
+        if (laterId && !again)
+          again = a.p.replaceAll(right, mim ? keepOptions({ mimNotes: true, trashEntryIds: [], trashRecordIds: [] }) : {})
+        return done
+      }
+      await a.online()
+      await waitFor(async () => again, 'もう一度復元する')
+      await again
+      a.engine?.requestUpload(true)
+      await settle(a, b)
+      expect(await a.p.getMeta('authoritative')).toBeNull()
+      expect(Object.keys((await b.load()).items)).toEqual([keepId])
+      if (mim) expect(((await b.load()).mimNotes[laterId] as MimNote | undefined)?.title).toBe('B のパスワード')
+    })
+  }
 
   it('初めての受け取りの前に受け取りが止まったら（無料枠を使い切った）、最初の受け取りまで送らない項目だけの送信の後も、その理由を出したままにする', async () => {
     const who = account()

@@ -553,6 +553,43 @@ describe('復元（replaceAll。6.16）', () => {
     await p.replaceAll(emptyData())
     expect([...(await p.goneKeys())]).toEqual(['items/ce-a.b.1'])
   })
+
+  it('境（authoritativeFrom）を書く・印を外すのは、印がまだその復元の物の時だけ', async () => {
+    const p = fresh()
+    await p.setMeta('uid', 'u')
+    await p.replaceAll(emptyData(), { tables: ['mimNotes'], keys: [], keepMimTrash: true })
+    const stamp = await p.getMeta('authoritative')
+    expect(stamp).toBeTruthy()
+    expect(await p.setAuthoritativeFrom('前の復元', { s: 1, n: 0 })).toBe(false)
+    expect(await p.getMeta('authoritativeFrom')).toBeUndefined()
+    expect(await p.finishAuthoritative('前の復元')).toBe(false)
+    expect(await p.getMeta('authoritative')).toBe(stamp)
+    expect(await p.getMeta('authoritativeKeep')).toMatchObject({ tables: ['inbox', 'mimNotes'] })
+    expect(await p.setAuthoritativeFrom(stamp, { s: 2, n: 0 })).toBe(true)
+    expect(await p.getMeta('authoritativeFrom')).toEqual({ s: 2, n: 0 })
+    expect(await p.finishAuthoritative(stamp)).toBe(true)
+    expect(await p.getMeta('authoritative')).toBeNull()
+    expect(await p.getMeta('authoritativeKeep')).toBeNull()
+    // 境は残す（「必ず上書き」の送信待ちを送る時に使う）
+    expect(await p.getMeta('authoritativeFrom')).toEqual({ s: 2, n: 0 })
+  })
+
+  // 印を比べてから外すまでの間に、このタブ・ほかのタブで次の復元をした（比べるのと外すのが別のトランザクションだと、後の復元の印や
+  // 残す物を外してしまい、後の復元をクラウドに当てない・MIM を含まないファイルなのにほかの端末の MIM を消す）
+  it('印を外している最中に次の復元をしても、後の復元の印と残す物は残る', async () => {
+    const p = fresh()
+    await p.setMeta('uid', 'u')
+    await p.replaceAll(emptyData())
+    const stamp = await p.getMeta('authoritative')
+    await new Promise((r) => setTimeout(r, 5))
+    const finishing = p.finishAuthoritative(stamp)
+    const again = p.replaceAll(emptyData(), { tables: ['mimNotes'], keys: [], keepMimTrash: true })
+    await Promise.all([finishing, again])
+    const later = await p.getMeta('authoritative')
+    expect(later).toBeTruthy()
+    expect(later).not.toBe(stamp)
+    expect(await p.getMeta('authoritativeKeep')).toEqual({ tables: ['inbox', 'mimNotes'], keys: [], mimTrash: true })
+  })
 })
 
 describe('全部を受け取り直した時（dropMissing。6.11）', () => {

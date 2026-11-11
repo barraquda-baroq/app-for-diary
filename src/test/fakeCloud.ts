@@ -119,7 +119,8 @@ export class FakeDevice {
     let from = await this.p.getMeta<number>('authoritativeFrom')
     if (from == null) {
       from = this.cloud.ts
-      await this.p.setMeta('authoritativeFrom', from)
+      // エンジンと同じ: 境は、印がまだこの復元の物の時だけ書く（1つのトランザクション）。次の復元が入っていたら、その内容で当て直す
+      if (!(await this.p.setAuthoritativeFrom(stamp, from))) return this.pushAuthoritative()
     }
     const bound = from
     const rank = (key: string) => tableSendRank(key.slice(0, key.indexOf(':')))
@@ -138,10 +139,8 @@ export class FakeDevice {
       }
       this.cloud.log.push(`${this.name}@${ts}: 復元で消した ${doomed.join(' ')}`)
     }
-    // エンジンと同じ: 当てている間にもう一度復元した時は、印を残したまま、その内容で当て直す
-    if ((await this.p.getMeta<unknown>('authoritative')) !== stamp) return this.pushAuthoritative()
-    await this.p.setMeta('authoritative', null)
-    await this.p.setMeta('authoritativeKeep', null)
+    // エンジンと同じ: 当てている間にもう一度復元した時は、印を残したまま、その内容で当て直す（比べるのと外すのは1つのトランザクション）
+    if (!(await this.p.finishAuthoritative(stamp))) return this.pushAuthoritative()
   }
 
   /** 復元を始めた時の時刻（エンジンの restoreBound） */
