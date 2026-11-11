@@ -1,12 +1,15 @@
 // ウィークリーの画面（docs/SPEC.md の 10.・7.7〜7.9・4.3・12.3）: 7日を横（L・M）と7日を縦（S）の描き方、区分ごとのレーン・
 // 受けた表示・端の＞・終点の●・完了の見え方・印・休みの列・見出しの行の数・縦のレールと「● 件名」の行・「＋」の行、
-// 予定を押すと詳細が開く（丸・AI の札は別のボタン）
-import { screen, within } from '@testing-library/react'
+// 予定を押すと詳細が開く（丸・AI の札は別のボタン）、日付の見出し → デイリー・休みのチェック・「＋」→ すばやく足す（その場で
+// 入力欄に替わる）、列が狭い時の始点のカード・受けた表示の件名の2行
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mkItem, mkOffDay, mkTask, T0 } from '../../../domain/testData'
 import type { AppData, Item } from '../../../domain/types'
+import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
+import { quickDraftKey, readLocal } from '../../../store/localDrafts'
 import { renderView, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
 import { sheetOf } from '../common/sheets'
 import { testIds } from '../common/testIds'
@@ -247,7 +250,35 @@ describe('7日を横（L・M。10.2）', () => {
     expect(screen.getByTestId(testIds.weekReceived('cl')).classList.contains('is-marks-low')).toBe(false)
   })
 
-  it('M の列（100px）では、ロックの付いた始点のカードと AI の札の付いた受けた表示の印を下の行へ', async () => {
+  it('印を期間の行の右に置き、そこに期間が入らない始点のカード（〆・ロック・Claude）は、期間を読み上げだけにして件名は1行目のまま（印と重ねない）', async () => {
+    const data = {
+      items: items(
+        span('busy', '2026-11-10', '2026-11-12', {
+          title: '見積もりの確認と返送',
+          origin: 'list',
+          locked: true,
+          by: 'connector',
+          ai: 'claude',
+          via: 'メール',
+        }),
+        span('plain', '2026-11-10', '2026-11-12', { title: '資料づくり', locked: true }),
+      ),
+    }
+    // L の 1400px（列 142px）
+    await renderWeek({}, { data })
+    const card = screen.getByTestId(testIds.weekStart('busy'))
+    expect(card.classList.contains('is-two-lines')).toBe(false)
+    expect(card.classList.contains('is-marks-low')).toBe(true)
+    expect(card.classList.contains('is-period-hidden')).toBe(true)
+    expect(card.querySelector('.wk-period')).toBeNull()
+    expect(card.querySelector('.visually-hidden')?.textContent).toBe('〜11/12')
+    // 期間を出す時は付けない
+    const plain = screen.getByTestId(testIds.weekStart('plain'))
+    expect(plain.querySelector('.wk-period')?.textContent).toBe('〜11/12')
+    expect(plain.classList.contains('is-period-hidden')).toBe(false)
+  })
+
+  it('M の列（100px）では、始点のカードは件名を2行にして印を2行目の右の端へ、AI の札の付いた受けた表示は印を下の行へ', async () => {
     const data = {
       items: items(
         span('lk', '2026-11-09', '2026-11-11', { title: '鍵のかかった予定', locked: true, startTime: '10:00', endTime: '12:00' }),
@@ -257,13 +288,20 @@ describe('7日を横（L・M。10.2）', () => {
     }
     await renderWeek({ width: 'M', area: { width: 700, height: 800 } }, { data })
     const lk = screen.getByTestId(testIds.weekStart('lk'))
+    expect(lk.classList.contains('is-two-lines')).toBe(true)
+    expect(lk.classList.contains('has-marks')).toBe(true)
     expect(lk.classList.contains('is-marks-low')).toBe(true)
-    // 期間の行の右のあきはロックの印の幅（12px＋4px）
+    // 2行目の右のあきはロックの印の幅（12px＋4px）
     expect(lk.style.getPropertyValue('--wk-marks-w')).toBe('16px')
-    // 期間は日付だけ（印の分も引いた幅に入らない）
-    expect(lk.querySelector('.wk-period')?.textContent).toBe('11/9〜11/11')
+    // 期間は読み上げにだけ残す（見えない）
+    expect(lk.querySelector('.wk-period')).toBeNull()
+    expect(lk.querySelector('.visually-hidden')?.textContent).toBe('11/9 10:00〜11/11 12:00')
     expect(screen.getByTestId(testIds.weekReceived('cl')).classList.contains('is-marks-low')).toBe(true)
-    expect(screen.getByTestId(testIds.weekStart('pl')).classList.contains('is-marks-low')).toBe(false)
+    expect(screen.getByTestId(testIds.weekReceived('cl')).classList.contains('is-two-lines')).toBe(false)
+    const pl = screen.getByTestId(testIds.weekStart('pl'))
+    expect(pl.classList.contains('is-two-lines')).toBe(true)
+    expect(pl.classList.contains('has-marks')).toBe(false)
+    expect(pl.style.getPropertyValue('--wk-marks-w')).toBe('')
   })
 
   it('「＋」の行を各日・各段のいちばん下に（ITEMS-066）', async () => {
@@ -397,5 +435,232 @@ describe('7日を縦（S。10.4）', () => {
     const { router } = await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
     await user.click(screen.getByTestId(testIds.weekReceived('recv')).querySelector('.wk-open') as HTMLElement)
     expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'recv' })
+  })
+})
+
+describe('日付の見出し・休みのチェック（10.2・10.4・7.4・7.12）', () => {
+  it.each([
+    ['L', 994],
+    ['S', 341],
+  ] as const)(
+    '%s: 日付の見出し（丸いラベル＋「11/10」）を押すと、その日のデイリーへ積む（ITEMS-055・CALENDAR-192）',
+    async (width, px) => {
+      const user = userEvent.setup()
+      const { router } = await renderWeek({ width, area: { width: px, height: 600 } })
+      await user.click(within(screen.getByTestId(testIds.weekHead('2026-11-12'))).getByRole('button', { name: /デイリーを開く/ }))
+      expect(router.state.location.pathname).toBe('/day/2026-11-12')
+      expect(router.state.historyAction).toBe('PUSH')
+    },
+  )
+
+  it('休みのチェックを押すと setOffDay で休みが付き、もう一度押すと外れる（記録は消さない。ITEMS-056・CALENDAR-046・D33）', async () => {
+    const user = userEvent.setup()
+    const spy = vi.spyOn(actions, 'setOffDay')
+    await renderWeek()
+    const check = screen.getByTestId(testIds.weekOff('2026-11-10')) as HTMLInputElement
+    await user.click(check)
+    expect(spy).toHaveBeenLastCalledWith('2026-11-10', true)
+    expect(getData().offDays['2026-11-10']?.off).toBe(true)
+    expect(check.checked).toBe(true)
+    expect(screen.getByTestId(testIds.weekCol('2026-11-10')).classList.contains('cp-offday')).toBe(true)
+    // 休みの日（11/11）は外す。記録は off: false で残る
+    await user.click(screen.getByTestId(testIds.weekOff('2026-11-11')))
+    expect(spy).toHaveBeenLastCalledWith('2026-11-11', false)
+    expect(getData().offDays['2026-11-11']?.off).toBe(false)
+    expect(screen.getByTestId(testIds.weekCol('2026-11-11')).classList.contains('cp-offday')).toBe(false)
+    spy.mockRestore()
+  })
+
+  it('S の日のかたまりの見出しの休みのチェックも同じ（ITEMS-085）', async () => {
+    const user = userEvent.setup()
+    await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
+    await user.click(screen.getByTestId(testIds.weekOff('2026-11-13')))
+    expect(getData().offDays['2026-11-13']?.off).toBe(true)
+    expect(screen.getByTestId(testIds.weekCol('2026-11-13')).classList.contains('cp-offday')).toBe(true)
+  })
+})
+
+describe('「＋」→ すばやく足す（12.1・ITEMS-068・D44）', () => {
+  const input = () => screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+
+  it('「＋」を押すと、その「＋」の行がその場で入力欄に替わる。Enter で足し、開いたまま続けて足せる（ITEMS-153〜155・161）', async () => {
+    const user = userEvent.setup()
+    await renderWeek()
+    const cell = tier('work').querySelectorAll<HTMLElement>('.wk-cell')[4]
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    expect(screen.queryByTestId(testIds.weekAdd('2026-11-12', 'work'))).toBeNull()
+    expect(cell.contains(input())).toBe(true)
+    expect(cell.lastElementChild?.contains(input())).toBe(true)
+    expect(document.activeElement).toBe(input())
+    await user.type(input(), '電話をかける{Enter}')
+    const added = Object.values(getData().items).find((it) => it.title === '電話をかける')
+    expect(added).toMatchObject({
+      origin: 'calendar',
+      kind: 'work',
+      start: '2026-11-12',
+      due: null,
+      startTime: null,
+      listed: false,
+    })
+    // 足した予定はその日・その段のカードに（入力欄の上）。入力欄は空に戻って開いたまま
+    const card = screen.getByTestId(testIds.weekCard(added?.id ?? ''))
+    expect(cell.contains(card)).toBe(true)
+    expect(card.compareDocumentPosition(input()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(input().value).toBe('')
+    expect(document.activeElement).toBe(input())
+    await user.type(input(), '資料を送る{Enter}')
+    expect(Object.values(getData().items).some((it) => it.title === '資料を送る' && it.start === '2026-11-12')).toBe(true)
+  })
+
+  it('Esc で閉じると「＋」に戻ってフォーカスも戻る。書きかけは控えたままで、開き直すと戻る（ITEMS-156・159）', async () => {
+    const user = userEvent.setup()
+    await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-13', 'private')))
+    await user.type(input(), '書きかけ')
+    expect(readLocal(quickDraftKey('2026-11-13', 'private'))).toBe('書きかけ')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    const add = screen.getByTestId(testIds.weekAdd('2026-11-13', 'private'))
+    expect(document.activeElement).toBe(add)
+    expect(readLocal(quickDraftKey('2026-11-13', 'private'))).toBe('書きかけ')
+    await user.click(add)
+    expect(input().value).toBe('書きかけ')
+  })
+
+  it('開くのは1か所だけ: ほかの「＋」を押すと前の入力欄は閉じて、押した所に開く（フォーカスは戻さない）', async () => {
+    const user = userEvent.setup()
+    await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-09', 'private')))
+    expect(screen.getAllByTestId(testIds.quickAddInput)).toHaveLength(1)
+    expect(tier('private').querySelectorAll('.wk-cell')[1].contains(input())).toBe(true)
+    expect(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work'))).toBeTruthy()
+    expect(document.activeElement).toBe(input())
+  })
+
+  it('入力欄の外（カード）を押すと閉じ、押したカードの詳細が開く', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.click(screen.getByTestId(testIds.weekCard('meet')).querySelector('.wk-open') as HTMLElement)
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
+  })
+
+  it('入力欄の外を押した時は、押し終わる（click）まで閉じない（S で下のかたまりがずれて、指の下の別の予定が押されないように。開発）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-09', 'work')))
+    const open = screen.getByTestId(testIds.weekCard('meet')).querySelector('.wk-open') as HTMLElement
+    await user.pointer({ keys: '[MouseLeft>]', target: open })
+    // 押している間は入力欄のまま（並びが変わらない）
+    expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
+    await user.pointer({ keys: '[/MouseLeft]', target: open })
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
+  })
+
+  it('押した後に click が来ない時（なぞってスクロールした・長押しした）も閉じる。Esc はすぐ閉じる', async () => {
+    const user = userEvent.setup()
+    await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
+    const add = () => screen.getByTestId(testIds.weekAdd('2026-11-09', 'work'))
+    const card = screen.getByTestId(testIds.weekCard('meet'))
+    // なぞってスクロールした（ブラウザが pointercancel）
+    await user.click(add())
+    fireEvent.pointerDown(card)
+    expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
+    fireEvent.pointerCancel(card)
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    // 離しても click が来ない（長押し）: 少し待って閉じる
+    await user.click(add())
+    fireEvent.pointerDown(card)
+    fireEvent.pointerUp(card)
+    expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
+    await waitFor(() => expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull())
+    // 押していない時の Esc はすぐ
+    await user.click(add())
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+  })
+
+  it('週を移ると閉じ、戻ってきても開き直さない', async () => {
+    const user = userEvent.setup()
+    const view = await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    const props = viewProps({ mode: 'week', viewed: '2026-11-10', area: { width: 994, height: 760 } })
+    view.setProps({ ...props, viewed: '2026-11-17' })
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    view.setProps(props)
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work'))).toBeTruthy()
+  })
+
+  it('S: 日のかたまりの半分の「＋」も、その場で入力欄に替わる', async () => {
+    const user = userEvent.setup()
+    await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-10', 'private')))
+    const half = screen.getByTestId(testIds.weekCol('2026-11-10')).querySelector('[data-tier="private"]') as HTMLElement
+    expect(half.contains(input())).toBe(true)
+    await user.type(input(), '買い物{Enter}')
+    expect(Object.values(getData().items).some((it) => it.title === '買い物' && it.kind === 'private')).toBe(true)
+  })
+})
+
+describe('列が狭い時の始点のカード・受けた表示（件名を2行に。開発。L の 960px ほどのウインドウ）', () => {
+  /** 960px のウインドウの領域（554px。列 79px） */
+  const NARROW = { width: 554, height: 700 }
+
+  it('丸の横に4字も入らない列では、始点のカードの件名を2行にして期間は読み上げだけに。広い列は1行と期間のまま', async () => {
+    await renderWeek({ area: NARROW })
+    const multi = screen.getByTestId(testIds.weekStart('multi'))
+    expect(multi.classList.contains('is-two-lines')).toBe(true)
+    expect(multi.querySelector('.cp-title')?.classList.contains('cp-lines-2')).toBe(true)
+    expect(multi.querySelector('.wk-period')).toBeNull()
+    expect(multi.querySelector('.visually-hidden')?.textContent).toBe('11/9 10:00〜11/12 18:00')
+    // 高さ 36px のカード・線の高さは変えない（クラスは同じ is-start）
+    expect(multi.classList.contains('is-start')).toBe(true)
+    // 土曜に始まって縮むカードも
+    expect(screen.getByTestId(testIds.weekStart('sat')).classList.contains('is-two-lines')).toBe(true)
+    // 受けた表示も「‹ 件名」を2行に
+    const recv = screen.getByTestId(testIds.weekReceived('recv'))
+    expect(recv.classList.contains('is-two-lines')).toBe(true)
+    expect(recv.querySelector('.cp-title')?.classList.contains('cp-lines-2')).toBe(true)
+  })
+
+  it('AI の札が広くて2行目に2字も残らない時は、件名を1行目だけにして2行目は札（期間は読み上げだけ）', async () => {
+    const data = {
+      items: items(
+        span('cl', '2026-11-10', '2026-11-12', { title: '展示会の手配', by: 'connector', ai: 'claude', via: 'メール' }),
+      ),
+    }
+    await renderWeek({ area: NARROW }, { data })
+    const cl = screen.getByTestId(testIds.weekStart('cl'))
+    expect(cl.classList.contains('is-two-lines')).toBe(true)
+    expect(cl.classList.contains('is-marks-low')).toBe(true)
+    expect(cl.querySelector('.cp-title')?.classList.contains('cp-lines-1')).toBe(true)
+    expect(cl.querySelector('.wk-period')).toBeNull()
+    expect(within(cl).getByTestId(testIds.aiTag('cl'))).toBeTruthy()
+  })
+
+  it('件名が丸の右の1行に入る短い件名は、2行目に期間を出す', async () => {
+    const data = { items: items(span('trip', '2026-11-13', '2026-11-15', { title: '旅行', kind: 'private' })) }
+    await renderWeek({ area: NARROW }, { data })
+    const trip = screen.getByTestId(testIds.weekStart('trip'))
+    expect(trip.classList.contains('is-two-lines')).toBe(true)
+    expect(trip.classList.contains('has-period')).toBe(true)
+    expect(trip.querySelector('.cp-title')?.classList.contains('cp-lines-1')).toBe(true)
+    expect(trip.querySelector('.wk-period')?.textContent).toBe('〜11/15')
+  })
+
+  it('L の広い列（142px）と S は、今までどおり件名 1行・期間', async () => {
+    await renderWeek()
+    expect(screen.getByTestId(testIds.weekStart('multi')).classList.contains('is-two-lines')).toBe(false)
+    expect(screen.getByTestId(testIds.weekReceived('recv')).classList.contains('is-two-lines')).toBe(false)
+  })
+
+  it('S（390px の半分）でも1行のまま', async () => {
+    await renderWeek({ width: 'S', area: { width: 374, height: 600 } })
+    expect(screen.getByTestId(testIds.weekStart('multi')).classList.contains('is-two-lines')).toBe(false)
+    expect(screen.getByTestId(testIds.weekStart('multi')).querySelector('.wk-period')).toBeTruthy()
   })
 })

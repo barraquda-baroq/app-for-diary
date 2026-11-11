@@ -36,7 +36,7 @@ export function DayHead({ day, today, layout, actions }: DayHeadProps) {
       <button
         type="button"
         className="wk-day"
-        onClick={() => actions.openDay?.(day.date)}
+        onClick={() => actions.openDay(day.date)}
         aria-label={`${jaDateLabel(day.date)}のデイリーを開く`}
         aria-current={day.isToday ? 'date' : undefined}
       >

@@ -12,7 +12,7 @@ import { testIds } from '../common/testIds'
 import { useDayDrop, type WeekCtx } from './dnd'
 import { AddRow, EdgeArrow, EndDot, ReceivedCard, StartCard, WeekCard } from './WeekCard'
 import { DayHead, KindTag } from './WeekHead'
-import type { WeekActions } from './weekActions'
+import { isQuickOpen, type WeekActions } from './weekActions'
 import {
   horizontalCardTextPx,
   horizontalLine,
@@ -112,7 +112,13 @@ function DayCell({ day, kind, week, columnPx, actions }: DayCellProps) {
           ))}
         </div>
       ) : null}
-      <AddRow date={day.date} kind={kind.kind} onAdd={actions.quickAdd} />
+      <AddRow
+        date={day.date}
+        kind={kind.kind}
+        open={isQuickOpen(actions.quick, day.date, kind.kind)}
+        onAdd={actions.quickAdd}
+        onClose={actions.closeQuick}
+      />
     </div>
   )
 }
