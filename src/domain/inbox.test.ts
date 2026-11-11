@@ -1046,6 +1046,21 @@ describe('会話で提案に答えた依頼（19.5・19.7 の 5.）', () => {
     const out = run({ ...back.data, inbox: { ...back.data.inbox, 'xp-3': again } }, { now: at }).data
     expect(out.inbox['xp-3']).toMatchObject({ status: 'rejected', reason: 'previously_declined' })
   })
+
+  it('2台で別々に答えて、提案にアプリの［承認］の答えが残っても、依頼の行で［元に戻す］と提案も控えになる', () => {
+    // この端末は会話の依頼 xe-2 を当て、ほかの端末は同じ提案をアプリで［承認］した。マージで提案はアプリの答えの組になる
+    const here = run(dataWith({ items: [item], inbox: [prop, answer()] })).data
+    const there = answerProposal(dataWith({ items: [item], inbox: [prop] }), 'xp-1', 'accept', ctx({ now: T0 + 1000 })).data
+    const merged = combineInboxOutcomes(here.inbox['xp-1'], there.inbox['xp-1'])
+    expect(merged).toMatchObject({ status: 'accepted', answeredVia: 'app', answerId: null })
+    const back = undoRequest({ ...here, inbox: { ...here.inbox, 'xp-1': merged } }, 'xe-2', ctx({ now: T0 + HOUR }))
+    expect(back.data.items[item.id].start).toBe('2026-12-03')
+    expect(back.data.inbox['xp-1'].undoneAt).toBe(T0 + HOUR)
+    const at = T0 + 2 * HOUR
+    const again = { ...prop, id: 'xp-3', createdAt: at, updatedAt: at, baseHash: revOf(back.data.items[item.id]) }
+    const out = run({ ...back.data, inbox: { ...back.data.inbox, 'xp-3': again } }, { now: at }).data
+    expect(out.inbox['xp-3']).toMatchObject({ status: 'rejected', reason: 'previously_declined' })
+  })
 })
 
 describe('競合を選ぶ（18.5）', () => {
@@ -1308,6 +1323,31 @@ describe('毎週の曜日の知らない値（形3。6.12）', () => {
     const out = run(dataWith({ routines: [raw], inbox: [toMonthly] })).data
     expect(out.inbox['xe-m'].status).toBe('applied')
     expect(out.routines.r1.weekdays).toEqual([])
+  })
+
+  it('知らない値が残っていても、曜日を外さずに毎週でない種類にする依頼は断る（曜日の指定は毎週だけ）', () => {
+    const toMonthly = mkInbox({
+      id: 'xe-m2',
+      op: 'update',
+      table: 'routines',
+      targetId: 'r1',
+      baseHash: 'after:xe-w',
+      patch: { cycle: 'monthly', monthDay: 5 },
+      requestQuote: '毎月5日にして',
+      createdAt: T0 - HOUR / 2,
+    })
+    const out = run(dataWith({ routines: [raw], inbox: [rec, toMonthly] })).data
+    expect(out.inbox['xe-w'].status).toBe('applied')
+    expect(out.inbox['xe-m2']).toMatchObject({ status: 'rejected', message: '曜日の指定は毎週だけです' })
+    expect(out.routines.r1).toMatchObject({ cycle: 'weekly', weekdays: [1, 3, 'x-new'] })
+  })
+
+  it('その後に毎週でない種類に変わっていたら、曜日を戻す元に戻すは確かめる（知らない値が混ざっていても）', () => {
+    const out = run(dataWith({ routines: [raw], inbox: [rec] })).data
+    const monthly = { ...out.routines.r1, cycle: 'monthly', monthDay: 5, updatedAt: T0 + 1 } as Routine
+    const back = undoRequest({ ...out, routines: { r1: monthly } }, 'xe-w', ctx({ now: T0 + HOUR }))
+    expect(back.result.status).toBe('needsConfirm')
+    expect(back.data.routines.r1).toEqual(monthly)
   })
 })
 

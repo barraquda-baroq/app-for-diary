@@ -240,7 +240,9 @@ export function routineProblems(r: Pick<Routine, 'title'> & Spec): RoutineProble
   const wdOk =
     Array.isArray(wd) && wd.every((w) => isInt(w, 0, 6)) && wd.every((w, i) => i === 0 || (wd[i - 1] as number) < (w as number))
   if (!wdOk) out.push({ fields: ['weekdays'], message: '曜日は 0（日）〜6（土）を小さい順に重ねずに入れてください' })
-  else if (r.cycle !== 'weekly' && wd.length > 0) out.push({ fields: ['cycle', 'weekdays'], message: '曜日の指定は毎週だけです' })
+  // 種類との組み合わせは、このアプリの知る曜日（0〜6）だけで見る（知らない値が混ざっていても、毎週でない種類に曜日を残さない）
+  const knownWd = Array.isArray(wd) ? wd.filter((w) => isInt(w, 0, 6)) : []
+  if (r.cycle !== 'weekly' && knownWd.length > 0) out.push({ fields: ['cycle', 'weekdays'], message: '曜日の指定は毎週だけです' })
   if (r.monthDay !== null && !isInt(r.monthDay, 1, 31)) out.push({ fields: ['monthDay'], message: '毎月の日は 1〜31 です' })
   else if (r.cycle !== 'monthly' && r.monthDay !== null)
     out.push({ fields: ['cycle', 'monthDay'], message: '日の指定は毎月だけです' })

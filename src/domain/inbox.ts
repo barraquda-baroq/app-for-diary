@@ -1322,16 +1322,11 @@ export function undoRequest(
   const markUndone = (d: AppData) =>
     transact(d, (tx) => {
       tx.put('inbox', { ...rec, undoneAt: ctx.now, updatedAt: ctx.now, message: '元に戻しました' })
-      // 会話で答えた提案（この依頼で当たった）も、承認した後に元に戻した提案と同じく控えにする（同じ中身の提案をまた出さない。19.5 の 4.）
+      // 会話で答えた提案も、承認した後に元に戻した提案と同じく控えにする（同じ中身の提案をまた出さない。19.5 の 4.）。2台で
+      // 別々に答えて、提案にはほかの答え（アプリの［承認］・別の会話の依頼）が残った時も同じ（この依頼は提案と同じ patch を当てた。
+      // 違えば proposal_mismatch で当てていない）
       const prop = rec.proposalId ? d.inbox[rec.proposalId] : undefined
-      if (
-        prop &&
-        !isNewerVersion(prop) &&
-        prop.op === 'propose' &&
-        prop.status === 'accepted' &&
-        prop.answerId === rec.id &&
-        prop.undoneAt == null
-      )
+      if (prop && !isNewerVersion(prop) && prop.op === 'propose' && prop.status === 'accepted' && prop.undoneAt == null)
         tx.put('inbox', { ...prop, undoneAt: ctx.now, updatedAt: ctx.now, message: '元に戻しました' })
     }).data
   const finish = (next: AppData, result: UndoResult) => {

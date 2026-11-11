@@ -457,6 +457,35 @@ describe('復元（replaceAll。6.16）', () => {
     expect((await p.load()).mimNotes.m1).toBeDefined()
   })
 
+  it('返事を受け取れなかった書き込みの印は「必ず上書き」の行にも残し、届いていたら、クラウドに当てる前は「必ず上書き」のまま送った内容を base にする', async () => {
+    const p = fresh()
+    await p.setMeta('uid', 'u')
+    const a = mkItem({ id: 'a', title: '元' })
+    await seed(p, dataWith({ items: [a] }))
+    const backup = await p.load()
+    const before = await p.load()
+    const sent = { ...a, title: '送った' }
+    await p.save(before, put(before, 'items', sent))
+    await p.markUnconfirmed([{ key: 'items/a', record: sent as AnyRecord }], 'tx-1')
+    // 復元の内容が送った内容と同じでも、送り終わりにしない（復元の印付きで書く）
+    for (const data of [backup, await p.load()]) {
+      await p.replaceAll(data)
+      const [row] = await p.readOutbox(10)
+      expect(row).toMatchObject({ force: true, unconfirmed: true, tx: 'tx-1', sent, base: a })
+      expect(await p.unconfirmedTx(['items/a'])).toEqual(new Set(['tx-1']))
+    }
+    await p.confirmLanded('tx-1')
+    const [row] = await p.readOutbox(10)
+    expect(row).toMatchObject({ force: true, base: sent })
+    expect(row.unconfirmed).toBeUndefined()
+    expect(row.tx).toBeUndefined()
+    // クラウドに当てた後（authoritative を外した後）は、ふつうに送り終わりにする
+    await p.markUnconfirmed([{ key: 'items/a', record: sent as AnyRecord }], 'tx-2')
+    await p.setMeta('authoritative', null)
+    await p.confirmLanded('tx-2')
+    expect(await p.outboxCount()).toBe(0)
+  })
+
   it('関数を渡すと、トランザクションの中で読んだ端末の今の記録から作る。残す表・残すキーは古い内容で書き直さない', async () => {
     const p = fresh()
     await p.setMeta('uid', 'u')

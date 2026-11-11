@@ -666,12 +666,15 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
 
   /**
    * 送った内容を記録する（completeUpload・confirmLanded）。送った後にこの端末で変わっていなければ送り終わり。変わっていれば、送った内容を
-   * 新しい base にして残す。onlyTx = その id のトランザクションの印の付いた行だけ（トランザクションの中で読み直して確かめる）
+   * 新しい base にして残す。onlyTx = その id のトランザクションの印の付いた行だけ（トランザクションの中で読み直して確かめる）。
+   * 復元・すべて削除をクラウドに当てる前（_meta の authoritative）の「必ず上書き」の行は、送った内容を base にするだけにする（送り終わりに
+   * せず、「必ず上書き」も外さない。復元の前に送った書き込みは、復元の内容ではない。6.16）
    */
   async function completeSent(sent: readonly Change[], onlyTx?: string): Promise<void> {
     if (!sent.length) return
     const tables = [...new Set(sent.map((s) => s.table))].filter((t) => KNOWN_TABLES.has(t))
-    await db.transaction('rw', [...tables.map((t) => db.tableOf(t)), db.outbox, db.gone], async () => {
+    await db.transaction('rw', [...tables.map((t) => db.tableOf(t)), db.outbox, db.gone, db.meta], async () => {
+      const restoring = Boolean((await db.meta.get('authoritative'))?.value)
       for (const s of sent) {
         if (!KNOWN_TABLES.has(s.table)) continue
         const k = outboxKey(s.table, s.id)
@@ -679,6 +682,10 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
         if (onlyTx !== undefined && row?.tx !== onlyTx) continue
         if (!s.record && isGoneKind(s.table, s.id)) await db.gone.put({ k, at: Date.now() })
         if (!row) continue
+        if (restoring && row.force) {
+          await db.outbox.put(rewriteRow(row, { base: s.record }))
+          continue
+        }
         const disk = (await db.tableOf(s.table).get(s.id)) ?? null
         if (deepEqual(disk, s.record)) await db.outbox.delete(k)
         else await db.outbox.put(rewriteRow(row, { base: s.record, noHistory: undefined, force: undefined }))
@@ -872,6 +879,9 @@ export function createPersistence(dbName = DEFAULT_DB_NAME): Persistence {
               const row: OutboxRow = { k, t, id, base: q?.base ?? old[id] ?? null, at }
               if (synced) row.force = true
               else if (q?.noHistory) row.noHistory = true
+              // 返事を受け取れなかった書き込みの印（2.4）は残す: 送る前に印を読み、届いていたら送った内容を base にする（復元を始めた後に
+              // ほかの端末が書いた記録と合わせる時の base を、クラウドに本当にある内容にするため。6.16。completeSent）
+              if (q?.tx) Object.assign(row, { ...(q.unconfirmed ? { unconfirmed: true } : {}), tx: q.tx, sent: q.sent ?? null })
               enqueue.push(row)
             })
           }

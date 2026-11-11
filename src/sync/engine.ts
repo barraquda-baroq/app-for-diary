@@ -576,8 +576,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         const all = snap.docs
         void exclusive(async () => {
           if (gen !== listenerGen) return
-          await handleSnapshot(changed, all, fromCache, full)
-          resubscribeCount = 0
+          await handleSnapshot(changed, all, fromCache, full, gen)
+          // 反映している間に購読が誤りで止まっていたら、待つ長さは戻さない
+          if (gen === listenerGen) resubscribeCount = 0
         }).catch((e) => {
           listenFail(e)
           if (gen === listenerGen) resubscribeLater()
@@ -605,7 +606,8 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
   }
 
   /**
-   * 全部を受け取り直す時か: 最後にクラウドと揃ってから 85日を過ぎた（端末の時計どうしで比べるので、時計のずれは打ち消し合う）。
+   * 全部を受け取り直す時か: 最後にクラウドと揃ってから 85日を過ぎた（端末の時計どうしで比べるので、時計のずれは打ち消し合う。
+   * 揃った時に 5日より多く進んでいた時計が、その後に直された時は、その分だけ遅れる。今の作りの限界。6.11）。
    * 揃った時刻を知らない・端末の時計がそれより 1日以上戻った時は、記録した位置（サーバーの時刻）と端末の時計の差で決める
    */
   function resyncDue(): boolean {
@@ -696,6 +698,8 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     all: QueryDocumentSnapshot<DocumentData>[],
     fromCache: boolean,
     full: boolean,
+    /** 通知を届けた購読の世代（反映している間に、その購読が誤りで止まったかを見る） */
+    gen: number,
   ): Promise<void> {
     if (stopped || deferred) return
     if (!changed.length && fromCache) return
@@ -768,7 +772,8 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     }
     if (!fromCache) {
       if (!slept) await noteCaughtUp()
-      listenFailure = null
+      // 反映している間にこの購読が誤りで止まっていたら（listenFail）、その誤りのままにする（購読が無いまま「同期済み」と出さない）
+      if (gen === listenerGen) listenFailure = null
       downloaded = true
       if (!status.downloaded) setStatus({ downloaded: true })
     }
@@ -778,7 +783,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       if (!uploading) {
         setStatus(
           pending === 0
-            ? { phase: 'synced', lastSyncedAt: Date.now(), error: null, errorCode: null }
+            ? (listenFailure ?? { phase: 'synced', lastSyncedAt: Date.now(), error: null, errorCode: null })
             : { phase: status.phase === 'error' || status.phase === 'offline' ? status.phase : 'uploading' },
         )
         if (pending > 0) requestUpload()
@@ -1204,6 +1209,9 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     if (!(await target.getMeta('authoritative'))) return
     deferred = true
     await ensureModel()
+    // 復元の前に送って返事を受け取れなかった書き込みが届いていたら、「必ず上書き」の送信待ちの base を送った内容にしておく（復元を
+    // 始めた後にほかの端末が書いた記録と 3者マージする時に、届いていた内容が復元の内容に勝たないように。2.4・6.16）
+    await confirmLandedKeys([...(await target.outboxKeys())])
     const local = await target.localKeys()
     const keep = (await target.getMeta<AuthoritativeKeep | null>('authoritativeKeep')) ?? {
       tables: ['inbox'],
@@ -1412,7 +1420,7 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
                 ? { phase: 'synced', lastSyncedAt: Date.now(), error: null, errorCode: null }
                 : { phase: 'downloading', error: null, errorCode: null }),
           )
-        else if (!downloaded) setStatus({ phase: 'downloading', error: null, errorCode: null })
+        else if (!downloaded) setStatus(listenFailure ?? { phase: 'downloading', error: null, errorCode: null })
       } catch (e) {
         if (e === MODEL_PAUSED) {
           await recount()
@@ -1479,11 +1487,13 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       await target.markAllDirty()
       await target.setMeta('cursor', null)
       await target.setMeta('caughtUpAt', null)
+      await target.setMeta('packNotBefore', null)
       await target.setMeta('uid', uid)
     }
     if ((await target.getMeta<number>('syncSchema')) !== SYNC_SCHEMA) {
       await target.setMeta('cursor', null)
       await target.setMeta('caughtUpAt', null)
+      await target.setMeta('packNotBefore', null)
       await target.setMeta('syncSchema', SYNC_SCHEMA)
     }
     if (stopped) return
@@ -1575,17 +1585,23 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
   // ---------- 手入れ（月の束・削除の印の片付け。6.11） ----------
 
   /**
-   * 1つの月の束に項目をまとめる（1つのトランザクション）。まとめた項目の id を返す。serverNow = サーバーの時刻の見積もり（項目の
-   * 文書が 60日より前に書かれた物だけをまとめる）
+   * 1つの月の束に項目をまとめる（1つのトランザクション）。まとめた項目の id と、文書が書かれてから 60日たっていないのでまとめなかった
+   * 項目（id → まとめてよくなる時刻。サーバーの時刻の ms）を返す。serverNow = サーバーの時刻の見積もり（項目の文書が 60日より前に
+   * 書かれた物だけをまとめる）
    */
-  async function packMonth(month: string, items: Item[], serverNow: number): Promise<string[]> {
+  async function packMonth(
+    month: string,
+    items: Item[],
+    serverNow: number,
+  ): Promise<{ ids: string[]; young: Map<string, number> }> {
     const packId = docIdOf(PACK_TABLE, month)
+    const young = new Map<string, number>()
     const res = await runTransaction(fs, async (tx) => {
+      young.clear()
       if (modelState !== 'ok') throw MODEL_PAUSED
       const cur = await txReadPack(tx, month)
       if (cur.doc && !cur.doc.deleted && !cur.body) throw new Error(`クラウドの月の束を読み取れませんでした（${packId}）`)
-      const snaps: DocumentSnapshot<DocumentData>[] = []
-      for (const it of items) snaps.push(await tx.get(doc(col, docIdOf('items', it.id))))
+      const snaps = await Promise.all(items.map((it) => tx.get(doc(col, docIdOf('items', it.id)))))
       // 項目の文書がこの端末の内容と同じ物だけをまとめる（ほかの端末で直されていれば、まとめない）。文書が書かれてから（サーバーの
       // 時刻で）60日たっていない物もまとめない（updatedAt の古いまま書き直された項目。ゴミ箱から戻した物など。復元を始めた後に
       // ほかの端末が書いた項目は、束に入れずに個別の文書のまま残し、復元が消さないように。6.11）
@@ -1594,7 +1610,12 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
         if (!s.exists()) return false
         const d = s.data() as RecordDoc
         const at = timeOf(d)
-        if (!at || at.s * 1000 + Math.floor(at.n / 1_000_000) > serverNow - PACK_AGE_MS) return false
+        if (!at) return false
+        const ready = at.s * 1000 + Math.floor(at.n / 1_000_000) + PACK_AGE_MS
+        if (ready > serverNow) {
+          young.set(it.id, ready)
+          return false
+        }
         return !d.deleted && (d.chunks ?? 0) === 0 && d.hash === hashRecord(it)
       })
       if (!ok.length) return null
@@ -1611,11 +1632,21 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       for (const it of take) tx.delete(doc(col, docIdOf('items', it.id)))
       return { ids: take.map((it) => it.id), hash: enc.hash, replaced: cur.doc ? timeOf(cur.doc) : null }
     })
-    if (!res) return []
+    if (!res) return { ids: [], young }
     rememberSent(packId, res.hash)
     if (res.replaced) replaced.set(packId, res.replaced)
     await target.setPacks(res.ids.map((id) => [id, month] as const))
-    return res.ids
+    return { ids: res.ids, young }
+  }
+
+  /** 書かれてから 60日たっていないので束にまとめなかった項目（_meta の packNotBefore。id → まとめてよくなる時刻。サーバーの時刻の ms） */
+  async function readPackNotBefore(): Promise<Map<string, number>> {
+    const saved = await target.getMeta<unknown>('packNotBefore')
+    const out = new Map<string, number>()
+    if (!saved || typeof saved !== 'object') return out
+    for (const [id, at] of Object.entries(saved as Record<string, unknown>))
+      if (typeof at === 'number' && Number.isFinite(at)) out.set(id, at)
+    return out
   }
 
   /**
@@ -1647,15 +1678,25 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       const packed = new Set((await target.packsOf()).keys())
       // サーバーの時刻の見積もり（まだ文書が届いていなければ、まとめない）
       const serverNow = clockSkew === null ? null : now - clockSkew
-      const candidates =
-        serverNow === null ? new Map<string, Item[]>() : packCandidates(await target.items(), { now, queued, packed, chunkSize })
-      for (const [month, list] of candidates) {
-        if (stopped || serverNow === null) return
-        const ids = await packMonth(month, list, serverNow).catch((e: unknown) => {
-          if (e === MODEL_PAUSED) return []
-          throw e
-        })
-        if (ids.length) result.packed[month] = ids.length
+      if (serverNow !== null) {
+        // 前の手入れで、文書が書かれてから 60日たっていなかった項目は、その時刻まで文書を読み直さない（復元・段階0からの最初の送信で
+        // 書いたばかりの古い項目を、毎日読み直さないように）
+        const notBefore = await readPackNotBefore()
+        for (const [id, at] of notBefore) {
+          if (at > serverNow) queued.add(id)
+          else notBefore.delete(id)
+        }
+        const candidates = packCandidates(await target.items(), { now, queued, packed, chunkSize })
+        for (const [month, list] of candidates) {
+          if (stopped) return
+          const r = await packMonth(month, list, serverNow).catch((e: unknown) => {
+            if (e === MODEL_PAUSED) return { ids: [], young: new Map<string, number>() }
+            throw e
+          })
+          if (r.ids.length) result.packed[month] = r.ids.length
+          for (const [id, at] of r.young) notBefore.set(id, at)
+        }
+        await target.setMeta('packNotBefore', notBefore.size ? Object.fromEntries(notBefore) : null)
       }
       result.purged = await purgeTombstones(now)
       await target.setMeta('lastMaintainDay', todayStr(now))

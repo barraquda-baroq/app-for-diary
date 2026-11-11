@@ -3,7 +3,8 @@
 //   1回の書き込み（同じ時刻）で書く。受け取り箱の依頼ごとのまとまりは全部書けるか1つも書かない。書くたびに送る書き込みの印
 //   （cloud.marks）を書き、返事を受け取れなかった書き込みが届いていたかを、次の送信・受信でそれで確かめる
 // - 受信: クラウドの書き込みを、オフラインから戻った最初はまとめて1回、その後は書き込みごとに1回ずつ applyRemote で反映する
-// - バックアップからの復元: 送る前に、この端末に無いクラウドのレコードを消し、「必ず上書き」の送信待ちは reset の印付きで書く
+// - バックアップからの復元: 送る前に、返事を受け取れなかった書き込みを印で確かめ、この端末に無いクラウドのレコードを消し、
+//   「必ず上書き」の送信待ちは reset の印付きで書く
 // - 端末内の保存・3者マージは本物（src/db/persistence.ts。fake-indexeddb）
 // NS の src/test/fakeCloud.ts を写し、幕の知らせを外し、受け取り箱の当て方（依頼ごとのまとまり）を足した。月の束は扱わない（エミュレーターで確かめる）。
 import {
@@ -106,6 +107,8 @@ export class FakeDevice {
   /** エンジンの pushAuthoritative と同じ: 復元の後、この端末に無いクラウドのレコードを、子から先に消す */
   async pushAuthoritative(): Promise<void> {
     if (!(await this.p.getMeta('authoritative'))) return
+    // エンジンと同じ: 復元の前に送って返事を受け取れなかった書き込みが届いていたら、送った内容を base にしておく
+    await this.confirmLanded([...(await this.p.outboxKeys())])
     const local = await this.p.localKeys()
     const keep = (await this.p.getMeta<AuthoritativeKeep | null>('authoritativeKeep')) ?? {
       tables: ['inbox'],
@@ -247,14 +250,19 @@ export class FakeDevice {
     }
   }
 
-  private async apply(changes: Change[], cursor: number | undefined, direct = false): Promise<Change[] | null> {
-    // エンジンの confirmLandedFor と同じ: 返事を受け取れなかった書き込みの送信待ちに当たる変化は、印を読んで確かめてから
-    const txs = await this.p.unconfirmedTx(changes.map((c) => `${c.table}/${c.id}`))
+  /** エンジンの confirmLandedKeys と同じ: keys の送信待ちのうち返事を受け取れなかった物の書き込みが、届いていたら送り終わりにする */
+  private async confirmLanded(keys: string[]): Promise<void> {
+    const txs = await this.p.unconfirmedTx(keys)
     const landed = this.cloud.marks.get(this.name)
     if (landed && txs.has(landed)) {
       await this.p.confirmLanded(landed)
       this.lastLanded = landed
     }
+  }
+
+  private async apply(changes: Change[], cursor: number | undefined, direct = false): Promise<Change[] | null> {
+    // エンジンの confirmLandedFor と同じ: 返事を受け取れなかった書き込みの送信待ちに当たる変化は、印を読んで確かめてから
+    await this.confirmLanded(changes.map((c) => `${c.table}/${c.id}`))
     return this.p.applyRemote(changes, { cursor, ...(await this.hooks()), ...(direct ? { direct: true } : {}) })
   }
 

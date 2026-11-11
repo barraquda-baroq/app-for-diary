@@ -47,8 +47,18 @@ export default defineConfig({
     // iPhone と同じ WebKit。WebKit を入れた所（CI）だけで動かす: npx playwright install webkit のあと E2E_WEBKIT=1。
     // WebKit ではまだ一度も通していないので、CI で通ったのを確かめるまでは、段階0の条件の起動アニメーション（launch.spec.ts）と
     // 段階0の通しの確かめ（smoke.spec.ts）に絞る（NS も WebKit は testMatch で絞っている）。通ったら frame.spec.ts などに広げる
+    // CI の WebKit はソフトウェアの描画でとても重く、CI の機械が遅い回には、起動アニメーションの途中でページが落ちる（Target crashed）・
+    // 期限までに消えないことが時々ある（同じコミットでも、ほかの回では通る）。その時だけ1回やり直す。やり直して通ったテストは、
+    // 一覧の最後に flaky として名前が出るので隠れない。毎回落ちる物は、やり直しても落ちる
     ...(process.env.E2E_WEBKIT
-      ? [{ name: 'iphone', testMatch: ['**/launch.spec.ts', '**/smoke.spec.ts'], use: { ...devices['iPhone 14'] } }]
+      ? [
+          {
+            name: 'iphone',
+            testMatch: ['**/launch.spec.ts', '**/smoke.spec.ts'],
+            retries: process.env.CI ? 1 : 0,
+            use: { ...devices['iPhone 14'] },
+          },
+        ]
       : []),
   ],
 })

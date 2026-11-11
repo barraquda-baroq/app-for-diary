@@ -69,6 +69,12 @@ const listen = vi.hoisted(() => ({
   beforeWrite: new Map<unknown, () => Promise<void>>(),
   /** Firestore ごとの、記録の購読（問い合わせの onSnapshot）を始めた回数 */
   queries: new Map<unknown, number>(),
+  /** 記録の購読（問い合わせ）を、すぐに resource-exhausted（無料枠を使い切った）で止める Firestore */
+  failQuery: new Set<unknown>(),
+  /** 次のサーバーからの通知を渡した直後に、その購読を resource-exhausted で止める Firestore（その後の購読も failQuery で止める） */
+  errorAfterServer: new Set<unknown>(),
+  /** Firestore ごとの、トランザクションの中で読んだ文書の数 */
+  txGets: new Map<unknown, number>(),
 }))
 vi.mock('firebase/firestore', async (importOriginal) => {
   const m = await importOriginal<typeof import('firebase/firestore')>()
@@ -76,11 +82,28 @@ vi.mock('firebase/firestore', async (importOriginal) => {
     docChanges?: () => { doc: { data: () => { device?: unknown } } }[]
     metadata?: { fromCache: boolean }
   }
+  const quota = () =>
+    Object.assign(new Error('無料枠を使い切りました（テスト）'), { name: 'FirebaseError', code: 'resource-exhausted' })
   const onSnapshot = (ref: { firestore: unknown; path?: string }, ...rest: unknown[]) => {
     if (!ref.path) listen.queries.set(ref.firestore, (listen.queries.get(ref.firestore) ?? 0) + 1)
     const i = rest.findIndex((x) => typeof x === 'function')
     const next = rest[i] as (snap: Snap) => void
+    const onError = rest[i + 1] as ((e: unknown) => void) | undefined
+    if (!ref.path && listen.failQuery.has(ref.firestore)) {
+      const t = setTimeout(() => onError?.(quota()), 20)
+      return () => clearTimeout(t)
+    }
+    let stopped = false
     rest[i] = (snap: Snap) => {
+      if (stopped) return
+      if (!ref.path && listen.errorAfterServer.has(ref.firestore) && snap.metadata && !snap.metadata.fromCache) {
+        listen.errorAfterServer.delete(ref.firestore)
+        listen.failQuery.add(ref.firestore)
+        stopped = true
+        next(snap)
+        setTimeout(() => onError?.(quota()), 0)
+        return
+      }
       if (listen.deaf.has(ref.firestore) && !ref.path?.endsWith('/meta/app')) return
       const own = listen.dropOwn.get(ref.firestore)
       const changes = own && snap.docChanges ? snap.docChanges() : []
@@ -108,6 +131,16 @@ vi.mock('firebase/firestore', async (importOriginal) => {
     await beforeWrite(fs)
     if (listen.offline.has(fs))
       throw Object.assign(new Error('通信できません（テスト）'), { name: 'FirebaseError', code: 'unavailable' })
+    type Tx = { get: (ref: unknown) => Promise<unknown> }
+    const fn = rest[0] as (tx: Tx) => Promise<unknown>
+    rest[0] = (tx: Tx) => {
+      const get = tx.get.bind(tx)
+      tx.get = (ref: unknown) => {
+        listen.txGets.set(fs, (listen.txGets.get(fs) ?? 0) + 1)
+        return get(ref)
+      }
+      return fn(tx)
+    }
     const r = await (m.runTransaction as unknown as (...a: unknown[]) => Promise<unknown>)(fs, ...rest)
     if (listen.loseReply.delete(fs))
       throw Object.assign(new Error('返事を受け取れませんでした（テスト）'), { name: 'FirebaseError', code: 'unavailable' })
@@ -153,6 +186,9 @@ afterEach(async () => {
   listen.deaf.clear()
   listen.beforeWrite.clear()
   listen.queries.clear()
+  listen.failQuery.clear()
+  listen.errorAfterServer.clear()
+  listen.txGets.clear()
   for (const d of devices.splice(0)) {
     d.offline()
     d.p.close()
@@ -783,6 +819,80 @@ describe('同期（エミュレーター）', () => {
     }
   })
 
+  it('返事を受け取れなかった書き込みの後で、次に送る前に復元しても、復元を始めた後にほかの端末が直した記録と合わせる時に復元の内容が勝つ', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await b.online()
+    let id = ''
+    await a.edit((d) => {
+      const r = addItem(d, { title: '元の題名' })
+      id = r.id
+      return r.data
+    })
+    await settle(a, b)
+    const backup = await a.load()
+    // A の書き込みは届くが、返事も自分の書き込みの通知も受け取らないまま閉じる
+    listen.loseReply.add(a.fs)
+    listen.deaf.add(a.fs)
+    await a.edit((d) => O.updateItem(d, id, { title: 'Aの題名' }).data)
+    await waitFor(async () => (await b.load()).items[id]?.title === 'Aの題名', 'A の書き込みが B に届く')
+    await waitFor(async () => (await a.p.readOutbox(5))[0]?.unconfirmed, 'A は返事を受け取っていない')
+    a.offline()
+    listen.deaf.delete(a.fs)
+    await a.restore(backup)
+    // 復元の境を決めた後・最初の送信の前に、B がメモを足した
+    listen.beforeWrite.set(a.fs, async () => {
+      await b.edit((d) => O.updateItem(d, id, { memo: 'Bが足した' }).data)
+      await settle(b)
+    })
+    await a.online()
+    await settle(a, b)
+    expect((await b.load()).items[id]).toMatchObject({ title: '元の題名', memo: 'Bが足した' })
+    expect(a.notes).toEqual([])
+  })
+
+  it('初めての受け取りの前に受け取りが止まったら（無料枠を使い切った）、最初の受け取りまで送らない項目だけの送信の後も、その理由を出したままにする', async () => {
+    const who = account()
+    const seed = await makeDevice('seed', who)
+    await seed.online()
+    await seed.edit((d) => addItem(d, { title: 'クラウドの予定' }).data)
+    await settle(seed)
+    seed.offline()
+    // 段階0から上がった端末（共通の履歴が無い項目だけを持つ。最初の受け取りが終わるまで送らない。6.11）
+    const a = await makeDevice('a', who)
+    await a.edit((d) => addItem(d, { title: '端末の予定' }).data)
+    listen.failQuery.add(a.fs)
+    await a.online()
+    await waitFor(async () => a.engine?.status.errorCode === 'quota', '無料枠を使い切った誤りが出る')
+    a.engine!.requestUpload(true)
+    await a.engine!.idle()
+    expect(a.engine!.status).toMatchObject({ phase: 'error', errorCode: 'quota' })
+    // 受け取りが戻ると、受け取ってから送る
+    listen.failQuery.delete(a.fs)
+    await waitFor(async () => a.engine?.status.phase === 'synced', '受け取りが戻る', 30_000)
+    await settle(a)
+    expect(Object.keys((await a.load()).items)).toHaveLength(2)
+  })
+
+  it('サーバーからの通知を反映している間に受け取りが止まったら（無料枠を使い切った）、反映し終えても「同期済み」にしない', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    const b = await makeDevice('b', who)
+    await a.online()
+    await b.online()
+    await a.edit((d) => addItem(d, { title: '予定' }).data)
+    await settle(a, b)
+    await waitFor(async () => a.engine?.status.phase === 'synced', 'A が揃う')
+    const from = a.statuses.length
+    listen.errorAfterServer.add(a.fs)
+    await b.edit((d) => addItem(d, { title: 'B の予定' }).data)
+    await waitFor(async () => a.statuses.slice(from).some((st) => st.errorCode === 'quota'), '受け取りが止まる')
+    await new Promise((r) => setTimeout(r, 500))
+    expect(a.engine!.status).toMatchObject({ phase: 'error', errorCode: 'quota' })
+  })
+
   it('同期の形の版が変わった端末は、次の同期で全件を受け取り直す', async () => {
     const who = account()
     const a = await makeDevice('a', who)
@@ -1118,6 +1228,8 @@ describe('持ち主とアクセスルール（エミュレーター。形1）', 
 
 describe('データの形の版（エミュレーター）', () => {
   const APP = { model: 1, appVersion: '0.1' }
+  // テストが時間切れで終わっても、次のテストを本番のルールのまま流さない
+  afterEach(() => useRules(emuRules))
 
   it('新しい版のアプリで書かれたデータがあると、受け取りは続け、送るのは止める。記録が消えたら書き直して送る', async () => {
     const who = account()
@@ -1170,6 +1282,10 @@ describe('データの形の版（エミュレーター）', () => {
       await enableNetwork(a.fs)
       await waitFor(async () => a.statuses.slice(from).some((st) => st.errorCode === 'permission-denied'), '読めなくなる')
       await new Promise((r) => setTimeout(r, 500))
+      expect(a.engine?.status.errorCode).toBe('permission-denied')
+      // 送る物の無い送信が終わっても、受け取りが止まっている間は「同期済み」に戻さない
+      a.engine!.requestUpload(true)
+      await a.engine!.idle()
       expect(a.engine?.status.errorCode).toBe('permission-denied')
       // 記録が戻った後に、新しい版のアプリが形の版を上げた
       await adminCreateOwner(a.uid)
@@ -1667,6 +1783,24 @@ describe('月の束（エミュレーター。6.11）', () => {
       expect(x.items['old-2']).toBeDefined()
       expect(Object.keys(x.trashEntries)).toEqual([])
     }
+  })
+
+  it('書いてから 60日たっていない古い項目は、その時刻を覚えて、それまでの手入れでは文書を読み直さない（段階0から上がった端末）', async () => {
+    const who = account()
+    const a = await makeDevice('a', who)
+    await a.edit((d) => [oldItem('old-1', '三月の会議'), oldItem('old-2', '三月の面談')].reduce(putItem, d))
+    await a.online()
+    await settle(a)
+    await waitFor(async () => a.engine?.serverNow() != null, 'サーバーの時刻の見積もりができる')
+    const reads = () => listen.txGets.get(a.fs) ?? 0
+    let before = reads()
+    expect((await a.engine!.maintain()).packed).toEqual({})
+    expect(reads() - before).toBeGreaterThanOrEqual(2)
+    before = reads()
+    for (const days of [1, 30, 59]) expect((await a.engine!.maintain(Date.now() + days * DAY_MS)).packed).toEqual({})
+    expect(reads()).toBe(before)
+    expect((await a.engine!.maintain(packTime())).packed).toEqual({ '2025-03': 2 })
+    expect(await a.p.getMeta('packNotBefore')).toBeNull()
   })
 
   it('この端末が書き直した束の中の、ほかの端末が直した項目も 3者マージする（own として扱わない）', async () => {

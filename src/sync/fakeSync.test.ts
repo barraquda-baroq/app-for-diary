@@ -106,6 +106,71 @@ describe('復元', () => {
     expect(d.inbox['xa-keep']).toBeDefined()
   })
 
+  // 書き込みは届いたが返事が無いまま、次に送る前に復元した。復元を始めた後にほかの端末がその記録を直しても、届いていた内容（送った
+  // 内容）を base にして合わせるので、復元の内容が勝つ（古い base で合わせると、届いていた題名が復元の題名に勝ってしまう）
+  for (const order of ['復元してから送る', 'クラウドに当てる前に、自分の書き込みの通知が届く'] as const) {
+    it(`前に送って返事を受け取れなかった書き込みの後で復元しても、復元の内容が勝つ（${order}）`, async () => {
+      const { a, b } = await pair()
+      let id = ''
+      await a.edit((d) => {
+        const r = O.addItem(d, { origin: 'calendar', title: '元の題名', start: '2026-12-01' })
+        id = r.result
+        return r.data
+      })
+      await settle(a, b)
+      const backup = await a.load()
+      await a.edit((d) => O.updateItem(d, id, { title: 'Aの題名' }).data)
+      await a.uploadBatch({ replyLost: true })
+      a.offline()
+      await a.restore(backup)
+      // 復元の「必ず上書き」の送信待ちにも、返事を受け取れなかった書き込みの印が残る（送る前に確かめる）
+      expect((await a.p.readOutbox(5)).find((r) => r.k === `items/${id}`)).toMatchObject({ force: true, unconfirmed: true })
+      if (order === 'クラウドに当てる前に、自分の書き込みの通知が届く') {
+        // 復元をクラウドに当てる前は受け取らない（印だけ確かめて base にし、「必ず上書き」は外さない）
+        expect(await a.receive()).toBe(false)
+        expect((await a.p.readOutbox(5)).find((r) => r.k === `items/${id}`)).toMatchObject({
+          force: true,
+          base: expect.objectContaining({ title: 'Aの題名' }),
+        })
+      }
+      await a.pushAuthoritative()
+      // 復元を始めた後に、B（A の題名を受け取っている）がメモを足した
+      await b.sync()
+      expect((await b.load()).items[id].title).toBe('Aの題名')
+      await b.edit((d) => O.updateItem(d, id, { memo: 'Bが足した' }).data)
+      await b.sync()
+      await settle(a, b)
+      expect(await sameData(a, b)).toBe(true)
+      expect((await b.load()).items[id]).toMatchObject({ title: '元の題名', memo: 'Bが足した' })
+    })
+  }
+
+  it('前に送って返事を受け取れなかった書き込みが届いていても、復元を始める前にほかの端末が直した物は復元で上書きする', async () => {
+    const { a, b } = await pair()
+    let id = ''
+    await a.edit((d) => {
+      const r = O.addItem(d, { origin: 'calendar', title: '元の題名', start: '2026-12-01' })
+      id = r.result
+      return r.data
+    })
+    await settle(a, b)
+    const backup = await a.load()
+    await a.edit((d) => O.updateItem(d, id, { title: 'Aの題名' }).data)
+    await a.uploadBatch({ replyLost: true })
+    a.offline()
+    // 復元を始める前に、B がメモを足した（A はまだ受け取っていない）
+    await b.sync()
+    await b.edit((d) => O.updateItem(d, id, { memo: 'Bが足した' }).data)
+    await b.sync()
+    await a.restore(backup)
+    await a.pushAuthoritative()
+    // 「必ず上書き」は外れず、復元の印付きで書く
+    expect((await a.p.readOutbox(5)).find((r) => r.k === `items/${id}`)).toMatchObject({ force: true })
+    await settle(a, b)
+    expect(await sameData(a, b)).toBe(true)
+    expect((await b.load()).items[id]).toMatchObject({ title: '元の題名', memo: '' })
+  })
+
   it('MIM を含まないファイルの復元は、ほかの端末で直した MIM を上書きしない（形4）', async () => {
     const { a, b } = await pair()
     let mimId = ''
