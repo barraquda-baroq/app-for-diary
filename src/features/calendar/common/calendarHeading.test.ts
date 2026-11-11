@@ -1,7 +1,7 @@
 // 操作の列の大きな数字と小さな表記（docs/SPEC.md の 3.7 の表）、［‹］［›］での見ている日の移り方（3.7 の「見ている日を引き継ぐ」）。
 // 暦の日付の計算そのもの（月の日数・週の初め・マンスリーのマス目・ログインの画面の日付）は src/domain/dates.test.ts
 import { describe, expect, it } from 'vitest'
-import type { Ymd } from '../../domain/dates'
+import type { Ymd } from '../../../domain/dates'
 import { periodHeading, shiftPeriod } from './calendarHeading'
 
 const d = (y: number, m: number, day: number): Ymd => ({ y, m, d: day })

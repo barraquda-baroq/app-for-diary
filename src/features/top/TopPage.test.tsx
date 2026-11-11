@@ -1,20 +1,31 @@
-// トップ画面の空の形（docs/SPEC.md の 3.2〜3.7）: ヘッダー、L の並べ方（カレンダーの領域と右の列）、S・M の積み方と切り替えの列、
-// 右の列の3つのリストの見出し・畳む・入力欄、カレンダーの操作の列、MIM の仮の画面への切り替え
-import { cleanup, render, screen, within } from '@testing-library/react'
+// トップ画面（docs/SPEC.md の 3.1〜3.7）: ヘッダー、L の並べ方（カレンダーの領域と右の列）、S・M の積み方と切り替えの列、
+// 右の列の3つのリストの見出し・畳む・入力欄、カレンダーの行き先と操作の列（#/ の置き換え・モードの切り替えは積む・‹ › 今日 は
+// 置き換える・見ている日を引き継ぐ・lastMode）、MIM の仮の画面への切り替え
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { routes } from '../../App'
-import { DEFAULT_PREFS, PREFS_KEY, usePrefs, useStackedLists, useToasts } from '../../store/uiStore'
+import {
+  DEFAULT_PREFS,
+  initialCalendarUi,
+  PREFS_KEY,
+  useCalendarUi,
+  usePrefs,
+  useStackedLists,
+  useToasts,
+} from '../../store/uiStore'
 import { useSync } from '../../sync/controller'
 import { setTestWidth, TEST_WIDTHS } from '../../test/width'
 import { ListPanel } from './ListPanel'
 
 const saved = () => JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null') as { collapsed?: Record<string, unknown> } | null
 
-function renderAt(path: string, width: number = TEST_WIDTHS.L) {
+/** 行き先（配列なら履歴を並べて最後の物）を開く */
+function renderAt(path: string | string[], width: number = TEST_WIDTHS.L) {
   setTestWidth(width)
-  const router = createMemoryRouter(routes, { initialEntries: [path] })
+  const entries = Array.isArray(path) ? path : [path]
+  const router = createMemoryRouter(routes, { initialEntries: entries, initialIndex: entries.length - 1 })
   render(<RouterProvider router={router} />)
   return router
 }
@@ -27,6 +38,7 @@ beforeEach(() => {
   usePrefs.setState(DEFAULT_PREFS)
   useStackedLists.setState({ collapsed: { routine: true, task: true, favorite: true } })
   useToasts.setState({ toasts: [] })
+  useCalendarUi.setState(initialCalendarUi())
   useSync.setState({
     auth: 'signedIn',
     user: { uid: 'u1', name: 'テスト', email: 'test@example.com' },
@@ -70,7 +82,8 @@ describe('ヘッダー（3.3）', () => {
     // L は右の列がそのまま
     expect(screen.getByTestId('side-column')).toBeTruthy()
     await user.click(screen.getByTestId('open-mim'))
-    expect(router.state.location.pathname).toBe('/')
+    // トップ #/ は開いた時にマンスリーの今月へ置き換わっているので、そこへ戻る
+    expect(router.state.location.pathname).toBe('/month/2026-11')
     expect(screen.getByTestId('calendar')).toBeTruthy()
   })
 
@@ -79,14 +92,24 @@ describe('ヘッダー（3.3）', () => {
     const router = renderAt('/')
     await user.click(screen.getByTestId('open-mim'))
     await user.click(screen.getByTestId('mim-back'))
-    expect(router.state.location.pathname).toBe('/')
+    expect(router.state.location.pathname).toBe('/month/2026-11')
     expect(router.state.historyAction).toBe('POP')
     cleanup()
 
+    // 直接開いた時はトップ #/ へ置き換え、トップは前回のモードの今日を含む期間へ置き換わる
     const direct = renderAt('/mim')
     await user.click(screen.getByTestId('mim-back'))
-    expect(direct.state.location.pathname).toBe('/')
+    expect(direct.state.location.pathname).toBe('/month/2026-11')
     expect(direct.state.historyAction).toBe('REPLACE')
+  })
+
+  it('MIM は4つのモードの行き先から開いても［‹ カレンダーに戻る］で1つ前のモード・期間へ戻る（FRAME-007）', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/week/2026-11-15')
+    await user.click(screen.getByTestId('open-mim'))
+    await user.click(screen.getByTestId('mim-back'))
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+    expect(router.state.historyAction).toBe('POP')
   })
 })
 
@@ -154,6 +177,127 @@ describe('L の並べ方（3.4）', () => {
   })
 })
 
+describe('カレンダーの行き先（3.1・6.13・7.12）', () => {
+  it('トップ #/ は、前回のモード（初めはマンスリー）の今日を含む期間へ置き換える（FRAME-001・282）', () => {
+    const router = renderAt('/')
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    expect(router.state.historyAction).toBe('REPLACE')
+    expect(screen.getByTestId('view-month')).toBeTruthy()
+    cleanup()
+
+    usePrefs.setState({ lastMode: 'week' })
+    const week = renderAt('/')
+    expect(week.state.location.pathname).toBe('/week/2026-11-08')
+    expect(screen.getByTestId('view-week')).toBeTruthy()
+  })
+
+  it.each([
+    ['/year/abc', '/year/2026'],
+    ['/month/2026-13', '/month/2026-11'],
+    ['/day/2026-02-30', '/day/2026-11-10'],
+  ])('日付の形が正しくない %s は、同じモードの今日を含む期間 %s へ置き換える（FRAME-017）', (path, to) => {
+    const router = renderAt(path)
+    expect(router.state.location.pathname).toBe(to)
+    expect(router.state.historyAction).toBe('REPLACE')
+  })
+
+  it('#/week/ の日付が日曜でない時は、その日を見ている日にしてその週の日曜へ置き換える（「日」でその日。FRAME-018）', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/week/2026-11-12')
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
+  })
+
+  it('知らない行き先（#/month だけ・#/month/2026-11/x）は「見つかりません」', () => {
+    renderAt('/month')
+    expect(screen.queryByTestId('top-page')).toBeNull()
+    cleanup()
+    renderAt('/month/2026-11/x')
+    expect(screen.queryByTestId('top-page')).toBeNull()
+  })
+
+  it('モードを替えると履歴に積み、見ている日を引き継ぐ（11/10 → 週 11/8〜 → 年 2026 → 日 11/10）。「戻る」で前のモードへ', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/month/2026-11')
+    await user.click(screen.getByTestId('cal-mode-week'))
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(router.state.historyAction).toBe('PUSH')
+    await user.click(screen.getByTestId('cal-mode-year'))
+    expect(router.state.location.pathname).toBe('/year/2026')
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    // 今と同じモードを押しても積まない
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(router.state.historyAction).toBe('PUSH')
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/year/2026')
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+  })
+
+  it('‹ › ［今日］は置き換える（何回押しても「戻る」1回で前のモードへ。FRAME-016）。月をまたぐと見ている日は月末にそろえる', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/day/2027-01-31')
+    await user.click(screen.getByTestId('cal-mode-month'))
+    expect(router.state.location.pathname).toBe('/month/2027-01')
+    await user.click(screen.getByTestId('cal-next'))
+    expect(router.state.location.pathname).toBe('/month/2027-02')
+    expect(router.state.historyAction).toBe('REPLACE')
+    // 見ている日は 2/28（1/31 → › → 2/28。FRAME-072）
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(router.state.location.pathname).toBe('/day/2027-02-28')
+    await user.click(screen.getByTestId('cal-next'))
+    await user.click(screen.getByTestId('cal-next'))
+    await user.click(screen.getByTestId('cal-today'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    expect(router.state.historyAction).toBe('REPLACE')
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/month/2027-02')
+  })
+
+  it('月・年の行き先へ「戻る」で戻った時、覚えている日が期間に無ければ今日、それも無ければ1日を見ている日にする（D02）', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/month/2026-10')
+    await user.click(screen.getByTestId('cal-mode-day'))
+    // 10月の中に覚えている日も今日も無いので、10月1日
+    expect(router.state.location.pathname).toBe('/day/2026-10-01')
+    await user.click(screen.getByTestId('cal-today'))
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/month/2026-10')
+    await user.click(screen.getByTestId('cal-mode-week'))
+    expect(router.state.location.pathname).toBe('/week/2026-09-27')
+  })
+
+  it('描いたモードを lastMode に書く（行き先を直接開いた時・「戻る」で戻った時も。FRAME-261）', async () => {
+    const router = renderAt('/week/2026-11-08')
+    expect(usePrefs.getState().lastMode).toBe('week')
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').lastMode).toBe('week')
+    await act(() => router.navigate('/year/2026'))
+    expect(usePrefs.getState().lastMode).toBe('year')
+    await act(() => router.navigate(-1))
+    expect(usePrefs.getState().lastMode).toBe('week')
+  })
+
+  it('左のアイコンと名前: カレンダーからは前回のモードの今日を含む期間へ置き換え、設定からは積む（FRAME-029・D05）', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/week/2026-12-06')
+    await user.click(screen.getByTestId('brand'))
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(router.state.historyAction).toBe('REPLACE')
+    // 見ている日も今日（日へ替えると 11/10）
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    await user.click(screen.getByTestId('open-settings'))
+    // 設定の画面は開いた時に読み込む（読み込むまではトップの画面のまま）
+    await screen.findByTestId('app-settings')
+    await user.click(screen.getByTestId('brand'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/settings')
+  })
+})
+
 describe('カレンダーの操作の列（3.7）', () => {
   const numeral = () => screen.getByTestId('cal-numeral').textContent
   const period = () => screen.getByTestId('cal-period').textContent
@@ -169,23 +313,28 @@ describe('カレンダーの操作の列（3.7）', () => {
     expect(screen.getByTestId('calendar-month').getAttribute('data-rows')).toBe('5')
   })
 
-  it('モードを替えると表記と出すボタンが替わる（無いボタンは消すが場所は残す）。最後のモードを覚える', async () => {
+  it('モードを替えると表記・出すボタン・モードの画面が替わる（無いボタンは消すが場所は残す）。最後のモードを覚える', async () => {
     const user = userEvent.setup()
     renderAt('/')
     await user.click(screen.getByTestId('cal-mode-year'))
     expect(numeral()).toBe('2026')
     expect(period()).toContain('YEAR')
     expect([hidden('cal-off'), hidden('cal-add'), hidden('cal-taskview')]).toEqual([true, true, false])
+    expect(screen.getByTestId('view-year')).toBeTruthy()
+    expect(screen.getByTestId('calendar').getAttribute('data-mode')).toBe('year')
     await user.click(screen.getByTestId('cal-mode-week'))
     expect(numeral()).toBe('11')
     expect(period()).toContain('11.08–11.14')
     expect([hidden('cal-off'), hidden('cal-add'), hidden('cal-taskview')]).toEqual([true, false, true])
+    expect(screen.getByTestId('view-week')).toBeTruthy()
     await user.click(screen.getByTestId('cal-mode-day'))
     expect(numeral()).toBe('10')
     expect(period()).toContain('TUE')
     expect(period()).toContain('NOV 2026')
+    expect([hidden('cal-off'), hidden('cal-add'), hidden('cal-taskview')]).toEqual([true, false, true])
     expect(usePrefs.getState().lastMode).toBe('day')
-    expect(screen.getByTestId('calendar-placeholder').textContent).toContain('段階2')
+    expect(screen.getByTestId('view-day')).toBeTruthy()
+    expect(screen.queryByTestId('view-week')).toBeNull()
   })
 
   it('‹ › でそのモードの期間を移り、［今日］で今日を含む期間へ戻る', async () => {
@@ -202,17 +351,55 @@ describe('カレンダーの操作の列（3.7）', () => {
     expect(screen.getByTestId('cal-prev').getAttribute('aria-label')).toBe('前の月')
   })
 
-  it('［休み］［＋ 登録］［Task View］は、まだ作っていない段階を知らせる', async () => {
+  it('［休み］で休みを付ける状態に入り（押した状態）、もう一度押すと終わる。マンスリーを離れると終わる（9.5・D30）', async () => {
     const user = userEvent.setup()
-    renderAt('/')
+    renderAt('/month/2026-11')
+    const off = () => screen.getByTestId('cal-off')
+    await user.click(off())
+    expect(useCalendarUi.getState().offMode).toBe(true)
+    expect(off().getAttribute('aria-pressed')).toBe('true')
+    await user.click(off())
+    expect(useCalendarUi.getState().offMode).toBe(false)
+    expect(off().getAttribute('aria-pressed')).toBe('false')
+    // ‹ › ［今日］では続き、モードを替えると終わる
+    await user.click(off())
+    await user.click(screen.getByTestId('cal-next'))
+    await user.click(screen.getByTestId('cal-today'))
+    expect(useCalendarUi.getState().offMode).toBe(true)
+    await user.click(screen.getByTestId('cal-mode-week'))
+    expect(useCalendarUi.getState().offMode).toBe(false)
+  })
+
+  it('休みを付ける状態は、「戻る」でほかのモードへ戻った時・MIM を開いた時も終わる（D30）', async () => {
+    const user = userEvent.setup()
+    const router = renderAt(['/week/2026-11-08', '/month/2026-11'])
     await user.click(screen.getByTestId('cal-off'))
+    await act(() => router.navigate(-1))
+    expect(useCalendarUi.getState().offMode).toBe(false)
+    await act(() => router.navigate(1))
+    await user.click(screen.getByTestId('cal-off'))
+    await user.click(screen.getByTestId('open-mim'))
+    expect(useCalendarUi.getState().offMode).toBe(false)
+  })
+
+  it('［＋ 登録］で登録の画面を開く（開始日はデイリーではその日、ほかは今日。区分は仕事）。［Task View］はまだ作っていない段階を知らせる', async () => {
+    const user = userEvent.setup()
+    const router = renderAt('/month/2026-12')
     await user.click(screen.getByTestId('cal-add'))
+    expect(router.state.location.state).toMatchObject({
+      sheet: { kind: 'register', init: { start: '2026-11-10', kind: 'work' } },
+    })
+    expect(screen.getByTestId('item-sheet').getAttribute('data-kind')).toBe('work')
+    await user.click(screen.getByTestId('modal-close'))
+    expect(screen.queryByTestId('item-sheet')).toBeNull()
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(router.state.location.pathname).toBe('/day/2026-12-01')
+    await user.click(screen.getByTestId('cal-add'))
+    expect(router.state.location.state).toMatchObject({ sheet: { kind: 'register', init: { start: '2026-12-01' } } })
+    await user.click(screen.getByTestId('modal-close'))
+    await user.click(screen.getByTestId('cal-mode-month'))
     await user.click(screen.getByTestId('cal-taskview'))
-    expect(useToasts.getState().toasts.map((t) => t.message)).toEqual([
-      '休みを付けるのは段階2で作ります',
-      '予定の登録は段階2で作ります',
-      'Task View は段階4で作ります',
-    ])
+    expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Task View は段階4で作ります'])
   })
 
   it('今日の日付に印を付ける（マス目の仮の絵）', () => {
