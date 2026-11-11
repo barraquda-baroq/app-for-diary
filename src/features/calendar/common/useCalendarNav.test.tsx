@@ -74,6 +74,23 @@ describe('7.12 の行き来', () => {
     expect(router.state.historyAction).toBe('REPLACE')
   })
 
+  it('区分を渡さずにデイリーへ移る時は、前に数字から移った時の区切り・予定のキーが残っていても消す（ほかのキーはそのまま。CALENDAR-189・190）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderView(Harness, {}, { path: '/month/2026-11' })
+    await click(user, '11月12日の日へ（プライベート）')
+    expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
+    // 目立たせる前に戻って、ウィークリーの見出し・マンスリーのマスから移る
+    await act(() => router.navigate(-1))
+    await click(user, '11月13日の日へ')
+    expect(router.state.location.pathname).toBe('/day/2026-11-13')
+    expect(useCalendarUi.getState().flash).toBeNull()
+    // 予定を目立たせるキー（'item:{id}'）は消さない
+    act(() => useCalendarUi.getState().flashTarget('item:w3'))
+    await act(() => router.navigate(-1))
+    await click(user, '11月13日の日へ')
+    expect(useCalendarUi.getState().flash?.keys).toEqual(['item:w3'])
+  })
+
   it('休みを付ける状態は、マンスリーの中で月を移っても続き、デイリーへ移ると終わる（D30）', async () => {
     const user = userEvent.setup()
     await renderView(Harness, {}, { path: '/month/2026-11' })

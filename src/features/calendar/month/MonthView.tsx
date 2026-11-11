@@ -16,10 +16,10 @@
 //   preventDefault 済みの物（マス目の中で受けた物）を見送る）
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { parseYmd, todayYmd, WEEKDAYS_EN } from '../../../domain/dates'
-import { ITEM_KINDS, type ItemKind } from '../../../domain/types'
+import type { ItemKind } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { attempt, useCalendarUi } from '../../../store/uiStore'
-import { cls, flashKey, useCalendarData } from '../common/parts'
+import { cls, useCalendarData } from '../common/parts'
 import { testIds } from '../common/testIds'
 import type { ViewProps } from '../common/types'
 import { useCalendarNav } from '../common/useCalendarRoute'
@@ -27,17 +27,6 @@ import { MonthCell } from './MonthCell'
 import { buildMonth, rovingIndex, type MonthCellVM } from './monthModel'
 import { OffModeBanner } from './OffModeBanner'
 import './month.css'
-
-/**
- * 数字から移った時に置いた、デイリーの区切り・予定を目立たせるキーがまだ残っていれば消す（マスから移る時は目立たせない。
- * CALENDAR-189・190。キーは目立たせてから 1.2秒・どこにも出なければ 3秒で消えるので、その間に「戻る」でここへ戻ってマスを押すと、
- * 前に押した数字の区分が目立ってしまう）
- */
-function clearDayFlash(): void {
-  const { flash, clearFlash } = useCalendarUi.getState()
-  const dayKeys = ITEM_KINDS.flatMap((k) => [flashKey.dayArea(k), flashKey.dayEvents(k)])
-  if (flash && flash.keys.some((k) => dayKeys.includes(k))) clearFlash(flash.seq)
-}
 
 export function MonthView({ viewed, today, width }: ViewProps) {
   const v = parseYmd(viewed) ?? todayYmd()
@@ -54,11 +43,9 @@ export function MonthView({ viewed, today, width }: ViewProps) {
         attempt(() => actions.setOffDay(c.date, !c.off))
         return
       }
+      // マスからは目立たせない（前に数字から移った時のキーが残っていれば openDay が消す。CALENDAR-189・190）
       if (c.outside) nav.openMonth(c.date)
-      else {
-        clearDayFlash()
-        nav.openDay(c.date)
-      }
+      else nav.openDay(c.date)
     },
     [nav],
   )

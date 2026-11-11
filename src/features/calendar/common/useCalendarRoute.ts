@@ -160,6 +160,13 @@ export function useCalendarNav(): CalendarNav {
       openMonth: (date) => go('month', date),
       openDay: (date, flash) => {
         if (flash) ui().flashTarget(`day-area:${flash}`, `day-events:${flash}`)
+        else {
+          // 区分を渡さない時（マンスリーのマス・ウィークリーの日付の見出し）は目立たせない。前に数字から移った時のキーがまだ残って
+          // いれば消す（キーは目立たせてから 1.2秒・どこにも出なければ 3秒で消えるので、その間に戻ってマスを押すと前の区分が目立つ。
+          // CALENDAR-189・190）。区切り・予定のほかのキー（'item:{id}' など）はそのまま
+          const f = ui().flash
+          if (f?.keys.some((k) => k.startsWith('day-area:') || k.startsWith('day-events:'))) ui().clearFlash(f.seq)
+        }
         go('day', date)
       },
     }
