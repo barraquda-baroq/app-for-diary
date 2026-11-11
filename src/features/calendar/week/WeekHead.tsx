@@ -26,7 +26,8 @@ export interface DayHeadProps {
 }
 
 export function DayHead({ day, today, layout, actions }: DayHeadProps) {
-  const tone = day.isToday ? null : dayTone(day.date)
+  // 日付の色は今日でも土日・祝日の色（7.1）。今日の印は丸いラベル（地・字の色・輪）と日付の太さ 600 で示す（7.3）
+  const tone = dayTone(day.date)
   return (
     <div
       className={cls('wk-head', layout === 'block' ? 'is-block' : `is-rows-${layout}`, day.off && 'is-off')}

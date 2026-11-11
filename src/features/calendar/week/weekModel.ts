@@ -89,13 +89,15 @@ export function monoTextPx(text: string, fontPx = 10): number {
 const FIT_MARGIN = 4
 
 /**
- * 始点のカードの期間を日付だけにするか（7.7・10.2）: ふつうは `11/9 10:00〜11/12 18:00`、カードの字の幅（textPx）に入らない時は
- * 時刻を省いて日付だけ `11/9〜11/12`（時刻は詳細で見る）。幅が測れていない（0）時はふつうの表記。date はカードを出す日
+ * 始点のカードの期間を日付だけにするか（7.7・10.2）: ふつうは `11/9 10:00〜11/12 18:00`、期間の行の幅に入らない時は
+ * 時刻を省いて日付だけ `11/9〜11/12`（時刻は詳細で見る）。textPx は点線の丸の横の字の幅で、期間の行はそこから右上の印の分
+ * （marksPx）が狭い（印を件名の横に置く時も、期間の行の右に置く時（laneMarksBelow）も同じ）。幅が測れていない（0）時は
+ * ふつうの表記。date はカードを出す日
  */
 export function periodDatesOnly(c: CalItem, date: string, textPx: number): boolean {
   // 時刻の無い物は省く時刻が無い（〜12/2 のまま）
   if (!(textPx > 0) || !c.item.startTime) return false
-  return monoTextPx(timeLabel(c, { on: date })) > textPx - FIT_MARGIN
+  return monoTextPx(timeLabel(c, { on: date })) > textPx - marksPx(c.item) - FIT_MARGIN
 }
 
 /** 7日を横の始点のカードの字の幅（列の幅 − 左右のあき 8px − カードの余白と丸。土曜で縮む時はさらに 14px） */
@@ -146,6 +148,27 @@ export function cardLayout(textPx: number, item: Pick<Item, 'origin' | 'start' |
   if (m > 0 ? textPx - m >= MIN_TITLE_PX : textPx >= MIN_TITLE_PX_PLAIN) return 'side'
   // 丸の行の右に印を置ける幅（最後の印の後のすき間 4px は要らない）
   return m - 4 > textPx ? 'marks-below' : 'stacked'
+}
+
+/**
+ * 始点のカード・受けた表示（高さ 36px・件名 1行）の右上の印を、件名の横ではなく下の行の右の端に置くか（開発）: 件名の横に置くと
+ * 件名が MIN_TITLE_PX より細くなる時（列の狭い M・L の狭いウインドウの、ロック・〆・AI の札の付いた複数日の予定。AI の札は
+ * 100px の列で件名の幅を 0 にする）。件名は横の幅を全部使い、印は期間の行（受けた表示は件名の下の行）の右の端に置く。
+ * textPx は件名の横の字の幅（始点のカードは horizontalCardTextPx・verticalCardTextPx、受けた表示は receivedTextPx。
+ * 測れていない 0 の時と印の無い時は横のまま）
+ */
+export function laneMarksBelow(textPx: number, item: Pick<Item, 'origin' | 'start' | 'due' | 'locked' | 'by' | 'ai'>): boolean {
+  const m = marksPx(item)
+  return textPx > 0 && m > 0 && textPx - m < MIN_TITLE_PX
+}
+
+/**
+ * 受けた表示の字の幅（px）。大きさは同じ位置の始点のカードと同じなので、その字の幅（cardTextPx）から: 点線の丸が無い代わりに
+ * 1px の点線の枠と左右の余白 8px（中に●を置く時は右の余白 22px）。測れていない 0 の時は 0
+ */
+export function receivedTextPx(cardTextPx: number, dotIn = false): number {
+  if (!(cardTextPx > 0)) return 0
+  return cardTextPx + CARD_CHROME - 2 * 1 - 2 * 8 - (dotIn ? 22 - 8 : 0)
 }
 
 // ---------- 週の形 ----------

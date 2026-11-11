@@ -92,6 +92,17 @@ test.describe('7日を横（PC）', { tag: ['@pc'] }, () => {
     const first10 = await box(page.getByTestId(`week-card-${I.weekly}`))
     const first11 = await box(page.getByTestId(`week-card-${I.quote}`))
     near(first10.y, first11.y, 'レーンの下の1日のカードの上の端')
+
+    // 件名は 13px・行の高さ 1.35 で2行まで（3行になる件名も2行で切る。FRAME-204）
+    const longTitle = page.getByTestId(`week-card-${I.longWork}`).locator('.cp-title')
+    const lines = await longTitle.evaluate((e) => ({ client: e.clientHeight, scroll: e.scrollHeight }))
+    expect(lines.client).toBeLessThanOrEqual(Math.ceil(2 * 13 * 1.35))
+    expect(lines.scroll).toBeGreaterThan(lines.client)
+
+    // 段の名札は日曜の列より広い（「PRIVATE プライベート」）。列の縦の線が字を横切らないよう、字の幅だけ --surface の地
+    const privTag = page.locator('[data-tier="private"] > .wk-tag')
+    expect((await box(privTag)).width).toBeGreaterThan((await box(col(page, '2026-11-08'))).width)
+    expect(await style(privTag, 'background-color')).toBe(await token(page, '--surface'))
     await noHorizontalScroll(page)
   })
 

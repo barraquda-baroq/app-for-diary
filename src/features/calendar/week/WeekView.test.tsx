@@ -73,6 +73,17 @@ describe('7日を横（L・M。10.2）', () => {
     expect(within(tier('private')).getByText('プライベート')).toBeTruthy()
   })
 
+  it.each([
+    ['2026-11-08', 'cp-sun'],
+    ['2026-11-14', 'cp-sat'],
+  ])('今日が %s でも、日付は土日・祝日の色のまま（7.1）で太さ 600（今日の印は丸いラベル。7.3）', async (today, tone) => {
+    await renderWeek({ today })
+    const md = screen.getByTestId(testIds.weekHead(today)).querySelector('.wk-md') as HTMLElement
+    expect(md.classList.contains('is-today')).toBe(true)
+    expect(md.classList.contains(tone)).toBe(true)
+    expect(screen.getByTestId(testIds.weekHead(today)).querySelector('.pill.is-today')).toBeTruthy()
+  })
+
   it('祝日名を日付の見出しの下に（CALENDAR-066）', async () => {
     await renderWeek({ viewed: '2026-11-03' }, { path: '/week/2026-11-01' })
     expect(within(screen.getByTestId(testIds.weekHead('2026-11-03'))).getByText('文化の日')).toBeTruthy()
@@ -223,6 +234,38 @@ describe('7日を横（L・M。10.2）', () => {
     expect(screen.getByTestId(testIds.weekCard('mail')).classList.contains('is-stacked')).toBe(false)
   })
 
+  it('始点のカード・受けた表示の印は、件名の横に置くと件名が細くなりすぎる狭い列では下の行の右に（期間はその分あける。開発）', async () => {
+    const data = {
+      items: items(
+        span('lk', '2026-11-09', '2026-11-11', { title: '鍵のかかった予定', locked: true, startTime: '10:00', endTime: '12:00' }),
+        span('cl', '2026-11-05', '2026-11-10', { title: 'Claude の予定', by: 'connector', ai: 'claude', via: 'メール' }),
+      ),
+    }
+    // 列 142px: ロックは件名の横、AI の札は受けた表示の件名を細くしすぎないので横のまま（受けた表示は丸が無く広い）
+    await renderWeek({}, { data })
+    expect(screen.getByTestId(testIds.weekStart('lk')).classList.contains('is-marks-low')).toBe(false)
+    expect(screen.getByTestId(testIds.weekReceived('cl')).classList.contains('is-marks-low')).toBe(false)
+  })
+
+  it('M の列（100px）では、ロックの付いた始点のカードと AI の札の付いた受けた表示の印を下の行へ', async () => {
+    const data = {
+      items: items(
+        span('lk', '2026-11-09', '2026-11-11', { title: '鍵のかかった予定', locked: true, startTime: '10:00', endTime: '12:00' }),
+        span('cl', '2026-11-05', '2026-11-10', { title: 'Claude の予定', by: 'connector', ai: 'claude', via: 'メール' }),
+        span('pl', '2026-11-10', '2026-11-12', { title: '印の無い予定' }),
+      ),
+    }
+    await renderWeek({ width: 'M', area: { width: 700, height: 800 } }, { data })
+    const lk = screen.getByTestId(testIds.weekStart('lk'))
+    expect(lk.classList.contains('is-marks-low')).toBe(true)
+    // 期間の行の右のあきはロックの印の幅（12px＋4px）
+    expect(lk.style.getPropertyValue('--wk-marks-w')).toBe('16px')
+    // 期間は日付だけ（印の分も引いた幅に入らない）
+    expect(lk.querySelector('.wk-period')?.textContent).toBe('11/9〜11/11')
+    expect(screen.getByTestId(testIds.weekReceived('cl')).classList.contains('is-marks-low')).toBe(true)
+    expect(screen.getByTestId(testIds.weekStart('pl')).classList.contains('is-marks-low')).toBe(false)
+  })
+
   it('「＋」の行を各日・各段のいちばん下に（ITEMS-066）', async () => {
     await renderWeek()
     for (const d of DATES)
@@ -236,6 +279,12 @@ describe('7日を横（L・M。10.2）', () => {
   it('いちばん外の要素がスクロールする要素（data-week-scroller。ドラッグの自動のスクロールを絞る）', async () => {
     await renderWeek()
     expect(screen.getByTestId(testIds.view('week')).hasAttribute('data-week-scroller')).toBe(true)
+  })
+
+  it('落とせる所（その段のその日の列）に日付と段の印（data-date・段の data-tier の中）', async () => {
+    await renderWeek()
+    for (const kind of ['work', 'private'] as const)
+      expect([...tier(kind).querySelectorAll<HTMLElement>('.wk-cell')].map((c) => c.dataset.date)).toEqual(DATES)
   })
 })
 
@@ -292,6 +341,11 @@ describe('7日を縦（S。10.4）', () => {
     // 「＋」はいつも出す行（各半分のいちばん下）
     const add = within(blocks[2]).getByTestId(testIds.weekAdd('2026-11-10', 'private'))
     expect(add.parentElement?.lastElementChild).toBe(add)
+    // 半分（落とせる所）に日付と段の印
+    expect([...blocks[2].querySelectorAll<HTMLElement>('.wk-half')].map((h) => [h.dataset.date, h.dataset.tier])).toEqual([
+      ['2026-11-10', 'work'],
+      ['2026-11-10', 'private'],
+    ])
   })
 
   it('5本のレーンの週: レールは3本（左から 4・14・24px）、4本目からは期間付きの始点のカードと締め切り日の「● 件名」の行（ITEMS-090〜097）', async () => {

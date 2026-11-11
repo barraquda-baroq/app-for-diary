@@ -16,8 +16,8 @@ import { AddRow, EdgeArrow, EndDot, OverflowRow, ReceivedCard, StartCard, WeekCa
 import { DayHead, KindTag } from './WeekHead'
 import type { WeekActions } from './weekActions'
 import {
-  periodDatesOnly,
   railsPx,
+  receivedTextPx,
   verticalCardTextPx,
   WEEK_PX,
   type RailSegment,
@@ -85,6 +85,7 @@ function Half({ day, kind, week, halfPx, actions }: HalfProps) {
       className={cls('wk-half', kind.rails > 0 && 'has-rails')}
       style={kind.rails > 0 ? { paddingLeft: railsPx(kind.rails) + WEEK_PX.inset } : undefined}
       data-tier={kind.kind}
+      data-date={day.date}
       data-drop={drop.state}
     >
       {half?.rails.map((seg) => (
@@ -95,9 +96,15 @@ function Half({ day, kind, week, halfPx, actions }: HalfProps) {
       ))}
       {half?.cards.map(({ lane, part }) =>
         part.card === 'received' ? (
-          <ReceivedCard key={lane.id} c={lane.c} week={week} dotIn={part.dot === 'inCard'} />
+          <ReceivedCard
+            key={lane.id}
+            c={lane.c}
+            week={week}
+            dotIn={part.dot === 'inCard'}
+            textPx={receivedTextPx(textPx, part.dot === 'inCard')}
+          />
         ) : (
-          <StartCard key={lane.id} c={lane.c} week={week} date={day.date} datesOnly={periodDatesOnly(lane.c, day.date, textPx)} />
+          <StartCard key={lane.id} c={lane.c} week={week} date={day.date} textPx={textPx} />
         ),
       )}
       {singles.map((c) => (

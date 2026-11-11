@@ -11,6 +11,7 @@ import {
   cardLayout,
   horizontalCardTextPx,
   horizontalLine,
+  laneMarksBelow,
   laneTop,
   marksPx,
   MIN_TITLE_PX,
@@ -18,6 +19,7 @@ import {
   periodDatesOnly,
   railSegment,
   railsPx,
+  receivedTextPx,
   verticalCardTextPx,
   verticalCardTop,
   WEEK_PX,
@@ -296,12 +298,26 @@ describe('始点のカードの期間（7.7・10.2・CALENDAR-130）', () => {
     expect(periodDatesOnly(timed, '2026-11-28', 0)).toBe(false)
   })
 
+  it('期間の行は右上の印の分だけ狭い（印の付いた予定は、印の無い物なら入る幅でも日付だけ）', () => {
+    const locked = cal(span('t', '2026-11-28', '2026-12-02', { startTime: '10:00', endTime: '15:00', locked: true }))[0]
+    // 136px の期間: 145px なら入る（余裕 4px）が、ロックの印 16px の分を引くと入らない
+    expect(periodDatesOnly(timed, '2026-11-28', 145)).toBe(false)
+    expect(periodDatesOnly(locked, '2026-11-28', 145)).toBe(true)
+  })
+
   it('カードの字の幅: 7日を横は列 − 8px − 余白と丸 42px（土曜で縮む時はさらに 14px）、縦は半分 − レールと余白', () => {
     expect(horizontalCardTextPx(142)).toBe(92)
     expect(horizontalCardTextPx(142, true)).toBe(78)
     expect(horizontalCardTextPx(0)).toBe(0)
     expect(verticalCardTextPx(170, 3)).toBe(170 - 34 - 4 - 42)
     expect(verticalCardTextPx(170, 0)).toBe(170 - 4 - 4 - 42)
+  })
+
+  it('受けた表示の字の幅: 同じ大きさの始点のカードから、丸の代わりに枠 1px と左右の余白 8px（中に●の時は右 22px）', () => {
+    // 列 142px: カードの幅 134px − 枠 2px − 余白 16px
+    expect(receivedTextPx(horizontalCardTextPx(142))).toBe(116)
+    expect(receivedTextPx(horizontalCardTextPx(142), true)).toBe(102)
+    expect(receivedTextPx(0)).toBe(0)
   })
 })
 
@@ -336,5 +352,15 @@ describe('カードの並べ方（狭い列。開発）', () => {
   it('印のあるカードは件名に MIN_TITLE_PX を残す', () => {
     expect(cardLayout(MIN_TITLE_PX + 16, locked)).toBe('side')
     expect(cardLayout(MIN_TITLE_PX + 15, locked)).toBe('stacked')
+  })
+
+  it.each<[string, number, boolean, Item]>([
+    ['L の列（142px）・ロック', 92, false, locked],
+    ['L の列・AI の札（件名に 46px しか残らない）', 92, true, ai],
+    ['M の列（100px）・〆', 50, true, due],
+    ['M の列・印なし（下へ移す印が無い）', 50, false, plain],
+    ['幅が測れていない・AI の札', 0, false, ai],
+  ])('始点のカード・受けた表示の印を下の行に置くか: %s（字の幅 %spx）→ %s', (_, textPx, expected, item) => {
+    expect(laneMarksBelow(textPx, item)).toBe(expected)
   })
 })

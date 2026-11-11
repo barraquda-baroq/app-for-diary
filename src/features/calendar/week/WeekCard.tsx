@@ -9,7 +9,7 @@
 // 「押すと詳細」のボタン（字を包み、::after でカード全体に広げる）と、その上に重ねた点線の丸・AI の札（別のボタン）を並べる
 // （ボタンの中にボタンを入れない）。入れ物とその上の要素には transform・filter・contain を付けない（掴んだカードがずれる。G9）。
 // 受けた表示と＞は掴めない（押すと詳細だけ。CALENDAR-176）
-import { memo, useCallback } from 'react'
+import { memo, useCallback, type CSSProperties } from 'react'
 import type { CalItem } from '../../../domain/calendar'
 import { jaDateLabel, mdLabel } from '../../../domain/dates'
 import { ITEM_KIND_LABELS } from '../../../domain/trash'
@@ -30,7 +30,7 @@ import {
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import { useItemDrag, type DragHandle, type WeekCtx } from './dnd'
-import { cardLayout } from './weekModel'
+import { cardLayout, laneMarksBelow, marksPx, periodDatesOnly } from './weekModel'
 import './week.css'
 
 /** 掴む所と目立たせる所を1つの要素に付ける ref（目立たせるのは登録・ドラッグで移った予定。4.9） */
@@ -91,6 +91,9 @@ export const WeekCard = memo(function WeekCard({ c, week, textPx = 0 }: WeekCard
   )
 })
 
+/** 印を下の行の右に置く時の、期間の行の右のあき（印の幅。week.css の --wk-marks-w） */
+const marksGap = (item: Item): CSSProperties => ({ '--wk-marks-w': `${marksPx(item)}px` }) as CSSProperties
+
 export interface StartCardProps {
   c: CalItem
   week: WeekCtx
@@ -98,27 +101,39 @@ export interface StartCardProps {
   date: string
   /** 土曜に始まって次の週へ続く（7日を横は 14px 縮めて、あいた所に＞） */
   shrink?: boolean
-  /** 期間を日付だけにする（カードの幅に入らない時。10.2） */
-  datesOnly?: boolean
+  /**
+   * 点線の丸の横の字の幅（px。縮める時はその分も引いた幅）。期間を日付だけにするか（入らない時。10.2）と、印を件名の横に置くか
+   * 期間の行の右に置くかを決める（weekModel.ts の periodDatesOnly・laneMarksBelow）。測れていない時は 0
+   */
+  textPx?: number
 }
 
 /** 複数日の始点のカード（7.8・10.2。36px・件名 1行・下の行に期間。左の点線の丸で予定全体を完了） */
-export const StartCard = memo(function StartCard({ c, week, date, shrink = false, datesOnly = false }: StartCardProps) {
+export const StartCard = memo(function StartCard({ c, week, date, shrink = false, textPx = 0 }: StartCardProps) {
   const item = c.item
   const open = useOpenDetail(item.id)
   const { ref, drag } = useItemRef(item, 'start', week, true)
+  const low = laneMarksBelow(textPx, item)
   return (
     <div
       {...drag.grabProps}
       ref={ref}
-      className={cls('wk-card', 'is-start', shrink && 'is-shrink', item.done && 'is-done', drag.isDragging && 'is-dragging')}
+      className={cls(
+        'wk-card',
+        'is-start',
+        shrink && 'is-shrink',
+        low && 'is-marks-low',
+        item.done && 'is-done',
+        drag.isDragging && 'is-dragging',
+      )}
+      style={low ? marksGap(item) : undefined}
       {...itemAttrs(item)}
       data-testid={testIds.weekStart(item.id)}
     >
       <DoneToggle item={item} className="wk-done" />
       <button type="button" className="wk-open" onClick={open}>
         <ItemTitle item={item} lines={1} />
-        <ItemTime c={c} on={date} datesOnly={datesOnly} className="wk-period" />
+        <ItemTime c={c} on={date} datesOnly={periodDatesOnly(c, date, textPx)} className="wk-period" />
       </button>
       <ItemMarks item={item} className="wk-marks" />
     </div>
@@ -130,17 +145,19 @@ export interface ReceivedCardProps {
   week: WeekCtx
   /** 前の週から続いて日曜に終わる: 右の端の中に●（線は引かない。7.8） */
   dotIn?: boolean
+  /** 「‹ 件名」の字の幅（px。weekModel.ts の receivedTextPx。印を件名の横に置くか下の行に置くかを決める。測れていない時は 0） */
+  textPx?: number
 }
 
 /** 前の週から続いている物の受けた表示（7.8。地は透き通り・1px の点線の枠・「‹ 件名」12px・完了の丸なし。掴めない） */
-export const ReceivedCard = memo(function ReceivedCard({ c, week, dotIn = false }: ReceivedCardProps) {
+export const ReceivedCard = memo(function ReceivedCard({ c, week, dotIn = false, textPx = 0 }: ReceivedCardProps) {
   const item = c.item
   const open = useOpenDetail(item.id)
   const flashRef = useFlashTarget<HTMLDivElement>(flashKey.item(item.id))
   return (
     <div
       ref={flashRef}
-      className={cls('wk-recv', dotIn && 'has-dot', item.done && 'is-done')}
+      className={cls('wk-recv', dotIn && 'has-dot', laneMarksBelow(textPx, item) && 'is-marks-low', item.done && 'is-done')}
       {...itemAttrs(item)}
       data-testid={testIds.weekReceived(item.id)}
     >

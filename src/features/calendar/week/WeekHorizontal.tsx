@@ -17,7 +17,7 @@ import {
   horizontalCardTextPx,
   horizontalLine,
   laneTop,
-  periodDatesOnly,
+  receivedTextPx,
   weekHeadRows,
   type LaneSlot,
   type WeekDay,
@@ -97,7 +97,7 @@ function DayCell({ day, kind, week, columnPx, actions }: DayCellProps) {
   const slots = kind.slots[day.date] ?? []
   const singles = kind.singles[day.date] ?? []
   return (
-    <div ref={drop.ref} className={cls('wk-cell', day.off && 'is-off')} data-drop={drop.state}>
+    <div ref={drop.ref} className={cls('wk-cell', day.off && 'is-off')} data-date={day.date} data-drop={drop.state}>
       {kind.laneCount > 0 ? (
         <div className="wk-lanes" style={{ height: laneTop(kind.laneCount) }}>
           {slots.map((slot, i) => (
@@ -135,15 +135,16 @@ function LaneRow({ slot, date, week, columnPx }: LaneRowProps) {
     <div className={cls('wk-lane', c.item.done && 'is-done')} {...itemAttrs(c.item)} data-lane={lane.lane}>
       {line ? <span className={`wk-line is-${line}`} aria-hidden="true" /> : null}
       {part.card === 'start' ? (
-        <StartCard
+        <StartCard c={c} week={week} date={date} shrink={shrink} textPx={horizontalCardTextPx(columnPx, shrink)} />
+      ) : null}
+      {part.card === 'received' ? (
+        <ReceivedCard
           c={c}
           week={week}
-          date={date}
-          shrink={shrink}
-          datesOnly={periodDatesOnly(c, date, horizontalCardTextPx(columnPx, shrink))}
+          dotIn={part.dot === 'inCard'}
+          textPx={receivedTextPx(horizontalCardTextPx(columnPx), part.dot === 'inCard')}
         />
       ) : null}
-      {part.card === 'received' ? <ReceivedCard c={c} week={week} dotIn={part.dot === 'inCard'} /> : null}
       {part.dot === 'center' ? <EndDot c={c} week={week} /> : null}
       {part.arrow ? <EdgeArrow item={c.item} /> : null}
     </div>

@@ -313,6 +313,16 @@
   line-height: 1;
 }
 
+/* 7日を横の段の名札は、列の帯（縦の 1px の線・休みの地）の上に重なり、日曜の列より広い（「PRIVATE プライベート」は 142px の列にも
+   入らない）。列の線が字を横切らないよう、名札の字の幅だけに --surface の地を敷く（休みの日の上でも、丸いラベルと同じく --surface。
+   領域の地も --surface なので、線と休みの地の上でだけ見える。開発） */
+.wk-tier > .wk-tag {
+  align-self: flex-start;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
 .wk-tier-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -548,6 +558,15 @@
   .wk-card.is-start .wk-marks .cp-ai::after {
     inset: -5px -6px -13px;
   }
+
+  /* 印を下の行に置いた始点のカード・受けた表示（is-marks-low）は、札が下の端の近くにあるので上へ広げる（36px の中に収める） */
+  .wk-card.is-start.is-marks-low .wk-marks .cp-ai::after {
+    inset: -13px -6px -4px;
+  }
+
+  .wk-recv.is-marks-low .wk-marks .cp-ai::after {
+    inset: -14px -6px -2px;
+  }
 }
 
 /* 列が狭くて件名が細くなりすぎる時（weekModel.ts の cardLayout が stacked・marks-below）: 印は点線の丸の行の右の端に、件名と
@@ -627,6 +646,24 @@
   text-overflow: ellipsis;
 }
 
+/* 列が狭くて、印を件名の横に置くと件名が細くなりすぎる時（weekModel.ts の laneMarksBelow）: 件名は横の幅を全部使い、印は期間の行の
+   右の端に（期間はその分だけ右をあける。幅は WeekCard.tsx が --wk-marks-w に入れる。開発） */
+.wk-card.is-start.is-marks-low {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'open';
+}
+
+.wk-card.is-start.is-marks-low .wk-marks {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  margin: 0;
+}
+
+.wk-card.is-start.is-marks-low .wk-period {
+  padding-right: var(--wk-marks-w, 0px);
+}
+
 /* ---------- 受けた表示（7.8）: カードと同じ大きさ・地は透き通る・1px の点線の枠（線と同じ色）・「‹ 件名」12px・--text-muted・1行 ---------- */
 .wk-recv {
   position: relative;
@@ -653,6 +690,22 @@
 
 .wk-recv .wk-marks {
   margin-top: 0;
+}
+
+/* 列が狭くて、印を件名の横に置くと件名が細くなりすぎる時（laneMarksBelow）: 「‹ 件名」の下の行の右の端に印（開発） */
+.wk-recv.is-marks-low {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+}
+
+.wk-recv.is-marks-low .wk-open {
+  flex: none;
+}
+
+.wk-recv.is-marks-low .wk-marks {
+  align-self: flex-end;
 }
 
 /* 日曜に終わる時は右の端の中に●（線は引かない） */
