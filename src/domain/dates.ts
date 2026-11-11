@@ -21,8 +21,20 @@ export const MONTHS_EN = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'
 /** 2桁にそろえる（11.08 の 08 など） */
 export const pad2 = (n: number): string => String(n).padStart(2, '0')
 
-const toDate = (v: Ymd) => new Date(v.y, v.m - 1, v.d)
+/** 今の時刻の、端末の現地の暦の日付（今日・doneOn など「今」を暦の日付にする所だけで使う） */
 const fromDate = (date: Date): Ymd => ({ y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() })
+
+/**
+ * 暦の計算（月の日数・曜日・日を足す）に使う、その日の UTC の 0時。暦の日付は壁時計の値なので（6.4）、端末の時差に左右されない
+ * UTC で数える（端末の暦の Date では、日付変更線をまたいで飛んだ日（Pacific/Kiritimati の 1994-12-31 など）を作れず、
+ * 月の日数・曜日がずれる）。setUTCFullYear なので 0〜99年も 1900年代に読み替えない。d は 0 や月の日数より大きくてもよい（繰り上がる）
+ */
+function utcDay(y: number, m: number, d: number): Date {
+  const t = new Date(0)
+  t.setUTCFullYear(y, m - 1, d)
+  return t
+}
+const fromUtcDay = (t: Date): Ymd => ({ y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() })
 
 /** 今日（端末の現地の日付） */
 export function todayYmd(now: Date = new Date()): Ymd {
@@ -35,16 +47,16 @@ export function sameDay(a: Ymd, b: Ymd): boolean {
 
 /** その月の日数（うるう年の2月は 29） */
 export function daysInMonth(y: number, m: number): number {
-  return new Date(y, m, 0).getDate()
+  return utcDay(y, m + 1, 0).getUTCDate()
 }
 
 /** 曜日（0 = 日曜） */
 export function weekdayOf(v: Ymd): number {
-  return toDate(v).getDay()
+  return utcDay(v.y, v.m, v.d).getUTCDay()
 }
 
 export function addDays(v: Ymd, days: number): Ymd {
-  return fromDate(new Date(v.y, v.m - 1, v.d + days))
+  return fromUtcDay(utcDay(v.y, v.m, v.d + days))
 }
 
 /** その日を含む週（日曜始まり）の日曜 */
@@ -225,7 +237,7 @@ export function minutesToHm(min: number): string {
 export function daysBetween(from: string, to: string): number {
   const a = mustYmd(from)
   const b = mustYmd(to)
-  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000)
+  return Math.round((utcDay(b.y, b.m, b.d).getTime() - utcDay(a.y, a.m, a.d).getTime()) / 86_400_000)
 }
 
 /** from から to までの毎日（両端を含む。to が前なら空） */

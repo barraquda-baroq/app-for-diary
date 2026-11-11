@@ -264,6 +264,52 @@ describe('カレンダーの日付の範囲（段階2。7.1: 週は日曜始ま�
     }
   })
 
+  it('日付変更線をまたいで暦の日が飛んだ時差でも、暦の計算はずれない（壁時計の値。6.4）', () => {
+    // Pacific/Kiritimati は 1994-12-31 が、Pacific/Apia は 2011-12-30 が無い（端末の暦の Date ではその日を作れない）
+    vi.stubEnv('TZ', 'Pacific/Kiritimati')
+    try {
+      expect(new Date(1994, 11, 31).getDate()).toBe(1)
+      expect(daysInMonth(1994, 12)).toBe(31)
+      expect(isYmd('1994-12-31')).toBe(true)
+      expect(weekdayOfYmd('1994-12-31')).toBe(6)
+      expect(addDaysYmd('1994-12-30', 1)).toBe('1994-12-31')
+      expect(eachDate('1994-12-30', '1995-01-01')).toEqual(['1994-12-30', '1994-12-31', '1995-01-01'])
+      expect(monthRange('1994-12')).toEqual({ from: '1994-12-01', to: '1994-12-31' })
+      expect(jaDateLabel('1994-12-31')).toBe('12月31日（土）')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    vi.stubEnv('TZ', 'Pacific/Apia')
+    try {
+      expect(new Date(2011, 11, 30).getDate()).toBe(31)
+      expect(weekdayOfYmd('2011-12-30')).toBe(5)
+      expect(weekStartOf('2011-12-31')).toBe('2011-12-25')
+      expect(weekDates('2011-12-25')).toEqual([
+        '2011-12-25',
+        '2011-12-26',
+        '2011-12-27',
+        '2011-12-28',
+        '2011-12-29',
+        '2011-12-30',
+        '2011-12-31',
+      ])
+      expect(
+        monthWeeks(2011, 12)
+          .flat()
+          .filter((c) => !c.outside),
+      ).toHaveLength(31)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('0〜99年も西暦のまま数える（Date.UTC の 1900年代への読み替えをしない）', () => {
+    expect(daysBetween('0099-12-31', '0100-01-01')).toBe(1)
+    expect(daysInMonth(4, 2)).toBe(29)
+    expect(weekdayOfYmd('0001-01-01')).toBe(1)
+    expect(addDaysYmd('0099-12-31', 1)).toBe('0100-01-01')
+  })
+
   it('月と年の範囲（月の日数・うるう年）', () => {
     expect(monthRange('2026-11')).toEqual({ from: '2026-11-01', to: '2026-11-30' })
     expect(monthRange('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
