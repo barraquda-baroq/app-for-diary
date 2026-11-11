@@ -1,7 +1,8 @@
 // 暦の日付の計算（docs/SPEC.md の 2.9・6.4・7.1）。日付は端末の現地の暦の日付（壁時計の値。時差では動かさない）、
 // 週は日曜〜土曜、日の変わり目は端末の 0時。
 // 段階0は画面の枠（カレンダーの操作の列・空のマンスリーのマス目・ログインの画面の日付・今日の印）に要る分、
-// 段階1で 'YYYY-MM-DD'・'HH:MM'・'YYYY-MM' の文字の日付の道具と、無料枠の戻る時刻（2.8）を足した
+// 段階1で 'YYYY-MM-DD'・'HH:MM'・'YYYY-MM' の文字の日付の道具と、無料枠の戻る時刻（2.8）を足した。
+// 段階2でカレンダーの日付の範囲（週・月・年・毎日）と表記（「11/9」「11月10日（火）」「2026.11.10」・時刻の頭の 0 を落とす）を足した
 
 /** 暦の日付（端末の現地の日付。m は 1〜12） */
 export interface Ymd {
@@ -191,6 +192,90 @@ export function shortDateLabel(s: string): string {
   const v = parseYmd(s)
   if (!v) return s
   return `${v.m}/${v.d}（${WEEKDAYS_JA[weekdayOf(v)]}）`
+}
+
+// ---------- カレンダーの日付と時刻（段階2。docs/SPEC.md の 3.1・6.4・7.1・7.7・11.1・12.3） ----------
+// カレンダーの画面は日付を 'YYYY-MM-DD' の文字のまま扱う（Ymd は今日を求める所だけ。toYmd で1回だけ文字にする）
+
+/** 曜日の読み上げ（「日曜日」。7.1・4.12） */
+export const WEEKDAYS_JA_LONG = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'] as const
+
+/** 行き先（#/year/…）に使える年（3.1。外の年は今年へ直す）。祝日の表がある年（1970〜2050）とは別（src/domain/holidays.ts） */
+export const ROUTE_YEARS = { from: 1900, to: 2199 } as const
+
+/** 'YYYY-MM-DD' を読む（形が違えば投げる） */
+function mustYmd(s: string): Ymd {
+  const v = parseYmd(s)
+  if (!v) throw new Error(`日付の形が違います: ${s}`)
+  return v
+}
+
+/** 画面の時刻の表記（時の頭の 0 を落とす: '09:05' → '9:05'、'00:30' → '0:30'、'24:00' はそのまま。保存は 'HH:MM' のまま。7.7） */
+export function displayHm(hm: string): string {
+  return /^\d\d:\d\d$/.test(hm) && hm.startsWith('0') ? hm.slice(1) : hm
+}
+
+/** 分（0〜1440）を 'HH:MM' に（1440 は '24:00'。外の値は端にそろえ、端数は切り捨てる） */
+export function minutesToHm(min: number): string {
+  const m = Math.min(1440, Math.max(0, Math.floor(Number.isFinite(min) ? min : 0)))
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`
+}
+
+/** from から to までの日数（同じ日は 0、to が前なら負。時差・夏時間で狂わないよう暦の日付だけで数える） */
+export function daysBetween(from: string, to: string): number {
+  const a = mustYmd(from)
+  const b = mustYmd(to)
+  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000)
+}
+
+/** from から to までの毎日（両端を含む。to が前なら空） */
+export function eachDate(from: string, to: string): string[] {
+  const n = daysBetween(from, to)
+  const out: string[] = []
+  for (let i = 0; i <= n; i++) out.push(addDaysYmd(from, i))
+  return out
+}
+
+/** その日を含む週（日曜始まり）の日曜（'YYYY-MM-DD'。7.1） */
+export function weekStartOf(date: string): string {
+  return toYmd(weekStart(mustYmd(date)))
+}
+
+/** 日曜から土曜までの7日（年をまたぐ週も 2026-12-27〜2027-01-02 のように続く） */
+export function weekDates(sunday: string): string[] {
+  return eachDate(sunday, addDaysYmd(sunday, 6))
+}
+
+/** 月（'YYYY-MM'）の初めの日と最後の日 */
+export function monthRange(ym: string): { from: string; to: string } {
+  if (!isMonth(ym)) throw new Error(`月の形が違います: ${ym}`)
+  const y = Number(ym.slice(0, 4))
+  const m = Number(ym.slice(5, 7))
+  return { from: `${ym}-01`, to: `${ym}-${pad2(daysInMonth(y, m))}` }
+}
+
+/** 年の 1月1日と 12月31日 */
+export function yearRange(y: number): { from: string; to: string } {
+  const yy = String(y).padStart(4, '0')
+  return { from: `${yy}-01-01`, to: `${yy}-12-31` }
+}
+
+/** 月日の表記「11/9」（0 で埋めない。期間の表記・ウィークリーの見出し。7.7） */
+export function mdLabel(date: string): string {
+  const v = mustYmd(date)
+  return `${v.m}/${v.d}`
+}
+
+/** 日本語の文の中の日付「11月10日（火）」（詳細の日付・マスの読み上げ。4.4・4.12） */
+export function jaDateLabel(date: string): string {
+  const v = mustYmd(date)
+  return `${v.m}月${v.d}日（${WEEKDAYS_JA[weekdayOf(v)]}）`
+}
+
+/** 点で区切った日付「2026.11.10」（デイリーの日の見出し。11.1） */
+export function dottedDate(date: string): string {
+  const v = mustYmd(date)
+  return `${String(v.y).padStart(4, '0')}.${pad2(v.m)}.${pad2(v.d)}`
 }
 
 // ---------- 無料枠の戻る時刻（2.8・18.4） ----------
