@@ -8,6 +8,7 @@ export const testIds = {
   // ----- 段階0からある物（操作の列。common/CalendarToolbar.tsx。段階0の src/features/top/CalendarArea.tsx から移した） -----
   calendar: 'calendar',
   calendarBody: 'calendar-body',
+  calendarMonth: 'calendar-month',
   calendarToolbar: 'calendar-toolbar',
   calPeriod: 'cal-period',
   calNumeral: 'cal-numeral',

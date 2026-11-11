@@ -49,7 +49,7 @@ export function MonthView({ viewed, today, width }: ViewProps) {
       {offMode && <OffModeBanner onEnd={() => setOffMode(false)} />}
       <div
         className={cls('mo-month', compact && 'is-compact', offMode && 'is-off')}
-        data-testid="calendar-month"
+        data-testid={testIds.calendarMonth}
         data-rows={weeks.length}
       >
         <div className="mo-head" aria-hidden="true">
