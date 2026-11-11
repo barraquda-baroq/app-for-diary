@@ -1,0 +1,602 @@
+/* デイリー（src/features/calendar/day/*。docs/SPEC.md の 11.・4.3〜4.9・7.3・7.4・7.7〜7.9）。クラスは .dy- で始める。
+   色は src/styles.css の変数だけを使う（画面で色を足さない）。区分の色は data-kind の --kind-*、ラベルの色は data-label の --label。
+   目立たせる所（区切り .dy-area・予定の枠 .dy-event・.dy-start。4.9）には outline・animation を付けない（.flash の枠が隠れる）。
+   フォーカスの枠は「押すと詳細」のボタンの ::after（枠全体に広げた所）に出す */
+
+/* ===== 画面の全体: いちばん上に日の見出し、その下にリストとタイムスケジュール（11.1） ===== */
+.dy {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ===== 日の見出し（高さ 40px。曜日の丸いラベル＋等幅の日付＋祝日名＋「休」。休みの日はこの行だけ --off-fill（.cp-offday。D40）） ===== */
+.dy-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  height: 40px;
+  margin: 8px 0;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.dy-date {
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* 祝日名は見出しの行の中（日付の右）。入らない時は「…」（D21） */
+.dy-holiday {
+  flex: 0 1 auto;
+}
+
+/* ===== リスト（左）とタイムスケジュール（右）を 4:6、間 16px（L・M。11.1） ===== */
+.dy-main {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+  gap: 16px;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* 左のリスト: 上下に半分ずつ、上＝仕事・下＝プライベートの区切り。それぞれの中だけでスクロールする */
+.dy-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* ===== 時間指定なしのリストの区切り（11.2）: 区切りの地そのものに区分の色を淡く敷く（見出しから下の端まで、行のすき間と
+   「＋ 予定を足す」の行も含めて。行には付けない）。ディープダークは地が --surface（styles.css）で、2つの区切りの間に 1px の --rule-strong ===== */
+.dy-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  background: var(--kind-area);
+}
+
+:root[data-theme='deep-dark'] .dy-area + .dy-area {
+  border-top: 1px solid var(--rule-strong);
+}
+
+/* ディープダークは区切りの地が面と同じなので、リストの外側に罫線を引いて、タイムスケジュールと同じ囲みにする */
+:root[data-theme='deep-dark'] .dy-list {
+  border: 1px solid var(--rule);
+}
+
+/* 見出し（高さ 28px）: アイコン＋等幅の「WORK」／「PRIVATE」＋「仕事」／「プライベート」＋まだ完了していない数 */
+.dy-area-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  min-width: 0;
+}
+
+.icon.dy-area-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--kind-text);
+}
+
+.dy-area-en {
+  color: var(--kind-text);
+}
+
+.dy-area-ja {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.dy-count {
+  margin-left: 2px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.dy-area-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dy-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 行（高さ 40px 以上・下に 1px の --rule）: 行頭の●（押せる所 40px）→ 件名（14px・2行まで）→ 印 → 複数日の右の端の表記。
+   ●・印・右の端は件名の1行目の高さにそろえる。行には区分の色の帯やハイライトを付けない（X2） */
+.dy-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 40px;
+  padding-right: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.dy-row-dot {
+  position: relative;
+  z-index: 1;
+}
+
+/* 「押すと詳細」のボタン（件名を包み、::after で行・枠の全体に広げる。●・AI の札はその上に重ねた別のボタン。D19） */
+.dy-open {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dy-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.dy-open:focus {
+  outline: none;
+}
+
+.dy-open:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.dy-row-open {
+  flex: 1 1 auto;
+  padding: 10px 0;
+}
+
+/* 件名（ui 14px・400・行の高さ 1.45・2行まで。4.7・11.2） */
+.dy-row-title {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+/* 印（〆・ロック・AI の札）。押せるのは AI の札だけで、ほかの所を押すと詳細（::after へ通す） */
+.dy-row-marks {
+  position: relative;
+  z-index: 1;
+  margin-top: 14px;
+  pointer-events: none;
+}
+
+.dy-row-marks .cp-ai,
+.dy-ev-marks .cp-ai {
+  pointer-events: auto;
+}
+
+/* 複数日の右の端（等幅 11px）: 「━＞」「━●」は線の色（ラベルの色、無ければ土台の色。完了は --done-text）、「〜11/11」は --text-muted */
+.dy-tail {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: none;
+  margin-top: 13px;
+}
+
+.dy-tail-mark {
+  color: var(--kind-line);
+}
+
+.dy-row[data-label] .dy-tail-mark {
+  color: var(--label);
+}
+
+.dy-row.is-done .dy-tail-mark {
+  color: var(--done-text);
+}
+
+.dy-tail-range {
+  color: var(--text-muted);
+}
+
+/* 完了した行は字を --done-text に（件名は部品が付ける。右の端の期間・印も件名と同じ色にし、件名より濃く残さない。7.9） */
+.dy-row.is-done .dy-tail-range,
+.dy-row.is-done .cp-marks {
+  color: var(--done-text);
+}
+
+/* 「＋ 予定を足す」の行（各区切りのいちばん下。押すとすばやく足す。12.1） */
+.dy-add {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 8px 0 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-hover);
+}
+
+.icon.dy-add-icon {
+  width: 14px;
+  height: 14px;
+  margin: 0 13px;
+}
+
+.dy-add:hover {
+  color: var(--text);
+}
+
+.dy-add:focus {
+  outline: none;
+}
+
+.dy-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ===== タイムスケジュール（右。11.3）: その中だけでスクロールする。0:00〜24:00（1時間 --hour-px） ===== */
+.dy-timeline {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.dy-tl-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dy-tl-inner {
+  position: relative;
+  display: flex;
+  height: calc(var(--day-px) + var(--tail-px));
+}
+
+/* 左の時刻の欄（幅 48px・等幅 11px・--text-faint。「0:00」〜「23:00」を各時間の上の端に） */
+.dy-axis {
+  position: relative;
+  flex: none;
+  width: 48px;
+}
+
+.dy-axis-label {
+  position: absolute;
+  right: 8px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.dy-events {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 時間の縞（偶数の時 --surface、奇数の時 --stripe）。各時間の上に 1px の --rule、12:00 は 1px の点線、0:00 は 2px（--rule-strong）。
+   24:00 の下の端にも 1px の --rule */
+.dy-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--day-px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.dy-hour {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--hour-px);
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.dy-hour.is-odd {
+  background: var(--stripe);
+}
+
+.dy-hour.is-noon {
+  border-top: 1px dashed var(--rule-strong);
+}
+
+.dy-hour.is-day-start {
+  border-top: 2px solid var(--rule-strong);
+}
+
+/* ===== 予定の枠と、日をまたぐ予定の部分の位置: 列の数で等分（右に 8px の空きを残し、空いた時間を押せるようにする。列の間は 2px） ===== */
+.dy-event,
+.dy-piece {
+  position: absolute;
+  left: calc((100% - 8px) * var(--col) / var(--cols) + 2px);
+  width: calc((100% - 8px) / var(--cols) - 2px);
+}
+
+/* 予定の枠（1日の予定・日をまたぐ予定の開始のカード）: 地は --surface（区分で変えない）、1px の --border、ラベルの左の一辺 4px
+   （.label-edge）、角丸 6px、余白 上下 4px・左 10px（左上の点線の丸の分を足す）・右 6px */
+.dy-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 6px 4px 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.dy-box.no-ring {
+  padding-left: 10px;
+}
+
+/* 完了（7.9）: 地 --done-bg（ハイライトは部品が付けない・斜線・字 --done-text・ラベルの一辺は残す）。時刻・印の字も件名と同じ
+   --done-text にする（--text-muted のままだと、斜線の件名より時刻の方が濃く見える。ウィークリーのカードと同じ） */
+.dy-box.is-done {
+  background: var(--done-bg);
+}
+
+.dy-box.is-done .cp-time,
+.dy-box.is-done .cp-marks {
+  color: var(--done-text);
+}
+
+/* 左上の点線の丸（16px。押せる所 24px。押すと完了） */
+.dy-ring {
+  position: absolute;
+  top: 0;
+  left: 5px;
+  z-index: 1;
+}
+
+.dy-ev-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1 1 auto;
+}
+
+/* 件名（12px・500。入るだけの行。後ろに区分の色のハイライト .kind-marker） */
+.dy-ev-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--lines, 1);
+  line-clamp: var(--lines, 1);
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.dy-ev-time {
+  line-height: 14px;
+}
+
+/* 印（区分のアイコン 12px → 〆 → ロック → AI の札。右上）。押せるのは AI の札だけ */
+.dy-ev-marks {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 16px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* 低い枠（2行が入らない）: 件名（1行）と時刻を横に並べる */
+.dy-box.is-compact .dy-ev-open {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.dy-box.is-compact .dy-ev-title {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  line-height: 14px;
+}
+
+/* 幅が足りない時は時刻の方から切る（件名を先に見せる） */
+.dy-box.is-compact .dy-ev-time {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dy-box.is-compact .dy-ev-marks {
+  height: 14px;
+}
+
+/* ===== 日をまたぐ予定のその日の部分（11.3・7.8）: 部分の入れ物は押せない（線の横の空いた時間を押せるように）。
+   開始のカードは部分が見えている間、見えている範囲のいちばん上に貼り付く（sticky）。線はカードの下を通る ===== */
+.dy-piece {
+  pointer-events: none;
+}
+
+.dy-start {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+/* カードの下から部分の終わりまでの 2px の線（ラベルの色、無ければ土台の色。完了は --done-text）。点線の丸の真下に */
+.dy-span-line {
+  position: absolute;
+  left: 17px;
+  bottom: 5px;
+  width: var(--span-w);
+  background: var(--kind-line);
+}
+
+.dy-span-line.to-arrow {
+  bottom: 8px;
+}
+
+.dy-piece[data-label] .dy-span-line {
+  background: var(--label);
+}
+
+.dy-piece.is-done .dy-span-line {
+  background: var(--done-text);
+}
+
+/* 部分の終わりの印: 最終日は●（10px）、ほかの日は 24:00 の所に下向きの矢印（「＞」を 90度回した物。等幅 12px） */
+.dy-span-end {
+  position: absolute;
+  left: 12px;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  width: 12px;
+}
+
+.dy-end-arrow {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 12px;
+  rotate: 90deg;
+  color: var(--kind-line);
+}
+
+[data-label] .dy-end-arrow {
+  color: var(--label);
+}
+
+.is-done .dy-end-arrow {
+  color: var(--done-text);
+}
+
+/* ===== 「+n」の札（列に入らない予定。等幅 11px。最後の列の右端に、隠れた予定のいちばん早い時刻の高さで重ねる。AMB-ITEMS-13） ===== */
+.dy-more {
+  position: absolute;
+  right: 12px;
+  z-index: 3;
+  min-width: 26px;
+  height: 18px;
+  margin: 3px 0 0;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.dy-more:hover {
+  color: var(--text);
+}
+
+.dy-more:focus {
+  outline: none;
+}
+
+.dy-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ===== 今の時刻の線（今日だけ。2px の --accent の横線と、時刻の欄の端に直径 8px の丸。7.3・11.3） ===== */
+.dy-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.dy-now::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ===== S（幅の区分。11.1）: 上にリスト（仕事 → プライベートを積む。高さは中身に合わせ、日の見出しより下の高さの 45% まで。
+   超えたらその中でスクロール）、下にタイムスケジュール（残りの高さ） ===== */
+.dy.is-stacked .dy-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dy.is-stacked .dy-list {
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dy.is-stacked .dy-area {
+  flex: none;
+}
+
+.dy.is-stacked .dy-area-body {
+  overflow: visible;
+}
+
+.dy.is-stacked .dy-timeline {
+  flex: 1 1 0;
+}
