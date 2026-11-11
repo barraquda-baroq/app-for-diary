@@ -173,11 +173,28 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     // 浮く: 1.03倍・不透明度 0.95・--shadow-lift（0 6px 20px）（FRAME-229・CALENDAR-162）
     expect(lifted).toMatchObject({ dragging: 'true', scale: '1.03', opacity: '0.95' })
     expect(lifted.shadow).toMatch(/0px 6px 20px/)
-    // 落とせる日の地は --accent-soft・1px の --accent の線（上にある日は実線、ほかは点線）
-    const outline = (l: Locator) => l.evaluate((e) => `${getComputedStyle(e).outlineStyle} ${getComputedStyle(e).outlineWidth}`)
-    expect(await outline(target)).toBe('solid 1px')
-    expect(await outline(cellL(page, 'work', '2026-11-13'))).toBe('dashed 1px')
-    expect(await outline(cellL(page, 'private', '2026-11-13'))).toMatch(/^none/)
+    // 落とせる日の地は --accent-soft・--accent の枠（ほかの落とせる日は 1px の点線、今その上にある日ははっきり分かるよう 2px の線。開発）
+    const outline = (l: Locator) =>
+      l.evaluate((e) => {
+        const cs = getComputedStyle(e)
+        return { look: `${cs.outlineStyle} ${cs.outlineWidth}`, color: cs.outlineColor, ground: cs.backgroundColor }
+      })
+    const hovered = await outline(target)
+    const other = await outline(cellL(page, 'work', '2026-11-13'))
+    expect(hovered.look).toBe('solid 2px')
+    expect(other.look).toBe('dashed 1px')
+    const accent = await page.evaluate(() => {
+      const probe = document.createElement('div')
+      probe.style.color = 'var(--accent)'
+      document.body.appendChild(probe)
+      const c = getComputedStyle(probe).color
+      probe.remove()
+      return c
+    })
+    expect(hovered.color).toBe(accent)
+    expect(other.color).toBe(accent)
+    expect(hovered.ground).toBe(other.ground)
+    expect((await outline(cellL(page, 'private', '2026-11-13'))).look).toMatch(/^none/)
     await drag.drop()
 
     await expect(target.getByTestId(`week-card-${I.meeting}`)).toBeVisible()

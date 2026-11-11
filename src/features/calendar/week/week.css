@@ -385,7 +385,10 @@
   padding: 0 4px;
 }
 
-/* 落とせる日（ドラッグの間。地を --accent-soft にして 1px の --accent の点線の枠、今その上にある日は線の枠。7.11・D25） */
+/*
+ * 落とせる日（ドラッグの間。地を --accent-soft にして 1px の --accent の点線の枠。7.11・D25）。今その上にある日は、ほかの落とせる日と
+ * はっきり分かるよう 2px の --accent の線の枠（開発）。枠は列の内側に描く（隣の列・段に掛けない）
+ */
 .wk-cell[data-drop='ok'],
 .wk-cell[data-drop='hover'],
 .wk-half[data-drop='ok'],
@@ -397,7 +400,8 @@
 
 .wk-cell[data-drop='hover'],
 .wk-half[data-drop='hover'] {
-  outline-style: solid;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* ---------- 線（2px・レーンのカードの高さの真ん中 18px。7.8・D42） ---------- */
