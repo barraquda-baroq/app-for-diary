@@ -22,8 +22,9 @@ export function collectDiagnosticsOnFailure(): void {
   }
   const logs = new WeakMap<Page, Rec>()
   test.beforeEach(async ({ page }) => {
-    // CI の WebKit の落ち方を調べる時だけ（.github/workflows/ci.yml の webkit-diag。E2E_LAUNCH_RENDERER=page）: 起動アニメーションを
-    // Worker ではなくページの中で描かせる（OffscreenCanvas の無いブラウザと同じにする。e2e/launch.spec.ts の「ページの中で描く時」と同じ）
+    // E2E_LAUNCH_RENDERER=page の時（CI の iPhone の WebKit と、その見比べの webkit-diag。.github/workflows/ci.yml）: 起動アニメーションを
+    // Worker ではなくページの中で描かせる（OffscreenCanvas の無いブラウザと同じにする。e2e/launch.spec.ts の「ページの中で描く時」と同じ）。
+    // CI の WebKit（Linux 版）は、Worker で描いた絵を画面に渡す所で時々ページごと落ちるため（docs/SPEC.md の 2.10）
     if (process.env.E2E_LAUNCH_RENDERER === 'page') {
       await page.addInitScript(() => {
         delete (window as { OffscreenCanvas?: unknown }).OffscreenCanvas

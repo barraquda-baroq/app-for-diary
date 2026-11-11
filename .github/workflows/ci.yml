@@ -64,12 +64,17 @@ jobs:
           E2E_PREVIEW: '1'
       # iPhone 14（WebKit。iOS の Chrome も Safari も中身は WebKit）。CI の WebKit はソフトウェアの描画でとても重く、
       # 2つを同時に流すと CPU を取り合ってアプリの起動が大きく遅れることがあるので、1つずつ流す（playwright.config.ts の iphone）。
-      # Chromium の E2E が落ちても流す。前の段で止まってブラウザを入れていない時は流さない（WebKit が無いという誤りで埋まらないように）
+      # Chromium の E2E が落ちても流す。前の段で止まってブラウザを入れていない時は流さない（WebKit が無いという誤りで埋まらないように）。
+      # E2E_LAUNCH_RENDERER=page: 起動アニメーションを Worker ではなくページの中で描かせる（テストの中だけ。e2e/helpers.ts）。
+      # CI の WebKit（Linux 版）は、Worker で描いた絵を画面に渡す所で時々ページごと落ちる（webkit-diag で 12回ずつ流して、Worker は
+      # 24回中 6回落ち、ページの中は 24回とも通った）。作者の iPhone では Worker で描いても問題が無く、Worker の道筋は Chromium の
+      # E2E で確かめている（docs/SPEC.md の 2.10）
       - name: E2E テスト（iPhone の WebKit）
         if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
         run: npm run test:e2e -- --project=iphone --workers=1
         env:
           E2E_WEBKIT: '1'
+          E2E_LAUNCH_RENDERER: page
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

@@ -77,9 +77,10 @@ export default defineConfig({
     },
     // iPhone と同じ WebKit。WebKit を入れた所（CI）だけで動かす: npx playwright install webkit のあと E2E_WEBKIT=1。
     // 流すのは @ios の印を付けたテストだけ（段階0の起動アニメーション・通しの確かめと、段階2で1つずつ足す物。15 まで）。
-    // CI の WebKit はソフトウェアの描画でとても重く、CI の機械が遅い回には、起動アニメーションの途中でページが落ちる（Target crashed）・
-    // 期限までに消えないことが時々ある（同じコミットでも、ほかの回では通る）。その時だけ1回やり直す。やり直して通ったテストは、
-    // 一覧の最後に flaky として名前が出るので隠れない。毎回落ちる物は、やり直しても落ちる
+    // CI の WebKit（Linux 版）は、起動アニメーションを Worker で描くと、その絵を画面に渡す所で時々ページごと落ちる（Target crashed）・
+    // 固まる。CI では起動アニメーションをページの中で描かせて流す（E2E_LAUNCH_RENDERER=page。.github/workflows/ci.yml・e2e/helpers.ts）。
+    // それでも CI の WebKit はソフトウェアの描画でとても重いので、落ちた時だけ1回やり直す。やり直して通ったテストは、一覧の最後に
+    // flaky として名前が出るので隠れない。毎回落ちる物は、やり直しても落ちる
     ...(process.env.E2E_WEBKIT
       ? [
           {
