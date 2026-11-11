@@ -1,0 +1,307 @@
+/* ===== マンスリー（docs/SPEC.md の 9.・4.4・4.5・4.7・4.8・7.1〜7.4）。クラスは .mo- で始める =====
+   色は src/styles.css の変数だけを使う（画面で色を足さない）。カレンダーには影を付けない（今日の輪は .today-mark の線）。
+   マスには段階0からある .cal-cell も付ける（e2e/frame.spec.ts・e2e/helpers.spec.ts が探す。段階0の仮の絵の CSS
+   src/features/top/top.css の .cal-cell も同じ値なので、どちらが後でも見た目は変わらない）。
+   休みの地（.cp-offday）・祝日名（.cp-holiday）・「休」（.cp-off）・今日の印（.today-mark）は共通の物を使い、ここでは大きさと置き場所だけ */
+
+/* 画面の箱: 休みを付ける状態の帯 → マス目。L はカレンダーの領域の高さいっぱい（帯の分はマス目が縮む） */
+.mo {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.mo-month {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.mo-head,
+.mo-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+/* ---------- 曜日の行（等幅 11px・500・大文字は .caps。日曜は --sun、土曜は --sat。左寄せで左の余白 8px。丸いラベルにしない） ---------- */
+.mo-head {
+  padding: 12px 0 6px;
+}
+
+.mo-weekday {
+  padding-left: 8px;
+  color: var(--text-muted);
+}
+
+.mo-weekday[data-tone='sun'] {
+  color: var(--sun);
+}
+
+.mo-weekday[data-tone='sat'] {
+  color: var(--sat);
+}
+
+/* ---------- マス目: L は max(88px, (領域の高さ − 曜日の行) ÷ 行の数)、M は 88px、S は 56px 以上（9.1・D15） ---------- */
+.mo-grid {
+  flex: 1 1 auto;
+  grid-auto-rows: minmax(88px, 1fr);
+}
+
+.mo-month.is-compact .mo-grid {
+  grid-auto-rows: minmax(56px, auto);
+}
+
+/* マス: 上に 2px の --rule-strong、左に 1px の --rule（いちばん左の列を除く）。中の余白は上下 6px・左右 8px（9.1・4.4-3） */
+.mo-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 8px;
+  border-top: 2px solid var(--rule-strong);
+  transition: background-color var(--dur-hover);
+}
+
+.mo-cell:not(:nth-child(7n + 1)) {
+  border-left: 1px solid var(--rule);
+}
+
+/* PC はマスに乗せると地を --surface-2 に（9.3）。休みの日の地（--off-fill）は乗せても替えない（休みかどうかが分からなくならないように） */
+@media (hover: hover) {
+  .mo-cell:not(.cp-offday):hover {
+    background: var(--surface-2);
+  }
+}
+
+/* マスいっぱいのボタン（押すとデイリーへ・前後の月へ・休みを付ける・外す）。中身はこの上に重ね、押すのはこのボタンが受ける */
+.mo-hit {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mo-hit:focus-visible {
+  outline-offset: -2px;
+}
+
+.mo-top,
+.mo-counts {
+  position: relative;
+  pointer-events: none;
+}
+
+/* ---------- 左上: 日付（等幅 13px・400・行の高さ 1。S は 12px）と「休」。右上（L・M）: 祝日名（9.2・4.7） ---------- */
+.mo-top {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mo-date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text);
+}
+
+.mo-cell[data-tone='sun'] .mo-date {
+  color: var(--sun);
+}
+
+.mo-cell[data-tone='sat'] .mo-date {
+  color: var(--sat);
+}
+
+/* 前後の月の日は日付だけを --numeral で（不透明度は使わない。4.5 の例外・D06） */
+.mo-cell[data-outside] .mo-date {
+  color: var(--numeral);
+}
+
+/* 今日は日付を直径 22px の丸に入れ、太さ 600（7.3。地・字・輪は src/styles.css の .today-mark） */
+.mo-date.today-mark {
+  width: 22px;
+  height: 22px;
+  margin: -4px 0 -4px -5px;
+  border-radius: var(--radius-pill);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+/* 祝日名: 1行でマスの幅の 60% まで、はみ出す分は「…」（10px・--sun・1行は .cp-holiday） */
+.mo-top .mo-holiday {
+  margin-left: auto;
+  max-width: 60%;
+}
+
+/* ---------- 下の真ん中: 件数（L・M「4 / 3」等幅 22px、S「4/3」等幅 14px・空白なし。9.2・4.7） ----------
+   件数の行はマスの左右の余白まで広げ（狭い S でも「12/10」が入るように）、字の大きさはその行の幅で決める（container の単位。
+   L・M 22 → 16px、S 14 → 11px。D27）。行を左右半分ずつに分け、「/」をマスの真ん中に置いて、仕事の数はその左、プライベートの数は
+   その右に寄せる（どのマスでも「/」が縦にそろう。L・M の数字のボタンは、それぞれの半分の中で押せる所を 34px 四方を目安に取る）。
+   半分の幅は中身で広げない（minmax(0, 1fr)。広がると「/」が真ん中からずれる） */
+.mo-counts {
+  --mo-half-sep: 0.45em;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  margin: auto -8px 0;
+  container-type: inline-size;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mo-count,
+.mo-sep {
+  font-size: clamp(16px, calc((100cqi - 8px) / 4.2), 22px);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.mo-count {
+  display: inline-flex;
+  align-items: center;
+  min-width: min(var(--tap), 100%);
+  height: var(--tap);
+  padding: 0;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.mo-count.is-work {
+  justify-self: end;
+  justify-content: flex-end;
+  padding-right: var(--mo-half-sep);
+  color: var(--work-text);
+}
+
+.mo-count.is-private {
+  justify-self: start;
+  justify-content: flex-start;
+  padding-left: var(--mo-half-sep);
+  color: var(--private-text);
+}
+
+/* 片方が 0 の時の「0」は飾りとして --numeral（4.5 の例外。押すとその区分を目立たせてデイリーへ。D29） */
+.mo-count.is-zero {
+  color: var(--numeral);
+}
+
+/* 「99+」（3文字。7.6）のあるマス（.is-wide）は、半分の幅に「99+」と「/」までの間が入る大きさまで字を小さくする
+   （等幅の字の幅は 0.61em ほど。L・M は 3 × 0.61 + 0.45 ≒ 2.3em が半分に入るよう 22 → 14px。幅 600px で 16px） */
+.mo-counts.is-wide .mo-count,
+.mo-counts.is-wide .mo-sep {
+  font-size: clamp(14px, calc((100cqi - 4px) / 4.5), 22px);
+}
+
+/* 「/」はマスの真ん中（--text-faint） */
+.mo-sep {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  color: var(--text-faint);
+}
+
+/* 数字のボタン（L・M。マスのボタンの上に重ね、自分で押されるのを受ける） */
+button.mo-count {
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.mo-count:focus-visible {
+  outline-offset: -2px;
+}
+
+/* S: 「4/3」（等幅 14px・空白なし。マスの幅が狭い時は 11px まで小さく）。数字はボタンにしない（マスのどこを押してもデイリーへ） */
+.mo-month.is-compact .mo-counts {
+  --mo-half-sep: 0.3em;
+}
+
+.mo-month.is-compact .mo-count,
+.mo-month.is-compact .mo-sep {
+  font-size: clamp(11px, calc((100cqi - 2px) / 3), 14px);
+}
+
+.mo-month.is-compact .mo-count {
+  min-width: 0;
+  height: auto;
+}
+
+/* S の「99+」のマス: 3 × 0.61 + 0.3 ≒ 2.1em が半分に入るよう 14px から小さくする（幅 360px で 10px、390px で 11px ほど。ほかの
+   マスの下限 11px より小さくなるのは、100件を超える日だけ。D27 に足す 開発 の決まり） */
+.mo-month.is-compact .mo-counts.is-wide .mo-count,
+.mo-month.is-compact .mo-counts.is-wide .mo-sep {
+  font-size: clamp(9px, calc((100cqi - 2px) / 4.2), 14px);
+}
+
+.mo-month.is-compact .mo-date {
+  font-size: 12px;
+}
+
+/* ---------- 休みを付ける状態（9.5）: マスの枠を 1px の点線（--accent）にして、押せることを示す ----------
+   マスの中身（日付・件数）より先に描き、狭い S で件数が枠に掛かっても字が上に出るようにする */
+.mo-month.is-off .mo-cell::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px dotted var(--accent);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+.mo-month.is-off.is-compact .mo-cell::before {
+  inset: 2px;
+}
+
+/* 帯（操作の列のすぐ下。地 --accent-soft・字 --accent-strong・高さ 36px）。カレンダーの領域の端から端まで（.cal-body の左右の余白の分を
+   はみ出させる）。L でマス目がスクロールしても見えるよう、上に留める。
+   高さは、指で操作する端末・M・S で 34px になる［終わる］（.btn-sm）と、S で2行に折り返す文（13px × 1.3 × 2）が、上下 1px の余白で
+   36px に入るようにする */
+.mo-banner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 36px;
+  margin: 0 -16px;
+  padding: 1px 16px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.mo-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.mo-banner-end {
+  flex: none;
+}
+
+/* S（599px まで）: .cal-body の左右の余白は 8px（src/features/calendar/common/frame.css） */
+@media (max-width: 599px) {
+  .mo-banner {
+    margin: 0 -8px;
+    padding: 1px 8px;
+  }
+}
