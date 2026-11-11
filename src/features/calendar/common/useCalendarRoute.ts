@@ -1,16 +1,25 @@
 // カレンダーの行き先と見ている日のフック（docs/SPEC.md の 3.1・3.7・6.13・7.12。D02・D05・D30）。
 // - useCalendarRoute: 今の行き先からモード・期間・見ている日・今日を決め、正しくない行き先（トップ #/ を含む）を描く前に
 //   置き換える。行き先が決めた見ている日を覚え（モードを替えた時に引き継ぐ）、描いたモードを lastMode に書く。CalendarView だけが呼ぶ
-// - useCalendarNav: モードの切り替え（積む）・［‹］［›］・［今日］・スワイプ（置き換える）・7.12 の行き来（積む）。どの部品からも呼べる
+// - useCalendarNav: モードの切り替え（積む）・［‹］［›］・［今日］・スワイプ（置き換える）・7.12 の行き来（モードが替われば積み、
+//   マンスリーの前後の月の日のように同じモードの中で期間を移るだけなら置き換える）。どの部品からも呼べる
 // 行き先を読む・直す決まりそのものは calendarRoute.ts（純粋な関数）
-import { useLayoutEffect, useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { todayStr, toYmd } from '../../../domain/dates'
 import type { ItemKind } from '../../../domain/types'
 import { calendarPath, paths } from '../../../routes'
 import { useCalendarUi, usePrefs } from '../../../store/uiStore'
 import { useToday } from '../../../ui/hooks'
-import { isRoutable, parseCalendarPath, resolveViewed, shiftViewed, type ParsedCalendarPath } from './calendarRoute'
+import {
+  clampToRouteYears,
+  isRoutable,
+  parseCalendarPath,
+  resolveViewed,
+  shiftViewed,
+  type ParsedCalendarPath,
+} from './calendarRoute'
+import { useCurrentLocation } from './sheets'
 import type { CalendarMode } from './types'
 
 /** 今の行き先のカレンダー（日付はどれも 'YYYY-MM-DD'） */
@@ -41,6 +50,7 @@ function viewedOf(parsed: ParsedCalendarPath, remembered: string | null, today: 
  *   描く前に置き換える（useLayoutEffect。置き換える前から置き換えた先と同じ物を描くので、トップの絵がちらつかない。FRAME-001・017・018）
  * - 行き先が決めた見ている日を覚える（モードを替えても引き継ぐ。FRAME-071。ほかの時は useCalendarNav が移る前に覚える）
  * - 描いたモードが lastMode と違えば書く（行き先を直接開いた・「戻る」で戻った時も。FRAME-261）
+ * - 0時を過ぎて今日が変わっても、見ている日は変えない（今日の印だけが移る。FRAME-277・CALENDAR-029）
  */
 export function useCalendarRoute(): CalendarRoute {
   const location = useLocation()
@@ -68,6 +78,24 @@ export function useCalendarRoute(): CalendarRoute {
     if (parsed.mode !== usePrefs.getState().lastMode) setPrefs({ lastMode: parsed.mode })
   }, [parsed.mode])
 
+  // 0時を過ぎて今日が変わった時、行き先が日を決めない月・年・日曜の週で、覚えている日が期間の外（無い）と、見ている日は今日から
+  // 決めていたので、今日が期間の外へ出ると期間の初めの日に変わってしまう（11/30 → 12/1 になると、11月の見ている日が 11/1 になり、
+  // 「週」で 11/1 の週へ）。その時は、それまでの見ている日を覚えて変えない。行き先が替わった・見ている日を覚え直した時（［今日］・
+  // 裏から戻って6時間）は、そちらに従う
+  const shown = useRef({ pathname: location.pathname, today, remembered, viewed })
+  useLayoutEffect(() => {
+    const before = shown.current
+    shown.current = { pathname: location.pathname, today, remembered, viewed }
+    if (
+      before.today !== today &&
+      before.pathname === location.pathname &&
+      before.remembered === remembered &&
+      before.viewed !== viewed
+    ) {
+      setViewed(before.viewed)
+    }
+  })
+
   return { mode: parsed.mode, viewed, from: parsed.from, to: parsed.to, today }
 }
 
@@ -79,60 +107,61 @@ export interface CalendarNav {
   shift: (dir: 1 | -1) => void
   /** ［今日］: 今日を含む期間へ（置き換える。見ている日は今日。FRAME-064） */
   goToday: () => void
-  /** その日の月のマンスリーへ（積む。イヤーの日・月の見出し、マンスリーの前後の月の日。7.12） */
+  /**
+   * その日の月のマンスリーへ（見ている日はその日。7.12）。イヤーの日・月の見出しからはモードが替わるので積み、マンスリーの前後の月の
+   * 日からは同じモードの中で期間を移るだけなので［›］［‹］と同じく置き換える（履歴に積むのはモードを替えた時。3.1・FRAME-014・016）
+   */
   openMonth: (date: string) => void
   /**
-   * その日のデイリーへ（積む。マンスリーの数字・マス、ウィークリーの日付の見出し。7.12）。flash に区分を渡すと、
-   * 移った先でその区分の区切りと予定を 1.2秒目立たせる（'day-area:{区分}'・'day-events:{区分}'。マンスリーの数字から。D32）
+   * その日のデイリーへ（積む。マンスリーの数字・マス、ウィークリーの日付の見出し。7.12。デイリーの中からなら置き換える）。flash に
+   * 区分を渡すと、移った先でその区分の区切りと予定を 1.2秒目立たせる（'day-area:{区分}'・'day-events:{区分}'。マンスリーの数字から。D32）
    */
   openDay: (date: string, flash?: ItemKind) => void
 }
 
 /**
- * カレンダーの行き来（ボタン・スワイプ・7.12 のマス目などから呼ぶ）。今のモードと見ている日は、押した時の行き先と覚えている日から
- * 決める（CalendarView の useCalendarRoute と同じ決め方）
+ * カレンダーの行き来（ボタン・スワイプ・7.12 のマス目などから呼ぶ）。今のモードと見ている日は、押した時の行き先（ルーターが今いる所）と
+ * 覚えている日から決める（CalendarView の useCalendarRoute と同じ決め方）。返す物は描き直しても同じ物（行き先が変わっても作り直さない）
  */
 export function useCalendarNav(): CalendarNav {
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const here = useCurrentLocation()
   return useMemo(() => {
     /** 押した時の今のモード・見ている日・今日 */
     const current = () => {
       const today = todayStr()
       const lastMode = usePrefs.getState().lastMode
-      const parsed = readRoute(pathname, today, lastMode)
+      const parsed = readRoute(here().pathname, today, lastMode)
       return { mode: parsed.mode, viewed: viewedOf(parsed, useCalendarUi.getState().viewed, today), today }
     }
     const ui = () => useCalendarUi.getState()
-    const push = (mode: CalendarMode, date: string) => {
-      ui().setViewed(date)
+    /** そのモードのその日を含む期間へ（見ている日はその日。モードが替われば積み、同じモードなら置き換える） */
+    const go = (mode: CalendarMode, date: string, replace = mode === current().mode) => {
+      const viewed = clampToRouteYears(date)
+      ui().setViewed(viewed)
       // マンスリーを離れると休みを付ける状態は終わる（D30）
       if (mode !== 'month') ui().setOffMode(false)
-      void navigate(calendarPath(mode, date))
-    }
-    const replace = (mode: CalendarMode, date: string) => {
-      ui().setViewed(date)
-      void navigate(calendarPath(mode, date), { replace: true })
+      void navigate(calendarPath(mode, viewed), { replace })
     }
     return {
       goMode: (mode) => {
         const { mode: now, viewed } = current()
-        if (mode !== now) push(mode, viewed)
+        if (mode !== now) go(mode, viewed, false)
       },
       shift: (dir) => {
         const { mode, viewed } = current()
         const next = shiftViewed(mode, viewed, dir)
-        if (isRoutable(mode, next)) replace(mode, next)
+        if (isRoutable(mode, next)) go(mode, next, true)
       },
       goToday: () => {
         const { mode, today } = current()
-        replace(mode, today)
+        go(mode, today, true)
       },
-      openMonth: (date) => push('month', date),
+      openMonth: (date) => go('month', date),
       openDay: (date, flash) => {
         if (flash) ui().flashTarget(`day-area:${flash}`, `day-events:${flash}`)
-        push('day', date)
+        go('day', date)
       },
     }
-  }, [navigate, pathname])
+  }, [navigate, here])
 }

@@ -13,6 +13,7 @@ import {
 } from 'react-router-dom'
 import { LoginPage } from './features/login/LoginPage'
 import { startTestAuth } from './features/login/testAuth'
+import { useInteractionClock } from './features/calendar/common/useReturnToToday'
 import { TopPage } from './features/top/TopPage'
 import { paths } from './routes'
 import { canShowData, useSync } from './sync/controller'
@@ -55,6 +56,8 @@ function RouteErrorBoundary({ children }: { children: React.ReactNode }) {
 
 /** すべての画面の外枠。画面ごとの中身は <Outlet /> に入る */
 function RootLayout() {
+  // 最後に押した・キーを打った時刻（裏から戻って6時間たったら今日へ移す決まりに使う。どの画面での操作も数える。D31）
+  useInteractionClock()
   return (
     <AppFrame>
       <AuthGate>

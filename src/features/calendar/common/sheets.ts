@@ -2,8 +2,8 @@
 // 開く時は行き先を変えずに、同じ行き先を履歴の state.sheet に積む（URL に予定の id を出さない。スマホの「戻る」で閉じられる）。
 // ［×］・Esc・背景・登録・削除で閉じる時は履歴を1つ戻す（戻る物が無い時は state.sheet を外して置き換える）。「戻る」でも同じく閉じる。
 // 中の小さな画面（削除の確かめ・複製・日付や時刻の一覧）は積まない（WP9）。小さな画面を出すのは common/SheetHost.tsx
-import { useMemo } from 'react'
-import { useLocation, useNavigate, type Location } from 'react-router-dom'
+import { useContext, useMemo } from 'react'
+import { UNSAFE_DataRouterContext, useNavigate, type Location } from 'react-router-dom'
 import type { ID } from '../../../domain/types'
 import type { RegisterInit, SheetLocationState, SheetState } from './types'
 
@@ -57,21 +57,38 @@ export interface ItemSheets {
   closeSheet: () => void
 }
 
-/** 小さな画面を開いた state を積む（もう開いている時は、その画面を替える: 置き換える） */
+/**
+ * 押した時の今の行き先を読む物（描いた時の行き先ではなく、ルーターが今いる所）。開く・閉じるは、開いた部品が消えた後に
+ * 呼ばれることがある（複製のお知らせの［開く］を、元の詳細を閉じてから押す・削除の確かめの間に「戻る」で閉じた後に［削除］を押す）。
+ * 描いた時の行き先で決めると、閉じた後のカレンダーの履歴を小さな画面で置き換えたり、もう1つ前の画面まで戻ったりする。
+ * データのルーター（src/App.tsx の createHashRouter・テストの createMemoryRouter）の中だけで使う（useBlocker と同じ）
+ */
+export function useCurrentLocation(): () => Location {
+  const data = useContext(UNSAFE_DataRouterContext)
+  if (!data) throw new Error('useCurrentLocation はデータのルーターの中で使います')
+  const { router } = data
+  return useMemo(() => () => router.state.location, [router])
+}
+
+/** 小さな画面を開いた state を積む（もう開いている時は、その画面を替える: 置き換える）。行き先は今いる所のまま */
 function open(navigate: ReturnType<typeof useNavigate>, location: Location, sheet: SheetState): void {
   const state: SheetHistoryState = { ...withoutSheet(location.state), sheet, sheetPage: PAGE_ID }
   void navigate(location.pathname, { state, replace: sheetOf(location.state) !== null })
 }
 
-/** 登録・詳細の小さな画面を開く・閉じる（どの部品からも呼べる） */
+/**
+ * 登録・詳細の小さな画面を開く・閉じる（どの部品からも呼べる）。返す物は描き直しても同じ物（行き先が変わっても作り直さないので、
+ * React.memo のカード・行に渡しても描き直さない）。開く・閉じるは押した時の今の行き先から決める
+ */
 export function useItemSheets(): ItemSheets {
   const navigate = useNavigate()
-  const location = useLocation()
+  const current = useCurrentLocation()
   return useMemo(
     () => ({
-      openRegister: (init) => open(navigate, location, { kind: 'register', init }),
-      openDetail: (id) => open(navigate, location, { kind: 'detail', id }),
+      openRegister: (init) => open(navigate, current(), { kind: 'register', init }),
+      openDetail: (id) => open(navigate, current(), { kind: 'detail', id }),
       closeSheet: () => {
+        const location = current()
         if (!sheetOf(location.state)) return
         if (popping && popping.key === location.key && Date.now() - popping.at < POP_GUARD_MS) return
         if (location.key !== 'default') {
@@ -83,6 +100,6 @@ export function useItemSheets(): ItemSheets {
         }
       },
     }),
-    [navigate, location],
+    [navigate, current],
   )
 }

@@ -46,6 +46,21 @@ function routableDate(date: string): boolean {
   return v !== null && inRouteYears(v.y)
 }
 
+/** 行き先に使える最初の日・最後の日（1900-01-01・2199-12-31。D04） */
+const FIRST_DAY = `${ROUTE_YEARS.from}-01-01`
+const LAST_DAY = `${ROUTE_YEARS.to}-12-31`
+
+/**
+ * 見ている日を、行き先に使える年（1900〜2199年）の中へ寄せる。端の週は年の外の日も含む（1900年1月1日の週の日曜は 1899年12月31日、
+ * 2199年12月29日の週の土曜は 2200年1月4日）ので、そこを見ている日にしたままモードを替えると、年の外の行き先（#/month/1899-12 など）に
+ * なって今日へ飛んでしまう。その週の中の、年の中の日にする
+ */
+export function clampToRouteYears(date: string): string {
+  if (compareYmd(date, FIRST_DAY) < 0) return FIRST_DAY
+  if (compareYmd(date, LAST_DAY) > 0) return LAST_DAY
+  return date
+}
+
 /**
  * そのモードで、その日を含む期間を行き先にできるか（行き先に使える年の中か）。週は、日曜〜土曜のどれかが中にあればよい
  * （1900年1月1日の週の日曜は 1899年12月31日）。［‹］［›］で年の端より外へは移らない
@@ -113,8 +128,8 @@ export function parseCalendarPath(pathname: string, today: string, lastMode: Cal
     case 'week':
       if (isRoutable('week', value)) {
         start = weekStartOf(value)
-        // 日曜でない日はその日を見ている日にする（FRAME-018）
-        if (start !== value) date = value
+        // 日曜でない日はその日を見ている日にする（FRAME-018。端の週の年の外の日は、年の中の日に寄せる）
+        if (start !== value) date = clampToRouteYears(value)
       }
       break
     case 'day':
@@ -128,12 +143,12 @@ export function parseCalendarPath(pathname: string, today: string, lastMode: Cal
 
 /**
  * 見ている日を決める（D02・確かめ A2）: 覚えている日が期間の中ならその日、無ければ今日が中なら今日、それも無ければ期間の初めの日
- * （年は 1/1、月は 1日、週は日曜）
+ * （年は 1/1、月は 1日、週は日曜。1900年1月1日の週は、日曜の 1899年12月31日でなく 1900年1月1日）
  */
 export function resolveViewed(p: Period, remembered: string | null, today: string): string {
-  if (remembered && parseYmd(remembered) && inPeriod(remembered, p)) return remembered
+  if (remembered && parseYmd(remembered) && inPeriod(remembered, p)) return clampToRouteYears(remembered)
   if (inPeriod(today, p)) return today
-  return p.from
+  return clampToRouteYears(p.from)
 }
 
 /**

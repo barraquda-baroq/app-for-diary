@@ -176,6 +176,20 @@ describe('今日（6.4・7.3）', () => {
     expect(router.state.location.pathname).toBe('/day/2026-11-10')
   })
 
+  it('月の行き先を直接開いたまま 0時を過ぎて今日が次の月になっても、見ている日は変えない（「週」で前の今日の週へ。FRAME-277・071）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderAt('/month/2026-11', { now: new Date(2026, 10, 30, 23, 59) })
+    expect(props()).toMatchObject({ today: '2026-11-30', viewed: '2026-11-30' })
+    vi.setSystemTime(new Date(2026, 11, 1, 0, 0, 5))
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    expect(props()).toMatchObject({ today: '2026-12-01', viewed: '2026-11-30' })
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    await user.click(screen.getByTestId('cal-mode-week'))
+    expect(router.state.location.pathname).toBe('/week/2026-11-29')
+  })
+
   it('最後に押した・キーを打った時刻を覚える（capture で拾う。D31）', async () => {
     await renderAt('/month/2026-11')
     useCalendarUi.setState({ lastInteraction: 0 })
@@ -258,6 +272,29 @@ describe('裏から戻って6時間（6.4。FRAME-278・CALENDAR-030）', () => 
     setVisibility('visible')
     expect(router.state.location.pathname).toBe('/month/2026-11')
     expect(useCalendarUi.getState().viewed).toBe('2026-11-11')
+  })
+
+  it('設定の画面での操作も「最後の操作」に数える（設定から戻ってすぐ裏へ回した時に、設定に入る前の操作から数えない。D31）', async () => {
+    const user = userEvent.setup()
+    const at = new Date(2026, 10, 10, 22, 0).getTime()
+    const { router } = await renderAt('/day/2026-11-10', { now: at })
+    useCalendarUi.setState({ lastInteraction: at })
+    await act(() => router.navigate('/settings'))
+    await screen.findByTestId('app-settings')
+    // 設定の画面で 3時間後に操作して、カレンダーへ戻る
+    vi.setSystemTime(at + 3 * HOUR)
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+    act(() => {
+      screen.getByTestId('settings-back').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    })
+    await user.click(screen.getByTestId('settings-back'))
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    // 設定に入る前の操作からは 6時間を過ぎたが、最後の操作（設定の画面）からは 3時間ほど
+    setVisibility('hidden')
+    vi.setSystemTime(at + 6 * HOUR + 5 * 60_000)
+    setVisibility('visible')
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    setVisibility('visible')
   })
 
   it('登録・詳細の画面を開いている間は動かさない（書きかけを消さない）', async () => {

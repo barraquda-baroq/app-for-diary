@@ -3,7 +3,7 @@
 // 0時を過ぎた時の今日の印、裏から戻って6時間、登録・詳細の小さな画面と「戻る」・Esc、スワイプ。
 // 今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。モードの画面の中身は各モードの担当の E2E で確かめる
 import { expect, test, type Page } from '@playwright/test'
-import { collectDiagnosticsOnFailure, longPressDrag, noHorizontalScroll, openCalendar, touchSwipe } from './helpers'
+import { collectDiagnosticsOnFailure, longPressDrag, noHorizontalScroll, openCalendar, seed, touchSwipe } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -256,7 +256,7 @@ test.describe('登録・詳細の小さな画面（PC。3.1・3.8）', { tag: ['
     await expect(sheet).toHaveCount(0)
   })
 
-  test('読み込み直すと、登録の画面は開き直さない（「戻る」の数は変わらない）', async ({ page }) => {
+  test('読み込み直すと、登録の画面は開き直さない（「戻る」の数は変わらない: 1回で前のモードへ）', async ({ page }) => {
     await openCalendar(page, '/month/2026-11')
     await page.getByTestId('cal-mode-day').click()
     await page.getByTestId('cal-add').click()
@@ -265,6 +265,37 @@ test.describe('登録・詳細の小さな画面（PC。3.1・3.8）', { tag: ['
     await expect(page.getByTestId('view-day')).toBeVisible()
     await expect(page.getByTestId('item-sheet')).toHaveCount(0)
     await at(page, '/day/2026-11-10')
+    await page.goBack()
+    await at(page, '/month/2026-11')
+  })
+
+  test('読み込み直すと、詳細の画面は予定があれば開き直し（履歴の state が残る）、［×］で1つ前へ閉じる（D03）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/month/2026-11')
+    await page.getByTestId('cal-mode-day').click()
+    await at(page, '/day/2026-11-10')
+    const id = await seed(page, ({ actions }) =>
+      actions.addItem({ origin: 'calendar', title: '定例の打ち合わせ', start: '2026-11-10' }),
+    )
+    // 詳細を開いた時と同じ履歴（同じ行き先に state.sheet を積む。中身の画面が詳細を開くのは WP9）を作ってから読み込み直す
+    await page.evaluate((itemId) => {
+      const cur = (window.history.state ?? {}) as { idx?: number }
+      window.history.pushState(
+        { usr: { sheet: { kind: 'detail', id: itemId } }, key: 'e2e-detail', idx: (cur.idx ?? 0) + 1 },
+        '',
+        window.location.href,
+      )
+    }, id)
+    await page.reload()
+    const sheet = page.getByTestId('item-sheet')
+    await expect(sheet).toBeVisible()
+    await expect(page.getByTestId('item-title')).toHaveText('定例の打ち合わせ')
+    await page.getByTestId('modal-close').click()
+    await expect(sheet).toHaveCount(0)
+    await at(page, '/day/2026-11-10')
+    await page.goBack()
+    await at(page, '/month/2026-11')
   })
 })
 
@@ -326,6 +357,32 @@ test.describe('スマホ（S）の枠', { tag: ['@s'] }, () => {
     await touchSwipe(page, page.getByTestId('calendar-body'), -150, 0)
     await page.waitForTimeout(200)
     await at(page, '/week/2026-11-08')
+  })
+
+  test('モードの画面の中だけでスクロールする所（デイリーの区切りなど）の上でも、なぞると前後の日へ。その所の縦のスクロールはそのまま', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/day/2026-11-10')
+    // デイリーの中身（WP8）の、中だけでスクロールする区切りの代わり
+    await page.evaluate(() => {
+      const box = document.createElement('div')
+      box.dataset.testid = 'inner-scroller'
+      box.style.height = '240px'
+      box.style.overflowY = 'auto'
+      const tall = document.createElement('div')
+      tall.style.height = '2000px'
+      box.appendChild(tall)
+      document.querySelector('[data-testid="view-day"]')?.appendChild(box)
+    })
+    const inner = page.getByTestId('inner-scroller')
+    await touchSwipe(page, inner, -140, 6)
+    await at(page, '/day/2026-11-11')
+    await touchSwipe(page, inner, 140, 0)
+    await at(page, '/day/2026-11-10')
+    // 縦になぞると、その所の中がスクロールする（期間は移らない）
+    await touchSwipe(page, inner, 0, -160)
+    await expect.poll(() => inner.evaluate((e) => e.scrollTop)).toBeGreaterThan(0)
+    await at(page, '/day/2026-11-10')
   })
 
   test('‹ › ではページのスクロールの位置を変えず、モードを替える（積む）と先頭へ戻る（D54）', async ({ page }) => {

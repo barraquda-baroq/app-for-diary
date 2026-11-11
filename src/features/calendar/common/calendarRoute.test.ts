@@ -2,6 +2,7 @@
 // トップ #/ の置き換え、正しくない行き先、日曜でない週、見ている日の決め方、［‹］［›］の月末、裏から戻って6時間の今日
 import { describe, expect, it } from 'vitest'
 import {
+  clampToRouteYears,
   inPeriod,
   isRoutable,
   parseCalendarPath,
@@ -99,6 +100,15 @@ describe('parseCalendarPath（3.1 の行き先）', () => {
     expect(parseCalendarPath('/year/2199', TODAY, 'month')?.replaceTo).toBeNull()
   })
 
+  it('年の端の週の、年の外の日（日曜でない）を開いた時は、見ている日を年の中の日に寄せる（モードを替えて今日へ飛ばないように）', () => {
+    // 2199年12月29日（日）〜2200年1月4日（土）の週
+    expect(parseCalendarPath('/week/2200-01-02', TODAY, 'month')).toMatchObject({
+      from: '2199-12-29',
+      replaceTo: '/week/2199-12-29',
+      date: '2199-12-31',
+    })
+  })
+
   it('カレンダーの行き先でなければ null（MIM・設定・#/month だけ・#/month/2026-11/x）', () => {
     for (const p of ['/mim', '/settings', '/login', '/month', '/month/2026-11/x', '/taskview/2026']) {
       expect(parseCalendarPath(p, TODAY, 'month'), p).toBeNull()
@@ -151,6 +161,26 @@ describe('resolveViewed（見ている日。D02・確かめ A2）', () => {
 
   it('覚えている日の形が正しくなければ使わない', () => {
     expect(resolveViewed(nov, '2026-11-31', TODAY)).toBe(TODAY)
+  })
+
+  it('1900年1月1日の週（日曜は 1899年12月31日）は 1900年1月1日を見ている日にする（年の外の日にしない。D04）', () => {
+    const first = { from: '1899-12-31', to: '1900-01-06' }
+    expect(resolveViewed(first, null, TODAY)).toBe('1900-01-01')
+    expect(resolveViewed(first, '1899-12-31', TODAY)).toBe('1900-01-01')
+    expect(resolveViewed(first, '1900-01-03', TODAY)).toBe('1900-01-03')
+    expect(resolveViewed({ from: '2199-12-29', to: '2200-01-04' }, '2200-01-02', TODAY)).toBe('2199-12-31')
+  })
+})
+
+describe('clampToRouteYears（行き先に使える年の中へ寄せる。D04）', () => {
+  it.each([
+    ['1899-12-31', '1900-01-01'],
+    ['1900-01-01', '1900-01-01'],
+    ['2026-11-10', '2026-11-10'],
+    ['2199-12-31', '2199-12-31'],
+    ['2200-01-04', '2199-12-31'],
+  ])('%s → %s', (date, to) => {
+    expect(clampToRouteYears(date)).toBe(to)
   })
 })
 

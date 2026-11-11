@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { mkItem } from '../../../domain/testData'
 import { useApp } from '../../../store/appStore'
 import { renderAt, renderView, setupCalendarTests } from '../../../test/renderCalendar'
-import { PAGE_ID, sheetOf, useItemSheets } from './sheets'
+import { PAGE_ID, sheetOf, useItemSheets, type ItemSheets } from './sheets'
 import { SheetHost } from './SheetHost'
 
 setupCalendarTests()
@@ -17,9 +17,13 @@ const items = {
   b: mkItem({ id: 'b', title: '資料の確認', start: '2026-11-12', kind: 'private' }),
 }
 
+/** Harness が最後に受け取った物（お知らせの［開く］のように、描いた後で呼ぶ時に使う） */
+let latest: ItemSheets | null = null
+
 /** 小さな画面を開くボタンと SheetHost だけの画面 */
 function Harness() {
   const s = useItemSheets()
+  latest = s
   return (
     <>
       <button type="button" onClick={() => s.openRegister({ start: '2026-11-12', kind: 'private' })}>
@@ -124,6 +128,40 @@ describe('開く・閉じる（履歴）', () => {
     expect(sheet()).toBeNull()
   })
 
+  it('詳細を開いている間に受け取った［開く］を、詳細を閉じてから押しても、カレンダーの履歴を置き換えずに積む（複製のお知らせ。12.7）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderView(Harness, {}, { path: '/year/2026', data: { items } })
+    await act(() => router.navigate('/month/2026-11'))
+    await user.click(screen.getByText('a を開く'))
+    // 詳細を開いている時に受け取った物（お知らせの［開く］が持つ物）
+    const fromToast = latest as ItemSheets
+    await user.click(screen.getByTestId('modal-close'))
+    expect(sheet()).toBeNull()
+    act(() => fromToast.openDetail('b'))
+    await act(async () => {})
+    expect(router.state.historyAction).toBe('PUSH')
+    expect(screen.getByTestId('item-title').textContent).toBe('資料の確認')
+    // ［×］で閉じるとマンスリーのまま（1つ前のイヤーまで戻らない）
+    await user.click(screen.getByTestId('modal-close'))
+    expect(sheet()).toBeNull()
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/year/2026')
+  })
+
+  it('開いている間に受け取った閉じる物を、「戻る」で閉じた後に呼んでも、もう1つ前へは戻らない（削除の確かめの間に「戻る」を押した時）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderView(Harness, {}, { path: '/year/2026', data: { items } })
+    await act(() => router.navigate('/month/2026-11'))
+    await user.click(screen.getByText('a を開く'))
+    const held = latest as ItemSheets
+    await act(() => router.navigate(-1))
+    expect(sheet()).toBeNull()
+    act(() => held.closeSheet())
+    await act(async () => {})
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+  })
+
   it('閉じている時に閉じても何もしない', async () => {
     const user = userEvent.setup()
     const { router } = await renderView(Harness, {}, { path: '/month/2026-11' })
@@ -146,18 +184,24 @@ describe('読み込み直した後（D03）', () => {
     expect(sheet()).toBeNull()
   })
 
-  it('詳細の予定が無ければ（ゴミ箱へ移した・ほかの端末で消した）、開かずに印を外す', async () => {
+  it('詳細の予定が無ければ（ゴミ箱へ移した・ほかの端末で消した）、開かずに閉じる（［×］と同じく1つ戻る）', async () => {
     const { router } = await renderAt(before({ kind: 'detail', id: 'gone' }), { data: { items } })
+    await act(async () => {})
     expect(sheet()).toBeNull()
-    expect(router.state.historyAction).toBe('REPLACE')
+    expect(router.state.historyAction).toBe('POP')
     expect(sheetOf(router.state.location.state)).toBeNull()
   })
 
-  it('登録の画面は開き直さずに印を外す', async () => {
-    const { router } = await renderAt(before({ kind: 'register', init: { start: '2026-11-10' } }), {})
+  it('登録の画面は開き直さずに閉じる（1つ戻る。同じカレンダーの履歴が2つ並ばないので、「戻る」の数は変わらない）', async () => {
+    const { router } = await renderAt(['/year/2026', ...before({ kind: 'register', init: { start: '2026-11-10' } })], {})
+    await act(async () => {})
     expect(sheet()).toBeNull()
     expect(sheetOf(router.state.location.state)).toBeNull()
     expect(router.state.location.pathname).toBe('/month/2026-11')
+    expect(router.state.historyAction).toBe('POP')
+    // 「戻る」1回で前のモードへ
+    await act(() => router.navigate(-1))
+    expect(router.state.location.pathname).toBe('/year/2026')
   })
 
   it('端末の中のデータを読み終えるまでは決めない（予定が無いと見誤って印を外さない）', async () => {

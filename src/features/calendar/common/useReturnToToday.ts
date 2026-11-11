@@ -1,5 +1,6 @@
 // 裏から戻った時に今日へ移す決まり（docs/SPEC.md の 6.4。FRAME-278・CALENDAR-030。D31）。
-// 最後に押した・キーを打った時刻を覚え（capture の pointerdown・keydown。画面の中だけ）、アプリが裏から戻った時（visibilitychange で
+// 最後に押した・キーを打った時刻を覚え（capture の pointerdown・keydown。useInteractionClock。設定の画面などカレンダーの外での操作も
+// 数えるよう、アプリの外枠（src/App.tsx）が1回だけ呼ぶ）、アプリが裏から戻った時（visibilitychange で
 // 見えるようになった時）に、最後の操作から 6時間以上たっていて、見ている期間が前の「今日」（最後に操作した日）を含んでいれば、新しい今日を含む期間へ
 // 置き換える（Q20 の「開いた時」と同じ扱い。見ている日も今日）。日付が変わっただけの時は動かさない（今日の印だけが移る。useToday）。
 // 決める関数は calendarRoute.ts の returnToTodayTarget。トップの画面（TopPage）が1回だけ呼ぶ
@@ -11,14 +12,12 @@ import { useCalendarUi, usePrefs } from '../../../store/uiStore'
 import { parseCalendarPath, resolveViewed, returnToTodayTarget } from './calendarRoute'
 import { sheetOf } from './sheets'
 
-export function useReturnToToday(): void {
-  const location = useLocation()
-  const navigate = useNavigate()
-  // 出来事の中で今の行き先を読む（付け直さずに済むよう ref に置く）
-  const here = useRef(location)
-  here.current = location
-
-  // 最後の操作（押した・キーを打った）。ほかの部品が止めても拾えるよう capture で聞く（D31）
+/**
+ * 最後の操作（押した・キーを打った）の時刻を覚える（D31。画面の中だけ）。ほかの部品が止めても拾えるよう capture で聞く。
+ * アプリの外枠（src/App.tsx の RootLayout）が1回だけ呼ぶ（カレンダーを出していない設定の画面などでの操作も「最後の操作」に数える。
+ * カレンダーへ戻ってすぐ裏へ回した時に、設定の画面に入る前の操作から 6時間と数えて今日へ移らないように）
+ */
+export function useInteractionClock(): void {
   useEffect(() => {
     const touch = () => useCalendarUi.getState().touch()
     window.addEventListener('pointerdown', touch, { capture: true, passive: true })
@@ -28,6 +27,14 @@ export function useReturnToToday(): void {
       window.removeEventListener('keydown', touch, { capture: true })
     }
   }, [])
+}
+
+export function useReturnToToday(): void {
+  const location = useLocation()
+  const navigate = useNavigate()
+  // 出来事の中で今の行き先を読む（付け直さずに済むよう ref に置く）
+  const here = useRef(location)
+  here.current = location
 
   useEffect(() => {
     const onVisibility = () => {
