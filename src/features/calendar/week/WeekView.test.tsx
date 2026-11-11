@@ -362,7 +362,22 @@ describe('予定を押すと詳細（12.3・ITEMS-079・195）', () => {
   })
 })
 
-describe('登録した予定（item:{id}）を目立たせて、見える所まで動かす（4.9・12.2。デイリー・落とした時と同じ。開発）', () => {
+describe('登録した予定（item:{id}）を目立たせて、週の中で見える所まで動かす（4.9・12.2。デイリー・落とした時と同じ。開発）', () => {
+  /**
+   * jsdom は大きさを測らないので、el を「画面の上の端から縦に 300px 見えて、中身が 1000px のスクロールする所」にし、card をその所の
+   * 上の端から 500px（見えていない所）に置く。el.scrollTo を返す
+   */
+  function layout(el: HTMLElement, card: HTMLElement) {
+    el.style.overflowY = 'auto'
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: 300 })
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 1000 })
+    el.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 140, height: 300 })
+    card.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 500, width: 140, height: 40 })
+    const scrollTo = vi.fn()
+    el.scrollTo = scrollTo as unknown as typeof el.scrollTo
+    return scrollTo
+  }
+
   it.each([
     ['1日のカード', testIds.weekCard('mail'), 'mail', 'L'],
     ['始点のカード', testIds.weekStart('multi'), 'multi', 'L'],
@@ -370,22 +385,38 @@ describe('登録した予定（item:{id}）を目立たせて、見える所ま�
     ['7日を縦のカード', testIds.weekCard('mail'), 'mail', 'S'],
   ] as const)('%s', async (_, testId, id, width) => {
     await renderWeek({ width })
-    const scrolled = vi.mocked(Element.prototype.scrollIntoView)
-    scrolled.mockClear()
-    act(() => useCalendarUi.getState().flashTarget(`item:${id}`))
     const el = screen.getByTestId(testId)
+    // L は段の中（仕事の段）、S は週の全体がスクロールする
+    const scroller = (width === 'S' ? screen.getByTestId(testIds.view('week')) : el.closest('.wk-tier-body')) as HTMLElement
+    const scrollTo = layout(scroller, el)
+    const page = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    const native = vi.mocked(Element.prototype.scrollIntoView)
+    native.mockClear()
+    act(() => useCalendarUi.getState().flashTarget(`item:${id}`))
     expect(el.classList.contains('flash')).toBe(true)
-    expect(scrolled.mock.contexts).toContain(el)
-    expect(scrolled.mock.calls[scrolled.mock.contexts.indexOf(el)][0]).toMatchObject({ block: 'nearest' })
+    // block: nearest と同じ（カードの下の端を見える所の下の端に合わせる）。ページは動かさない
+    expect(scrollTo).toHaveBeenCalledWith({ top: 540 - 300, behavior: 'smooth' })
+    expect(native).not.toHaveBeenCalled()
+    expect(page).not.toHaveBeenCalled()
+  })
+
+  it('もう見えている時は動かさない', async () => {
+    await renderWeek()
+    const el = screen.getByTestId(testIds.weekCard('mail'))
+    const scrollTo = layout(el.closest('.wk-tier-body') as HTMLElement, el)
+    el.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 100, width: 140, height: 40 })
+    act(() => useCalendarUi.getState().flashTarget('item:mail'))
+    expect(el.classList.contains('flash')).toBe(true)
+    expect(scrollTo).not.toHaveBeenCalled()
   })
 
   it('視差効果を減らす設定では、すぐに動かす', async () => {
     const props = viewProps({ mode: 'week', viewed: '2026-11-10', area: { width: 994, height: 760 } })
     await renderView(WeekView, props, { path: '/week/2026-11-08', data: { items: WEEK }, reducedMotion: true })
-    const scrolled = vi.mocked(Element.prototype.scrollIntoView)
-    scrolled.mockClear()
+    const el = screen.getByTestId(testIds.weekCard('meet'))
+    const scrollTo = layout(el.closest('.wk-tier-body') as HTMLElement, el)
     act(() => useCalendarUi.getState().flashTarget('item:meet'))
-    expect(scrolled).toHaveBeenCalledWith({ block: 'nearest', behavior: 'auto' })
+    expect(scrollTo).toHaveBeenCalledWith({ top: 240, behavior: 'auto' })
   })
 })
 

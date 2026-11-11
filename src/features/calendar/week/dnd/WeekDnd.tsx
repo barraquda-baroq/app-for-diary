@@ -38,8 +38,8 @@ import {
 import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
 import type { Item, ItemKind } from '../../../../domain/types'
 import { vibrate15 } from '../../../../ui/motion'
-import { useWeekScroller } from '../weekScroller'
-import { applyDrop, reveal, settle, SETTLE_BACK } from './drop'
+import { revealInWeek, useWeekScroller } from '../weekScroller'
+import { applyDrop, settle, SETTLE_BACK } from './drop'
 import { activationOf, pointerKind } from './gesture'
 import { useLockGesture } from './lockGesture'
 import {
@@ -206,7 +206,7 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
             .map((id) => (id === undefined ? undefined : manager.registry.draggables.get(id)?.element))
             .find((x) => x?.isConnected)
           settle(el)
-          reveal(el)
+          revealInWeek(el)
         })
       }
     },
