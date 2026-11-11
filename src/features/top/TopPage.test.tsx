@@ -402,7 +402,7 @@ describe('カレンダーの操作の列（3.7）', () => {
     expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Task View は段階4で作ります'])
   })
 
-  it('今日の日付に印を付ける（マス目の仮の絵）', () => {
+  it('今日の日付に印を付ける（マンスリーのマス目）', () => {
     renderAt('/')
     const marks = screen.getByTestId('calendar-month').querySelectorAll('.today-mark')
     expect(Array.from(marks).map((m) => m.textContent)).toEqual(['10'])

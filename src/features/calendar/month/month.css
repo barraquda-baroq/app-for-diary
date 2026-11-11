@@ -1,7 +1,6 @@
 /* ===== マンスリー（docs/SPEC.md の 9.・4.4・4.5・4.7・4.8・7.1〜7.4）。クラスは .mo- で始める =====
    色は src/styles.css の変数だけを使う（画面で色を足さない）。カレンダーには影を付けない（今日の輪は .today-mark の線）。
-   マスには段階0からある .cal-cell も付ける（e2e/frame.spec.ts・e2e/helpers.spec.ts が探す。段階0の仮の絵の CSS
-   src/features/top/top.css の .cal-cell も同じ値なので、どちらが後でも見た目は変わらない）。
+   マスには段階0からある .cal-cell も付ける（e2e/frame.spec.ts・e2e/helpers.spec.ts が探す。.cal-cell には CSS を当てない）。
    休みの地（.cp-offday）・祝日名（.cp-holiday）・「休」（.cp-off）・今日の印（.today-mark）は共通の物を使い、ここでは大きさと置き場所だけ */
 
 /* 画面の箱: 休みを付ける状態の帯 → マス目。L はカレンダーの領域の高さいっぱい（帯の分はマス目が縮む） */
