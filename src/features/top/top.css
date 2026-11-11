@@ -170,113 +170,18 @@
   border-radius: var(--radius);
 }
 
-/* ---------- カレンダーの領域と操作の列（3.7） ---------- */
-.cal {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-  min-width: 0;
+/* ---------- カレンダーの領域（操作の列とモードの画面は src/features/calendar/common/frame.css） ----------
+   S・M（3.5）: イヤー・マンスリーは中身の高さ（ページと一緒にスクロール）。ウィークリー・デイリーはカレンダーの区切り全体
+   （操作の列を含む）を 100dvh − ヘッダー − 切り替えの列 の高さに固定し、モードの画面は残りの高さで中だけスクロールする
+   （下のリストへはページのスクロールで行ける。新しい版の帯が出ている間も帯の分は引かない。確かめ A17・D15）。
+   L（3.4）はカレンダーの領域が上の .top-wide の高さで決まり、どのモードも中だけでスクロールする */
+.top-stacked .cal.is-fixed {
+  height: calc(100vh - var(--header-h) - var(--safe-top) - var(--switcher-h));
+  height: calc(100dvh - var(--header-h) - var(--safe-top) - var(--switcher-h));
 }
 
-.cal-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid var(--rule);
-}
-
-.cal-toolbar-left,
-.cal-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.cal-toolbar-left {
-  gap: 12px;
-}
-
-/* 右の物は右寄せ（3.7）。カレンダーの領域が狭くて（L の 900〜1080px ほど・M）2行に折り返した時も、2行目の右の端に寄せる */
-.cal-toolbar-right {
-  margin-left: auto;
-}
-
-/* 大きく淡い数字（等幅 300・--numeral。L・M 44px、S 32px は src/styles.css の .numeral）と、期間の小さな表記（2行） */
-.cal-period {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  font-size: inherit;
-  font-weight: inherit;
-}
-
-.cal-period:focus {
-  outline: none;
-}
-
-.cal-period:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-  border-radius: var(--radius-sm);
-}
-
-/* 1桁と2桁で ‹ › の位置が動かないように */
-.cal-numeral {
-  min-width: 2ch;
-}
-
-.cal-period-label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  /* 等幅 11px の11字（「11.08–11.14」）と字間が入る幅。週を移っても ‹ › の位置が動かないように */
-  min-width: 12.5ch;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.cal-nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* そのモードに無いボタンは消すが、ほかのボタンの位置は動かさない（3.7） */
-.cal-tool-hidden {
-  visibility: hidden;
-}
-
-.cal-add .icon,
-.cal-taskview .icon {
-  width: 16px;
-  height: 16px;
-}
-
-/* ---------- カレンダーの中（段階0の仮の絵）。マンスリーは空のマス目（9.1） ---------- */
-.cal-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 0 16px 16px;
-}
-
-.cal-stage-note {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-.cal-empty {
-  margin-top: 16px;
-}
-
+/* ---------- マンスリーの仮の絵（段階0の空のマス目。9.1）。マンスリーの画面（src/features/calendar/month）の中身ができたら
+   そちらの CSS に替わる ---------- */
 .cal-month {
   display: flex;
   flex-direction: column;
@@ -554,31 +459,4 @@
   font-weight: 500;
   letter-spacing: 0.06em;
   font-synthesis-weight: none;
-}
-
-/* ---------- S（599px まで）: 操作の列を2行にし（1行目に左の物、2行目に右の物）、360px に収める（3.7） ---------- */
-@media (max-width: 599px) {
-  .cal-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 12px 12px 10px;
-  }
-
-  .cal-toolbar-left {
-    gap: 10px;
-  }
-
-  .cal-toolbar-right {
-    gap: 6px;
-    margin-left: 0;
-  }
-
-  .segmented.cal-modes button {
-    min-width: var(--tap);
-    padding: 4px 10px;
-  }
-
-  .cal-body {
-    padding: 0 8px 12px;
-  }
 }

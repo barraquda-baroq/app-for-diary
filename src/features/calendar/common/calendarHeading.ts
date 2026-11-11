@@ -1,8 +1,19 @@
 // カレンダーの操作の列の「大きく淡い数字」と「期間の小さな表記」（docs/SPEC.md の 3.7）と、［‹］［›］での見ている日の移り方
 // （3.7 の「見ている日を引き継ぐ」）。暦の日付の計算そのものは src/domain/dates.ts（2.9）。
-// 段階2でカレンダーの画面（src/features/calendar/common）を作る時に、そちらへ移す
-import { addDays, addMonths, MONTHS_EN, pad2, WEEKDAYS_EN, WEEKDAYS_JA, weekdayOf, weekStart, type Ymd } from '../../domain/dates'
-import type { CalendarMode } from '../../store/uiStore'
+// 段階0は src/features/top にあり、段階2でカレンダーの画面の共通の所（ここ）へ移した。React・ストアを読まない（純粋な関数。
+// src/features/calendar/purity.test.ts。モードの型も common/types.ts から読む）
+import {
+  addDays,
+  addMonths,
+  MONTHS_EN,
+  pad2,
+  WEEKDAYS_EN,
+  WEEKDAYS_JA,
+  weekdayOf,
+  weekStart,
+  type Ymd,
+} from '../../../domain/dates'
+import type { CalendarMode } from './types'
 
 /** ［‹］［›］: そのモードの期間で前後へ（年は1年、月は1か月、週は7日、日は1日。docs/SPEC.md の 3.7） */
 export function shiftPeriod(mode: CalendarMode, v: Ymd, dir: 1 | -1): Ymd {

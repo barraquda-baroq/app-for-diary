@@ -1,5 +1,6 @@
 // 画面の枠とログインの画面の E2E（docs/SPEC.md の 2.5・3.・21. の段階0）: ログインの画面 → 空のトップ画面
-// （ヘッダー・カレンダーの操作の列・右の列の3つのリスト・スマホの積み方と切り替えの列）。
+// （ヘッダー・カレンダーの操作の列・右の列の3つのリスト・スマホの積み方と切り替えの列）。カレンダーの行き先・履歴・高さ・
+// 小さな画面（段階2）は e2e/calendar-frame.spec.ts。
 // ログインした状態は、テストの時だけ効く印（localStorage の diary-studio:test-auth。src/features/login/testAuth.ts）で作る
 import { expect, test, type Page } from '@playwright/test'
 import { darkSurfaces, noHorizontalScroll, tapSize } from './helpers'
@@ -87,7 +88,8 @@ test.describe('空のトップ画面', { tag: ['@pc', '@s'] }, () => {
     const todayBg = await tokenColor(page, '--today-bg')
     await expect.poll(() => mim.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe(todayBg)
     await mim.click()
-    await expect(page).toHaveURL(/#\/$/)
+    // トップ #/ は開いた時に前回のモード（初めはマンスリー）の今日を含む期間へ置き換わっているので、そこへ戻る（FRAME-001）
+    await expect(page).toHaveURL(/#\/month\/\d{4}-\d{2}$/)
     await expect(page.getByTestId('calendar')).toBeVisible()
   })
 

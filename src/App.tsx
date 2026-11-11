@@ -1,5 +1,6 @@
 // 画面の行き先と外枠。NS の src/App.tsx から（小説の画面・ゴミ箱の自動の片付け・Claude 連携を外し、ログインの関所を足した物）。
-// 段階0の行き先はトップ・MIM（仮の画面）・ログイン・設定の4つ（docs/SPEC.md の 3.1・21.）
+// 行き先はトップ（#/）・カレンダーの4つのモード（#/year/2026・#/month/2026-11・#/week/2026-11-08・#/day/2026-11-10。段階2）・
+// MIM（仮の画面）・ログイン・設定（docs/SPEC.md の 3.1・21.）
 import { lazy, Suspense } from 'react'
 import {
   createHashRouter,
@@ -12,6 +13,7 @@ import {
 } from 'react-router-dom'
 import { LoginPage } from './features/login/LoginPage'
 import { startTestAuth } from './features/login/testAuth'
+import { useInteractionClock } from './features/calendar/common/useReturnToToday'
 import { TopPage } from './features/top/TopPage'
 import { paths } from './routes'
 import { canShowData, useSync } from './sync/controller'
@@ -54,6 +56,8 @@ function RouteErrorBoundary({ children }: { children: React.ReactNode }) {
 
 /** すべての画面の外枠。画面ごとの中身は <Outlet /> に入る */
 function RootLayout() {
+  // 最後に押した・キーを打った時刻（裏から戻って6時間たったら今日へ移す決まりに使う。どの画面での操作も数える。D31）
+  useInteractionClock()
   return (
     <AppFrame>
       <AuthGate>
@@ -79,9 +83,22 @@ export const routes: RouteObject[] = [
     element: <RootLayout />,
     errorElement: <RootError />,
     children: [
-      { path: paths.top(), element: <TopPage /> },
+      // トップ・カレンダーの4つのモード・MIM は、同じトップの画面（TopPage）の中で替える（モードを替えても作り直さないので、右の列の
+      // スクロール・畳んだ状態がそのまま）。中の行き先は描く物を持たず、TopPage が行き先を読む。トップ #/ は前回のモードの今日を含む
+      // 期間へ置き換え、日付の形が正しくない行き先は今日を含む期間へ置き換える（src/features/calendar/common/calendarRoute.ts）。
+      // #/month だけ・#/month/2026-11/x のような行き先はどこにも当たらず「見つかりません」（3.1）。
       // MIM はトップの画面の中で開く（L はカレンダーの領域、M はカレンダーの区切りが替わり、S は全面。docs/SPEC.md の 16.1）
-      { path: paths.mim(), element: <TopPage /> },
+      {
+        element: <TopPage />,
+        children: [
+          { index: true, element: null },
+          { path: 'year/:y', element: null },
+          { path: 'month/:ym', element: null },
+          { path: 'week/:ymd', element: null },
+          { path: 'day/:ymd', element: null },
+          { path: paths.mim(), element: null },
+        ],
+      },
       { path: paths.login(), element: <LoginPage /> },
       { path: paths.settings(), element: <AppSettingsPage /> },
       { path: '*', element: <NotFound /> },

@@ -1,18 +1,24 @@
-// トップ画面（段階0の空の形。docs/SPEC.md の 3.）。行き先 #/ と #/mim（MIM を開いている時）の両方で使う。
+// トップ画面（docs/SPEC.md の 3.）。カレンダーの行き先（#/・#/year/2026・#/month/2026-11・#/week/2026-11-08・#/day/2026-11-10）と
+// #/mim（MIM を開いている時）のどれでも、同じこの画面を出したまま中だけを替える（モードを替えても右の列のスクロール・畳んだ状態を
+// 保つ。src/App.tsx の行き先の木）。
 // - L（900px 以上。3.4）: 左にカレンダーの領域（残りの幅）、右に右の列（300px）。ページ全体はスクロールせず、それぞれの中だけで
 //   スクロールする。MIM を開いた時は、カレンダーの領域が MIM に替わる（右の列はそのまま）。
 // - S・M（3.5）: ヘッダーの下に切り替えの列（カレンダー｜Routine｜Task｜Favorite。押すとその先頭へスクロールする）、
 //   その下にカレンダー → Routine List → Task List → Favorite List を縦に積む。3つのリストはアプリを開くたびに畳んで始まる。
 //   MIM は、M ではカレンダーの区切りが MIM に替わり、S ではカレンダーとリストと切り替えの列の代わりに全面で開く。
-// カレンダーの中身（段階2）・リストの中身と数（段階3）・MIM（段階4）はまだ無い
+// カレンダーの領域は src/features/calendar/common/CalendarView（行き先・操作の列・モードの画面）、登録・詳細の小さな画面は
+// SheetHost（履歴の state.sheet）。裏から戻って6時間たった時に今日へ移す決まり（6.4）もここで見張る。
+// リストの中身と数（段階3）・MIM（段階4）はまだ無い
 import { useEffect, useId, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { isMimPath } from '../../routes'
-import { useStackedLists, type ListKey } from '../../store/uiStore'
+import { calendarModeOf, isMimPath } from '../../routes'
+import { useCalendarUi, usePrefs, useStackedLists, type ListKey } from '../../store/uiStore'
 import { useDocumentTitle, useWidthClass, type WidthClass } from '../../ui/hooks'
 import { AppHeader } from '../../ui/Layout'
 import { scrollBehavior } from '../../ui/motion'
-import { CalendarArea } from './CalendarArea'
+import { CalendarView } from '../calendar/common/CalendarView'
+import { SheetHost } from '../calendar/common/SheetHost'
+import { useReturnToToday } from '../calendar/common/useReturnToToday'
 import { FOLD_MS, LIST_INFO, LIST_ORDER, ListPanel } from './ListPanel'
 import { MimPlaceholder } from './MimPlaceholder'
 import './top.css'
@@ -26,14 +32,31 @@ const COUNTS: Record<ListKey, number> = { routine: 0, task: 0, favorite: 0 }
 
 export function TopPage() {
   const width = useWidthClass()
-  const mimOpen = isMimPath(useLocation().pathname)
+  const { pathname } = useLocation()
+  const lastMode = usePrefs((s) => s.lastMode)
+  const mimOpen = isMimPath(pathname)
   useDocumentTitle(mimOpen ? 'MIM' : undefined)
+  useReturnToToday()
+  // トップ #/ は前回のモードに置き換わる
+  useEndOffMode(mimOpen ? null : (calendarModeOf(pathname) ?? lastMode))
   return (
     <>
       <AppHeader />
       {width === 'L' ? <WideTop mimOpen={mimOpen} /> : <StackedTop width={width} mimOpen={mimOpen} />}
+      {mimOpen ? null : <SheetHost />}
     </>
   )
+}
+
+/**
+ * マンスリーを離れたら休みを付ける状態を終わる（ほかのモード・MIM・設定などの別の画面。「戻る」で離れた時も。D30）。
+ * mode はいま出しているカレンダーのモード（MIM の時は null）
+ */
+function useEndOffMode(mode: string | null): void {
+  useEffect(() => {
+    if (mode !== 'month') useCalendarUi.getState().setOffMode(false)
+  }, [mode])
+  useEffect(() => () => useCalendarUi.getState().setOffMode(false), [])
 }
 
 /** L の並べ方（docs/SPEC.md の 3.4） */
@@ -41,7 +64,7 @@ function WideTop({ mimOpen }: { mimOpen: boolean }) {
   return (
     <main className="top top-wide" data-testid="top-page" data-width="L">
       <section className="top-calendar" aria-label={mimOpen ? 'MIM' : 'カレンダー'} data-testid="calendar-area">
-        {mimOpen ? <MimPlaceholder /> : <CalendarArea width="L" />}
+        {mimOpen ? <MimPlaceholder /> : <CalendarView width="L" />}
       </section>
       <aside className="top-side" aria-label="リスト" data-testid="side-column">
         {LIST_ORDER.map((key) => (
@@ -189,7 +212,7 @@ function StackedTop({ width, mimOpen }: { width: WidthClass; mimOpen: boolean })
           {mimOpen ? (
             <MimPlaceholder headingId={headingId('calendar')} />
           ) : (
-            <CalendarArea width={width} headingId={headingId('calendar')} />
+            <CalendarView width={width} headingId={headingId('calendar')} />
           )}
         </section>
         {!fullMim
