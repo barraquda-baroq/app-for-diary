@@ -54,7 +54,9 @@ jobs:
       - name: ビルドにテスト用の入口が無いことの確かめ
         run: "! grep -rqE 'diary-studio:test-auth|fakeSignIn|showUpdateBanner|__ds|demo-diary-studio' dist/"
       # ふだんは1分半ほど。GitHub の機械が Ubuntu の置き場（archive.ubuntu.com）の名前を引けない時、apt が1つずつ待ち続けて
-      # 30分の期限まで止まったことがある（2026-11-11）。1回を8分で打ち切り、1分おいてもう1回だけやり直す
+      # 30分の期限まで止まったことがある（2026-11-11）。1回を8分で打ち切り、1分おいてもう1回だけやり直す。
+      # 打ち切っても、sudo の下の apt-get は残って dpkg の鍵を持ち続ける（2回目が「Could not get lock」で落ちた）ので、
+      # やり直す前に残った apt-get を止め、鍵が空くのを待つ
       - name: E2E テスト用ブラウザ
         id: browsers
         timeout-minutes: 18
@@ -62,7 +64,10 @@ jobs:
           for attempt in 1 2; do
             if timeout 480 npx playwright install --with-deps chromium webkit; then exit 0; fi
             echo "ブラウザを入れられなかった（${attempt}回目）"
-            [ "$attempt" = 2 ] || sleep 60
+            [ "$attempt" = 2 ] && break
+            sudo pkill -x apt-get || true
+            for i in $(seq 30); do pgrep -x apt-get > /dev/null || break; sleep 2; done
+            sleep 60
           done
           exit 1
       # PC 1400×900・Pixel 7（Chromium）。
