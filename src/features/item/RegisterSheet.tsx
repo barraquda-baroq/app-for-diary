@@ -12,7 +12,8 @@
 //   1.2秒目立たせる（4.9。お知らせは出さない）
 // - 書きかけ（件名かメモに字がある）のまま閉じようとした時（［やめる］・［×］・Esc・背景・「戻る」）は「書きかけを捨てますか？
 //   ［捨てる］［戻る］」と確かめる。「戻る」は履歴を戻すのを止めて（useBlocker）確かめ、［戻る］なら画面を開いたままにする（D03・
-//   AMB-ITEMS-10）。閉じる（onClose = common/sheets.ts の closeSheet）のは確かめが終わってから
+//   AMB-ITEMS-10）。閉じる（onClose = common/sheets.ts の closeSheet）のは確かめが終わってから。書きかけの間に、この画面を別の小さな
+//   画面に替える時（複製のお知らせの［開く］で詳細を開く）も、同じく止めて確かめる（［戻る］なら登録の画面と書きかけはそのまま。開発）
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, type BlockerFunction } from 'react-router-dom'
 import { editDates, editTimes } from '../../domain/itemInput'
@@ -22,6 +23,7 @@ import { attempt, notifyError, useCalendarUi, usePrefs } from '../../store/uiSto
 import { choiceDialog } from '../../ui/dialogs'
 import { isSubmitShortcut, submitShortcutLabel } from '../../ui/keys'
 import { flashKey } from '../calendar/common/parts/useFlashTarget'
+import { sheetOf } from '../calendar/common/sheets'
 import { testIds } from '../calendar/common/testIds'
 import type { RegisterSheetProps } from '../calendar/common/types'
 import { DetailForm } from './DetailForm'
@@ -71,7 +73,7 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
 
   /** 閉じてよい（登録した・捨てると決めた。「戻る」を止めない） */
   const leaving = useRef(false)
-  /** 確かめを出している間（同じ確かめを重ねて出さない。close = ［×］など、back = 「戻る」） */
+  /** 確かめを出している間（同じ確かめを重ねて出さない。close = ［×］など、back = 「戻る」・別の小さな画面に替える） */
   const asking = useRef<'close' | 'back' | null>(null)
 
   const onDates = (patch: DatePatch) => {
@@ -145,9 +147,11 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
     })
   }
 
-  // 「戻る」: 書きかけの間は履歴を戻すのを止めて確かめる（［捨てる］で戻る、［戻る］・Esc なら開いたまま）
+  // 「戻る」と、この画面を別の小さな画面に替える時（複製のお知らせの［開く］。common/sheets.ts の open は置き換える）: 書きかけの間は
+  // 止めて確かめる（［捨てる］で戻る・替える、［戻る］・Esc なら開いたまま）。小さな画面を閉じる・ほかの行き先へ移るのは止めない
   const shouldBlock = useCallback<BlockerFunction>(
-    ({ historyAction }) => historyAction === 'POP' && !leaving.current && hasDraftText(current.current),
+    ({ historyAction, nextLocation }) =>
+      (historyAction === 'POP' || sheetOf(nextLocation.state) !== null) && !leaving.current && hasDraftText(current.current),
     [],
   )
   const blocker = useBlocker(shouldBlock)

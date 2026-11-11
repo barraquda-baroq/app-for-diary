@@ -1,7 +1,7 @@
 // 登録・詳細の小さな画面と履歴（docs/SPEC.md の 3.1・3.8。D03）: 開くと同じ行き先を state.sheet 付きで積み、［×］・Esc は
 // 1つ戻して閉じ、「戻る」でも閉じる（モード・期間はそのまま）。開いている時に別の物を開くと替える。読み込み直した後は、詳細は
 // 予定があれば開き直し、無ければ・登録の画面は印を外す。データを読み終えるまでは決めない
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { mkItem } from '../../../domain/testData'
@@ -147,6 +147,43 @@ describe('開く・閉じる（履歴）', () => {
     expect(router.state.location.pathname).toBe('/month/2026-11')
     await act(() => router.navigate(-1))
     expect(router.state.location.pathname).toBe('/year/2026')
+  })
+
+  it('書きかけの登録の画面を詳細に替える時（複製のお知らせの［開く］）は、閉じる時と同じく確かめる。［戻る］なら登録の画面と書きかけはそのまま、［捨てる］で替える（開発）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderView(Harness, {}, { path: '/month/2026-11', data: { items } })
+    await user.click(screen.getByText('登録を開く'))
+    // 登録の画面を開いている時に押す［開く］（お知らせが持つ物）
+    const fromToast = latest as ItemSheets
+    await user.type(screen.getByTestId('item-title'), '会議')
+    act(() => fromToast.openDetail('a'))
+    await act(async () => {})
+    const dialog = screen.getByRole('dialog', { name: '書きかけを捨てますか？' })
+    expect(within(dialog).getByText('入力した予定は登録されません。')).toBeTruthy()
+    await user.click(screen.getByTestId('item-discard-keep'))
+    expect(sheetOf(router.state.location.state)?.kind).toBe('register')
+    expect((screen.getByTestId('item-title') as HTMLTextAreaElement).value).toBe('会議')
+    act(() => fromToast.openDetail('a'))
+    await act(async () => {})
+    await user.click(screen.getByTestId('item-discard'))
+    await waitFor(() => expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'a' }))
+    await waitFor(() => expect(screen.getByTestId('item-title').textContent).toBe('定例ミーティング'))
+    // 替えた（積んでいない）ので、［×］1回でカレンダーへ戻る
+    await user.click(screen.getByTestId('modal-close'))
+    expect(sheet()).toBeNull()
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    expect(sheetOf(router.state.location.state)).toBeNull()
+  })
+
+  it('書きかけでない登録の画面は、確かめずに詳細に替える', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderView(Harness, {}, { path: '/month/2026-11', data: { items } })
+    await user.click(screen.getByText('登録を開く'))
+    act(() => (latest as ItemSheets).openDetail('b'))
+    await act(async () => {})
+    expect(screen.queryByRole('dialog', { name: '書きかけを捨てますか？' })).toBeNull()
+    expect(router.state.historyAction).toBe('REPLACE')
+    expect(screen.getByTestId('item-title').textContent).toBe('資料の確認')
   })
 
   it('開いている間に受け取った閉じる物を、「戻る」で閉じた後に呼んでも、もう1つ前へは戻らない（削除の確かめの間に「戻る」を押した時）', async () => {
