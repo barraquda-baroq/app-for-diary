@@ -1,0 +1,535 @@
+/* 登録・詳細の画面（src/features/item/*。docs/SPEC.md の 3.8・4.3・4.6・4.7・4.11・12.2・12.3）。クラスは .it- で始める。
+   色は src/styles.css の変数だけを使う（部品で色を足さない）。小さな画面・下からのシート（.modal）・入力欄（.input・.textarea）・
+   切り替え（.switch・.segmented）・ボタン（.btn・.icon-btn）・畳む（.fold）・点線の丸（DotCheckIcon）は src/styles.css の物をそのまま使い、
+   ここでは足りない所だけを書く。
+   注意の字は --text-muted で出し、--overdue・--danger は区分の色の地の上に置かない（削除は「…」のメニューの中。4.5・ITEMS-221） */
+
+/* ===== 画面の地と上の辺の帯（4.3・12.2・12.3。X2） =====
+   地は選んでいる区分の色（data-kind の --kind-sheet。ディープダークは --surface）。上の辺の 6px のラベルの色の帯は src/styles.css の
+   .modal.label-band（data-label がある時だけ。角丸に沿って切れる）。中の入力欄・ボタンの地は今までどおり */
+.modal.it-sheet {
+  background: var(--kind-sheet, var(--surface));
+}
+
+/* 下のボタンの列も同じ地（画面全体を区分の色に）。上の 1px の線だけで分ける */
+.modal.it-sheet .modal-foot {
+  background: transparent;
+}
+
+/* 下のボタンの列が無い詳細の画面は、中身の下にスマホのホームバーの分を空ける（ボタンの列はそれ自身が空ける） */
+.modal.it-sheet .modal-body:last-child {
+  padding-bottom: calc(16px + var(--safe-bottom));
+}
+
+/* ===== 題の左のアイコン（src/ui/Modal の titleIcon。14px・読み上げない） =====
+   登録・詳細の画面では、区分の色の地が無くなるディープダークだけで出す（かばん・家。12.3・Q24・FRAME-144） */
+.modal-title-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  vertical-align: -2px;
+  color: var(--text-muted);
+}
+
+.modal-title-icon .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.modal.it-sheet .modal-title-icon {
+  display: none;
+}
+
+:root[data-theme='deep-dark'] .modal.it-sheet .modal-title-icon {
+  display: inline-flex;
+}
+
+/* ===== 欄の並び（件名 → 区分 → 日付 → 時刻 → 詳しく。12.2） ===== */
+.it-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.it-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* 欄の名前（12px・600・--text-muted。NS の .field の名前と同じ） */
+.it-field-label,
+.it-cap {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* 欄の下の添え書き（「空なら1日だけ」・「翌日 02:00 まで」・日付にできなかった理由・list 生まれの1行） */
+.it-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* 件名: 1行の欄（改行しない）。長い件名は折り返して高さを伸ばす（fields/useAutoGrow.ts）。余白と行の高さは .input のまま
+   （1行の時はほかの入力欄と同じ 36px・スマホ 40px。4.11） */
+.input.it-title {
+  display: block;
+  resize: none;
+  overflow: hidden;
+}
+
+/* 区分の切り替え（［かばん 仕事｜家 プライベート］）。欄の幅いっぱいに伸ばさない */
+.segmented.it-kind {
+  align-self: flex-start;
+}
+
+.segmented.it-kind button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+}
+
+.segmented.it-kind .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ===== 日付・時刻の2つの欄（「開始日」〜「締め切り日」・「開始」〜「終了」。12.2 の 3・4） =====
+   1行目に欄の名前、2行目に欄と「〜」、3行目に右の欄の下の添え書き。左右の欄は同じ幅 */
+.it-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 4px;
+  align-items: center;
+}
+
+.it-pair > .it-a {
+  grid-column: 1;
+}
+
+.it-pair > .it-b {
+  grid-column: 3;
+}
+
+.it-pair > .it-cap {
+  grid-row: 1;
+}
+
+.it-pair > .it-date-wrap,
+.it-pair > .it-time,
+.it-pair > .it-sep {
+  grid-row: 2;
+}
+
+.it-pair > .it-sep {
+  grid-column: 2;
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+.it-pair > .it-note.it-b {
+  grid-row: 3;
+}
+
+.it-pair > .it-wide {
+  grid-column: 1 / -1;
+}
+
+/* 日付の欄（押すと小さな月のカレンダー）。入力欄と同じ形で、日付は日本語の「11月10日（火）」（ui の書体・桁をそろえる。4.4） */
+.it-date-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.it-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.it-date .icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.it-date.is-empty {
+  color: var(--text-faint);
+}
+
+/* ［×］で消せる欄は、右に［×］の分を空ける */
+.it-date-wrap.is-clearable .it-date {
+  padding-right: 34px;
+}
+
+.it-clear {
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  translate: 0 -50%;
+}
+
+/* 時刻の欄（打てる。左に時計のアイコン） */
+.it-time {
+  position: relative;
+  min-width: 0;
+}
+
+.it-time .icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  translate: 0 -50%;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.it-time .input {
+  padding-left: 32px;
+}
+
+/* 押せない時刻の欄（開始時刻が空の間の終了・カレンダーに出ていない list 生まれ） */
+.it-time .input:disabled {
+  background: transparent;
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.it-time:has(.input:disabled) .icon {
+  color: var(--text-faint);
+}
+
+/* ===== 詳しく（開閉。端末ごとに覚える。12.2 の 5・4.9） ===== */
+.it-details {
+  display: flex;
+  flex-direction: column;
+  padding-top: 4px;
+  border-top: 1px solid var(--rule);
+}
+
+.it-details-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  margin-left: -4px;
+  padding: 0 10px 0 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.it-details-toggle:hover {
+  color: var(--text);
+}
+
+.it-details-toggle .icon {
+  width: 16px;
+  height: 16px;
+  transition: rotate var(--dur-fold) ease;
+}
+
+.it-details-toggle[aria-expanded='true'] .icon {
+  rotate: 90deg;
+}
+
+/* 畳む中身は .fold の中で切れるので、入力欄のフォーカスの輪（外へ 3px）の分だけ左右に余白を取って外へ戻し、上下の余白は中に置く
+   （.fold の子に上下の余白があると、畳んだ時もその分の高さが残る） */
+.it-details-clip {
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.it-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 0 4px;
+}
+
+/* ===== ラベルの色を選ぶ所（4.6・D35）: 左に「なし」、丸 28px を 12×2（S は丸 24px で「なし」を別の行に） ===== */
+.it-label-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+/* 選んでいる（乗せている）色の、付けた呼び名 */
+.it-label-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.it-labels {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.it-swatches {
+  display: grid;
+  grid-template-columns: repeat(12, 28px);
+  gap: 5px;
+}
+
+.it-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--label);
+  color: var(--on-label);
+  cursor: pointer;
+  transition: scale var(--dur-hover);
+}
+
+.it-swatch .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* 選んでいる色・「なし」: 地の色の細いすき間と --accent の輪（色に頼らずに分かるよう、色には✓も。4.12） */
+.it-swatch[aria-pressed='true'],
+.it-label-none[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 2px var(--kind-sheet, var(--surface)),
+    0 0 0 4px var(--accent);
+}
+
+@media (hover: hover) {
+  .it-swatch:hover {
+    scale: 1.08;
+  }
+}
+
+.it-label-none {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.it-label-none[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* ロック・Task List にも出す（横に並べ、入らなければ折り返す） */
+.it-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+
+.it-switch {
+  font-size: 14px;
+}
+
+.it-switch.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* メモ: 4行から、中身に合わせて高さを伸ばす（fields/useAutoGrow.ts） */
+.textarea.it-memo {
+  display: block;
+  resize: none;
+  overflow: hidden;
+}
+
+/* ===== 詳細の画面の上の列（点線の丸と「完了にする」、［複製］、「…」。12.3） ===== */
+.it-toprow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* 開いた時のフォーカスの置き場（件名の欄にフォーカスすると、スマホでキーボードが開くため）。押す物ではないので枠を出さない */
+.it-toprow:focus {
+  outline: none;
+}
+
+.it-spacer {
+  flex: 1;
+}
+
+.it-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  margin-left: -8px;
+  padding: 0 12px 0 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.it-done .dot-check-icon {
+  color: var(--text-faint);
+}
+
+.it-done[aria-pressed='true'] {
+  color: var(--text-muted);
+}
+
+@media (hover: hover) {
+  /* 乗せると実線（点線の丸の決まり。4.11） */
+  .it-done:hover .dot-check-ring {
+    stroke-dasharray: none;
+  }
+}
+
+/* ===== 詳細の画面の下の行（作った・完了・Claude が追加。12px・--text-faint。12.3・D47） ===== */
+.it-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.it-meta p {
+  margin: 0;
+  min-width: 0;
+}
+
+/* Claude が足した物の行（長い時は1行で切り、押すと全部） */
+.it-via {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.it-via[aria-expanded='true'] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 詳細の予定が見つからない時（閉じるまでの間） */
+.it-missing {
+  margin: 8px 0 4px;
+  color: var(--text-muted);
+}
+
+/* 登録の画面のキーの案内（指で操作する端末・S では出さない。.hint-keyboard・.hide-mobile） */
+.it-hint {
+  margin-right: auto;
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ===== S（599px まで）: ラベルの丸を 24px にし、「なし」を別の行に（360px でも入るように。AMB-ITEMS-01） ===== */
+@media (max-width: 599px) {
+  .it-labels {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .it-swatches {
+    grid-template-columns: repeat(12, 24px);
+    gap: 3px;
+  }
+
+  .it-swatch {
+    width: 24px;
+    height: 24px;
+  }
+
+  .it-swatch .icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .it-swatch[aria-pressed='true'] {
+    box-shadow:
+      0 0 0 1.5px var(--kind-sheet, var(--surface)),
+      0 0 0 3px var(--accent);
+  }
+
+  /* 2つの日付の欄が 360px の幅でも「11月15日（日）」を切らずに入るよう、日付の欄のアイコンを出さず、［×］の分も詰める */
+  .it-date .icon {
+    display: none;
+  }
+
+  .it-date {
+    padding-left: 8px;
+  }
+
+  .it-date-wrap.is-clearable .it-date {
+    padding-right: 28px;
+  }
+
+  .it-pair {
+    column-gap: 4px;
+  }
+}
+
+/* 指で操作する端末と S・M では、日付の欄も入力欄と同じ 40px にする（4.11） */
+@media (max-width: 899px), (pointer: coarse) {
+  .it-date {
+    min-height: 40px;
+  }
+}
