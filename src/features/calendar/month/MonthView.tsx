@@ -6,15 +6,14 @@
 //   どこを押してもデイリーへ（目立たせない。D32）。前後の月の日はその月のマンスリーへ
 // - 休みを付ける状態（9.5。［休み］で入る・終わる。状態は useCalendarUi の offMode）: 操作の列の下に帯、マスの枠を点線にし、
 //   どのマスを押しても（数字・前後の月の日も）その日の休みが付いたり外れたりする。［休み］をもう一度・［終わる］・Esc で終わる。
-//   ‹ ›・今日・スワイプ・［＋ 登録］では続き、マンスリーを離れると終わる（モードの切り替えは useCalendarNav、ほかはここ。D30）
-import { useCallback, useEffect, useMemo } from 'react'
+//   ‹ ›・今日・スワイプ・［＋ 登録］では続き、マンスリーを離れると終わる（モードの切り替え・「戻る」・MIM・設定など、マンスリーを
+//   離れた時に終えるのは src/features/top/TopPage.tsx の useEndOffMode と useCalendarNav。ここでは終えない。D30）
+import { useCallback, useMemo } from 'react'
 import { parseYmd, todayYmd, WEEKDAYS_EN } from '../../../domain/dates'
 import type { ItemKind } from '../../../domain/types'
-import { calendarModeOf } from '../../../routes'
 import { actions } from '../../../store/actions'
 import { attempt, useCalendarUi } from '../../../store/uiStore'
 import { cls, useCalendarData } from '../common/parts'
-import { useCurrentLocation } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import type { ViewProps } from '../common/types'
 import { useCalendarNav } from '../common/useCalendarRoute'
@@ -30,17 +29,7 @@ export function MonthView({ viewed, today, width }: ViewProps) {
   const offMode = useCalendarUi((s) => s.offMode)
   const setOffMode = useCalendarUi((s) => s.setOffMode)
   const nav = useCalendarNav()
-  const here = useCurrentLocation()
   const compact = width === 'S'
-
-  // マンスリーを離れたら（「戻る」で週へ・MIM・設定など。モードの切り替えは useCalendarNav が先に終える）休みを付ける状態を終える。
-  // 幅が変わって描き直す（L と S・M で置き場所が替わる）だけなら、行き先はマンスリーのままなので続ける
-  useEffect(
-    () => () => {
-      if (calendarModeOf(here().pathname) !== 'month') useCalendarUi.getState().setOffMode(false)
-    },
-    [here],
-  )
 
   const onCell = useCallback(
     (c: MonthCellVM) => {

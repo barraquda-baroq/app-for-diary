@@ -147,11 +147,12 @@
 /* ---------- 下の真ん中: 件数（L・M「4 / 3」等幅 22px、S「4/3」等幅 14px・空白なし。9.2・4.7） ----------
    件数の行はマスの左右の余白まで広げ（狭い S でも「12/10」が入るように）、字の大きさはその行の幅で決める（container の単位。
    L・M 22 → 16px、S 14 → 11px。D27）。行を左右半分ずつに分け、「/」をマスの真ん中に置いて、仕事の数はその左、プライベートの数は
-   その右に寄せる（どのマスでも「/」が縦にそろう。L・M の数字のボタンは、それぞれの半分の中で押せる所を 34px 四方を目安に取る） */
+   その右に寄せる（どのマスでも「/」が縦にそろう。L・M の数字のボタンは、それぞれの半分の中で押せる所を 34px 四方を目安に取る）。
+   半分の幅は中身で広げない（minmax(0, 1fr)。広がると「/」が真ん中からずれる） */
 .mo-counts {
   --mo-half-sep: 0.45em;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   margin: auto -8px 0;
   container-type: inline-size;
@@ -195,6 +196,13 @@
   color: var(--numeral);
 }
 
+/* 「99+」（3文字。7.6）のあるマス（.is-wide）は、半分の幅に「99+」と「/」までの間が入る大きさまで字を小さくする
+   （等幅の字の幅は 0.61em ほど。L・M は 3 × 0.61 + 0.45 ≒ 2.3em が半分に入るよう 22 → 14px。幅 600px で 16px） */
+.mo-counts.is-wide .mo-count,
+.mo-counts.is-wide .mo-sep {
+  font-size: clamp(14px, calc((100cqi - 4px) / 4.5), 22px);
+}
+
 /* 「/」はマスの真ん中（--text-faint） */
 .mo-sep {
   position: absolute;
@@ -234,6 +242,13 @@ button.mo-count:focus-visible {
   height: auto;
 }
 
+/* S の「99+」のマス: 3 × 0.61 + 0.3 ≒ 2.1em が半分に入るよう 14px から小さくする（幅 360px で 10px、390px で 11px ほど。ほかの
+   マスの下限 11px より小さくなるのは、100件を超える日だけ。D27 に足す 開発 の決まり） */
+.mo-month.is-compact .mo-counts.is-wide .mo-count,
+.mo-month.is-compact .mo-counts.is-wide .mo-sep {
+  font-size: clamp(9px, calc((100cqi - 2px) / 4.2), 14px);
+}
+
 .mo-month.is-compact .mo-date {
   font-size: 12px;
 }
@@ -254,7 +269,9 @@ button.mo-count:focus-visible {
 }
 
 /* 帯（操作の列のすぐ下。地 --accent-soft・字 --accent-strong・高さ 36px）。カレンダーの領域の端から端まで（.cal-body の左右の余白の分を
-   はみ出させる）。L でマス目がスクロールしても見えるよう、上に留める */
+   はみ出させる）。L でマス目がスクロールしても見えるよう、上に留める。
+   高さは、指で操作する端末・M・S で 34px になる［終わる］（.btn-sm）と、S で2行に折り返す文（13px × 1.3 × 2）が、上下 1px の余白で
+   36px に入るようにする */
 .mo-banner {
   position: sticky;
   top: 0;
@@ -264,7 +281,7 @@ button.mo-count:focus-visible {
   gap: 8px 12px;
   min-height: 36px;
   margin: 0 -16px;
-  padding: 3px 16px;
+  padding: 1px 16px;
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -274,7 +291,7 @@ button.mo-count:focus-visible {
   min-width: 0;
   margin: 0;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 .mo-banner-end {
@@ -285,6 +302,6 @@ button.mo-count:focus-visible {
 @media (max-width: 599px) {
   .mo-banner {
     margin: 0 -8px;
-    padding: 3px 8px;
+    padding: 1px 8px;
   }
 }

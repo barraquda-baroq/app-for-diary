@@ -3,6 +3,8 @@
 // 月をまたぐ・読み込み直し）、端末の時差。データは作り物の e2e/fixtures/demoData.ts（今日は 2026年11月10日（火）9:00）。
 // 11月の見本: 11/10 は仕事 8・プライベート 2、11/19 は 12/10、11/3 文化の日・11/23 勤労感謝の日、休みは 11/11・11/14・11/23・12/2
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { mkItem } from '../src/domain/testData'
+import type { Item } from '../src/domain/types'
 import { demoData } from './fixtures/demoData'
 import { centerOf, collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, tapSize, touchSwipe } from './helpers'
 
@@ -46,6 +48,21 @@ async function token(page: Page, name: string): Promise<string> {
 
 const colorOf = (target: Locator) => target.evaluate((e) => getComputedStyle(e).color)
 const groundOf = (target: Locator) => target.evaluate((e) => getComputedStyle(e).backgroundColor)
+
+/** 100件を超える日（11/18 は仕事 100・11/19 は両方 100・11/20 はプライベート 100。「99+」と出す。7.6） */
+function crowded(): Record<string, Item> {
+  const items: Record<string, Item> = {}
+  for (let i = 0; i < 100; i++) {
+    items[`w${i}`] = mkItem({ id: `w${i}`, title: `仕事 ${i}`, start: '2026-11-18', due: '2026-11-19' })
+    items[`p${i}`] = mkItem({ id: `p${i}`, title: `用事 ${i}`, kind: 'private', start: '2026-11-19', due: '2026-11-20' })
+  }
+  return items
+}
+
+/** 休みを付ける状態の帯の高さ（36px。2行に折り返す S でも。9.5） */
+async function bannerHeight(page: Page): Promise<number> {
+  return Math.round((await page.getByTestId('off-banner').boundingBox())!.height)
+}
 
 /** 件数の字がマスの中に収まっている（はみ出して隣のマスに掛からない。D27） */
 async function countsFit(page: Page, date: string) {
@@ -105,11 +122,13 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     expect(await colorOf(count(page, '2026-11-03', 'private'))).toBe(await token(page, '--numeral'))
     expect(await colorOf(cell(page, '2026-12-03').locator('.mo-date'))).toBe(await token(page, '--numeral'))
     await expect(cell(page, '2026-12-03').locator('.mo-counts')).toHaveCount(0)
-    // 休みの日は地 --off-fill と「休」（前後の月の日も。D06）。土日・祝日は自動で休みにしない（CALENDAR-047・081・242）
-    expect(await groundOf(cell(page, '2026-11-11'))).toBe(await token(page, '--off-fill'))
+    // 休みの日は地 --off-fill と「休」（前後の月の日も。D06）。土日・祝日は自動で休みにしない（CALENDAR-047・081・242）。
+    // データを置いた直後は地の色が変わる途中（乗せた時と同じ 120ms の変わり方）なので、変わり終わるまで待つ
+    const offFill = await token(page, '--off-fill')
+    await expect.poll(() => groundOf(cell(page, '2026-11-11'))).toBe(offFill)
+    await expect.poll(() => groundOf(cell(page, '2026-12-02'))).toBe(offFill)
     await expect(cell(page, '2026-11-11').locator('.cp-off')).toContainText('休')
-    expect(await groundOf(cell(page, '2026-12-02'))).toBe(await groundOf(cell(page, '2026-11-11')))
-    expect(await groundOf(cell(page, '2026-11-15'))).not.toBe(await groundOf(cell(page, '2026-11-11')))
+    expect(await groundOf(cell(page, '2026-11-15'))).not.toBe(offFill)
     // 祝日は日付が --sun、右上に祝日名（マスの幅の 60% まで）。祝日で休みの日は両方（CALENDAR-066・082・237）
     expect(await colorOf(cell(page, '2026-11-03').locator('.mo-date'))).toBe(await token(page, '--sun'))
     expect(await colorOf(cell(page, '2026-11-07').locator('.mo-date'))).toBe(await token(page, '--sat'))
@@ -240,6 +259,9 @@ test.describe('マンスリー（S）', { tag: ['@s'] }, () => {
     await page.waitForTimeout(300)
     await page.getByTestId('cal-off').tap()
     await expect(page.getByTestId('off-banner')).toBeVisible()
+    // 帯の文は S では2行に折り返すが、高さは 36px のまま（［終わる］も 34px 四方）
+    expect(await bannerHeight(page)).toBe(36)
+    await tapSize(page.getByTestId('off-end'), '［終わる］')
     await cell(page, '2026-12-09').tap()
     await expect(cell(page, '2026-12-09')).toHaveClass(/cp-offday/)
     await at(page, '/month/2026-12')
@@ -256,6 +278,14 @@ test.describe('マンスリー（S・幅 360px）', { tag: ['@s'] }, () => {
     await countsFit(page, '2026-11-15')
     await noHorizontalScroll(page)
   })
+
+  test('「99+」の日も件数がマスに収まる（「/」はマスの真ん中のまま、字を小さくする。7.6・D27）', async ({ page }) => {
+    await openCalendar(page, MONTH, { data: { items: crowded() } })
+    await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('99+/99+')
+    await expect(cell(page, '2026-11-18').locator('.mo-counts')).toHaveText('99+/0')
+    for (const date of ['2026-11-18', '2026-11-19', '2026-11-20']) await countsFit(page, date)
+    await noHorizontalScroll(page)
+  })
 })
 
 test.describe('マンスリー（M）', { tag: ['@m'] }, () => {
@@ -268,6 +298,11 @@ test.describe('マンスリー（M）', { tag: ['@m'] }, () => {
     await countsFit(page, '2026-11-19')
     await expect(cell(page, '2026-11-03').locator('.cp-holiday')).toHaveText('文化の日')
     await noHorizontalScroll(page)
+    // 休みを付ける状態の帯は 36px（［終わる］は指で押せる 34px）
+    await page.getByTestId('cal-off').tap()
+    expect(await bannerHeight(page)).toBe(36)
+    await page.getByTestId('off-end').tap()
+    await expect(page.getByTestId('off-banner')).toHaveCount(0)
     await count(page, '2026-11-19', 'private').tap()
     await at(page, '/day/2026-11-19')
   })

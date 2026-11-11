@@ -43,6 +43,11 @@ export interface MonthCellVM {
   holiday: string | null
   /** 件数（両方 0 の日と前後の月の日は null = 何も書かない。9.2） */
   counts: Record<ItemKind, MonthCountVM> | null
+  /**
+   * 件数のどちらかが「99+」（3文字。7.6）。「/」をマスの真ん中に置いたまま、半分の幅に「99+」が入るよう件数の字を小さくする
+   * （ほかのマスは2桁の「12/10」が入る大きさ。D27）
+   */
+  wide: boolean
   /** マスの読み上げ（「11月10日（火）、仕事 4件、プライベート 3件、休み」。4.12・9.3） */
   label: string
 }
@@ -74,12 +79,14 @@ export function buildMonth(
           off: isOff,
           holiday: null,
           counts: null,
+          wide: false,
           label: outsideLabel(date, isOff),
         }
       }
       const name = holidayName(date)
       const n = counts[date] ?? { work: 0, private: 0 }
       const isToday = date === today
+      const shown = n.work === 0 && n.private === 0 ? null : countsOf(n)
       return {
         date,
         day: v.d,
@@ -88,7 +95,8 @@ export function buildMonth(
         isToday,
         off: isOff,
         holiday: width === 'S' ? null : name,
-        counts: n.work === 0 && n.private === 0 ? null : countsOf(n),
+        counts: shown,
+        wide: shown !== null && (shown.work.text.length > 2 || shown.private.text.length > 2),
         label: monthCellLabel(date, n, isOff, name),
       }
     }),

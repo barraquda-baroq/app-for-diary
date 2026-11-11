@@ -96,12 +96,22 @@ describe('件数（7.6・9.2）', () => {
     expect(cellOf(weeks, '2026-11-14').counts).toBeNull()
   })
 
-  it('100 以上は「99+」', () => {
+  it('100 以上は「99+」。どちらかが「99+」のマスは wide（字を小さくして半分の幅に収める。D27）', () => {
     const many = Array.from({ length: 100 }, (_, i) => mkItem({ id: `m${i}`, kind: 'private', start: '2026-11-20' }))
-    const c = cellOf(buildMonth(NOV, listOf(...many), NONE, TODAY, 'L'), '2026-11-20')
+    const weeks = buildMonth(NOV, listOf(...many, mkItem({ id: 'w', start: '2026-11-21' })), NONE, TODAY, 'S')
+    const c = cellOf(weeks, '2026-11-20')
     expect(c.counts?.private.text).toBe('99+')
     expect(c.counts?.work.text).toBe('0')
+    expect(c.wide).toBe(true)
     expect(c.label).toBe('11月20日（金）、仕事 0件、プライベート 99+件')
+    // 2桁まで（「12/10」）と、件数の無い日は wide でない
+    expect(cellOf(weeks, '2026-11-21').wide).toBe(false)
+    expect(cellOf(weeks, '2026-11-22').wide).toBe(false)
+    const twelve = Array.from({ length: 99 }, (_, i) => mkItem({ id: `n${i}`, start: '2026-11-19' }))
+    expect(cellOf(buildMonth(NOV, listOf(...twelve), NONE, TODAY, 'L'), '2026-11-19')).toMatchObject({
+      counts: { work: { text: '99' } },
+      wide: false,
+    })
   })
 
   it('月をまたぐ予定は、その月の日だけに数え、前後の月の日には件数を出さない（9.1）', () => {
@@ -160,6 +170,7 @@ describe('休み・祝日名・前後の月の日（7.2・7.4・9.1・9.2。D06�
       off: true,
       holiday: null,
       counts: null,
+      wide: false,
       label: '12月2日（水）、休み',
     })
     expect(cellOf(weeks, '2026-12-05')).toMatchObject({ outside: true, tone: null, off: false, label: '12月5日（土）' })

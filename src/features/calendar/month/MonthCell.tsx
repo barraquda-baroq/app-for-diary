@@ -24,7 +24,7 @@ export interface MonthCellProps {
 }
 
 function MonthCellImpl({ cell, compact, offMode, onCell, onCount }: MonthCellProps) {
-  const { date, day, outside, tone, isToday, off, holiday, counts, label } = cell
+  const { date, day, outside, tone, isToday, off, holiday, counts, wide, label } = cell
   // 数字を別のボタンにするのは L・M の、休みを付ける状態でない時だけ（D19・9.5）
   const countButtons = !compact && !offMode
   return (
@@ -51,7 +51,10 @@ function MonthCellImpl({ cell, compact, offMode, onCell, onCount }: MonthCellPro
         {holiday && <HolidayName date={date} className="mo-holiday" />}
       </div>
       {counts && (
-        <div className={cls('mono', 'mo-counts', countButtons && 'is-buttons')} aria-hidden={countButtons ? undefined : true}>
+        <div
+          className={cls('mono', 'mo-counts', countButtons && 'is-buttons', wide && 'is-wide')}
+          aria-hidden={countButtons ? undefined : true}
+        >
           <Count date={date} kind="work" count={counts.work} button={countButtons} onCount={onCount} />
           <span className="mo-sep" aria-hidden="true">
             /
@@ -105,6 +108,7 @@ function sameCell(a: MonthCellProps, b: MonthCellProps): boolean {
     x.isToday === y.isToday &&
     x.off === y.off &&
     x.holiday === y.holiday &&
+    x.wide === y.wide &&
     x.label === y.label &&
     sameCounts(x.counts, y.counts)
   )

@@ -99,6 +99,16 @@ describe('マス目と中身（9.1・9.2）', () => {
     expect(hit('2026-11-03').getAttribute('aria-label')).toBe('11月3日（火）、予定なし、文化の日')
   })
 
+  it('どちらかが「99+」のマスは件数の行に is-wide（字を小さくして「99+」を半分の幅に収める。7.6・D27）', async () => {
+    const items = Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => [`m${i}`, mkItem({ id: `m${i}`, kind: 'private', start: '2026-11-20' })]),
+    )
+    await renderAt('/month/2026-11', { data: { ...sample(), items: { ...sample().items, ...items } }, width: 'S' })
+    expect(cell('2026-11-20').querySelector('.mo-counts')?.textContent).toBe('0/99+')
+    expect(cell('2026-11-20').querySelector('.mo-counts')?.classList.contains('is-wide')).toBe(true)
+    expect(cell('2026-11-10').querySelector('.mo-counts')?.classList.contains('is-wide')).toBe(false)
+  })
+
   it('予定を完了にすると、その期間の毎日の数が減る（7.6）', async () => {
     await renderAt('/month/2026-11', { data: sample() })
     expect(count('2026-11-09', 'work').textContent).toBe('1')
@@ -224,8 +234,20 @@ describe('休みを付ける状態（9.5・D30）', () => {
     expect(useCalendarUi.getState().offMode).toBe(true)
     fireEvent.keyDown(document.body, { key: 'Escape', isComposing: true })
     expect(useCalendarUi.getState().offMode).toBe(true)
+    // Safari は変換を取り消す Esc を、変換が終わってから keyCode 229 で送る
+    fireEvent.keyDown(document.body, { key: 'Escape', keyCode: 229 })
+    expect(useCalendarUi.getState().offMode).toBe(true)
     fireEvent.keyDown(document.body, { key: 'Escape' })
     expect(useCalendarUi.getState().offMode).toBe(false)
+  })
+
+  it('［終わる］にフォーカスがある時に Esc で終えると、フォーカスは操作の列の［休み］へ（帯と一緒に消えないように）', async () => {
+    await openOffMode()
+    const end = screen.getByTestId(testIds.offEnd)
+    act(() => end.focus())
+    fireEvent.keyDown(end, { key: 'Escape' })
+    expect(useCalendarUi.getState().offMode).toBe(false)
+    expect(document.activeElement).toBe(screen.getByTestId(testIds.calOff))
   })
 
   it('［＋ 登録］を開いても続き、その画面で Esc を押すと画面だけが閉じる（D30）', async () => {
