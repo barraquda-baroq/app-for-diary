@@ -1162,6 +1162,12 @@ h4 {
   animation: shake var(--dur-shake) ease-in-out;
 }
 
+/* 視差効果を減らす設定で揺らす代わりに、ロックの印（LockIcon。線は文字の色）を 600ms だけ --accent にする。
+   付けた側（src/ui/motion.ts の shake）が外す（docs/SPEC.md の 4.9） */
+.lock-accent {
+  color: var(--accent);
+}
+
 /* 右の列の上に重ねるパネル（右から 180ms。段階3のリストの［詳しく］で使う） */
 .panel-in {
   animation: slide-in-right var(--dur-panel) ease-out;

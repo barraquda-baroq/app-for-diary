@@ -1,6 +1,9 @@
-// E2E テスト用のヘルパー。NS の e2e/helpers.ts から。開発サーバーでは window.__ds（src/main.tsx）からログインの状態などを操作できる。
-// データを用意する seed は、データのストアを作る段階1で足す
+// E2E テスト用のヘルパー。NS の e2e/helpers.ts から。開発サーバーでは window.__ds（src/main.tsx）からログインの状態・データ・操作を使える。
+// 段階2のカレンダーの E2E は、画面を通さずにデータを置き（seedData・seed）、時刻を決めて開く（openCalendar。初めは
+// 2026年11月10日（火）9:00）。指の操作は Chromium（Pixel 7・タブレット）では CDP の本物のタッチ、WebKit（iPhone）では
+// 合成した PointerEvent（pointerType: 'touch'）で送る（longPressDrag・touchSwipe）。データは作り物だけを使う（個人の情報を入れない）
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import type { AppData, Item } from '../src/domain/types'
 
 /**
  * 落ちた時の手がかりを残す（CI の WebKit でだけ時々ログインの画面が出ないことがあり、その時に何が起きていたかを見るため）。
@@ -77,7 +80,10 @@ export function collectDiagnosticsOnFailure(): void {
   })
 }
 
-interface DevHook {
+/** 画面から呼ぶ操作（src/store/actions.ts） */
+export type Actions = typeof import('../src/store/actions').actions
+
+export interface DevHook {
   /** エミュレーターにつないでいる時だけ: 仮のアカウントでログインする */
   signInForTest: (sub: string) => Promise<void>
   /** 画面のテスト用: Firebase を使わずにログインした状態にする */
@@ -88,6 +94,19 @@ interface DevHook {
   showUpdateBanner: () => void
   /** showUpdateBanner で出した帯の［更新する］が押されたか */
   updateApplied: () => boolean
+  /** 表示用のデータ（直した後の物）・端末の raw のデータ */
+  getData: () => AppData
+  getRaw: () => AppData
+  /** 画面から呼ぶ操作 */
+  actions: Actions
+  /** 端末の中のデータを読み終えるまで待つ */
+  whenStoreReady: () => Promise<void>
+  /** 端末の中のデータを丸ごと置き換える（足りない表は空） */
+  replaceAllData: (data: AppData) => Promise<void>
+  /** 保留中の変更をすぐ保存する */
+  flushNow: () => Promise<boolean>
+  /** ゴミ箱の期限切れを決める時刻を差し替える */
+  setTrashClock: (fn: () => number | null) => void
 }
 
 declare global {
@@ -156,4 +175,205 @@ export async function tapSize(target: Locator, label: string, both = true): Prom
   const box = await target.boundingBox()
   expect(box?.height, label).toBeGreaterThanOrEqual(34)
   if (both) expect(box?.width, label).toBeGreaterThanOrEqual(34)
+}
+
+// ---------- 段階2: データを置く・時刻を決めて開く ----------
+
+/**
+ * 画面を通さずにデータを用意する（NS の seed）。fn はブラウザの中で動く（外の変数は arg で渡す）。終わったら保存まで待つ。
+ *   const id = await seed(page, ({ actions }) => actions.addItem({ origin: 'calendar', title: '打ち合わせ', start: '2026-11-10' }))
+ */
+export async function seed<R, A = undefined>(page: Page, fn: (hook: DevHook, arg: A) => R, arg?: A): Promise<Awaited<R>> {
+  const result = await page.evaluate(
+    async ({ src, arg }) => {
+      await window.__ds.whenStoreReady()
+      const f = new Function(`return (${src})`)() as (h: DevHook, a: unknown) => unknown
+      const r = await f(window.__ds, arg)
+      await window.__ds.flushNow()
+      return r
+    },
+    { src: fn.toString(), arg: arg as unknown },
+  )
+  return result as Awaited<R>
+}
+
+/** 端末の中のデータを、渡した物（足りない表は空）に置き換えて保存する。アプリを開いた後に呼ぶ */
+export async function seedData(page: Page, data: Partial<AppData>): Promise<void> {
+  await page.waitForFunction(() => Boolean(window.__ds))
+  await page.evaluate(async (d) => {
+    await window.__ds.whenStoreReady()
+    await window.__ds.replaceAllData(d as AppData)
+    await window.__ds.flushNow()
+  }, data)
+}
+
+/** 端末の raw の予定（知らない値も残っているか・ゴミ箱へ移ったかの確かめ。無ければ null） */
+export async function rawItem(page: Page, id: string): Promise<Item | null> {
+  return page.evaluate((i) => window.__ds.getRaw().items[i] ?? null, id)
+}
+
+/** カレンダーの E2E の「今」（2026年11月10日（火）9:00 日本時間。docs/SPEC.md の例の日） */
+export const E2E_NOW = '2026-11-10T09:00:00+09:00'
+
+export interface OpenCalendarOptions {
+  /** 今の時刻（page.clock.setFixedTime。タイマーは本物のまま動く）。false なら時刻を決めない（clock.install を自分でする時） */
+  now?: string | Date | false
+  /** 外観（white・dark・deep-dark・system） */
+  appearance?: 'system' | 'white' | 'dark' | 'deep-dark'
+  /** 端末ごとの表示の設定（lastMode・detailsOpen など。src/store/uiStore.ts の Prefs） */
+  prefs?: Record<string, unknown>
+  /** 開いた後に置くデータ */
+  data?: Partial<AppData>
+}
+
+/**
+ * ログインした状態（テスト用の印 diary-studio:test-auth。Firebase は使わない）で、決めた時刻・外観・表示の設定でカレンダーを開く。
+ * 表示の設定は最初に開いた時だけ置く（読み込み直しても、アプリが覚えた設定が残る）。起動アニメーションは出さない（強制しない）。
+ *   await openCalendar(page, '/week/2026-11-08', { data: { items } })
+ */
+export async function openCalendar(page: Page, hash = '/', opts: OpenCalendarOptions = {}): Promise<void> {
+  const { now = E2E_NOW, appearance, prefs, data } = opts
+  if (now !== false) await page.clock.setFixedTime(new Date(now))
+  const stored = appearance || prefs ? { v: 1, ...(appearance ? { appearance } : {}), ...prefs } : null
+  await page.addInitScript((p) => {
+    localStorage.setItem('diary-studio:test-auth', '1')
+    if (p && !sessionStorage.getItem('e2e:prefs-set')) {
+      localStorage.setItem('diary-studio:prefs', JSON.stringify(p))
+      sessionStorage.setItem('e2e:prefs-set', '1')
+    }
+  }, stored)
+  await page.goto(`/#${hash}`)
+  await page.waitForFunction(() => Boolean(window.__ds))
+  await expect(page.getByTestId('top-page')).toBeVisible()
+  if (data) await seedData(page, data)
+}
+
+// ---------- 段階2: マウス・指の操作 ----------
+
+/** 要素の真ん中（画面の座標） */
+export async function centerOf(target: Locator): Promise<{ x: number; y: number }> {
+  const box = await target.boundingBox()
+  if (!box) throw new Error('要素が見えていません')
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+type Point = { x: number; y: number }
+const pointOf = async (p: Locator | Point): Promise<Point> => ('x' in p && 'y' in p ? p : centerOf(p as Locator))
+
+/**
+ * マウスでドラッグする（押す → 少し動かして掴む（5px 以上。docs/SPEC.md の 7.11） → 落とす所の真ん中まで steps 回に分けて動かす → 離す）
+ */
+export async function mouseDrag(page: Page, from: Locator | Point, to: Locator | Point, { steps = 10 } = {}): Promise<void> {
+  const a = await pointOf(from)
+  const b = await pointOf(to)
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(a.x + 8, a.y, { steps: 2 })
+  await page.mouse.move(b.x, b.y, { steps })
+  await page.mouse.up()
+}
+
+/** Chromium（Pixel 7・タブレット）か。CDP の本物のタッチを使えるのはこちらだけ */
+const isChromium = (page: Page) => page.context().browser()?.browserType().name() === 'chromium'
+
+/**
+ * 指の送り方: cdp = 本物のタッチ（Chromium だけ。ブラウザが pointer・touch の両方の出来事を作り、動かすとスクロールもする）、
+ * synthetic = 合成した PointerEvent（WebKit 用。スクロールはしない）。省くと Chromium は cdp、ほかは synthetic
+ */
+export type TouchVia = 'cdp' | 'synthetic'
+const touchVia = (page: Page, via?: TouchVia): TouchVia => via ?? (isChromium(page) ? 'cdp' : 'synthetic')
+
+/**
+ * 合成した指の PointerEvent（pointerType: 'touch'）を送る（WebKit 用）。押した所の要素に pointerdown を送り、その後の動きと離す
+ * のも同じ要素に送る（指の pointer は押した要素に捕まる。document まで伝わる）。holdMs は押してから動かし始めるまで
+ */
+async function syntheticTouch(page: Page, points: Point[], holdMs: number, stepMs: number): Promise<void> {
+  await page.evaluate(
+    async ({ points, holdMs, stepMs }) => {
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+      const [first] = points
+      const target = document.elementFromPoint(first.x, first.y) ?? document.body
+      const fire = (type: string, p: { x: number; y: number }, buttons: number) =>
+        target.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerId: 7,
+            pointerType: 'touch',
+            isPrimary: true,
+            clientX: p.x,
+            clientY: p.y,
+            button: 0,
+            buttons,
+            width: 10,
+            height: 10,
+            pressure: buttons ? 0.5 : 0,
+          }),
+        )
+      fire('pointerdown', first, 1)
+      await wait(holdMs)
+      for (const p of points.slice(1)) {
+        fire('pointermove', p, 1)
+        await wait(stepMs)
+      }
+      fire('pointerup', points[points.length - 1], 0)
+    },
+    { points, holdMs, stepMs },
+  )
+}
+
+/** a から b までを steps 等分した点（a を含む） */
+function path(a: Point, b: Point, steps: number): Point[] {
+  return Array.from({ length: steps + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps }))
+}
+
+/** 本物の指（CDP の Input.dispatchTouchEvent。Chromium だけ）で、押す → holdMs 待つ → 動かす → 離す */
+async function cdpTouch(page: Page, points: Point[], holdMs: number, stepMs: number): Promise<void> {
+  const cdp = await page.context().newCDPSession(page)
+  try {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points[0]] })
+    if (holdMs) await page.waitForTimeout(holdMs)
+    for (const p of points.slice(1)) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [p] })
+      if (stepMs) await page.waitForTimeout(stepMs)
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  } finally {
+    await cdp.detach()
+  }
+}
+
+/**
+ * 指で長押ししてからドラッグする（押したまま holdMs（初めは 450ms。掴むのは 400ms・8px 以内。docs/SPEC.md の 7.11）待ち、
+ * 落とす所まで steps 回に分けて動かして離す）。Chromium は CDP の本物のタッチ、WebKit は合成した PointerEvent。
+ * page.clock.install（タイマーも偽物）と一緒には使わない（待つ間にタイマーが進まないので掴めない）
+ */
+export async function longPressDrag(
+  page: Page,
+  from: Locator | Point,
+  to: Locator | Point,
+  { holdMs = 450, steps = 10, stepMs = 16, via }: { holdMs?: number; steps?: number; stepMs?: number; via?: TouchVia } = {},
+): Promise<void> {
+  const points = path(await pointOf(from), await pointOf(to), steps)
+  if (touchVia(page, via) === 'cdp') await cdpTouch(page, points, holdMs, stepMs)
+  else await syntheticTouch(page, points, holdMs, stepMs)
+}
+
+/**
+ * 指ですばやく払う（スワイプ。docs/SPEC.md の 3.7: 横に 60px 以上・角度 30° 未満で前・次へ）。from から dx・dy だけ、
+ * steps 回に分けて durationMs で動かす。Chromium は CDP の本物のタッチ、WebKit は合成した PointerEvent
+ */
+export async function touchSwipe(
+  page: Page,
+  from: Locator | Point,
+  dx: number,
+  dy = 0,
+  { steps = 8, durationMs = 160, via }: { steps?: number; durationMs?: number; via?: TouchVia } = {},
+): Promise<void> {
+  const a = await pointOf(from)
+  const points = path(a, { x: a.x + dx, y: a.y + dy }, steps)
+  const stepMs = Math.round(durationMs / steps)
+  if (touchVia(page, via) === 'cdp') await cdpTouch(page, points, 0, stepMs)
+  else await syntheticTouch(page, points, 0, stepMs)
 }

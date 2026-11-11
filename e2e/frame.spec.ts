@@ -26,7 +26,7 @@ async function tokenColor(page: Page, token: string): Promise<string> {
   }, token)
 }
 
-test.describe('ログインの画面（2.5）', () => {
+test.describe('ログインの画面（2.5）', { tag: ['@pc', '@s'] }, () => {
   test('ログインしていなければログインの画面だけを出す（グレーの地・等幅の名前・今日の日付・［Google でログイン］）', async ({
     page,
   }) => {
@@ -63,7 +63,7 @@ test.describe('ログインの画面（2.5）', () => {
   })
 })
 
-test.describe('空のトップ画面', () => {
+test.describe('空のトップ画面', { tag: ['@pc', '@s'] }, () => {
   test('テスト用の印でログインした状態になり、ヘッダーの右端に［MIM］、その左に設定の歯車', async ({ page }) => {
     await openSignedIn(page)
     const header = page.getByTestId('app-header')
@@ -109,7 +109,7 @@ test.describe('空のトップ画面', () => {
   })
 })
 
-test.describe('新しい版の帯（2.8）', () => {
+test.describe('新しい版の帯（2.8）', { tag: ['@pc', '@s'] }, () => {
   /** ページを3画面ぶんの高さにする（段階2・3で予定やリストの行が増えた時と同じ形。帯の有無でヘッダーの固定が崩れないか見る） */
   async function makeTall(page: Page, container: string) {
     await page.evaluate((sel) => {
@@ -160,7 +160,7 @@ test.describe('新しい版の帯（2.8）', () => {
   })
 })
 
-test.describe('PC（L）の並べ方（3.4）', () => {
+test.describe('PC（L）の並べ方（3.4）', { tag: ['@pc', '@s'] }, () => {
   test.skip(({ isMobile }) => isMobile, 'PC の幅だけ')
 
   test('左にカレンダーの領域、右に 300px の右の列（Routine → Task → Favorite）。ページ全体はスクロールしない', async ({
@@ -232,7 +232,7 @@ test.describe('PC（L）の並べ方（3.4）', () => {
   })
 })
 
-test.describe('スマホ（S）の並べ方（3.5・3.6）', () => {
+test.describe('スマホ（S）の並べ方（3.5・3.6）', { tag: ['@pc', '@s'] }, () => {
   test.skip(({ isMobile }) => !isMobile, 'スマホだけ')
 
   test('切り替えの列と縦の積み。3つのリストは畳んで始まり、押すと開いてその先頭が切り替えの列のすぐ下に来る', async ({

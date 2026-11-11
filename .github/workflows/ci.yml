@@ -26,6 +26,10 @@ jobs:
         run: npm run typecheck
       - name: 整形の確かめ（Prettier）
         run: npm run format:check
+      # E2E のテストには流す端末の印（@pc・@s・@m・@ios。playwright.config.ts）を付ける。印の無いテストはどの端末でも流れないので
+      # ここで止める（e2e/check-tags.mjs。テストを並べるだけで、ブラウザも開発サーバーも使わない。docs/SPEC.md の 2.10）
+      - name: E2E のテストの端末の印の確かめ
+        run: npm run e2e:tags
       # src/ の単体テストと、scripts/ のテスト（vite.config.ts の埋め込み・manifest・アイコン・書体のライセンス、公開の前の確かめ）
       - name: 単体テスト
         run: npm test

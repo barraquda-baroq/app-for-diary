@@ -1,5 +1,8 @@
+// 小さな画面（L は真ん中・S/M は下からのシート）。NS の src/ui/Modal.tsx から。段階2で、予定の登録・詳細の画面の見た目
+// （区分の地・ラベルの色の帯・ディープダークの題の左の区分のアイコン。docs/SPEC.md の 4.3・12.2・12.3）のための印を足した（動きは同じ）
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import type { ItemKind } from '../domain/types'
 import { XIcon } from './icons'
 
 export interface ModalProps {
@@ -12,6 +15,19 @@ export interface ModalProps {
   initialFocus?: string
   /** 今は閉じられない（処理中など）。× ボタンを押せない見た目にする（onClose 側で何もしないようにしておくこと） */
   closeDisabled?: boolean
+  /** .modal に足すクラス（画面ごとの CSS で地の色などを決める） */
+  className?: string
+  /** .modal の data-testid */
+  testId?: string
+  /** 予定の区分（data-kind。中では --kind-sheet などが区分の色になる。src/styles.css の [data-kind]） */
+  dataKind?: ItemKind
+  /**
+   * ラベルの色のキー（src/domain/labels.ts の LabelKey。data-label と .label-band で上の辺に 6px の帯を付ける。null・省くと帯なし。
+   * 予定の label は知らない値も残す文字なので string で受ける）
+   */
+  dataLabel?: string | null
+  /** 題の左に添える物（ディープダークの区分のアイコンなど。読み上げない） */
+  titleIcon?: ReactNode
 }
 
 /** 開いているモーダルの重なり（いちばん上だけが Esc と Tab を扱う） */
@@ -32,7 +48,20 @@ function setBackgroundLocked(locked: boolean): void {
 }
 
 /** 汎用モーダル。Esc・背景クリックで閉じる。スマホでは下からのシートになる */
-export function Modal({ title, onClose, children, footer, wide, initialFocus, closeDisabled }: ModalProps) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  footer,
+  wide,
+  initialFocus,
+  closeDisabled,
+  className,
+  testId,
+  dataKind,
+  dataLabel,
+  titleIcon,
+}: ModalProps) {
   const ref = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const onCloseRef = useRef(onClose)
@@ -93,9 +122,25 @@ export function Modal({ title, onClose, children, footer, wide, initialFocus, cl
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div ref={ref} className={`modal${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div
+        ref={ref}
+        className={['modal', wide && 'wide', dataLabel && 'label-band', className].filter(Boolean).join(' ')}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-testid={testId}
+        data-kind={dataKind}
+        data-label={dataLabel ?? undefined}
+      >
         <div className="modal-head">
-          <h2 id={titleId}>{title}</h2>
+          <h2 id={titleId}>
+            {titleIcon ? (
+              <span className="modal-title-icon" aria-hidden="true">
+                {titleIcon}
+              </span>
+            ) : null}
+            {title}
+          </h2>
           <button
             type="button"
             className="icon-btn"

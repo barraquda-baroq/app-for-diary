@@ -201,7 +201,7 @@ const readTimeline = (page: Page) => page.evaluate(() => (window as unknown as {
 /** 今のテストの流れ（recordTimeline の lines）。失敗した時に afterEach が添える */
 let timeline: string[] | null = null
 
-test.describe('起動アニメーション', () => {
+test.describe('起動アニメーション', { tag: ['@pc', '@s', '@ios'] }, () => {
   test.afterEach(async ({}, testInfo) => {
     if (timeline && testInfo.status !== testInfo.expectedStatus) {
       await testInfo.attach('launch-timeline', { body: timeline.join(' '), contentType: 'text/plain' })

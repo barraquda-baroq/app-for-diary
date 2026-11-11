@@ -169,3 +169,95 @@ describe('お知らせ（トースト）', () => {
     expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['2', '3', '4'])
   })
 })
+
+describe('操作の失敗の知らせ（attempt・attemptAsync）', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('attemptAsync: 成功した時は結果を返し、お知らせは出さない', async () => {
+    const { attemptAsync, useToasts } = await import('./uiStore')
+    useToasts.setState({ toasts: [] })
+    expect(await attemptAsync(async () => 'entry-1')).toBe('entry-1')
+    expect(useToasts.getState().toasts).toEqual([])
+  })
+
+  it('attemptAsync: Promise の失敗も受けて、undefined を返し、エラーのお知らせにする（attempt は Promise の失敗を受けない）', async () => {
+    const { attempt, attemptAsync, useToasts } = await import('./uiStore')
+    const { DomainError } = await import('../domain/types')
+    useToasts.setState({ toasts: [] })
+    expect(await attemptAsync(() => Promise.reject(new DomainError('ゴミ箱に見つかりません')))).toBeUndefined()
+    expect(useToasts.getState().toasts.map((t) => [t.kind, t.message])).toEqual([['error', 'ゴミ箱に見つかりません']])
+
+    // 思いがけない失敗はコンソールにも残す
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(
+      await attemptAsync(async () => {
+        throw new Error('保存できませんでした')
+      }),
+    ).toBeUndefined()
+    expect(logged).toHaveBeenCalledTimes(1)
+    expect(useToasts.getState().toasts.at(-1)?.message).toBe('保存できませんでした')
+
+    // attempt は投げた例外を受ける（同じ知らせ方）
+    expect(
+      attempt(() => {
+        throw new DomainError('できません')
+      }),
+    ).toBeUndefined()
+    expect(useToasts.getState().toasts.at(-1)?.message).toBe('できません')
+  })
+})
+
+describe('カレンダーの画面の状態（useCalendarUi）', () => {
+  it('初めは見ている日なし・休みを付けていない・目立たせる所なし', async () => {
+    const { initialCalendarUi, useCalendarUi } = await import('./uiStore')
+    useCalendarUi.setState(initialCalendarUi())
+    const s = useCalendarUi.getState()
+    expect(s.viewed).toBeNull()
+    expect(s.offMode).toBe(false)
+    expect(s.flash).toBeNull()
+    expect(typeof s.lastInteraction).toBe('number')
+  })
+
+  it('見ている日・休みを付ける状態・押した時刻を覚える（端末には保存しない）', async () => {
+    const { initialCalendarUi, useCalendarUi, PREFS_KEY } = await import('./uiStore')
+    localStorage.removeItem(PREFS_KEY)
+    useCalendarUi.setState(initialCalendarUi())
+    const s = useCalendarUi.getState()
+    s.setViewed('2026-11-10')
+    s.setOffMode(true)
+    s.touch(1_000)
+    expect(useCalendarUi.getState()).toMatchObject({ viewed: '2026-11-10', offMode: true, lastInteraction: 1_000 })
+    expect(localStorage.getItem(PREFS_KEY)).toBeNull()
+  })
+
+  it('目立たせる: キーを1つ以上まとめて渡し、同じ所でも毎回 seq が変わる。目立たせ終えたらその seq の物だけ消す', async () => {
+    const { flashMatches, initialCalendarUi, useCalendarUi } = await import('./uiStore')
+    useCalendarUi.setState(initialCalendarUi())
+    const ui = () => useCalendarUi.getState()
+    ui().flashTarget('item:a')
+    const first = ui().flash!
+    expect(first).toMatchObject({ key: 'item:a', keys: ['item:a'] })
+    ui().flashTarget('item:a')
+    const second = ui().flash!
+    expect(second.seq).toBeGreaterThan(first.seq)
+    // 古い seq を消しても、新しく目立たせた物は残る
+    ui().clearFlash(first.seq)
+    expect(ui().flash).toBe(second)
+    ui().clearFlash(second.seq)
+    expect(ui().flash).toBeNull()
+
+    // マンスリーの数字から来た時は、区切りと予定を一緒に
+    ui().flashTarget('day-area:work', 'day-events:work')
+    expect(ui().flash?.key).toBe('day-area:work')
+    expect(flashMatches(ui().flash, 'day-area:work')).toBe(true)
+    expect(flashMatches(ui().flash, 'day-events:work')).toBe(true)
+    expect(flashMatches(ui().flash, 'day-area:private')).toBe(false)
+    expect(flashMatches(null, 'day-area:work')).toBe(false)
+    // キーが無ければ何もしない
+    const before = ui().flash
+    ui().flashTarget()
+    expect(ui().flash).toBe(before)
+  })
+})

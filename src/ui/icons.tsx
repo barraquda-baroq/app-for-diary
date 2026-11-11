@@ -319,6 +319,19 @@ export const CloudOffIcon = (p: IconProps) => (
   </Svg>
 )
 
+/**
+ * Claude からの提案の印（カード・行・詳細の提案の欄。docs/SPEC.md の 4.10・7.7・12.3）: 角の丸い吹き出しの中に点3つ。
+ * 段階2で形とテストだけを足し、使うのは提案の画面を作る段階5（確かめ A20）
+ */
+export const ProposalIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6.5 4h11A3.5 3.5 0 0 1 21 7.5v6a3.5 3.5 0 0 1-3.5 3.5H12l-4.5 3.5V17h-1A3.5 3.5 0 0 1 3 13.5v-6A3.5 3.5 0 0 1 6.5 4z" />
+    <circle cx="8" cy="10.5" r="1.1" fill="currentColor" />
+    <circle cx="12" cy="10.5" r="1.1" fill="currentColor" />
+    <circle cx="16" cy="10.5" r="1.1" fill="currentColor" />
+  </Svg>
+)
+
 /** 点線の丸の、点と点の間（線の長さ 2.6px・すき間 2.6px。docs/SPEC.md の 4.11） */
 const DOT_DASH = 2.6
 

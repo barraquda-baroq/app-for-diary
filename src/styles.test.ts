@@ -2,6 +2,8 @@
 // 部品が色を直接書いていないか、幅の区分の値がスクリプトとそろっているかを確かめる（docs/SPEC.md の 2.5・4.3・4.5・4.6・4.11）
 import { describe, expect, it } from 'vitest'
 import { WIDTH_L, WIDTH_M } from './ui/hooks'
+// 段階2のカレンダーで増える字と地の組（docs/SPEC.md の 4.5・FRAME-146・167・CALENDAR-056・143）は下の「段階2のカレンダーの字と地」。
+// 隣の月の日の淡い数字（--numeral）を休みの地（--off-fill）に置く組は、3:1 に届かないので報告だけにする（確かめ A7。段階2の見本で決める）
 
 // テストでは CSS を import すると（?raw でも）中身が空になるので、ファイルを読む。node:fs の型はアプリの tsconfig に無いので、
 // 名前を変数にして読み込み、使う関数の形だけを書く
@@ -520,9 +522,69 @@ describe('区分の色とラベルの色の見分け（docs/SPEC.md の 4.3・4.
     }
   })
 
+  it.each(THEMES)(
+    '%s: 区分の領域・詳細の地も、ラベルの色と明るさが 0.1 以上違う（ラベルの帯・一辺が地に溶けない。FRAME-146）',
+    (theme) => {
+      for (const ground of ['--work-area', '--private-area', '--work-sheet', '--private-sheet']) {
+        for (const [key] of SPEC_LABELS) {
+          const dl = Math.abs(oklab(color(theme, ground))[0] - oklab(color(theme, `--label-${key}`))[0])
+          expect(dl, `${theme}: ${ground} / ${key}`).toBeGreaterThanOrEqual(0.1)
+        }
+      }
+    },
+  )
+
   it('ダーク: 土日の色は区分の数字の色と OKLab で 0.10 ほど離れている（取り違えないように）', () => {
     expect(deltaE(color('dark', '--sat'), color('dark', '--work-text'))).toBeGreaterThanOrEqual(0.1)
     expect(deltaE(color('dark', '--sun'), color('dark', '--private-text'))).toBeGreaterThanOrEqual(0.1)
+  })
+})
+
+describe('段階2のカレンダーの字と地（docs/SPEC.md の 4.5・FRAME-167・CALENDAR-056・143）', () => {
+  /** 字の色 4.5:1 以上の組（[字, 地, 確かめる外観]。ディープダークはハイライトが無い） */
+  const TEXT_PAIRS: readonly (readonly [string, string, readonly Theme[]])[] = [
+    // 休みの日の土日の色（マンスリー・ウィークリーの日付。CALENDAR-056）と、休みの「休」
+    ['--sun', '--off-fill', THEMES],
+    ['--sat', '--off-fill', THEMES],
+    ['--off-text', '--off-fill', THEMES],
+    // 休みを付ける状態の帯の字（D30）・押した［休み］
+    ['--accent-strong', '--accent-soft', THEMES],
+    // 件名のハイライトの上のカードの時刻・印
+    ['--text-muted', '--work-marker', ['white', 'dark']],
+    ['--text-muted', '--private-marker', ['white', 'dark']],
+    // 区分の地の上の区分の字（カード・名前の札・デイリーの区切り）
+    ['--work-text', '--work-soft', THEMES],
+    ['--private-text', '--private-soft', THEMES],
+    ['--work-text', '--work-area', THEMES],
+    ['--private-text', '--private-area', THEMES],
+    ['--text', '--work-sheet', THEMES],
+    ['--text', '--private-sheet', THEMES],
+  ]
+
+  it.each(TEXT_PAIRS.flatMap(([fg, bg, themes]) => themes.map((t) => [t, fg, bg] as const)))(
+    '%s: %s / %s は 4.5:1 以上',
+    (theme, fg, bg) => {
+      expect(contrast(color(theme, fg), color(theme, bg))).toBeGreaterThanOrEqual(4.5)
+    },
+  )
+
+  it.each(THEMES)(
+    '%s: 済んだ物の字（--done-text）は、面と区分の4つの地（カード・領域）の上で 3:1 以上（CALENDAR-143）',
+    (theme) => {
+      for (const ground of ['--surface', '--work-soft', '--private-soft', '--work-area', '--private-area']) {
+        expect(contrast(color(theme, '--done-text'), color(theme, ground)), `${theme}: ${ground}`).toBeGreaterThanOrEqual(3)
+      }
+    },
+  )
+
+  it('報告だけ（確かめ A7）: 隣の月の日の淡い数字（--numeral）を休みの地（--off-fill）に置いた時の比', () => {
+    const report = THEMES.map((theme) => {
+      const ratio = contrast(color(theme, '--numeral'), color(theme, '--off-fill'))
+      expect(Number.isFinite(ratio)).toBe(true)
+      return `${theme} ${ratio.toFixed(2)}:1${ratio < 3 ? '（3:1 未満）' : ''}`
+    })
+    // 見本で淡すぎると決まったら、休みの地の上だけ --text-faint にする（D06）。それまでは落とさずに知らせる
+    console.info(`[A7] --numeral / --off-fill: ${report.join('、')}`)
   })
 })
 

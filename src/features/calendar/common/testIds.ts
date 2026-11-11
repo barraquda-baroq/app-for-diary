@@ -1,0 +1,92 @@
+// カレンダー・予定の画面の data-testid（段階2。E2E と部品のテストが同じ名前で探す。docs/SPEC.md の 2.9 の「主な要素に data-testid」）。
+// 段階0からある操作の列の cal-*・calendar・.cal-cell はそのまま使う（e2e/frame.spec.ts）。日付は 'YYYY-MM-DD'、区分は work・private
+import type { ID, ItemKind } from '../../../domain/types'
+import type { LabelKey } from '../../../domain/labels'
+import type { CalendarMode } from '../../../store/uiStore'
+
+export const testIds = {
+  // ----- 段階0からある物（操作の列。src/features/top/CalendarArea.tsx） -----
+  calendar: 'calendar',
+  calendarBody: 'calendar-body',
+  calendarToolbar: 'calendar-toolbar',
+  calPeriod: 'cal-period',
+  calNumeral: 'cal-numeral',
+  calPrev: 'cal-prev',
+  calNext: 'cal-next',
+  calToday: 'cal-today',
+  calMode: (mode: CalendarMode) => `cal-mode-${mode}`,
+  calOff: 'cal-off',
+  calAdd: 'cal-add',
+  calTaskView: 'cal-taskview',
+
+  // ----- モードの画面（中身ができるまでの仮の画面も同じ名前） -----
+  view: (mode: CalendarMode) => `view-${mode}`,
+
+  // ----- マンスリー（9.） -----
+  monthCell: (date: string) => `month-cell-${date}`,
+  monthCount: (date: string, kind: ItemKind) => `month-count-${date}-${kind}`,
+  offBanner: 'off-banner',
+  offEnd: 'off-end',
+
+  // ----- ウィークリー（10.） -----
+  weekCol: (date: string) => `week-col-${date}`,
+  weekHead: (date: string) => `week-head-${date}`,
+  weekOff: (date: string) => `week-off-${date}`,
+  weekAdd: (date: string, kind: ItemKind) => `week-add-${date}-${kind}`,
+  weekCard: (id: ID) => `week-card-${id}`,
+  weekStart: (id: ID) => `week-start-${id}`,
+  weekEnd: (id: ID) => `week-end-${id}`,
+  weekReceived: (id: ID) => `week-received-${id}`,
+  weekEdge: (id: ID) => `week-edge-${id}`,
+  weekOverflow: (date: string, id: ID) => `week-overflow-${date}-${id}`,
+
+  // ----- デイリー（11.） -----
+  dayHead: 'day-head',
+  dayArea: (kind: ItemKind) => `day-area-${kind}`,
+  dayRow: (id: ID) => `day-row-${id}`,
+  dayAdd: (kind: ItemKind) => `day-add-${kind}`,
+  dayTimeline: 'day-timeline',
+  dayEvent: (id: ID) => `day-event-${id}`,
+  dayMore: 'day-more',
+  dayNow: 'day-now',
+
+  // ----- イヤー（8.） -----
+  yearCell: (date: string) => `year-cell-${date}`,
+  yearMonth: (m: number) => `year-month-${m}`,
+
+  // ----- どの画面にもある部品 -----
+  /** 点線の丸（完了にする） */
+  done: (id: ID) => `done-${id}`,
+  quickAddInput: 'quick-add-input',
+  aiTag: (id: ID) => `ai-tag-${id}`,
+
+  // ----- 登録・詳細・複製の画面（12.） -----
+  itemSheet: 'item-sheet',
+  itemTitle: 'item-title',
+  itemKind: (kind: ItemKind) => `item-kind-${kind}`,
+  itemStart: 'item-start',
+  itemDue: 'item-due',
+  itemDueClear: 'item-due-clear',
+  itemStartTime: 'item-start-time',
+  itemEndTime: 'item-end-time',
+  itemTimeHint: 'item-time-hint',
+  itemDateError: 'item-date-error',
+  itemDetails: 'item-details',
+  /** ラベルの色（なしは 'none'） */
+  itemLabel: (key: LabelKey | 'none') => `item-label-${key}`,
+  itemRequester: 'item-requester',
+  itemLock: 'item-lock',
+  itemListed: 'item-listed',
+  itemMemo: 'item-memo',
+  itemStatusLine: 'item-status-line',
+  itemFooter: 'item-footer',
+  itemRegister: 'item-register',
+  itemCancel: 'item-cancel',
+  itemDone: 'item-done',
+  itemDuplicate: 'item-duplicate',
+  itemMore: 'item-more',
+  itemDelete: 'item-delete',
+  dupStart: 'dup-start',
+  dupDue: 'dup-due',
+  dupSubmit: 'dup-submit',
+} as const
