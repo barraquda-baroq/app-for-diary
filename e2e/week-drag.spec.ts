@@ -1249,8 +1249,9 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
     expect(css.select).toBe('none')
     // -webkit-touch-callout は iOS の WebKit だけが持つ（持たない WebKit では空。CALENDAR-164）
     if (css.callout) expect(css.callout).toBe('none')
-    // すぐ動かした指はスクロールにするので、touch-action はそのまま
-    expect(css.touchAction).toBe('auto')
+    // すぐ動かした指はスクロールにするので、touch-action は none にしない。縦のスクロールはブラウザに任せ、横の動きは
+    // 前後の週へのなぞりに使う（3.7。モードの画面の中は pan-y pinch-zoom。src/features/calendar/common/frame.css）
+    expect(css.touchAction).toBe('pan-y pinch-zoom')
     const drag = await startLongPress(page, await grabPoint(gym), { via: 'synthetic' })
     await expect.poll(() => recordedPulses(page)).toEqual([`shake:week-card-${I.gym}`])
     await drag.moveTo(await visiblePoint(halfS(page, 'private', '2026-11-13')))
