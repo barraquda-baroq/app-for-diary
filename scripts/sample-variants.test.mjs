@@ -1,8 +1,9 @@
 // @vitest-environment node
 // 段階2の見本の色の案（scripts/sample-variants.mjs・e2e/samples/variants.json）と色の計算（scripts/lib/color.mjs）の確かめ
 // （docs/SPEC.md の 4.3・4.5・4.6・21.）。どの案も src/styles.test.ts と同じ決まりを満たすので、作者がどれを選んでも、その値を
-// そのまま src/styles.css に入れられる（段階2の終わり。WP14）。作者の答え（2026-11-12。ANSWERS）の後は、答えた問い（Q2〜Q6）の案は
-// 答える前の値（ASKED_TOKENS。見本で見比べてもらった時の値）から作ったまま残し、答えの値は src/styles.css に入っている
+// そのまま src/styles.css に入れられる（段階2の終わり。WP14）。作者の答え（2026-11-12。ANSWERS）の後は、答えた問いの案は答える前の値
+// （見本で見比べてもらった時の値。Q2〜Q6 は ASKED_TOKENS、Q9・Q11・Q12・Q13 はラベルの24色だけ ASKED_LABELS。askedFor）から作ったまま
+// 残し、答えの値（Q3 A・Q4 B・Q5 B・Q6 B・Q13 G）は src/styles.css に入っている
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
@@ -22,7 +23,9 @@ import {
   ACCENT_STEP,
   ACCENT_TOKENS,
   ANSWERS,
+  ANSWERED_BRIGHT,
   ASKED_GROUND_BANDS,
+  ASKED_LABELS,
   ASKED_TOKENS,
   BRIGHT_WHITE,
   BRIGHT_WHITE_GROUNDS,
@@ -35,10 +38,11 @@ import {
   HIGHLIGHT_ASKED,
   HIGHLIGHT_FULL,
   HUES_30,
-  HUES_NOW,
+  HUES_ASKED,
   LABEL_KEYS,
   LABEL_LADDER,
   LABEL_NAMES,
+  LABEL_QUESTIONS,
   LABEL_RULES,
   LABEL_SETS,
   LADDER_NAMES,
@@ -47,6 +51,7 @@ import {
   THEMES,
   WEEKEND_MIN_DE,
   askedCss,
+  askedFor,
   askedThemes,
   buildVariants,
   checkPick,
@@ -72,14 +77,14 @@ import { LABEL_DEFAULT_NAMES, LABEL_KEYS as APP_LABEL_KEYS } from '../src/domain
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 const committed = readFileSync(new URL('../e2e/samples/variants.json', import.meta.url), 'utf8')
 const themes = readThemes(css)
-/** 答える前の値（見本で見比べてもらった時。答えた問いの案はこの上で作った） */
+/** 答える前の値（Q2〜Q6 を見本で見比べてもらった時。2026-11-11。Q2〜Q6 の案はこの上で作った） */
 const asked = askedThemes(themes)
 const variants = buildVariants(css)
 const options = variants.options
-/** 答えた問い（Q2〜Q6）の案か */
-const answered = (id) => options[id].question in ANSWERS
-/** 案を重ねたその外観の変数（答えた問いの案は答える前の値に、まだ答えの無い問いの案は今の値に重ねる） */
-const applied = (id, theme) => withTokens((answered(id) ? asked : themes)[theme], options[id].tokens[theme])
+/** その案を作って確かめた土台（見比べてもらった時の値と区分の地の幅。askedFor） */
+const baseOf = (id) => askedFor(options[id].question, themes)
+/** 案を重ねたその外観の変数（見比べてもらった時の値に重ねる） */
+const applied = (id, theme) => withTokens(baseOf(id).themes[theme], options[id].tokens[theme])
 
 describe('色の計算（scripts/lib/color.mjs）', () => {
   it('16進 ↔ sRGB を行き来できる', () => {
@@ -132,24 +137,80 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
     expect(hexOf(themes['deep-dark'], '--work-marker')).toBeNull()
   })
 
-  it.each(THEMES)('%s: 今の値は確かめ（checkTheme。src/styles.test.ts と同じ決まり）を通る', (theme) => {
-    expect(checkTheme(theme, themes[theme])).toEqual([])
-  })
+  it.each(THEMES)(
+    '%s: 今の値は確かめ（checkTheme。src/styles.test.ts と同じ決まり）を通る（ホワイトの蛍光の黄・緑は、答えで選んだ案G の例外で見る）',
+    (theme) => {
+      expect(ANSWERED_BRIGHT).toEqual(['lemon-d', 'mint-d'])
+      expect(checkTheme(theme, themes[theme], { bright: ANSWERED_BRIGHT })).toEqual([])
+      // 例外を使わないと、ホワイトの菜の花・濃とミント・濃の、区分の地との明るさの差だけを割る（ダーク・ディープダークは例外なしで通る）
+      const plain = checkTheme(theme, themes[theme])
+      if (theme === 'white') {
+        expect(plain.length).toBeGreaterThan(0)
+        expect(
+          plain.every((p) => /明るさの差/.test(p) && /--label-(lemon|mint)-d /.test(p)),
+          plain.join('\n'),
+        ).toBe(true)
+      } else expect(plain).toEqual([])
+    },
+  )
 
   it.each(THEMES)('%s: 答える前の値（今の値に ASKED_TOKENS を重ねた物）も、答える前の区分の地の幅で確かめを通る', (theme) => {
     expect(checkTheme(theme, asked[theme], { bands: ASKED_GROUND_BANDS })).toEqual([])
   })
 
-  it('作者の答え（Q3 A・Q4 B・Q5 B・Q6 B）の案を答える前の値に重ねると、今の src/styles.css の値になる（--emit css の値がそのまま入っている）', () => {
-    expect(ANSWERS).toEqual({ 2: 'labels', 3: 'depth-lighter', 4: 'highlight-full', 5: 'weekend-matched', 6: 'now' })
+  it.each(THEMES)(
+    '%s: Q9・Q11・Q12・Q13 を見比べてもらった時の値（今の値のラベルの24色だけを ASKED_LABELS に戻した物）も、例外なしで確かめを通る',
+    (theme) => {
+      const base = askedFor(13, themes)
+      expect(base.bands).toBe(GROUND_BANDS)
+      expect(checkTheme(theme, base.themes[theme], { bands: base.bands })).toEqual([])
+      for (const [k, v] of base.themes[theme]) {
+        if (k.startsWith('--label-')) expect(v, `${theme} ${k}`).toBe(ASKED_LABELS[theme][k])
+        else expect(v, `${theme} ${k}`).toBe(themes[theme].get(k))
+      }
+    },
+  )
+
+  it('askedFor: 答えた Q2〜Q6 は 2026-11-11 の値と答える前の幅、答えたラベルの24色の問い（Q9〜Q13）は今の値に答える前の24色', () => {
+    expect(LABEL_QUESTIONS).toEqual([9, 11, 12, 13])
+    for (const q of [2, 3, 4, 5, 6]) {
+      const base = askedFor(q, themes)
+      expect(base.bands, String(q)).toBe(ASKED_GROUND_BANDS)
+      for (const t of THEMES) expect([...base.themes[t]], `${q} ${t}`).toEqual([...asked[t]])
+    }
+    for (const q of LABEL_QUESTIONS) {
+      const base = askedFor(q, themes)
+      expect(base.bands, String(q)).toBe(GROUND_BANDS)
+      expect(hexOf(base.themes.white, '--label-lemon-d'), String(q)).toBe('#9a861b')
+      expect(hexOf(base.themes.white, '--work-soft'), String(q)).toBe(hexOf(themes.white, '--work-soft'))
+    }
+    // まだ答えの無い問い（今は無い）は、今の値と今の幅
+    const none = askedFor(99, themes)
+    expect(none.themes).toBe(themes)
+    expect(none.bands).toBe(GROUND_BANDS)
+  })
+
+  it('作者の答え（Q3 A・Q4 B・Q5 B・Q6 B・Q13 G）の案を答える前の値に重ねると、今の src/styles.css の値になる（--emit css の値がそのまま入っている）', () => {
+    expect(ANSWERS).toEqual({
+      2: 'labels',
+      3: 'depth-lighter',
+      4: 'highlight-full',
+      5: 'weekend-matched',
+      6: 'now',
+      9: 'labels',
+      11: 'labels',
+      12: 'labels',
+      13: 'labels-g',
+    })
     const pick = Object.values(ANSWERS)
       .filter((id) => id in options)
       .join(',')
-    expect(pick).toBe('depth-lighter,highlight-full,weekend-matched')
+    expect(pick).toBe('depth-lighter,highlight-full,weekend-matched,labels-g')
     const tokens = pickTokens(variants, pick)
     for (const t of THEMES) {
-      // 答えで替えたトークンは、ASKED_TOKENS に答える前の値を残したトークンと同じ
+      // 答えで替えたトークンは、ASKED_TOKENS に答える前の値を残したトークンと同じ（ラベルの24色は ASKED_LABELS）
       expect(Object.keys(tokens[t]).sort(), t).toEqual(Object.keys(ASKED_TOKENS[t]).sort())
+      for (const [k, v] of Object.entries(ASKED_LABELS[t])) expect(ASKED_TOKENS[t][k], `${t} ${k}`).toBe(v)
       for (const [k, v] of Object.entries(tokens[t])) {
         expect(themes[t].get(k), `${t} ${k}`).toBe(v)
         expect(ASKED_TOKENS[t][k], `${t} ${k}`).not.toBe(v)
@@ -162,10 +223,17 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
   })
 
   it('答えた問いの切り抜きの下に敷く CSS（variants.json の asked）は、答える前の値と答える前の件名のハイライトの形（下 6割）', () => {
-    expect(variants.asked.questions).toEqual(Object.keys(ANSWERS).map(Number))
+    expect(variants.asked.questions).toEqual(
+      Object.keys(ANSWERS)
+        .map(Number)
+        .filter((q) => !LABEL_QUESTIONS.includes(q)),
+    )
     expect(variants.asked.questions).toEqual([2, 3, 4, 5, 6])
-    // Q9 はまだ答えが無いので、今の値のまま撮る
-    expect(variants.asked.questions).not.toContain(9)
+    // Q9・Q11・Q12・Q13 の案は24色をすべて書き換えるので、敷かずに撮る（ラベル以外は Q3〜Q6 の答えを入れた今の値のまま）
+    for (const q of LABEL_QUESTIONS) expect(variants.asked.questions).not.toContain(q)
+    for (const id of ['labels-a', 'labels-b', 'labels-c', 'labels-d', 'labels-c2', 'labels-e', 'labels-f', 'labels-g'])
+      for (const t of THEMES)
+        expect(Object.keys(options[id].tokens[t]).sort(), `${id} ${t}`).toEqual(Object.keys(ASKED_LABELS[t]).sort())
     expect(variants.asked.tokens).toEqual(ASKED_TOKENS)
     expect(variants.asked.css).toBe(askedCss())
     expect(variants.asked.css).toContain(`.kind-marker {\n  background: ${HIGHLIGHT_ASKED} !important;\n}`)
@@ -188,7 +256,7 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
   it('確かめは、決まりを割る値を見つける', () => {
     const w = themes.white
     expect(checkTheme('white', withTokens(w, { '--text-faint': '#9a9a9a' })).join('\n')).toMatch(/--text-faint \/ --bg/)
-    expect(checkTheme('white', withTokens(w, { '--work-line': '#5787ce' })).join('\n')).toMatch(
+    expect(checkTheme('white', withTokens(w, { '--work-line': hexOf(w, '--label-blue-d') })).join('\n')).toMatch(
       /--work-line \/ --label-blue-d の ΔE/,
     )
     expect(checkTheme('white', withTokens(w, { '--work-soft': '#c0c8d0' })).join('\n')).toMatch(
@@ -222,14 +290,30 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
     })
   })
 
-  it('4.6 の明るさ・彩度・色相から作り直すと、表の24色（3つの外観）と同じになる（1/255 以内）', () => {
-    const palette = labelPalette(HUES_NOW)
+  it('4.6 の表の24色（今の src/styles.css）は、作者が選んだ案G（LABEL_SETS の labels-g）と同じ。ホワイトとダークは同じ値', () => {
+    const g = options['labels-g']
     for (const theme of THEMES) {
       for (const key of LABEL_KEYS) {
         const now = hexOf(themes[theme], `--label-${key}`)
+        expect(now, `${theme} ${key}`).toBe(g.tokens[theme][`--label-${key}`])
+        expect(now, `${theme} ${key}`).toBe(oklchToHex(LABEL_SETS['labels-g'].oklch[key][theme]).hex)
+      }
+    }
+    for (const key of LABEL_KEYS) expect(hexOf(themes.white, `--label-${key}`), key).toBe(hexOf(themes.dark, `--label-${key}`))
+    // ディープダークは案C のディープダーク（ほぼグレー。D20）
+    for (const key of LABEL_KEYS)
+      expect(hexOf(themes['deep-dark'], `--label-${key}`), key).toBe(options['labels-c'].tokens['deep-dark'][`--label-${key}`])
+  })
+
+  it('答える前の24色（ASKED_LABELS。見本で見比べてもらった時の 4.6 の表）は、その時の明るさ・彩度・色相（LABEL_RULES・HUES_ASKED）から作った値（1/255 以内）', () => {
+    const palette = labelPalette(HUES_ASKED)
+    for (const theme of THEMES) {
+      expect(Object.keys(ASKED_LABELS[theme])).toEqual(LABEL_KEYS.map((k) => `--label-${k}`))
+      for (const key of LABEL_KEYS) {
+        const before = ASKED_LABELS[theme][`--label-${key}`]
         expect(
-          channelDiff(palette[theme][key].hex, now),
-          `${theme} ${key} ${palette[theme][key].hex} / ${now}`,
+          channelDiff(palette[theme][key].hex, before),
+          `${theme} ${key} ${palette[theme][key].hex} / ${before}`,
         ).toBeLessThanOrEqual(1)
       }
     }
@@ -273,7 +357,7 @@ describe('案（e2e/samples/variants.json）', () => {
   const cases = Object.keys(options).flatMap((id) => THEMES.map((t) => [id, t]))
   it.each(cases)('%s（%s）は決まりを満たす', (id, theme) => {
     const scale = options[id].question === 3 ? bandScaleOf(id, theme) : undefined
-    const bands = answered(id) ? ASKED_GROUND_BANDS : GROUND_BANDS
+    const { bands } = baseOf(id)
     expect(checkTheme(theme, applied(id, theme), { bandScale: scale, bands, bright: BRIGHT_WHITE[id] })).toEqual([])
   })
 
@@ -533,7 +617,8 @@ describe('Q6 A・C: グレーの差し色の濃さ（accent-lighter・accent-dee
 
 // ラベルの24色の案（Q9・Q11・Q12・Q13）の確かめに使う物
 const colorsOf = (id, theme) => Object.fromEntries(LABEL_KEYS.map((k) => [k, options[id].tokens[theme][`--label-${k}`]]))
-const nowColors = (theme) => Object.fromEntries(LABEL_KEYS.map((k) => [k, hexOf(themes[theme], `--label-${k}`)]))
+/** 見比べてもらった時の「今」の24色（答える前のパステルの24色 ASKED_LABELS。下のテストの名前の「今」はこの色） */
+const nowColors = (theme) => Object.fromEntries(LABEL_KEYS.map((k) => [k, ASKED_LABELS[theme][`--label-${k}`]]))
 const both = (bases) => bases.flatMap((b) => [`${b}-l`, `${b}-d`])
 /** 作者が「特に近い」と言った2つの仲間（青の仲間・左のピンクの仲間） */
 const FAMILIES = { 青: both(['teal', 'sky', 'blue', 'wisteria']), ピンク: both(['rose', 'coral', 'peony']) }
@@ -692,9 +777,9 @@ describe('Q11: ラベルの24色に原色に近い色を入れる（labels-c・l
       ['A', 'labels-a'],
       ['B', 'labels-b'],
     ])
-    // Q9・Q11 は ANSWERS に無い（今の値の上で作って撮る）
-    expect(ANSWERS).not.toHaveProperty('9')
-    expect(ANSWERS).not.toHaveProperty('11')
+    // Q9・Q11 は、どれも選ばれず作り直した（ANSWERS の labels。見比べてもらった時の値の上で作ったまま残す）
+    expect(ANSWERS[9]).toBe('labels')
+    expect(ANSWERS[11]).toBe('labels')
   })
 
   it.each(SETS)(
@@ -796,10 +881,10 @@ describe('Q11: ラベルの24色に原色に近い色を入れる（labels-c・l
         }
         for (const r of ['l', 'd']) expect(hueRoundTrip(o, theme, r), `${theme} ${r}`).toBe(true)
       }
-      // ホワイトとダークの色合いは、今の12の色合い（4.6）から 25° 以内（桜は桜、菜の花は黄、瑠璃は青のまま）
+      // ホワイトとダークの色合いは、答える前の12の色合い（HUES_ASKED）から 25° 以内（桜は桜、菜の花は黄、瑠璃は青のまま）
       for (const theme of BOTH)
         for (const r of ['l', 'd'])
-          row(r).forEach((k, i) => expect(circ(o[k][theme][2], HUES_NOW[i]), `${theme} ${k}`).toBeLessThanOrEqual(25))
+          row(r).forEach((k, i) => expect(circ(o[k][theme][2], HUES_ASKED[i]), `${theme} ${k}`).toBeLessThanOrEqual(25))
     },
   )
 
@@ -855,8 +940,8 @@ describe('Q12: ラベルの24色（はっきりからくすみまで・ホワイ
     ])
     expect(QUESTIONS[11].options.map((o) => o.id)).toEqual(['labels-a', 'labels-c', 'labels-d'])
     expect(QUESTIONS[9].options.map((o) => o.id)).toEqual(['labels-a', 'labels-b'])
-    // Q9・Q11・Q12 は ANSWERS に無い（今の値の上で作って撮る）
-    for (const q of ['9', '11', '12']) expect(ANSWERS).not.toHaveProperty(q)
+    // Q9・Q11・Q12 は、どれも選ばれず作り直した（ANSWERS の labels）
+    for (const q of [9, 11, 12]) expect(ANSWERS[q], String(q)).toBe('labels')
   })
 
   it.each(SETS)(
@@ -1011,10 +1096,10 @@ describe('Q12: ラベルの24色（はっきりからくすみまで・ホワイ
         }
         for (const r of ['l', 'd']) expect(hueRoundTrip(o, theme, r), `${theme} ${r}`).toBe(true)
       }
-      // 色合いは今の12の色合い（4.6）から 25° 以内（桜は桜、菜の花は黄、瑠璃は青のまま）
+      // 色合いは答える前の12の色合い（HUES_ASKED）から 25° 以内（桜は桜、菜の花は黄、瑠璃は青のまま）
       for (const theme of BOTH)
         for (const r of ['l', 'd'])
-          row(r).forEach((k, i) => expect(circ(o[k][theme][2], HUES_NOW[i]), `${theme} ${k}`).toBeLessThanOrEqual(25))
+          row(r).forEach((k, i) => expect(circ(o[k][theme][2], HUES_ASKED[i]), `${theme} ${k}`).toBeLessThanOrEqual(25))
     },
   )
 
@@ -1072,7 +1157,7 @@ describe('Q13: ラベルの24色（蛍光色からくすみまで。labels-g。Q
     lightness(hexOf(themes.white, g)),
   )
 
-  it('選ぶ物は E（前回の案E）・G（案G）。Q9・Q11・Q12 は聞いた時のまま残す', () => {
+  it('選ぶ物は E（前回の案E）・G（案G）。Q9・Q11・Q12 は聞いた時のまま残す。答えは G（「案Gで」）', () => {
     expect(QUESTIONS[13].title).toBe('ラベルの24色（蛍光色からくすみまで）')
     expect(QUESTIONS[13].appearances).toEqual(THEMES)
     expect(QUESTIONS[13].options.map((x) => [x.letter, x.id])).toEqual([
@@ -1082,7 +1167,8 @@ describe('Q13: ラベルの24色（蛍光色からくすみまで。labels-g。Q
     expect(QUESTIONS[12].options.map((x) => x.id)).toEqual(['labels-c2', 'labels-e', 'labels-f'])
     expect(options['labels-e'].question).toBe(12)
     expect(options[ID]).toMatchObject({ question: 13, letter: 'G', appearances: THEMES })
-    for (const q of ['9', '11', '12', '13']) expect(ANSWERS).not.toHaveProperty(q)
+    for (const q of [9, 11, 12]) expect(ANSWERS[q], String(q)).toBe('labels')
+    expect(ANSWERS[13]).toBe('labels-g')
   })
 
   it('キーと並び・既定の呼び名は今のまま。3つの外観の24色を OKLCH の値からそのまま作る（sRGB に入らない値・切り詰めた値は無い）', () => {
@@ -1164,7 +1250,7 @@ describe('Q13: ラベルの24色（蛍光色からくすみまで。labels-g。Q
 
   it('12の色合いの仲間と色を選ぶ所の並びは今のまま（今の色合いから 25° 以内）。淡は濃より明るい（蛍光の黄・緑の仲間だけは淡の方が暗い）', () => {
     for (const theme of THEMES) for (const r of ['l', 'd']) expect(hueRoundTrip(o(), theme, r), `${theme} ${r}`).toBe(true)
-    for (const r of ['l', 'd']) row(r).forEach((k, i) => expect(circ(o()[k].white[2], HUES_NOW[i]), k).toBeLessThanOrEqual(25))
+    for (const r of ['l', 'd']) row(r).forEach((k, i) => expect(circ(o()[k].white[2], HUES_ASKED[i]), k).toBeLessThanOrEqual(25))
     const darker = row('l')
       .map((k) => k.slice(0, -2))
       .filter((b) => lightness(hex('white', `${b}-l`)) <= lightness(hex('white', `${b}-d`)))
@@ -1247,6 +1333,11 @@ describe('Q13: ラベルの24色（蛍光色からくすみまで。labels-g。Q
     expect(checkPick(variants, 'labels-g@white', css)).toEqual([])
     expect(checkPick(variants, 'labels-g@dark+deep-dark', css)).toEqual([])
     expect(checkPick(variants, 'depth-lighter,labels-g', css)).toEqual([])
+    // ラベルを選び直さない時・ホワイトのラベルを替えない時は、今の値（案G）のホワイトの例外のまま
+    expect(checkPick(variants, '', css)).toEqual([])
+    expect(checkPick(variants, 'labels-e@dark+deep-dark', css)).toEqual([])
+    // ホワイトの24色を例外の無い案で書き換えると、例外は外れる（案E の値はふつうの決まりで通る）
+    expect(checkPick(variants, 'labels-e', css)).toEqual([])
     // 案G の値を例外の無い案として選ぶと割る
     const copy = { ...variants, options: { ...options, copy: { ...options[ID] } } }
     expect(checkPick(copy, 'copy', css).join('\n')).toMatch(/--label-lemon-d の明るさの差/)
@@ -1293,9 +1384,9 @@ describe('選んだ案を書く形にする（段階2の終わりの --emit css|
     expect(() => pickTokens(variants, 'highlight-full@deep-dark')).toThrow(/ディープダーク.*変えません/)
   })
 
-  // 答えた問い（Q3〜Q6）は答えの値のまま（今の src/styles.css）。まだ決まっていないラベルの24色（今のまま・Q9 の案A・案B・
-  // Q11 の案C・案D・Q12 の案C′・案E・案F・Q13 の案G）は、どれを選んでも、答えを入れた今の値の上で決まりを満たす（--emit css --pick labels-c
-  // などをそのまま入れられる。案G はホワイトの蛍光の黄・緑の例外 BRIGHT_WHITE を使う）
+  // 答えた問い（Q3〜Q6・Q13）は答えの値のまま（今の src/styles.css。ラベルの24色は案G）。ラベルの24色の案（今の案G のまま・Q9 の案A・案B・
+  // Q11 の案C・案D・Q12 の案C′・案E・案F・Q13 の案G）は、どれを選び直しても、答えを入れた今の値の上で決まりを満たす（--emit css --pick labels-c
+  // などをそのまま入れられる。案G はホワイトの蛍光の黄・緑の例外 BRIGHT_WHITE を使い、選び直さない時は今の値の例外 ANSWERED_BRIGHT のまま）
   it.each(THEMES)(
     '%s: ラベルの24色（Q9・Q11・Q12・Q13）のどれを選んでも、答えを入れた今の値の上で決まりを満たす（checkPick）',
     (theme) => {

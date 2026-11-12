@@ -29,15 +29,18 @@
 // 「今」（B・Q4 A・Q5 A）は今の src/styles.css のまま。どの案も、src/styles.test.ts と同じ決まり（字 4.5:1、大きな数字・済んだ物 3:1、
 // ラベルと地の明るさの差 0.1、ラベルなしの線と24色の ΔE 0.06 など）で確かめ、通らない案は書き出さずに止める（checkTheme）。
 // アプリの中には入らない（見本は e2e/samples/samples.spec.ts が page.addStyleTag で差し込んで撮る）。
-// 作者の答え（2026-11-12。ANSWERS）: Q3 A・Q4 B・Q5 B・Q6 B（今）を選び、その値は src/styles.css に入れた。答えた問い（Q2〜Q6）の案は、
-// 見本で見比べてもらった時の値（答える前の値 ASKED_TOKENS を今の src/styles.css に重ねた物）から作ったまま残す（見本の控え）。
-// その切り抜きは、答える前の値（e2e/samples/variants.json の asked。askedCss）を敷いてから撮る（「今」の絵が、見比べてもらった時の
-// 「今」になる）。ANSWERS に無い Q9・Q11・Q12・Q13 の案（ラベルの24色）は、今の src/styles.css（答えを入れた値）の上で確かめ、そのまま撮る。
-// Q9（案A・案B）は、作者の答え（2026-11-12「もっとはっきりした原色に近い色も採用しましょう」）でどちらも選ばず、Q11 で聞き直している。
+// 作者の答え（2026-11-12。ANSWERS）: Q3 A・Q4 B・Q5 B・Q6 B（今）・Q13 G（ラベルの24色は案G）を選び、その値は src/styles.css に入れた。
+// 答えた問いの案は、見本で見比べてもらった時の値（答える前の値）から作ったまま残す（見本の控え。askedFor）。Q2〜Q6 は 2026-11-11 の値
+// （ASKED_TOKENS を今の src/styles.css に重ねた物。ラベルの24色は答える前のパステルの24色 ASKED_LABELS）で作り、その切り抜きは、
+// 答える前の値（e2e/samples/variants.json の asked。askedCss）を敷いてから撮る（「今」の絵が、見比べてもらった時の「今」になる）。
+// Q9・Q11・Q12・Q13 の案（ラベルの24色）は、Q3〜Q6 の答えを入れた後に聞いたので、今の src/styles.css のラベルの24色だけを答える前の
+// 値（ASKED_LABELS）に戻した物の上で確かめる（案は24色をすべて書き換えるので、切り抜きに敷く値は要らない）。
+// Q9（案A・案B）は、作者の答え（2026-11-12「もっとはっきりした原色に近い色も採用しましょう」）でどちらも選ばず、Q11 で聞き直した。
 // Q11（案A・案C・案D）も、答え（2026-11-12「ダークの案Cをホワイトに適用するのもしっくりきそうです」「はっきりから、くすんだ系統まで
-// レンジをもっと持たせて良い」）でどれも選ばず、ホワイトもダークと同じ色にした案で Q12 で聞き直している。
+// レンジをもっと持たせて良い」）でどれも選ばず、ホワイトもダークと同じ色にした案で Q12 で聞き直した。
 // Q12（案C′・案E・案F）も、答え（2026-11-12「黄色系をもっと蛍光色に近づけて」「黄色、ピンク、青、緑、オレンジ、赤、紫を蛍光色採用して
-// そこからくすみまでのレンジを広げて」「ホワイトもダークと同じ蛍光の黄にする」）でどれも選ばず、蛍光の7色を入れた案G で Q13 で聞き直している
+// そこからくすみまでのレンジを広げて」「ホワイトもダークと同じ蛍光の黄にする」）でどれも選ばず、蛍光の7色を入れた案G で Q13 で聞き直し、
+// Q13 の答え（2026-11-12「案Gで」）で案G に決まった
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -105,16 +108,46 @@ export const LABEL_KEYS = [
 /** 既定の呼び名（4.6。仕様書の表の行を出す時に使う） */
 export const LABEL_NAMES = ['桜', '珊瑚', '杏', '菜の花', '若葉', 'ミント', '青磁', '空', '瑠璃', '藤', '菫', '牡丹']
 
-/** ラベルの色の決まり（4.6: 外観ごと・淡（l）／濃（d）ごとの OKLCH の L と C） */
+/**
+ * 答える前（Q13 の答えの前）のラベルの色の決まり（その時の 4.6: 外観ごと・淡（l）／濃（d）ごとの OKLCH の L と C。パステル）。
+ * 答える前の24色（ASKED_LABELS）と Q2 B（hue30）は、この決まりから作った。今の 4.6 の24色は案G（LABEL_SETS['labels-g']）
+ */
 export const LABEL_RULES = {
   white: { l: [0.76, 0.09], d: [0.62, 0.12] },
   dark: { l: [0.86, 0.075], d: [0.75, 0.11] },
   'deep-dark': { l: [0.56, 0.022], d: [0.44, 0.022] },
 }
-/** 今の12の色合い（4.6。桜→牡丹の順） */
-export const HUES_NOW = [10, 40, 68, 98, 128, 160, 192, 225, 258, 288, 318, 350]
+/** 答える前の12の色合い（その時の 4.6。桜→牡丹の順。作り直した案も、どの色もこの色合いから 25° 以内に置いた） */
+export const HUES_ASKED = [10, 40, 68, 98, 128, 160, 192, 225, 258, 288, 318, 350]
 /** 30° おきの案（15°・45°…345°） */
-export const HUES_30 = HUES_NOW.map((_, i) => 15 + 30 * i)
+export const HUES_30 = HUES_ASKED.map((_, i) => 15 + 30 * i)
+/** 答える前（Q2〜Q13 を見比べてもらった時）のラベルの24色（その時の 4.6 の表。外観ごとに、淡の12色・濃の12色の行） */
+const ASKED_LABEL_ROWS = {
+  white: [
+    '#e499a4 #e39e86 #d7a672 #c0b26e #a0bc7e #7cc39d #65c3c0 #6dbddc #8db3ea #aea8e8 #c99fd6 #dd9ab9',
+    '#c26576 #c26b4c #b57727 #9a861b #71943f #339c6d #039a97 #0994ba #5787ce #8379ca #a46eb5 #bb6690',
+  ],
+  dark: [
+    '#febdc6 #fdc1ac #f2c89c #ded299 #c3dba6 #a6e1c0 #96e1de #9bdcf6 #b5d3ff #cecaff #e6c2f1 #f8bdd8',
+    '#ea909e #e99578 #dca05d #c0af58 #9abb6e #6ac396 #44c4c0 #54bce2 #82b0f3 #aaa3f0 #cb98db #e391b8',
+  ],
+  'deep-dark': [
+    '#816f71 #81706b #7d7267 #787566 #717769 #6a7970 #667978 #67777e #6d7582 #737381 #7a717d #7f6f76',
+    '#5e4e50 #5e4f49 #5b5046 #565345 #4f5548 #48564e #455756 #46555c #4b535f #52515e #584f5b #5c4e54',
+  ],
+}
+/** 答える前のラベルの24色（{ 外観: { '--label-キー': 値 } }。Q2〜Q13 の答えの前の値。LABEL_RULES・HUES_ASKED から作ったパステル） */
+export const ASKED_LABELS = Object.fromEntries(
+  THEMES.map((t) => [
+    t,
+    Object.fromEntries(
+      ASKED_LABEL_ROWS[t]
+        .join(' ')
+        .split(' ')
+        .map((hex, i) => [`--label-${LABEL_KEYS[i]}`, hex]),
+    ),
+  ]),
+)
 
 /** 今の既定の呼び名（4.6。桜・淡 … 牡丹・濃） */
 const NAMES_NOW = Object.fromEntries(LABEL_KEYS.map((k, i) => [k, `${LABEL_NAMES[i % 12]}・${k.endsWith('-l') ? '淡' : '濃'}`]))
@@ -836,7 +869,8 @@ export const cvdDeltaE = (type) => (x, y) => {
 
 /**
  * Q9・Q11・Q12・Q13: ラベルの24色の作り直し（LABEL_SETS の id）。OKLCH の [L, C, h] をそのまま16進にする（sRGB に入らない値は置かない）。
- * notes に、外観ごとのいちばん近い2色と、色覚の違い（1型・2型）で見たいちばん近い2色を、今の値と並べて書く
+ * notes に、外観ごとのいちばん近い2色と、色覚の違い（1型・2型）で見たいちばん近い2色を、見比べてもらった時の「今」の値と並べて書く
+ * （themes = 答える前の値。ラベルの24色は ASKED_LABELS。askedFor）
  */
 function labelSet(id, themes) {
   const set = LABEL_SETS[id]
@@ -1181,21 +1215,38 @@ export const QUESTIONS = {
 // ---------- 作者の答え（2026-11-12。docs/STAGE2-LOOKS.md の「作者の答え」・仕様書 22.） ----------
 
 /**
- * 答えた問いと選んだ案（now は「今」のまま）。Q2（30°おき）は、■1・■2 の答え（「色の間が近すぎる」「パステルの縛りを外して」）で
- * どちらも選ばず、24色を作り直して Q9 で聞き直している。Q9（案A・案B）も、答え（「原色に近い色も」）でどちらも選ばず、原色に近い色を
- * 入れて Q11 で聞き直している。Q11（案A・案C・案D）も、答え（「ダークの案Cをホワイトにも」「はっきりから、くすんだ系統まで」）で
- * どれも選ばず、ホワイトもダークと同じ色にして Q12 で聞き直している。Q12（案C′・案E・案F）も、答え（「黄・ピンク・青・緑・オレンジ・赤・紫を
- * 蛍光色に、そこからくすみまで」「ホワイトもダークと同じ蛍光の黄」）でどれも選ばず、蛍光の7色を入れて Q13 で聞き直している
- * （Q9・Q11・Q12・Q13 の案は今の値の上で作るので、ここに無い。Q13 は答えを待つ）。
- * 選んだ案の値は src/styles.css に入れた（node scripts/sample-variants.mjs --emit css --pick depth-lighter,highlight-full,weekend-matched）
+ * 答えた問いと選んだ案（now は「今」のまま、labels は「どれも選ばず、ラベルの24色を作り直して次の問いで聞き直した」）。Q2（30°おき）は、
+ * ■1・■2 の答え（「色の間が近すぎる」「パステルの縛りを外して」）でどちらも選ばず、24色を作り直して Q9 で聞き直した。Q9（案A・案B）も、
+ * 答え（「原色に近い色も」）でどちらも選ばず、原色に近い色を入れて Q11 で聞き直した。Q11（案A・案C・案D）も、答え（「ダークの案Cを
+ * ホワイトにも」「はっきりから、くすんだ系統まで」）でどれも選ばず、ホワイトもダークと同じ色にして Q12 で聞き直した。Q12（案C′・案E・案F）も、
+ * 答え（「黄・ピンク・青・緑・オレンジ・赤・紫を蛍光色に、そこからくすみまで」「ホワイトもダークと同じ蛍光の黄」）でどれも選ばず、蛍光の7色を
+ * 入れて Q13 で聞き直した。Q13 は「案Gで」（labels-g）。
+ * 選んだ案の値は src/styles.css に入れた（node scripts/sample-variants.mjs --emit css --pick depth-lighter,highlight-full,weekend-matched,labels-g）
  */
-export const ANSWERS = { 2: 'labels', 3: 'depth-lighter', 4: 'highlight-full', 5: 'weekend-matched', 6: 'now' }
-
+export const ANSWERS = {
+  2: 'labels',
+  3: 'depth-lighter',
+  4: 'highlight-full',
+  5: 'weekend-matched',
+  6: 'now',
+  9: 'labels',
+  11: 'labels',
+  12: 'labels',
+  13: 'labels-g',
+}
 /**
- * 答える前（見本で見比べてもらった時。2026-11-11）の src/styles.css の値のうち、答えで替えた物（Q3 A・Q5 B）。
- * Q2〜Q6 の案は、この値を今の src/styles.css に重ねた物から作る（見本の控えが答えの前と同じになる）
+ * ラベルの24色の作り直しの問い（Q3〜Q6 の答えを src/styles.css に入れた後に聞いた）。答える前の値は、今の src/styles.css のラベルの24色だけを
+ * ASKED_LABELS に戻した物（askedFor）
  */
-export const ASKED_TOKENS = {
+export const LABEL_QUESTIONS = [9, 11, 12, 13]
+/**
+ * 今の src/styles.css のホワイトで、白い地より明るい蛍光色の例外（BRIGHT_WHITE）を使うラベルのキー（答えで選んだ案の例外。案G の
+ * 菜の花・濃・ミント・濃）
+ */
+export const ANSWERED_BRIGHT = Object.values(ANSWERS).flatMap((id) => BRIGHT_WHITE[id] ?? [])
+
+/** 答える前（2026-11-11）の区分の地とハイライト・土日祝の色（Q3 A・Q5 B で替えた物） */
+const ASKED_GROUNDS_WEEKEND = {
   white: {
     '--work-soft': '#e4edf8',
     '--work-area': '#f1f5fb',
@@ -1225,6 +1276,11 @@ export const ASKED_TOKENS = {
     '--sun': '#a08589',
   },
 }
+/**
+ * 答える前（見本で見比べてもらった時。2026-11-11）の src/styles.css の値のうち、答えで替えた物（Q3 A・Q5 B の区分の地・土日祝の色と、
+ * Q13 G のラベルの24色 ASKED_LABELS）。Q2〜Q6 の案は、この値を今の src/styles.css に重ねた物から作る（見本の控えが答えの前と同じになる）
+ */
+export const ASKED_TOKENS = Object.fromEntries(THEMES.map((t) => [t, { ...ASKED_GROUNDS_WEEKEND[t], ...ASKED_LABELS[t] }]))
 /** 答える前の件名のハイライトの形（Q4 A。字の下 6割） */
 export const HIGHLIGHT_ASKED = 'linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%)'
 
@@ -1242,6 +1298,17 @@ export function askedThemes(themes) {
   return Object.fromEntries(THEMES.map((t) => [t, withTokens(themes[t], ASKED_TOKENS[t])]))
 }
 
+/**
+ * その問いの案を作って確かめる時の土台（見本で見比べてもらった時の値と、区分の地の差の幅）。まだ答えの無い問いは今の値と今の幅、
+ * 答えた Q2〜Q6 は 2026-11-11 の値（askedThemes）と答える前の幅、答えた Q9・Q11・Q12・Q13（LABEL_QUESTIONS）は今の値のラベルの24色だけを
+ * 答える前の値（ASKED_LABELS）に戻した物と今の幅。戻り値: { themes: { theme: 変数 }, bands }
+ */
+export function askedFor(question, themes) {
+  if (!(question in ANSWERS)) return { themes, bands: GROUND_BANDS }
+  if (!LABEL_QUESTIONS.includes(Number(question))) return { themes: askedThemes(themes), bands: ASKED_GROUND_BANDS }
+  return { themes: Object.fromEntries(THEMES.map((t) => [t, withTokens(themes[t], ASKED_LABELS[t])])), bands: GROUND_BANDS }
+}
+
 /** 案のトークンを、見本に差し込む CSS にする（外観ごとに :root[data-theme=…]） */
 export function tokensCss(tokens) {
   return THEMES.filter((t) => tokens[t] && Object.keys(tokens[t]).length)
@@ -1256,17 +1323,22 @@ export function tokensCss(tokens) {
 
 /**
  * すべての案を作り、確かめる。css = src/styles.css の中身。戻り値は e2e/samples/variants.json の中身。
- * 答えた問い（Q2〜Q6）の案は答える前の値（askedThemes）から、ANSWERS に無い問い（Q9・Q11・Q12・Q13）の案は今の値から作る。
- * 案が決まりを満たさない時は投げる（書き出さない）
+ * どの案も、その問いを見比べてもらった時の値（askedFor。答えた Q2〜Q6 は 2026-11-11 の値、答えた Q9・Q11・Q12・Q13 は今の値のラベルの24色を
+ * 答える前に戻した物）から作って確かめる。案が決まりを満たさない時は投げる（書き出さない）
  */
 export function buildVariants(css) {
   const themes = readThemes(css)
   const asked = askedThemes(themes)
+  const labelsAsked = askedFor(LABEL_QUESTIONS[0], themes).themes
   for (const theme of THEMES) {
-    const problems = checkTheme(theme, themes[theme])
+    // 今の値のホワイトの蛍光の黄・緑は、答えで選んだ案G の例外（ANSWERED_BRIGHT）で見る
+    const problems = checkTheme(theme, themes[theme], { bright: ANSWERED_BRIGHT })
     if (problems.length) throw new Error(`今の src/styles.css が決まりを満たしていません:\n${problems.join('\n')}`)
     const before = checkTheme(theme, asked[theme], { bands: ASKED_GROUND_BANDS })
     if (before.length) throw new Error(`答える前の値（ASKED_TOKENS）が決まりを満たしていません:\n${before.join('\n')}`)
+    const beforeLabels = checkTheme(theme, labelsAsked[theme])
+    if (beforeLabels.length)
+      throw new Error(`答える前のラベルの24色（ASKED_LABELS）が決まりを満たしていません:\n${beforeLabels.join('\n')}`)
   }
   const B = ASKED_GROUND_BANDS
   const made = {
@@ -1277,16 +1349,16 @@ export function buildVariants(css) {
     'weekend-matched': { question: 5, letter: 'B', ...weekendMatched(asked, B) },
     'accent-lighter': { question: 6, letter: 'A', ...accent(asked, -1, B) },
     'accent-deeper': { question: 6, letter: 'C', ...accent(asked, 1, B) },
-    'labels-a': { question: 9, letter: 'A', ...labelSet('labels-a', themes) },
-    'labels-b': { question: 9, letter: 'B', ...labelSet('labels-b', themes) },
+    'labels-a': { question: 9, letter: 'A', ...labelSet('labels-a', labelsAsked) },
+    'labels-b': { question: 9, letter: 'B', ...labelSet('labels-b', labelsAsked) },
     // Q11 の A は Q9 の labels-a（同じ案。上の行で作った物）
-    'labels-c': { question: 11, letter: 'C', ...labelSet('labels-c', themes) },
-    'labels-d': { question: 11, letter: 'D', ...labelSet('labels-d', themes) },
-    'labels-c2': { question: 12, letter: 'C', ...labelSet('labels-c2', themes) },
-    'labels-e': { question: 12, letter: 'E', ...labelSet('labels-e', themes) },
-    'labels-f': { question: 12, letter: 'F', ...labelSet('labels-f', themes) },
+    'labels-c': { question: 11, letter: 'C', ...labelSet('labels-c', labelsAsked) },
+    'labels-d': { question: 11, letter: 'D', ...labelSet('labels-d', labelsAsked) },
+    'labels-c2': { question: 12, letter: 'C', ...labelSet('labels-c2', labelsAsked) },
+    'labels-e': { question: 12, letter: 'E', ...labelSet('labels-e', labelsAsked) },
+    'labels-f': { question: 12, letter: 'F', ...labelSet('labels-f', labelsAsked) },
     // Q13 の E は Q12 の labels-e（同じ案。上の行で作った物）
-    'labels-g': { question: 13, letter: 'G', ...labelSet('labels-g', themes) },
+    'labels-g': { question: 13, letter: 'G', ...labelSet('labels-g', labelsAsked) },
   }
   const options = {}
   for (const [id, m] of Object.entries(made)) {
@@ -1295,13 +1367,12 @@ export function buildVariants(css) {
     const tokens = Object.fromEntries(THEMES.filter((t) => m.tokens[t]).map((t) => [t, m.tokens[t]]))
     let css = tokensCss(tokens)
     if (id === 'highlight-full') css = `.kind-marker {\n  background: ${HIGHLIGHT_FULL} !important;\n}\n`
-    const answered = m.question in ANSWERS
+    const base = askedFor(m.question, themes)
     for (const theme of THEMES) {
       const bandScale = m.actual ? { [theme]: m.actual[theme] } : undefined
-      const base = answered ? asked[theme] : themes[theme]
-      const problems = checkTheme(theme, withTokens(base, tokens[theme]), {
+      const problems = checkTheme(theme, withTokens(base.themes[theme], tokens[theme]), {
         bandScale,
-        bands: answered ? B : GROUND_BANDS,
+        bands: base.bands,
         bright: BRIGHT_WHITE[id],
       })
       if (problems.length) throw new Error(`案 ${id} が決まりを満たしていません:\n${problems.join('\n')}`)
@@ -1325,9 +1396,11 @@ export function buildVariants(css) {
     themes: THEMES,
     questions: QUESTIONS,
     options,
-    // 答えた問いの切り抜きの下に敷く、答える前の値（askedCss）
+    // 答えた問い（Q2〜Q6）の切り抜きの下に敷く、答える前の値（askedCss）。Q9・Q11・Q12・Q13 の案は24色をすべて書き換えるので敷かない
     asked: {
-      questions: Object.keys(ANSWERS).map(Number),
+      questions: Object.keys(ANSWERS)
+        .map(Number)
+        .filter((q) => !LABEL_QUESTIONS.includes(q)),
       tokens: ASKED_TOKENS,
       css: askedCss(),
     },
@@ -1395,12 +1468,16 @@ export function checkPick(variants, pick, css) {
   const tokens = pickTokens(variants, pick)
   const themes = readThemes(css)
   const out = []
-  // ホワイトの蛍光の例外（BRIGHT_WHITE）は、その案のその色をホワイトに選んだ時だけ（ほかの案が同じトークンを書き換える組は pickTokens が止める）
-  const bright = String(pick ?? '')
-    .split(',')
-    .map((s) => s.trim().split('@'))
-    .filter(([id, only]) => id && (!only || only.split('+').includes('white')))
-    .flatMap(([id]) => BRIGHT_WHITE[id] ?? [])
+  // ホワイトの蛍光の例外（BRIGHT_WHITE）は、その案のその色をホワイトに選んだ時だけ（ほかの案が同じトークンを書き換える組は pickTokens が止める）。
+  // 選んだ案が書き換えないラベルは今の値のままなので、今の値の例外（答えで選んだ案G の ANSWERED_BRIGHT）のまま
+  const bright = [
+    ...String(pick ?? '')
+      .split(',')
+      .map((s) => s.trim().split('@'))
+      .filter(([id, only]) => id && (!only || only.split('+').includes('white')))
+      .flatMap(([id]) => BRIGHT_WHITE[id] ?? []),
+    ...ANSWERED_BRIGHT.filter((k) => !(`--label-${k}` in tokens.white)),
+  ]
   for (const t of THEMES) {
     const vars = themes[t]
     const surface = hexOf(vars, '--surface')

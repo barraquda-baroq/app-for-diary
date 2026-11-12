@@ -95,32 +95,35 @@ const SPEC_TOKENS: Record<string, readonly [string, string, string]> = {
   '--qr-fg': ['#000000', '#000000', '#000000'],
 }
 
-/** docs/SPEC.md の 4.6 の表（キー: [ホワイト, ダーク, ディープダーク]。並びは番号の順） */
+/**
+ * docs/SPEC.md の 4.6 の表（キー: [ホワイト, ダーク, ディープダーク]。並びは番号の順）。段階2の見本の ■13 の答え（案G）: ホワイトとダークは
+ * 同じ値（蛍光の7色からくすみ色まで）、ディープダークはほぼグレーの濃淡
+ */
 const SPEC_LABELS: readonly (readonly [string, string, string, string])[] = [
-  ['rose-l', '#e499a4', '#febdc6', '#816f71'],
-  ['coral-l', '#e39e86', '#fdc1ac', '#81706b'],
-  ['apricot-l', '#d7a672', '#f2c89c', '#7d7267'],
-  ['lemon-l', '#c0b26e', '#ded299', '#787566'],
-  ['lime-l', '#a0bc7e', '#c3dba6', '#717769'],
-  ['mint-l', '#7cc39d', '#a6e1c0', '#6a7970'],
-  ['teal-l', '#65c3c0', '#96e1de', '#667978'],
-  ['sky-l', '#6dbddc', '#9bdcf6', '#67777e'],
-  ['blue-l', '#8db3ea', '#b5d3ff', '#6d7582'],
-  ['wisteria-l', '#aea8e8', '#cecaff', '#737381'],
-  ['violet-l', '#c99fd6', '#e6c2f1', '#7a717d'],
-  ['peony-l', '#dd9ab9', '#f8bdd8', '#7f6f76'],
-  ['rose-d', '#c26576', '#ea909e', '#5e4e50'],
-  ['coral-d', '#c26b4c', '#e99578', '#5e4f49'],
-  ['apricot-d', '#b57727', '#dca05d', '#5b5046'],
-  ['lemon-d', '#9a861b', '#c0af58', '#565345'],
-  ['lime-d', '#71943f', '#9abb6e', '#4f5548'],
-  ['mint-d', '#339c6d', '#6ac396', '#48564e'],
-  ['teal-d', '#039a97', '#44c4c0', '#455756'],
-  ['sky-d', '#0994ba', '#54bce2', '#46555c'],
-  ['blue-d', '#5787ce', '#82b0f3', '#4b535f'],
-  ['wisteria-d', '#8379ca', '#aaa3f0', '#52515e'],
-  ['violet-d', '#a46eb5', '#cb98db', '#584f5b'],
-  ['peony-d', '#bb6690', '#e391b8', '#5c4e54'],
+  ['rose-l', '#d8c8c7', '#d8c8c7', '#937c7c'],
+  ['coral-l', '#c97b54', '#c97b54', '#827265'],
+  ['apricot-l', '#cea88b', '#cea88b', '#726b60'],
+  ['lemon-l', '#e6c46e', '#e6c46e', '#878271'],
+  ['lime-l', '#9edb8d', '#9edb8d', '#767d6b'],
+  ['mint-l', '#73996e', '#73996e', '#5c726c'],
+  ['teal-l', '#73c1aa', '#73c1aa', '#657d7b'],
+  ['sky-l', '#87d7eb', '#87d7eb', '#76848b'],
+  ['blue-l', '#979fa8', '#979fa8', '#667381'],
+  ['wisteria-l', '#8e79b8', '#8e79b8', '#6b6671'],
+  ['violet-l', '#c9a7d0', '#c9a7d0', '#837888'],
+  ['peony-l', '#dd79d0', '#dd79d0', '#7c6e77'],
+  ['rose-d', '#d14361', '#d14361', '#5c494c'],
+  ['coral-d', '#ff0205', '#ff0205', '#63554e'],
+  ['apricot-d', '#ff7903', '#ff7903', '#534a3b'],
+  ['lemon-d', '#feff01', '#feff01', '#686250'],
+  ['lime-d', '#77b945', '#77b945', '#515545'],
+  ['mint-d', '#02ff85', '#02ff85', '#3e5045'],
+  ['teal-d', '#2d8f99', '#2d8f99', '#4e5e5b'],
+  ['sky-d', '#06acfe', '#06acfe', '#536570'],
+  ['blue-d', '#4483eb', '#4483eb', '#4b5256'],
+  ['wisteria-d', '#8858e1', '#8858e1', '#4c495a'],
+  ['violet-d', '#a002ff', '#a002ff', '#645b67'],
+  ['peony-d', '#ff01be', '#ff01be', '#5d515f'],
 ]
 
 const THEMES = ['white', 'dark', 'deep-dark'] as const
@@ -540,26 +543,94 @@ describe('区分の色とラベルの色の見分け（docs/SPEC.md の 4.3・4.
     }
   })
 
-  it.each(THEMES)('%s: カードの地は、ラベルの色と明るさが 0.1 以上違う', (theme) => {
+  // ホワイトの白い地より明るい蛍光色（4.6 の例外。菜の花・濃とミント・濃）。ホワイトもダークと同じ蛍光の黄・緑（段階2の見本の ■12・■13 の
+  // 答え）は、白い地（OKLab の明るさ 0.93〜1）との明るさの差が 0.1 に届かず、4px の縁も面の上で 1.6:1 に届かない。白い紙に蛍光ペンで引いた
+  // 色のように、明るさではなく色で見分けるので、この2色だけ、ホワイトでは明るさの差 0.1 と縁の 1.6:1 の代わりに、ラベルを置く白い地のどれとも
+  // OKLab の差（ΔE）0.15 以上を求める。ほかの色・ほかの外観・ほかの決まり（ラベルなしの線との ΔE 0.06・✓ の 3:1）は緩めない
+  const BRIGHT_WHITE: readonly string[] = ['lemon-d', 'mint-d']
+  /** ホワイトでラベルを置く白い地（面・カード・領域・詳細の地・縞・済んだ物の地） */
+  const BRIGHT_WHITE_GROUNDS = [
+    '--surface',
+    '--surface-2',
+    '--stripe',
+    '--work-soft',
+    '--work-area',
+    '--work-sheet',
+    '--private-soft',
+    '--private-area',
+    '--private-sheet',
+    '--done-bg',
+  ] as const
+  const bright = (theme: Theme, key: string) => theme === 'white' && BRIGHT_WHITE.includes(key)
+  const KIND_GROUNDS = [
+    '--work-soft',
+    '--private-soft',
+    '--work-area',
+    '--private-area',
+    '--work-sheet',
+    '--private-sheet',
+  ] as const
+  const lightnessGap = (theme: Theme, ground: string, key: string) =>
+    Math.abs(oklab(color(theme, ground))[0] - oklab(color(theme, `--label-${key}`))[0])
+
+  it.each(THEMES)('%s: カードの地は、ラベルの色と明るさが 0.1 以上違う（ホワイトの蛍光の黄・緑を除く）', (theme) => {
     for (const soft of ['--work-soft', '--private-soft']) {
       for (const [key] of SPEC_LABELS) {
-        const dl = Math.abs(oklab(color(theme, soft))[0] - oklab(color(theme, `--label-${key}`))[0])
-        expect(dl, `${theme}: ${soft} / ${key}`).toBeGreaterThanOrEqual(0.1)
+        if (bright(theme, key)) continue
+        expect(lightnessGap(theme, soft, key), `${theme}: ${soft} / ${key}`).toBeGreaterThanOrEqual(0.1)
       }
     }
   })
 
   it.each(THEMES)(
-    '%s: 区分の領域・詳細の地も、ラベルの色と明るさが 0.1 以上違う（ラベルの帯・一辺が地に溶けない。FRAME-146）',
+    '%s: 区分の領域・詳細の地も、ラベルの色と明るさが 0.1 以上違う（ラベルの帯・一辺が地に溶けない。FRAME-146。ホワイトの蛍光の黄・緑を除く）',
     (theme) => {
       for (const ground of ['--work-area', '--private-area', '--work-sheet', '--private-sheet']) {
         for (const [key] of SPEC_LABELS) {
-          const dl = Math.abs(oklab(color(theme, ground))[0] - oklab(color(theme, `--label-${key}`))[0])
-          expect(dl, `${theme}: ${ground} / ${key}`).toBeGreaterThanOrEqual(0.1)
+          if (bright(theme, key)) continue
+          expect(lightnessGap(theme, ground, key), `${theme}: ${ground} / ${key}`).toBeGreaterThanOrEqual(0.1)
         }
       }
     },
   )
+
+  it('ホワイトの例外は菜の花・濃とミント・濃だけ（明るさの差 0.1 に届かないのはこの2色だけ）。この2色は白い地の10色のどれとも ΔE 0.15 以上', () => {
+    const short = SPEC_LABELS.map(([key]) => key).filter((key) =>
+      KIND_GROUNDS.some((ground) => lightnessGap('white', ground, key) < 0.1),
+    )
+    expect(short).toEqual(BRIGHT_WHITE)
+    for (const key of BRIGHT_WHITE) {
+      // 白い地より明るい蛍光色（淡の12色のどれよりも明るい）
+      const L = oklab(color('white', `--label-${key}`))[0]
+      for (const [other] of SPEC_LABELS.filter(([k]) => k.endsWith('-l')))
+        expect(L, `${key} / ${other}`).toBeGreaterThan(oklab(color('white', `--label-${other}`))[0])
+      for (const ground of BRIGHT_WHITE_GROUNDS)
+        expect(deltaE(color('white', ground), color('white', `--label-${key}`)), `${ground} / ${key}`).toBeGreaterThanOrEqual(
+          0.15,
+        )
+    }
+    // ダークでは例外を使わない（暗い地の上では、蛍光の黄・緑もふつうの決まりを満たす）
+    for (const key of BRIGHT_WHITE)
+      for (const ground of KIND_GROUNDS)
+        expect(lightnessGap('dark', ground, key), `dark ${ground} / ${key}`).toBeGreaterThanOrEqual(0.1)
+  })
+
+  it.each(['white', 'dark'] as const)(
+    '%s: ラベルの左の一辺（4px）は、面の上でホワイト 1.6:1・ダーク 2.5:1 以上（ホワイトの蛍光の黄・緑は上の ΔE 0.15 で見る）',
+    (theme) => {
+      for (const [key] of SPEC_LABELS) {
+        const edge = contrast(color(theme, '--surface'), color(theme, `--label-${key}`))
+        if (bright(theme, key)) expect(edge, `${theme}: ${key}`).toBeLessThan(1.6)
+        else expect(edge, `${theme}: ${key}`).toBeGreaterThanOrEqual(theme === 'white' ? 1.6 : 2.5)
+      }
+    },
+  )
+
+  it.each(THEMES)('%s: ラベルの色の●の中の✓（--on-label）は、24色のどの上でも 3:1 以上（7.9）', (theme) => {
+    for (const [key] of SPEC_LABELS) {
+      expect(contrast(color(theme, '--on-label'), color(theme, `--label-${key}`)), `${theme}: ${key}`).toBeGreaterThanOrEqual(3)
+    }
+  })
 
   // 土日の色と区分の数字（4.5）: カード・S の件数・「99+」でない所の区分の字（--*-text）とは OKLab で 0.10 以上（ダークの関係に
   // 合わせて、ホワイトとディープダークも作り直した。■5 の答え B）。L・M のマンスリーの件数の少し淡い色（--*-count）は、ダーク・
