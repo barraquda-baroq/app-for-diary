@@ -345,19 +345,23 @@ describe('マンスリーの件数の字（9.2・4.7。作者の気になった�
 
 /**
  * 余白は 4px を単位にする（0・4・8・12・16・24・32。docs/SPEC.md の 4.8・FRAME-213）。カレンダー・登録と詳細の画面の CSS の余白の宣言
- * （margin・padding・gap・row-gap・column-gap・inset と top・right・bottom・left。@media の中も）に書いた px の値のうち、3px より大きく
- * 単位に乗らない物は、4.8 の例外の印を同じ行（宣言の終わりの ; の後ろ）に書いた宣言だけに許す。印は次の形で、分けは 4.8 の（開発）の5つ:
+ * （margin・padding・gap・row-gap・column-gap・grid-gap・grid-row-gap・grid-column-gap・inset と top・right・bottom・left。@media の中も）
+ * に書いた px と rem（1rem = 16px で見る）の値のうち、3px より大きく単位に乗らない物は、4.8 の例外の印を宣言の終わりの ; のすぐ後ろ
+ * （同じ行）に書いた宣言だけに許す。印は次の形で、分けは 4.8 の（開発）の5つ（（理由）は書かなくてもよい）:
  *   /* 4.8 の例外: 中央に置く（理由） *\/   分け = 中央に置く・押せる所・節の寸法・線の分・NS のまま
- * - calc()・clamp()・max() の中の px も1つずつ見る（calc(50% - 14px) の 14px も）。マイナスの値は大きさで見る（-5px は 5px）
+ * - calc()・clamp()・max() の中の px も1つずつ見る（calc(50% - 14px) の 14px も）。px だけを足し引きした calc() は、足した値も見る
+ *   （calc(4px + 2px) は 6px）。マイナスの値は大きさで見る（-5px は 5px）
  * - 3px までの値（目で合わせる 1〜3px の寄せ・線の太さ）は単位の外でもよい。em・%・var() は見ない（字の大きさに合わせる間・変数）
- * - scroll-margin・scroll-padding は見た目の余白ではない（スクロールして止める位置）ので見ない。変数（--…）の値も見ない
+ * - scroll-margin・scroll-padding は見た目の余白ではない（スクロールして止める位置）ので見ない。変数（--…）の値も見ない（余白に使う
+ *   変数は、使う宣言の方に印を付ける。今は --cp-ai-hit-x だけで、使う所はどれも押せる所の印がある）
  * - 印が付いているのに単位に乗らない値の無い宣言・余白でない宣言の印は、要らない印として落とす（値を直した後に印だけが残らないように）
  */
 const SPACING_SCALE = new Set([0, 4, 8, 12, 16, 24, 32])
 const SPACING_PROP =
-  /^(?:(?:margin|padding)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?|gap|row-gap|column-gap|inset(?:-(?:inline|block)(?:-(?:start|end))?)?|top|right|bottom|left)$/
+  /^(?:(?:margin|padding)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?|(?:grid-)?(?:row-|column-)?gap|inset(?:-(?:inline|block)(?:-(?:start|end))?)?|top|right|bottom|left)$/
 const EXCEPTION_KINDS = ['中央に置く', '押せる所', '節の寸法', '線の分', 'NS のまま'] as const
-const EXCEPTION_MARK = new RegExp(`/\\*\\s*4\\.8 の例外: (?:${EXCEPTION_KINDS.join('|')})`)
+/** 宣言の終わりの ; のすぐ後ろ（空白だけをはさむ）の 4.8 の例外の印 */
+const EXCEPTION_MARK = new RegExp(`^[ \\t]*/\\*\\s*4\\.8 の例外: (?:${EXCEPTION_KINDS.join('|')})`)
 /** 4.8 の例外の印の形で始まるコメント（分けの正しくない物も） */
 const ANY_EXCEPTION_MARK = /\/\*\s*4\.8 の例外/g
 
@@ -383,14 +387,20 @@ export function offScaleSpacing(source: string): string[] {
       if (m && SPACING_PROP.test(m[1].toLowerCase())) {
         const [, prop, rawValue] = m
         const value = rawValue.replace(/\s+/g, ' ')
-        const bad = [...value.matchAll(/(-?\d*\.?\d+)px\b/g)]
-          .map((x) => Math.abs(Number(x[1])))
-          .filter((v) => v > 3 && !SPACING_SCALE.has(v))
-        // 印を見る所: 宣言の始まり（前の宣言の後ろの印・空白は除く）から、宣言の終わり（; か }）の行の終わりまで
-        const from = start + text.search(/\S/)
-        const mark = EXCEPTION_MARK.exec(source.slice(from, lineEnd(i)))
+        const px = [...value.matchAll(/(-?\d*\.?\d+)(px|rem)\b/g)].map((x) => Number(x[1]) * (x[2] === 'rem' ? 16 : 1))
+        // px だけを足し引きした calc() の足した値（calc(4px + 2px) の 6px）
+        for (const c of value.matchAll(/calc\(\s*(-?\d*\.?\d+px(?:\s*[-+]\s*\d*\.?\d+px)+)\s*\)/g)) {
+          px.push(
+            [...c[1].matchAll(/([-+]?)\s*(\d*\.?\d+)px/g)].reduce((sum, t) => sum + (t[1] === '-' ? -1 : 1) * Number(t[2]), 0),
+          )
+        }
+        const bad = [...new Set(px.map(Math.abs))].filter((v) => v > 3 && !SPACING_SCALE.has(v))
+        // 印を見る所: 宣言の終わりの ; のすぐ後ろ（同じ行。同じ行に宣言を2つ書いた時は、印は後ろの宣言の分だけ）。} で終わる宣言
+        // （; の無い物。prettier が ; を足す）には印を付けられない
+        const after = i + 1
+        const mark = ch === ';' ? EXCEPTION_MARK.exec(source.slice(after, lineEnd(i))) : null
         const where = `${selectors[selectors.length - 1] ?? ''} { ${prop}: ${value} }`
-        if (mark) usedMarks.add(from + mark.index)
+        if (mark) usedMarks.add(after + mark[0].indexOf('/*'))
         if (bad.length && !mark) found.push(`${where}（${bad.join('・')}px が 4px の単位に乗らない）`)
         if (!bad.length && mark) found.push(`${where}（単位に乗っているのに 4.8 の例外の印がある）`)
       }
@@ -427,6 +437,11 @@ describe('余白は 4px を単位に（0・4・8・12・16・24・32。例外は
         .j { gap: 6px; /* 4.8 の例外: 好みで */ }
         .k { gap: 8px; /* 4.8 の例外: 中央に置く */ }
         .l { width: 30px; /* 4.8 の例外: 節の寸法 */ }
+        .m { gap: 0.375rem; padding: 0.5rem 0.25rem; margin: 0.625rem; }
+        .n { grid-gap: 6px; grid-row-gap: 8px; grid-column-gap: 10px; }
+        .o { gap: calc(4px + 2px); padding: calc(12px - 4px); margin: calc(8px + 8px - 6px); }
+        .p { gap: 6px; padding: 10px; /* 4.8 の例外: 中央に置く */ }
+        .q { gap: 6px; } /* 4.8 の例外: 中央に置く */
       `),
     ).toEqual([
       '.b { gap: 6px }（6px が 4px の単位に乗らない）',
@@ -435,10 +450,20 @@ describe('余白は 4px を単位に（0・4・8・12・16・24・32。例外は
       '.i { padding: 6px 10px }（6・10px が 4px の単位に乗らない）',
       '.j { gap: 6px }（6px が 4px の単位に乗らない）',
       '.k { gap: 8px }（単位に乗っているのに 4.8 の例外の印がある）',
-      // 行の上に書いた印（.i）・分けの無い印（.j）・余白でない宣言の印（.l）
+      '.m { gap: 0.375rem }（6px が 4px の単位に乗らない）',
+      '.m { margin: 0.625rem }（10px が 4px の単位に乗らない）',
+      '.n { grid-gap: 6px }（6px が 4px の単位に乗らない）',
+      '.n { grid-column-gap: 10px }（10px が 4px の単位に乗らない）',
+      '.o { gap: calc(4px + 2px) }（6px が 4px の単位に乗らない）',
+      '.o { margin: calc(8px + 8px - 6px) }（6・10px が 4px の単位に乗らない）',
+      // 印は宣言の ; のすぐ後ろの分だけ（同じ行の前の宣言・} の後ろの印は数えない）
+      '.p { gap: 6px }（6px が 4px の単位に乗らない）',
+      '.q { gap: 6px }（6px が 4px の単位に乗らない）',
+      // 行の上に書いた印（.i）・分けの無い印（.j）・余白でない宣言の印（.l）・} の後ろの印（.q）
       expect.stringMatching(/^11 行目の 4\.8 の例外の印が/),
       expect.stringMatching(/^14 行目の 4\.8 の例外の印が/),
       expect.stringMatching(/^16 行目の 4\.8 の例外の印が/),
+      expect.stringMatching(/^21 行目の 4\.8 の例外の印が/),
     ])
   })
 

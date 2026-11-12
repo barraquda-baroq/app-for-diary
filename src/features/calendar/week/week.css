@@ -444,7 +444,7 @@
 /* ---------- 線（2px・レーンのカードの高さの真ん中 18px。7.8・D42） ---------- */
 .wk-line {
   position: absolute;
-  top: 17px; /* 4.8 の例外: 節の寸法（2px の線の真ん中をレーンのカードの真ん中 18px に。D42） */
+  top: 17px; /* 4.8 の例外: 節の寸法（2px の線の真ん中をレーンのカードの真ん中 18px に。7.8） */
   height: var(--span-w);
   background: var(--wk-line);
   pointer-events: none;

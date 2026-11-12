@@ -154,7 +154,7 @@
 .it-date {
   display: flex;
   align-items: center;
-  gap: 6px; /* 4.8 の例外: NS のまま（.input の左の 10px とアイコン 16px から、字を時刻の欄と同じ 32px に） */
+  gap: 6px; /* 4.8 の例外: NS のまま（.input の形に合わせた欄。左の 10px とアイコン 16px と合わせて、字を時刻の欄と同じ 32px から） */
   width: 100%;
   min-height: 36px;
   padding: 6px 10px; /* 4.8 の例外: NS のまま（.input と同じ） */
