@@ -1,13 +1,15 @@
 // アプリの外枠（AppFrame）の新しい版の帯（docs/SPEC.md の 2.8）: 新しい版を受け取った時だけ「新しい版があります ［更新する］」を出し、
 // 押すと入力中の下書きを保存してから新しい版に切り替える（保存は帯の1か所だけ。src/main.tsx の apply は切り替えるだけ）。
 // 段階2: 左のアイコンと名前の行き先（積むか置き換えるか。D05）、カレンダーの4つのモードから開いた MIM の戻り先（FRAME-007）、
-// カレンダーの中の置き換えでスクロールを戻さないこと（D54）、iPhone のキーボードの高さ --kb
-import { act, cleanup, render, screen } from '@testing-library/react'
+// カレンダーの中の置き換えでスクロールを戻さないこと（D54）、iPhone のキーボードの高さ --kb、
+// お知らせのボタンは指を離した時に効く（3.9。iPhone で、ドラッグの後の［元に戻す］が効かなかった時の手当て。iPhone が click を
+// 作らなかった見込み）
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { markDraftClean, markDraftDirty } from '../store/draftRegistry'
-import { DEFAULT_PREFS, initialCalendarUi, useAppUpdate, useCalendarUi, usePrefs } from '../store/uiStore'
+import { DEFAULT_PREFS, initialCalendarUi, notify, useAppUpdate, useCalendarUi, usePrefs, useToasts } from '../store/uiStore'
 import { AppFrame, AppHeader, brandReplaces, scrollsToTop, useMim } from './Layout'
 
 function renderFrame() {
@@ -235,5 +237,59 @@ describe('iPhone のキーボードの高さ（2.7・FRAME-086）', () => {
     expect(document.documentElement.style.getPropertyValue('--kb')).toBe('0px')
     unmount()
     expect(document.documentElement.style.getPropertyValue('--kb')).toBe('')
+  })
+})
+
+describe('お知らせのボタン（3.9）', () => {
+  afterEach(() => useToasts.setState({ toasts: [] }))
+
+  /** 指で押して離す（jsdom の TouchEvent は Touch を作れないので、ふつうの Event に指の一覧を載せる）。touchend を止めたら false */
+  function fingerTap(el: Element): boolean {
+    const finger = { identifier: 1, clientX: 10, clientY: 10 }
+    const send = (type: string, touches: (typeof finger)[]) => {
+      const e = new Event(type, { bubbles: true, cancelable: true })
+      Object.assign(e, { touches, targetTouches: touches, changedTouches: [finger] })
+      return el.dispatchEvent(e)
+    }
+    send('touchstart', [finger])
+    return send('touchend', [])
+  }
+
+  it('［元に戻す］は指を離した時に、click を待たずに1回だけ効いて消える（後から click が来ても2回は戻さない）', () => {
+    const run = vi.fn()
+    renderFrame()
+    act(() => notify('11/9（月）へ移しました', { label: '元に戻す', run }))
+    const toast = screen.getByText('11/9（月）へ移しました').closest('.toast') as HTMLElement
+    const undo = within(toast).getByRole('button', { name: '元に戻す' })
+    let prevented = false
+    act(() => {
+      prevented = !fingerTap(undo)
+    })
+    // touchend を止めて、ブラウザに click を作らせない（消えたお知らせの下の物を押さないように）
+    expect(prevented).toBe(true)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(useToasts.getState().toasts).toEqual([])
+    expect(screen.queryByText('11/9（月）へ移しました')).toBeNull()
+    act(() => {
+      fireEvent.click(undo)
+    })
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('［×］も指を離した時に消える。マウス・キーボードの click でもこれまでどおり効く', () => {
+    const run = vi.fn()
+    renderFrame()
+    act(() => notify('ひとつめ', { label: '元に戻す', run }))
+    act(() => {
+      fingerTap(within(screen.getByText('ひとつめ').closest('.toast') as HTMLElement).getByRole('button', { name: '閉じる' }))
+    })
+    expect(useToasts.getState().toasts).toEqual([])
+    expect(run).not.toHaveBeenCalled()
+    act(() => notify('ふたつめ', { label: '元に戻す', run }))
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: '元に戻す' }))
+    })
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(useToasts.getState().toasts).toEqual([])
   })
 })

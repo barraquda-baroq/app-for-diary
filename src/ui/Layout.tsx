@@ -2,7 +2,7 @@
 // ヘッダー（docs/SPEC.md の 3.3）: 左に DS のアイコンと名前、右に 同期の表示 → 設定の歯車 → いちばん右に［MIM］。
 // NS のパンくず・端末への保存の状態・別のタブの変更の帯・iPhone / Android のアプリの帯は持ち込まない（保存の帯などは段階1で足す）。
 // 段階2で、左のアイコンと名前の行き先（前回のモードの今日を含む期間）・カレンダーの ‹ › 今日 でスクロールを戻さないこと・
-// iPhone のキーボードの高さ（--kb）を足した
+// iPhone のキーボードの高さ（--kb）を足した。お知らせのボタンは、指で押した時は指を離した時に効く（src/ui/fingerTap.ts）
 import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
@@ -18,8 +18,10 @@ import {
   usePrefs,
   useToasts,
   type CalendarMode,
+  type Toast,
 } from '../store/uiStore'
 import { DialogHost, cancelAllDialogs } from './dialogs'
+import { useFingerTap } from './fingerTap'
 import { GearIcon, KeyIcon, XIcon } from './icons'
 import { useKeyboardInset } from './keyboardInset'
 import { SyncIndicator } from './SyncIndicator'
@@ -129,32 +131,41 @@ export function AppHeader({ actions }: { actions?: ReactNode }) {
 
 function Toasts() {
   const toasts = useToasts((s) => s.toasts)
-  const dismiss = useToasts((s) => s.dismiss)
   // ダイアログ表示中は画面本体が操作不可（inert）になるので、お知らせは body 直下に出す
   return createPortal(
     <div className="toasts" aria-live="assertive">
       {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.kind}`} role={t.kind === 'error' ? 'alert' : 'status'}>
-          <p>{t.message}</p>
-          {t.action ? (
-            <button
-              type="button"
-              className="toast-action"
-              onClick={() => {
-                dismiss(t.id)
-                t.action?.run()
-              }}
-            >
-              {t.action.label}
-            </button>
-          ) : null}
-          <button type="button" onClick={() => dismiss(t.id)} aria-label="閉じる">
-            <XIcon />
-          </button>
-        </div>
+        <ToastView key={t.id} toast={t} />
       ))}
     </div>,
     document.body,
+  )
+}
+
+/**
+ * お知らせ1つ。［元に戻す］などのボタンと［×］は、指で押した時は指を離した時に効く（ブラウザが click を作るのを待たない。
+ * iPhone でウィークリーのカードを動かした後に［元に戻す］が効かなかったことへの手当て。iPhone が click を作らなかった見込みで、
+ * 原因は確かめられていない。src/ui/fingerTap.ts・docs/SPEC.md の 3.9）
+ */
+function ToastView({ toast: t }: { toast: Toast }) {
+  const dismiss = useToasts((s) => s.dismiss)
+  const action = useFingerTap(() => {
+    dismiss(t.id)
+    t.action?.run()
+  })
+  const close = useFingerTap(() => dismiss(t.id))
+  return (
+    <div className={`toast ${t.kind}`} role={t.kind === 'error' ? 'alert' : 'status'}>
+      <p>{t.message}</p>
+      {t.action ? (
+        <button type="button" className="toast-action" {...action}>
+          {t.action.label}
+        </button>
+      ) : null}
+      <button type="button" {...close} aria-label="閉じる">
+        <XIcon />
+      </button>
+    </div>
   )
 }
 
