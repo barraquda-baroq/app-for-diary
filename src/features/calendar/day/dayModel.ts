@@ -328,8 +328,11 @@ const BOX_PAD_RIGHT = 6
 const MARK_GAP = 4
 /** 1行にまとめた枠の、件名と時刻の間 */
 const COMPACT_TIME_GAP = 6
-/** 印の幅（px。区分のアイコン 12・〆 11・ロック 12・AI の札「Claude」44・「AI」20・終わりの● 10・矢印 12） */
-const MARK_PX = { kind: 12, due: 11, lock: 12, aiClaude: 44, ai: 20, dot: 10, arrow: 12 } as const
+/**
+ * 印の幅（px。区分のアイコン 12・〆 11・ロック 12・AI の札「Claude」44・「AI」22（parts.css の .cp-ai の幅の最小）・終わりの● 10・
+ * 矢印 12）
+ */
+const MARK_PX = { kind: 12, due: 11, lock: 12, aiClaude: 44, ai: 22, dot: 10, arrow: 12 } as const
 /**
  * 2行の枠で件名に残したい幅（px。12px の字で5字）。印を件名の横に置くとこれより狭くなり、件名が入らない枠は、印を時刻の行の右へ
  * 下ろす（これより広くても、下ろせば件名が入りきる時は下ろす）

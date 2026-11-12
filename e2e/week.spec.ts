@@ -465,6 +465,27 @@ test.describe('7日を縦（S）', () => {
   )
 
   test(
+    '週の中の物を見える所へ出す時（落とした後・目立たせる時など）は、上に固定した段の名札の行の下に出す（隠れない）',
+    { tag: ['@s'] },
+    async ({ page }) => {
+      await openWeek(page)
+      const view = page.getByTestId('view-week')
+      // 下まで送ってから、上の方のカードを上へ出す（scrollIntoView の nearest。src/ui/scrollWithin.ts も同じく .wk-v の
+      // scroll-padding-top を見込む）
+      for (const id of [`week-start-${I.materials}`, `week-card-${I.weekly}`, `week-card-${I.dinner}`]) {
+        const hidden = await view.evaluate((v, id) => {
+          v.scrollTop = v.scrollHeight
+          const target = v.querySelector(`[data-testid="${id}"]`) as HTMLElement
+          target.scrollIntoView({ block: 'nearest' })
+          const tags = (v.querySelector('.wk-vtags') as HTMLElement).getBoundingClientRect().bottom
+          return tags - target.getBoundingClientRect().top
+        }, id)
+        expect(hidden, id).toBeLessThanOrEqual(0.5)
+      }
+    },
+  )
+
+  test(
     '混んだ週: レールは3本まで、4本目のレーンからは期間付きの始点のカードと締め切り日の「● 件名」の行（10.4・D41）',
     { tag: ['@s'] },
     async ({ page }) => {

@@ -357,11 +357,11 @@ describe('狭い枠の中の出し方（fitBox。11.3・D39。見本の「‹ �
     expect(boxPx({ w: 1 / 4, wRoom: 1 / 4 }, 536)).toBeCloseTo(124)
   })
 
-  it('印の幅: 区分のアイコン 12px と、〆 11・ロック 12・AI の札（Claude 44・AI 20）・線の無いカードの●10・矢印12、間 4px。thin はアイコンと●・矢印だけ', () => {
+  it('印の幅: 区分のアイコン 12px と、〆 11・ロック 12・AI の札（Claude 44・AI 22）・線の無いカードの●10・矢印12、間 4px。thin はアイコンと●・矢印だけ', () => {
     expect(boxMarksPx(mkItem({}), null)).toBe(12)
     expect(boxMarksPx(mkItem({ locked: true }), null)).toBe(28)
     expect(boxMarksPx(mkItem({ locked: true, by: 'connector', ai: 'claude' }), null)).toBe(12 + 12 + 44 + 2 * 4)
-    expect(boxMarksPx(mkItem({ by: 'connector', ai: null }), null)).toBe(12 + 20 + 4)
+    expect(boxMarksPx(mkItem({ by: 'connector', ai: null }), null)).toBe(12 + 22 + 4)
     expect(boxMarksPx(mkTask({ due: D }), 'dot')).toBe(12 + 11 + 10 + 2 * 4)
     expect(boxMarksPx(mkItem({ locked: true, by: 'connector', ai: 'claude' }), 'arrow', true)).toBe(12 + 12 + 4)
   })

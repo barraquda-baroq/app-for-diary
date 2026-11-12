@@ -159,6 +159,21 @@ describe('scrollIntoViewWithin', () => {
     expect(weekTo).toHaveBeenCalledWith({ left: 0, top: 260, behavior: 'smooth' })
   })
 
+  it('箱の scroll-padding（上に固定した行の分）と要素の scroll-margin を見込む（S のウィークリーの名札の行 24px の下に出す）', () => {
+    const week = div(document.body, { overflowY: 'auto', scrollPaddingTop: '24px' })
+    const weekTo = geom(week, { rect: [0, 214, 412, 630], scroll: [412, 2000], at: { top: 500 } })
+    const card = div(week)
+    geom(card, { rect: [10, 230, 200, 44] })
+    scrollIntoViewWithin(card)
+    // 見える所の上の端は 214 + 24 = 238: 230 − 238 = −8px
+    expect(weekTo).toHaveBeenLastCalledWith({ left: 0, top: 492, behavior: 'smooth' })
+    const inner = div(week, { scrollMarginTop: '4px' })
+    geom(inner, { rect: [10, 240, 200, 44] })
+    scrollIntoViewWithin(inner)
+    // 要素の上の 4px も見せる: 240 − 4 − 238 = −2px
+    expect(weekTo).toHaveBeenLastCalledWith({ left: 0, top: 490, behavior: 'smooth' })
+  })
+
   it('入れ子: 中の段を縦に送った後の位置で、外の箱を横に送る。overflow が hidden の向き・箱は動かさない', () => {
     // 7日を横（外の箱は横だけスクロール）の中の段（縦だけスクロール）
     const outer = div(document.body, { overflowX: 'auto', overflowY: 'hidden' })

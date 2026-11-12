@@ -408,6 +408,27 @@ async function tapSizes(
   return found
 }
 
+/**
+ * 見本のデータの1日の予定のうち3つ（11/10 の定例ミーティング・メールの返信、11/11 の打ち合わせの候補日）を、ai が claude でない
+ * Claude が足した物（「AI」の札。7.7）にする。見本のデータの札は「Claude」だけなので、細い「AI」の札の押せる所はこれで測る
+ */
+function withAiTags() {
+  const data = demoData()
+  for (const id of [I.weekly, I.mail, I.claude]) {
+    data.items[id] = { ...data.items[id], by: 'connector', ai: null, via: 'メール: 確かめ' }
+  }
+  return data
+}
+
+/**
+ * 「AI」の札の押せる所（ウィークリーのカード・デイリーの行と予定の枠）が D08 の大きさ（SMALL_OK の .cp-ai）。札は「Claude」より
+ * 細く、札の左右に 6px 広げるだけでは 32px にしかならなかった（::after は札の枠の内側から測るので、22px の札は 20 + 12px）
+ */
+async function aiTagSizes(page: Page) {
+  await openCalendar(page, '/month/2026-11', { data: withAiTags(), prefs: { detailsOpen: true } })
+  expect(await tapSizes(page, { modes: [MODES[2], MODES[3]], sheets: false })).toEqual([])
+}
+
 test.describe('横にスクロールしない・押せる所の大きさ（S）', { tag: ['@s'] }, () => {
   for (const width of [360, 390, 412] as const) {
     test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない${width === 360 ? '（削除の確かめも）' : ''}（FRAME-026・CALENDAR-226）`, async ({
@@ -423,6 +444,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
   }) => {
     await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
     expect(await tapSizes(page)).toEqual([])
+  })
+
+  test('「AI」の札（ai が claude でない物）も、指で押せる所は札の幅によらず D08 の大きさ（ウィークリー・デイリー）', async ({
+    page,
+  }) => {
+    await aiTagSizes(page)
   })
 })
 
@@ -451,6 +478,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
     // 丸の行の右に置いた札の押せる所が丸の押せる所に掛かる）
     await page.addStyleTag({ content: '.cp-ai { letter-spacing: 1px; }' })
     expect(await tapSizes(page, { modes: [MODES[2], MODES[3]], sheets: false })).toEqual([])
+  })
+
+  test('「AI」の札（ai が claude でない物）も、指で押せる所は札の幅によらず D08 の大きさ（ウィークリー・デイリー）', async ({
+    page,
+  }) => {
+    await aiTagSizes(page)
   })
 })
 

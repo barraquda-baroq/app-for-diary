@@ -239,9 +239,10 @@ describe('指の端末の押せる所（D08・4.11）', () => {
     expect(n(day('.dy-ring').get('left')) + n(hit.get('left')) + n(hit.get('width'))).toBe(n(padLeft))
   })
 
-  it('AI の札の押せる所は高さ 34px まで（予定の枠では上の端から下へ、リストの行では 40px の行の中で上下に）', () => {
-    expect(inMedia('.dy-ev-marks .cp-ai::after').get('inset')).toBe('-5px -6px -15px')
-    expect(inMedia('.dy-row-marks .cp-ai::after').get('inset')).toBe('-10px -6px')
+  it('AI の札の押せる所は高さ 34px まで（予定の枠では上の端から下へ、リストの行では 40px の行の中で上下に）。左右は parts.css の --cp-ai-hit-x（6px か、幅 34px まで）', () => {
+    expect(inMedia('.dy-ev-marks .cp-ai::after').get('inset')).toBe('-5px var(--cp-ai-hit-x) -15px')
+    expect(inMedia('.dy-box.is-narrow .dy-ev-marks .cp-ai::after').get('inset')).toBe('0 var(--cp-ai-hit-x) -15px')
+    expect(inMedia('.dy-row-marks .cp-ai::after').get('inset')).toBe('-10px var(--cp-ai-hit-x)')
   })
 })
 
