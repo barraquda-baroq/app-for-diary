@@ -143,13 +143,18 @@
   max-width: 60%;
 }
 
-/* ---------- 下の真ん中: 件数（L・M「4 / 3」等幅 22px、S「4/3」等幅 14px・空白なし。9.2・4.7） ----------
+/* ---------- 下の真ん中: 件数（L・M「4 / 3」等幅 28px、S「4/3」等幅 14px・空白なし。どれも太さ 600。9.2・4.7） ----------
    件数の行はマスの左右の余白まで広げ（狭い S でも「12/10」が入るように）、字の大きさはその行の幅で決める（container の単位。
-   L・M 22 → 16px、S 14 → 11px。D27）。行を左右半分ずつに分け、「/」をマスの真ん中に置いて、仕事の数はその左、プライベートの数は
+   L・M 28 → 19px、S 14 → 11px。D27）。行を左右半分ずつに分け、「/」をマスの真ん中に置いて、仕事の数はその左、プライベートの数は
    その右に寄せる（どのマスでも「/」が縦にそろう。L・M の数字のボタンは、それぞれの半分の中で押せる所を 34px 四方を目安に取る）。
-   半分の幅は中身で広げない（minmax(0, 1fr)。広がると「/」が真ん中からずれる） */
+   半分の幅は中身で広げない（minmax(0, 1fr)。広がると「/」が真ん中からずれる）。
+   太さは、等幅の書体で読み込んでいるいちばん太い 600（4.7。端末が太らせた字にしない）。飾りの「0」と「/」も 600 にして、数字の形をそろえる。
+   色: L・M は少し淡い --work-count・--private-count（19px 以上・太さ 600 の大きな字なので、地の上で 3:1 以上。4.5）。19px より小さく
+   なることのある「99+」のマスと S は、--work-text・--private-text（4.5:1 以上） */
 .mo-counts {
   --mo-half-sep: 0.45em;
+  --mo-work: var(--work-count);
+  --mo-private: var(--private-count);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
@@ -159,10 +164,18 @@
   white-space: nowrap;
 }
 
+.mo-counts.is-wide,
+.mo-month.is-compact .mo-counts {
+  --mo-work: var(--work-text);
+  --mo-private: var(--private-text);
+}
+
+/* L・M: 半分の幅が「12」と「/」までの間（2 × 0.61 + 0.45 ≒ 1.7em）より 4px ほど広い大きさ（幅 960px のウインドウで 20px ほど、
+   768px のタブレットで 27px ほど、1400px で 28px） */
 .mo-count,
 .mo-sep {
-  font-size: clamp(16px, calc((100cqi - 8px) / 4.2), 22px);
-  font-weight: 400;
+  font-size: clamp(19px, calc((100cqi - 8px) / 3.4), 28px);
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -180,14 +193,14 @@
   justify-self: end;
   justify-content: flex-end;
   padding-right: var(--mo-half-sep);
-  color: var(--work-text);
+  color: var(--mo-work);
 }
 
 .mo-count.is-private {
   justify-self: start;
   justify-content: flex-start;
   padding-left: var(--mo-half-sep);
-  color: var(--private-text);
+  color: var(--mo-private);
 }
 
 /* 片方が 0 の時の「0」は飾りとして --numeral（4.5 の例外。押すとその区分を目立たせてデイリーへ。D29） */
@@ -196,10 +209,10 @@
 }
 
 /* 「99+」（3文字。7.6）のあるマス（.is-wide）は、半分の幅に「99+」と「/」までの間が入る大きさまで字を小さくする
-   （等幅の字の幅は 0.61em ほど。L・M は 3 × 0.61 + 0.45 ≒ 2.3em が半分に入るよう 22 → 14px。幅 600px で 16px） */
+   （等幅の字の幅は 0.61em ほど。L・M は 3 × 0.61 + 0.45 ≒ 2.3em が半分に入るよう 28 → 14px。幅 600px で 16px） */
 .mo-counts.is-wide .mo-count,
 .mo-counts.is-wide .mo-sep {
-  font-size: clamp(14px, calc((100cqi - 4px) / 4.5), 22px);
+  font-size: clamp(14px, calc((100cqi - 4px) / 4.5), 28px);
 }
 
 /* 「/」はマスの真ん中（--text-faint） */
@@ -226,7 +239,7 @@ button.mo-count:focus-visible {
   outline-offset: -2px;
 }
 
-/* S: 「4/3」（等幅 14px・空白なし。マスの幅が狭い時は 11px まで小さく）。数字はボタンにしない（マスのどこを押してもデイリーへ） */
+/* S: 「4/3」（等幅 14px・太さ 600・空白なし。マスの幅が狭い時は 11px まで小さく）。数字はボタンにしない（マスのどこを押してもデイリーへ） */
 .mo-month.is-compact .mo-counts {
   --mo-half-sep: 0.3em;
 }

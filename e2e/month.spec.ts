@@ -1,5 +1,5 @@
 // マンスリーの E2E（docs/SPEC.md の 9.・7.1〜7.4・7.6・7.12・3.10・4.5・4.7・4.11・4.12）: マス目の形と色（L・M・S）、件数の字の
-// 大きさ（狭い S でも「12/10」が入る。D27）、完了にした・戻した時の件数、押した時の行き先（S は目立たせずにいちばん上から。D32）、
+// 大きさと太さ（L・M は 19〜28px・太さ 600 の少し淡い色、S は 14px から・太さ 600。狭い S でも「12/10」が入る。D27）、完了にした・戻した時の件数、押した時の行き先（S は目立たせずにいちばん上から。D32）、
 // キーボードでマスの間を動く、休みを付ける状態（［休み］・帯・点線・付ける／外す・Esc・［終わる］・もう一度［休み］・モードの切り替え・
 // 月をまたぐ・［今日］・［＋ 登録］・スワイプ・読み込み直し。D30）、端末の時差。データは作り物の e2e/fixtures/demoData.ts
 // （今日は 2026年11月10日（火）9:00）。
@@ -87,6 +87,28 @@ async function token(page: Page, name: string): Promise<string> {
 const colorOf = (target: Locator) => target.evaluate((e) => getComputedStyle(e).color)
 const groundOf = (target: Locator) => target.evaluate((e) => getComputedStyle(e).backgroundColor)
 
+/** 字の大きさ（px の数）と太さ */
+const fontOf = (target: Locator) =>
+  target.evaluate((e) => {
+    const cs = getComputedStyle(e)
+    return { size: parseFloat(cs.fontSize), weight: cs.fontWeight }
+  })
+
+/**
+ * L・M の件数の字（9.2・4.7）: 19〜28px・太さ 600（等幅の書体で読み込んでいるいちばん太い字。端末が太らせた字ではない）。
+ * 「/」と飾りの「0」も同じ太さ
+ */
+async function countFontLM(page: Page, date: string): Promise<number> {
+  const work = await fontOf(count(page, date, 'work'))
+  expect(work.size, `${date} の件数の大きさ`).toBeGreaterThanOrEqual(19)
+  expect(work.size, `${date} の件数の大きさ`).toBeLessThanOrEqual(28)
+  expect(work.weight).toBe('600')
+  expect(await fontOf(count(page, date, 'private'))).toEqual(work)
+  expect(await fontOf(cell(page, date).locator('.mo-sep'))).toEqual(work)
+  expect(await page.evaluate((px) => document.fonts.check(`600 ${px}px "Roboto Mono"`), work.size)).toBe(true)
+  return work.size
+}
+
 /** 100件を超える日（11/18 は仕事 100・11/19 は両方 100・11/20 はプライベート 100。「99+」と出す。7.6） */
 function crowded(): Record<string, Item> {
   const items: Record<string, Item> = {}
@@ -148,16 +170,18 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     const t = (await today.boundingBox())!
     expect([Math.round(t.width), Math.round(t.height)]).toEqual([22, 22])
     expect(await groundOf(today)).toBe(await token(page, '--today-bg'))
-    // 件数「8 / 2」: 仕事 --work-text・「/」--text-faint・プライベート --private-text、L は 22px（CALENDAR-238・244・FRAME-133）
+    // 件数「8 / 2」: 仕事 --work-count・「/」--text-faint・プライベート --private-count（L・M は --*-text より少し淡い）、L の 1400px の
+    // ウインドウでは 28px・太さ 600（CALENDAR-238・244・FRAME-133。作者の気になった所: 大きく太く、もう少し淡く）
     await expect(count(page, '2026-11-10', 'work')).toHaveText('8')
     await expect(count(page, '2026-11-10', 'private')).toHaveText('2')
-    expect(await colorOf(count(page, '2026-11-10', 'work'))).toBe(await token(page, '--work-text'))
-    expect(await colorOf(count(page, '2026-11-10', 'private'))).toBe(await token(page, '--private-text'))
+    expect(await colorOf(count(page, '2026-11-10', 'work'))).toBe(await token(page, '--work-count'))
+    expect(await colorOf(count(page, '2026-11-10', 'private'))).toBe(await token(page, '--private-count'))
     expect(await colorOf(cell(page, '2026-11-10').locator('.mo-sep'))).toBe(await token(page, '--text-faint'))
-    expect(await count(page, '2026-11-10', 'work').evaluate((e) => getComputedStyle(e).fontSize)).toBe('22px')
-    // 片方が 0 なら飾りの「0」（--numeral）。前後の月の日は日付だけ --numeral（CALENDAR-232・240・FRAME-171）
+    expect(await countFontLM(page, '2026-11-10')).toBe(28)
+    // 片方が 0 なら飾りの「0」（--numeral。太さは数字と同じ 600）。前後の月の日は日付だけ --numeral（CALENDAR-232・240・FRAME-171）
     await expect(count(page, '2026-11-03', 'private')).toHaveText('0')
     expect(await colorOf(count(page, '2026-11-03', 'private'))).toBe(await token(page, '--numeral'))
+    expect(await countFontLM(page, '2026-11-03')).toBe(28)
     expect(await colorOf(cell(page, '2026-12-03').locator('.mo-date'))).toBe(await token(page, '--numeral'))
     await expect(cell(page, '2026-12-03').locator('.mo-counts')).toHaveCount(0)
     // 休みの日は地 --off-fill と「休」（前後の月の日も。D06）。土日・祝日は自動で休みにしない（CALENDAR-047・081・242）。
@@ -369,6 +393,39 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
   })
 })
 
+test.describe('マンスリー（PC・幅 960px のウインドウ）', { tag: ['@pc'] }, () => {
+  test.use({ viewport: { width: 960, height: 800 } })
+
+  test('L のいちばん狭いマスでも、件数は太さ 600 の 19px 以上で「12 / 10」がマスに収まり、「/」はマスの真ん中、数字のボタンは 34px 四方以上。「99+」のマスは字を小さくして --*-text（9.2・D27）', async ({
+    page,
+  }) => {
+    await openCalendar(page, MONTH, { data: demoData() })
+    await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('12/10')
+    const size = await countFontLM(page, '2026-11-19')
+    // 28px より小さく（マスの幅で決まる）、太字の大きな字（18.66px 以上）のまま
+    expect(size).toBeLessThan(28)
+    await countsFit(page, '2026-11-19')
+    for (const kind of ['work', 'private'] as const) await tapSize(count(page, '2026-11-19', kind), `数字 ${kind}`)
+    const box = (await cell(page, '2026-11-19').boundingBox())!
+    const sep = (await cell(page, '2026-11-19').locator('.mo-sep').boundingBox())!
+    expect(Math.abs(sep.x + sep.width / 2 - (box.x + box.width / 2))).toBeLessThan(1)
+    expect(await colorOf(count(page, '2026-11-19', 'work'))).toBe(await token(page, '--work-count'))
+
+    // 「99+」のマス: 19px より小さくなる（太字の大きな字にならない）ので、4.5:1 の --work-text・--private-text。飾りの「0」は --numeral
+    await openCalendar(page, MONTH, { data: { items: crowded() } })
+    await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('99+/99+')
+    for (const date of ['2026-11-18', '2026-11-19', '2026-11-20']) await countsFit(page, date)
+    const wide = await fontOf(count(page, '2026-11-19', 'work'))
+    expect(wide.size).toBeLessThan(19)
+    expect(wide.size).toBeGreaterThanOrEqual(14)
+    expect(wide.weight).toBe('600')
+    expect(await colorOf(count(page, '2026-11-19', 'work'))).toBe(await token(page, '--work-text'))
+    expect(await colorOf(count(page, '2026-11-19', 'private'))).toBe(await token(page, '--private-text'))
+    expect(await colorOf(count(page, '2026-11-18', 'private'))).toBe(await token(page, '--numeral'))
+    await noHorizontalScroll(page)
+  })
+})
+
 test.describe('マンスリー（端末の時差）', { tag: ['@pc'] }, () => {
   test.use({ timezoneId: 'America/Los_Angeles' })
 
@@ -384,7 +441,7 @@ test.describe('マンスリー（端末の時差）', { tag: ['@pc'] }, () => {
 })
 
 test.describe('マンスリー（S）', { tag: ['@s'] }, () => {
-  test('S（Pixel 7・幅 412px）: 56px の行、件数は「12/10」（14px・空白なし）でマスに収まり、祝日名は出さない。横にスクロールしない（9.2・D27）', async ({
+  test('S（Pixel 7・幅 412px）: 56px の行、件数は「12/10」（14px・太さ 600・空白なし。色は --*-text）でマスに収まり、祝日名は出さない。横にスクロールしない（9.2・D27）', async ({
     page,
   }) => {
     await openCalendar(page, MONTH, { data: demoData() })
@@ -392,7 +449,12 @@ test.describe('マンスリー（S）', { tag: ['@s'] }, () => {
     await expect(page.getByTestId('calendar-month')).toHaveClass(/is-compact/)
     expect(Math.round((await cell(page, '2026-11-02').boundingBox())!.height)).toBe(56)
     await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('12/10')
-    expect(await count(page, '2026-11-19', 'work').evaluate((e) => getComputedStyle(e).fontSize)).toBe('14px')
+    // 大きさと色は今までどおりで、太さだけ 600（作者の気になった所: スマホは太字に）。「/」も 600
+    expect(await fontOf(count(page, '2026-11-19', 'work'))).toEqual({ size: 14, weight: '600' })
+    expect(await fontOf(count(page, '2026-11-19', 'private'))).toEqual({ size: 14, weight: '600' })
+    expect(await fontOf(cell(page, '2026-11-19').locator('.mo-sep'))).toEqual({ size: 14, weight: '600' })
+    expect(await colorOf(count(page, '2026-11-19', 'work'))).toBe(await token(page, '--work-text'))
+    expect(await colorOf(count(page, '2026-11-19', 'private'))).toBe(await token(page, '--private-text'))
     await countsFit(page, '2026-11-19')
     await expect(page.locator('.cp-holiday')).toHaveCount(0)
     expect(await colorOf(cell(page, '2026-11-03').locator('.mo-date'))).toBe(await token(page, '--sun'))
@@ -489,9 +551,13 @@ test.describe('マンスリー（S・幅 360px）', { tag: ['@s'] }, () => {
 })
 
 test.describe('マンスリー（M）', { tag: ['@m'] }, () => {
-  test('M: 88px の行、数字のボタンは 34px 四方以上、祝日名を出す（9.1・9.3・D15・CALENDAR-246）', async ({ page }) => {
+  test('M: 88px の行、件数は L と同じ 19〜28px・太さ 600、数字のボタンは 34px 四方以上、祝日名を出す（9.1・9.2・9.3・D15・CALENDAR-246）', async ({
+    page,
+  }) => {
     await openCalendar(page, MONTH, { data: demoData() })
     expect(Math.round((await cell(page, '2026-11-02').boundingBox())!.height)).toBe(88)
+    await countFontLM(page, '2026-11-19')
+    expect(await colorOf(count(page, '2026-11-19', 'work'))).toBe(await token(page, '--work-count'))
     await tapSize(count(page, '2026-11-10', 'work'), '仕事の数字')
     await tapSize(count(page, '2026-11-10', 'private'), 'プライベートの数字')
     await tapSize(count(page, '2026-11-19', 'work'), '仕事の数字（2桁）')

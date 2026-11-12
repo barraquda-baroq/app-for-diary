@@ -127,22 +127,24 @@
   --on-cover: #25282e;
   --cover-border: #73767d;
   /* 土日祝・休み */
-  --sat: #3f69a3;
-  --sun: #ac4257;
+  --sat: #263958;
+  --sun: #773241;
   --off-fill: #ebebee;
   --off-text: #5c6068;
-  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3） */
-  --work-soft: #e4edf8;
-  --work-area: #f1f5fb;
-  --work-sheet: #ecf2fa;
-  --work-marker: #d3e3f7;
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。9.2） */
+  --work-soft: #ecf2fa;
+  --work-area: #f5f8fc;
+  --work-sheet: #f2f6fc;
+  --work-marker: #e0ebfa;
   --work-text: #2d5288;
+  --work-count: #3d639b;
   --work-line: #7a92b3;
-  --private-soft: #fae5ed;
-  --private-area: #fcf1f5;
-  --private-sheet: #fbedf3;
-  --private-marker: #f6d3e1;
+  --private-soft: #fcedf2;
+  --private-area: #fdf5f8;
+  --private-sheet: #fcf2f7;
+  --private-marker: #f9e0ea;
   --private-text: #a23d5e;
+  --private-count: #b64f6f;
   --private-line: #b97f93;
   --on-label: #17181b;
   /* 完了・注意 */
@@ -237,18 +239,20 @@
   --sun: #c79199;
   --off-fill: #272a30;
   --off-text: #a8aab0;
-  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3） */
-  --work-soft: #1d2938;
-  --work-area: #1a212b;
-  --work-sheet: #1c2532;
-  --work-marker: #2a3d55;
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。9.2） */
+  --work-soft: #1b242f;
+  --work-area: #191e26;
+  --work-sheet: #1b212b;
+  --work-marker: #243243;
   --work-text: #9fc1ec;
+  --work-count: #8daed8;
   --work-line: #7a9cc9;
-  --private-soft: #33202a;
-  --private-area: #261c22;
-  --private-sheet: #2c1f26;
-  --private-marker: #4a2a3a;
+  --private-soft: #2b1e25;
+  --private-area: #221b20;
+  --private-sheet: #261d23;
+  --private-marker: #3a2530;
   --private-text: #f1a8c3;
+  --private-count: #dd95b0;
   --private-line: #c48aa1;
   --on-label: #17181b;
   /* 完了・注意 */
@@ -339,22 +343,24 @@
   --on-cover: #aeaca6;
   --cover-border: #68696c;
   /* 土日祝・休み */
-  --sat: #808b9b;
-  --sun: #a08589;
+  --sat: #838890;
+  --sun: #98888a;
   --off-fill: #1c1e22;
   --off-text: #8a8984;
-  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3） */
-  --work-soft: #141518;
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。9.2） */
+  --work-soft: #121316;
   --work-area: var(--surface);
   --work-sheet: var(--surface);
   --work-marker: transparent;
   --work-text: #aeaca6;
+  --work-count: #9b9994;
   --work-line: #6d727b;
-  --private-soft: #141518;
+  --private-soft: #121316;
   --private-area: var(--surface);
   --private-sheet: var(--surface);
   --private-marker: transparent;
   --private-text: #aeaca6;
+  --private-count: #9b9994;
   --private-line: #6d727b;
   --on-label: #e6e5e1;
   /* 完了・注意 */
@@ -1090,11 +1096,11 @@ h4 {
 }
 
 /* 件名のハイライト（デイリーのタイムスケジュール・Task List。docs/SPEC.md の 4.3。段階2・3で使う）。件名の字を包む inline の要素に付け、
-   data-kind の中で使う。字の高さの下 6割ほどの帯を字の幅だけに引く（折り返したら各行に）。帯の上の字は --text・--text-muted だけ。
-   完了・済みの物には付けない。ディープダークは --*-marker が transparent なので帯は出ない */
+   data-kind の中で使う。字の高さいっぱいの帯を字の幅だけに引く（折り返したら各行に。段階2の見本の ■4 の答え B）。帯の上の字は
+   --text・--text-muted だけ。完了・済みの物には付けない。ディープダークは --*-marker が transparent なので帯は出ない */
 .kind-marker {
   display: inline;
-  background: linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%);
+  background: linear-gradient(var(--kind-marker, transparent), var(--kind-marker, transparent));
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }

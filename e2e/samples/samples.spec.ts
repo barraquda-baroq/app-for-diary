@@ -151,7 +151,8 @@ test.describe('案の CSS が効く', () => {
         await tag.evaluate((e) => (e as Element).remove())
         expect(await read(names), id).toEqual(before)
       }
-      // 件名のハイライトの形（Q4 B）: 字の高さいっぱい（下 6割の 40% の境が無くなる）
+      // 件名のハイライトの形（Q4 B）: 字の高さいっぱい（下 6割の 40% の境が無い）。作者の答え（2026-11-12）で B に決まり、今の値も
+      // この形になったので、案の CSS を差し込んでも形は変わらない
       const marker = () =>
         page.evaluate(() => {
           const host = document.createElement('div')
@@ -165,7 +166,7 @@ test.describe('案の CSS が効く', () => {
           host.remove()
           return bg
         })
-      expect(await marker()).toContain('40%')
+      expect(await marker()).not.toContain('40%')
       const tag = await page.addStyleTag({ content: variants.options['highlight-full'].css })
       expect(await marker()).not.toContain('40%')
       await tag.evaluate((e) => (e as Element).remove())

@@ -1,7 +1,8 @@
 // @vitest-environment node
 // 段階2の見本の色の案（scripts/sample-variants.mjs・e2e/samples/variants.json）と色の計算（scripts/lib/color.mjs）の確かめ
 // （docs/SPEC.md の 4.3・4.5・4.6・21.）。どの案も src/styles.test.ts と同じ決まりを満たすので、作者がどれを選んでも、その値を
-// そのまま src/styles.css に入れられる（段階2の終わり。WP14）
+// そのまま src/styles.css に入れられる（段階2の終わり。WP14）。作者の答え（2026-11-12。ANSWERS）の後は、答えた問い（Q2〜Q6）の案は
+// 答える前の値（ASKED_TOKENS。見本で見比べてもらった時の値）から作ったまま残し、答えの値は src/styles.css に入っている
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
@@ -20,7 +21,13 @@ import {
 import {
   ACCENT_STEP,
   ACCENT_TOKENS,
+  ANSWERS,
+  ASKED_GROUND_BANDS,
+  ASKED_TOKENS,
+  COUNT_PAIRS,
+  GROUND_BANDS,
   GROUNDS,
+  HIGHLIGHT_ASKED,
   HIGHLIGHT_FULL,
   HUES_30,
   HUES_NOW,
@@ -32,6 +39,7 @@ import {
   SAMPLE_SELECTORS,
   THEMES,
   WEEKEND_MIN_DE,
+  askedThemes,
   buildVariants,
   checkPick,
   checkTheme,
@@ -56,10 +64,14 @@ import { LABEL_DEFAULT_NAMES, LABEL_KEYS as APP_LABEL_KEYS } from '../src/domain
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 const committed = readFileSync(new URL('../e2e/samples/variants.json', import.meta.url), 'utf8')
 const themes = readThemes(css)
+/** 答える前の値（見本で見比べてもらった時。答えた問いの案はこの上で作った） */
+const asked = askedThemes(themes)
 const variants = buildVariants(css)
 const options = variants.options
-/** 案を重ねたその外観の変数 */
-const applied = (id, theme) => withTokens(themes[theme], options[id].tokens[theme])
+/** 答えた問い（Q2〜Q6）の案か */
+const answered = (id) => options[id].question in ANSWERS
+/** 案を重ねたその外観の変数（答えた問いの案は答える前の値に、まだ答えの無い問いの案は今の値に重ねる） */
+const applied = (id, theme) => withTokens((answered(id) ? asked : themes)[theme], options[id].tokens[theme])
 
 describe('色の計算（scripts/lib/color.mjs）', () => {
   it('16進 ↔ sRGB を行き来できる', () => {
@@ -116,6 +128,36 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
     expect(checkTheme(theme, themes[theme])).toEqual([])
   })
 
+  it.each(THEMES)('%s: 答える前の値（今の値に ASKED_TOKENS を重ねた物）も、答える前の区分の地の幅で確かめを通る', (theme) => {
+    expect(checkTheme(theme, asked[theme], { bands: ASKED_GROUND_BANDS })).toEqual([])
+  })
+
+  it('作者の答え（Q3 A・Q4 B・Q5 B・Q6 B）の案を答える前の値に重ねると、今の src/styles.css の値になる（--emit css の値がそのまま入っている）', () => {
+    expect(ANSWERS).toEqual({ 2: 'labels', 3: 'depth-lighter', 4: 'highlight-full', 5: 'weekend-matched', 6: 'now' })
+    const pick = Object.values(ANSWERS)
+      .filter((id) => id in options)
+      .join(',')
+    expect(pick).toBe('depth-lighter,highlight-full,weekend-matched')
+    const tokens = pickTokens(variants, pick)
+    for (const t of THEMES) {
+      // 答えで替えたトークンは、ASKED_TOKENS に答える前の値を残したトークンと同じ
+      expect(Object.keys(tokens[t]).sort(), t).toEqual(Object.keys(ASKED_TOKENS[t]).sort())
+      for (const [k, v] of Object.entries(tokens[t])) {
+        expect(themes[t].get(k), `${t} ${k}`).toBe(v)
+        expect(ASKED_TOKENS[t][k], `${t} ${k}`).not.toBe(v)
+      }
+      // Q6 B（今）: グレーの差し色は答える前のまま
+      for (const k of ACCENT_TOKENS) expect(ASKED_TOKENS[t][k], `${t} ${k}`).toBeUndefined()
+    }
+    expect(emitCss(variants, pick)).toContain(`background: ${HIGHLIGHT_FULL};`)
+    expect(checkPick(variants, pick, css)).toEqual([])
+  })
+
+  it('区分の地の面からの差の幅（FRAME-180）は、答える前の幅の 0.7 倍（Q3 A の「面からの差 × 0.7」）', () => {
+    for (const part of ['area', 'sheet'])
+      GROUND_BANDS[part].forEach((v, i) => expect(v, part).toBeCloseTo(ASKED_GROUND_BANDS[part][i] * 0.7, 6))
+  })
+
   it('確かめは、決まりを割る値を見つける', () => {
     const w = themes.white
     expect(checkTheme('white', withTokens(w, { '--text-faint': '#9a9a9a' })).join('\n')).toMatch(/--text-faint \/ --bg/)
@@ -132,6 +174,11 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
       /--work-area は var\(--surface\)/,
     )
     expect(checkTheme('white', withTokens(w, { '--done-text': '#c8c8c8' })).join('\n')).toMatch(/--done-text \/ --surface/)
+    // マンスリーの件数（大きな字）は、件数を置く3つの地の上で 3:1 以上
+    expect(COUNT_PAIRS).toHaveLength(6)
+    expect(checkTheme('white', withTokens(w, { '--private-count': '#e0a0b4' })).join('\n')).toMatch(
+      /--private-count \/ --off-fill が .*（3:1 未満・マンスリーの件数/,
+    )
     // 詳細の地が領域の地より淡い（逆さま）時は、そのとおりに書く
     expect(checkTheme('white', withTokens(w, { '--work-area': '#ecf2fa' })).join('\n')).toMatch(
       /--work-area の面との差が --work-sheet 以上/,
@@ -198,7 +245,8 @@ describe('案（e2e/samples/variants.json）', () => {
   const cases = Object.keys(options).flatMap((id) => THEMES.map((t) => [id, t]))
   it.each(cases)('%s（%s）は決まりを満たす', (id, theme) => {
     const scale = options[id].question === 3 ? bandScaleOf(id, theme) : undefined
-    expect(checkTheme(theme, applied(id, theme), { bandScale: scale })).toEqual([])
+    const bands = answered(id) ? ASKED_GROUND_BANDS : GROUND_BANDS
+    expect(checkTheme(theme, applied(id, theme), { bandScale: scale, bands })).toEqual([])
   })
 
   it('見本に差し込む CSS は、外観ごとの :root[data-theme=…] の中に案の値だけを書く', () => {
@@ -223,10 +271,10 @@ describe('案（e2e/samples/variants.json）', () => {
 /** 地の濃さの案で、実際に使った倍率（値から逆に求める。トークンごと） */
 function bandScaleOf(id, theme) {
   if (theme === 'deep-dark') return undefined
-  const surface = hexOf(themes[theme], '--surface')
+  const surface = hexOf(asked[theme], '--surface')
   const out = {}
   for (const [k, v] of Object.entries(options[id].tokens[theme]))
-    out[k] = deltaE(v, surface) / deltaE(hexOf(themes[theme], k), surface)
+    out[k] = deltaE(v, surface) / deltaE(hexOf(asked[theme], k), surface)
   return { [theme]: out }
 }
 
@@ -256,7 +304,7 @@ describe('Q2 B: 12の色合いを 30° おき（hue30）', () => {
 
   it('桜（15°）と牡丹（345°）の間も 30°（今は 20°）', () => {
     const near = (theme, a, b) => deltaE(options.hue30.tokens[theme][`--label-${a}`], options.hue30.tokens[theme][`--label-${b}`])
-    const now = (theme, a, b) => deltaE(hexOf(themes[theme], `--label-${a}`), hexOf(themes[theme], `--label-${b}`))
+    const now = (theme, a, b) => deltaE(hexOf(asked[theme], `--label-${a}`), hexOf(asked[theme], `--label-${b}`))
     for (const theme of ['white', 'dark'])
       expect(near(theme, 'rose-l', 'peony-l')).toBeGreaterThan(now(theme, 'rose-l', 'peony-l'))
   })
@@ -271,10 +319,10 @@ describe('Q3 A・C: 区分の地とハイライトの濃さ（depth-lighter・de
     const o = options[id]
     expect(o.appearances).toEqual(THEMES)
     for (const theme of ['white', 'dark']) {
-      const surface = hexOf(themes[theme], '--surface')
+      const surface = hexOf(asked[theme], '--surface')
       expect(Object.keys(o.tokens[theme]).sort()).toEqual(PARTS.flatMap((p) => [`--work-${p}`, `--private-${p}`]).sort())
       for (const [name, hex] of Object.entries(o.tokens[theme])) {
-        const ratio = deltaE(hex, surface) / deltaE(hexOf(themes[theme], name), surface)
+        const ratio = deltaE(hex, surface) / deltaE(hexOf(asked[theme], name), surface)
         const noted = o.notes.some((n) => n.includes(name) && n.includes(theme === 'white' ? 'ホワイト' : 'ダーク'))
         if (noted) {
           // 戻した物は 1 と k の間
@@ -282,7 +330,7 @@ describe('Q3 A・C: 区分の地とハイライトの濃さ（depth-lighter・de
           expect(ratio, `${theme} ${name}`).toBeLessThan(Math.max(1, k) + 0.02)
         } else expect(ratio, `${theme} ${name}`).toBeCloseTo(k, 1)
         // 色合いの向きは今のまま（仕事は青み・プライベートはピンクみ）
-        const hNow = hexToOklch(hexOf(themes[theme], name))[2]
+        const hNow = hexToOklch(hexOf(asked[theme], name))[2]
         const hNew = hexToOklch(hex)[2]
         expect(Math.abs(((hNew - hNow + 540) % 360) - 180), `${theme} ${name} の色合い`).toBeLessThan(8)
       }
@@ -305,13 +353,14 @@ describe('Q3 A・C: 区分の地とハイライトの濃さ（depth-lighter・de
   ])('%s: 倍率を戻したトークンは、倍率どおりだと決まりを割る', (id, k) => {
     const o = options[id]
     for (const theme of ['white', 'dark']) {
-      const surface = hexOf(themes[theme], '--surface')
+      const surface = hexOf(asked[theme], '--surface')
       const scale = bandScaleOf(id, theme)[theme]
       for (const name of Object.keys(o.tokens[theme])) {
         const noted = o.notes.some((n) => n.includes(`${name} `) && n.includes(theme === 'white' ? 'ホワイト' : 'ダーク'))
         if (!noted) continue
-        const full = scaledFrom(surface, hexOf(themes[theme], name), k)
-        const problems = checkTheme(theme, withTokens(themes[theme], { ...o.tokens[theme], [name]: full.hex }), {
+        const full = scaledFrom(surface, hexOf(asked[theme], name), k)
+        const problems = checkTheme(theme, withTokens(asked[theme], { ...o.tokens[theme], [name]: full.hex }), {
+          bands: ASKED_GROUND_BANDS,
           bandScale: { [theme]: { ...scale, [name]: full.k } },
         })
         expect(
@@ -324,18 +373,18 @@ describe('Q3 A・C: 区分の地とハイライトの濃さ（depth-lighter・de
 
   it('濃い案のホワイトの領域の地は、字の読みやすさを割らないので × 1.4 のまま', () => {
     const o = options['depth-deeper']
-    const surface = hexOf(themes.white, '--surface')
+    const surface = hexOf(asked.white, '--surface')
     for (const name of ['--work-area', '--private-area']) {
-      const ratio = deltaE(o.tokens.white[name], surface) / deltaE(hexOf(themes.white, name), surface)
+      const ratio = deltaE(o.tokens.white[name], surface) / deltaE(hexOf(asked.white, name), surface)
       expect(ratio, name).toBeCloseTo(1.4, 1)
     }
   })
 
   it('淡い案は今より面に近く、濃い案は今より面から遠い（ホワイトのハイライトは字の読みやすさのため、ほぼ今のまま）', () => {
     for (const theme of THEMES) {
-      const surface = hexOf(themes[theme], '--surface')
+      const surface = hexOf(asked[theme], '--surface')
       for (const name of Object.keys(options['depth-lighter'].tokens[theme])) {
-        const now = deltaE(hexOf(themes[theme], name), surface)
+        const now = deltaE(hexOf(asked[theme], name), surface)
         expect(deltaE(options['depth-lighter'].tokens[theme][name], surface), `${theme} ${name}`).toBeLessThan(now)
         expect(deltaE(options['depth-deeper'].tokens[theme][name], surface), `${theme} ${name}`).toBeGreaterThan(now)
       }
@@ -349,8 +398,10 @@ describe('Q4 B: 件名のハイライトを字の高さいっぱいに（highlig
     expect(o.tokens).toEqual({})
     expect(o.appearances).toEqual(['white', 'dark'])
     expect(o.css).toContain(`.kind-marker {\n  background: ${HIGHLIGHT_FULL} !important;`)
-    // 今の形（下 6割）は src/styles.css にある
-    expect(css).toMatch(/\.kind-marker \{[^}]*linear-gradient\(transparent 40%, var\(--kind-marker, transparent\) 40%\)/)
+    // 答える前の形（A。字の下 6割）は 40% の境のある帯。答え B の形が src/styles.css に入っている
+    expect(HIGHLIGHT_ASKED).toBe('linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%)')
+    expect(css).toMatch(/\.kind-marker \{\s*display: inline;\s*background: ([^;]+);/)
+    expect(/\.kind-marker \{\s*display: inline;\s*background: ([^;]+);/.exec(css)[1]).toBe(HIGHLIGHT_FULL)
   })
 })
 
@@ -377,12 +428,12 @@ describe('Q5 B: 土日祝の色をダークに合わせる（weekend-matched）'
 
   it('色合いはダークと同じ、彩度はダークと同じく区分の色の半分ほど（色の付いた灰色）', () => {
     for (const [a, b] of PAIRS) {
-      const dark = hexOf(themes.dark, a)
-      const darkRatio = chromaOf(dark) / chromaOf(hexOf(themes.dark, b))
+      const dark = hexOf(asked.dark, a)
+      const darkRatio = chromaOf(dark) / chromaOf(hexOf(asked.dark, b))
       expect(darkRatio).toBeGreaterThan(0.45)
       expect(darkRatio).toBeLessThan(0.85)
       const white = o.tokens.white[a]
-      expect(chromaOf(white) / chromaOf(hexOf(themes.white, b))).toBeCloseTo(darkRatio, 1)
+      expect(chromaOf(white) / chromaOf(hexOf(asked.white, b))).toBeCloseTo(darkRatio, 1)
       for (const t of ['white', 'deep-dark']) {
         const dh = Math.abs(((hexToOklch(o.tokens[t][a])[2] - hexToOklch(dark)[2] + 540) % 360) - 180)
         expect(dh, `${t} ${a} の色合い`).toBeLessThan(t === 'deep-dark' ? 8 : 2)
@@ -415,9 +466,9 @@ describe('Q5 B: 土日祝の色をダークに合わせる（weekend-matched）'
       expect(o.notes.some((n) => n.startsWith(`ホワイトの ${a} は`) && n.includes('反対の側'))).toBe(true)
   })
 
-  it('今のホワイトの日曜の色はプライベートの数字に近すぎる（ΔE 0.03）ので、案では離れる', () => {
-    expect(deltaE(hexOf(themes.white, '--sun'), hexOf(themes.white, '--private-text'))).toBeLessThan(0.05)
-    expect(deltaE(o.tokens.white['--sun'], hexOf(themes.white, '--private-text'))).toBeGreaterThanOrEqual(WEEKEND_MIN_DE)
+  it('答える前のホワイトの日曜の色はプライベートの数字に近すぎた（ΔE 0.03）ので、案では離れる', () => {
+    expect(deltaE(hexOf(asked.white, '--sun'), hexOf(asked.white, '--private-text'))).toBeLessThan(0.05)
+    expect(deltaE(o.tokens.white['--sun'], hexOf(asked.white, '--private-text'))).toBeGreaterThanOrEqual(WEEKEND_MIN_DE)
   })
 })
 
@@ -429,24 +480,24 @@ describe('Q6 A・C: グレーの差し色の濃さ（accent-lighter・accent-dee
     const o = options[id]
     expect(o.appearances).toEqual(THEMES)
     for (const theme of THEMES) {
-      const surfaceL = lightness(hexOf(themes[theme], '--surface'))
+      const surfaceL = lightness(hexOf(asked[theme], '--surface'))
       for (const name of ACCENT_TOKENS) {
         // var(--primary) のトークン（ホワイト・ダークの --today-bg）は書かず、指す先に付いていく
-        if (/^var\(/.test(themes[theme].get(name))) {
+        if (/^var\(/.test(asked[theme].get(name))) {
           expect(o.tokens[theme][name]).toBeUndefined()
           continue
         }
         const hex = o.tokens[theme][name]
         expect(hex, `${theme} ${name}`).toMatch(/^#[0-9a-f]{6}$/)
         expect(chromaOf(hex), `${theme} ${name}`).toBeLessThan(0.002)
-        const now = Math.abs(lightness(hexOf(themes[theme], name)) - surfaceL)
+        const now = Math.abs(lightness(hexOf(asked[theme], name)) - surfaceL)
         const next = Math.abs(lightness(hex) - surfaceL)
         expect(Math.abs(next - now), `${theme} ${name}`).toBeLessThanOrEqual(ACCENT_STEP + 0.01)
         // 決まりのために動きを小さくした物を除き、向きどおりに動く
         const limited = o.notes.some((n) => n.includes(`${name} `) && n.includes('決まりを割る'))
         if (!limited || Math.abs(next - now) > 0.005) expect(Math.sign(next - now), `${theme} ${name}`).toBe(dir)
         // 面を越えない（面より暗い色・明るい色の側のまま）
-        expect(Math.sign(lightness(hex) - surfaceL)).toBe(Math.sign(lightness(hexOf(themes[theme], name)) - surfaceL))
+        expect(Math.sign(lightness(hex) - surfaceL)).toBe(Math.sign(lightness(hexOf(asked[theme], name)) - surfaceL))
       }
     }
   })
@@ -595,26 +646,10 @@ describe('選んだ案を書く形にする（段階2の終わりの --emit css|
     expect(() => pickTokens(variants, 'highlight-full@deep-dark')).toThrow(/ディープダーク.*変えません/)
   })
 
-  // 作者は問いごとに1つずつ（外観ごとに違ってもよい）選ぶので、どの組み合わせでも決まりを満たす
-  // （それぞれの案を今の値に重ねて確かめただけでは、組み合わせた時に割れないとは言えない）。
-  // ラベルの24色は Q2（今・30°おき）か Q9（作り直しの A・B）のどれか1つ（同じトークンを書き換えるので）
-  const ANSWERS = {
-    labels: ['now', 'hue30', 'labels-a', 'labels-b'],
-    3: ['depth-lighter', 'now', 'depth-deeper'],
-    4: ['now', 'highlight-full'],
-    5: ['now', 'weekend-matched'],
-    6: ['accent-lighter', 'now', 'accent-deeper'],
-  }
-  const combos = Object.values(ANSWERS).reduce((acc, ids) => acc.flatMap((c) => ids.map((id) => [...c, id])), [[]])
-  it.each(THEMES)('%s: 問い2〜6・9の答えのどの組み合わせ（144通り）でも、選んだ値は決まりを満たす（checkPick）', (theme) => {
-    expect(combos).toHaveLength(144)
-    for (const combo of combos) {
-      const pick = combo
-        .filter((id) => id !== 'now' && options[id].appearances.includes(theme))
-        .map((id) => `${id}@${theme}`)
-        .join(',')
-      expect(checkPick(variants, pick, css), `${theme}: ${pick}`).toEqual([])
-    }
+  // 答えた問い（Q3〜Q6）は答えの値のまま（今の src/styles.css）。まだ答えの無いラベルの24色（Q9: 今のまま・案A・案B）は、
+  // どれを選んでも、答えを入れた今の値の上で決まりを満たす（--emit css --pick labels-a などをそのまま入れられる）
+  it.each(THEMES)('%s: まだ答えの無い Q9 のどれを選んでも、答えを入れた今の値の上で決まりを満たす（checkPick）', (theme) => {
+    for (const pick of ['', 'labels-a', 'labels-b']) expect(checkPick(variants, pick, css), `${theme}: ${pick}`).toEqual([])
   })
 
   it('checkPick: 選んだ値が決まりを割る時は、その文を返す（--emit はそれを出して止まる）', () => {

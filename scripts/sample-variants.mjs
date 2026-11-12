@@ -21,7 +21,10 @@
 //   labels-b        Q9 B  同じく、24色それぞれに和色の名前（桜・紅・朱・琥珀…）。淡と濃の行で色合いと明るさを互い違いに（LABEL_SETS）
 // 「今」（B・Q4 A・Q5 A）は今の src/styles.css のまま。どの案も、src/styles.test.ts と同じ決まり（字 4.5:1、大きな数字・済んだ物 3:1、
 // ラベルと地の明るさの差 0.1、ラベルなしの線と24色の ΔE 0.06 など）で確かめ、通らない案は書き出さずに止める（checkTheme）。
-// アプリの中には入らない（見本は e2e/samples/samples.spec.ts が page.addStyleTag で差し込んで撮る）
+// アプリの中には入らない（見本は e2e/samples/samples.spec.ts が page.addStyleTag で差し込んで撮る）。
+// 作者の答え（2026-11-12。ANSWERS）: Q3 A・Q4 B・Q5 B・Q6 B（今）を選び、その値は src/styles.css に入れた。答えた問い（Q2〜Q6）の案は、
+// 見本で見比べてもらった時の値（答える前の値 ASKED_TOKENS を今の src/styles.css に重ねた物）から作ったまま残す（見本の控え。
+// e2e/samples/variants.json は答えの前と同じ中身）。まだ答えの無い Q9 の案は、今の src/styles.css（答えを入れた値）の上で確かめる
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -385,17 +388,28 @@ const GRAY_TOKENS = [
   '--cover-border',
 ]
 const KIND_GROUNDS = ['--work-soft', '--private-soft', '--work-area', '--private-area', '--work-sheet', '--private-sheet']
-/** 区分の地の、面からの OKLab の差の幅（FRAME-180: 領域 0.03〜0.04、詳細 0.04〜0.06。ホワイトとダーク） */
-export const GROUND_BANDS = { area: [0.03, 0.04], sheet: [0.04, 0.06] }
+/**
+ * 区分の地の、面からの OKLab の差の幅（FRAME-180。ホワイトとダーク）。作者の答え Q3 A（淡い。面からの差 × 0.7）で、答える前の
+ * 領域 0.03〜0.04・詳細 0.04〜0.06（ASKED_GROUND_BANDS）を 0.7 倍にした
+ */
+export const GROUND_BANDS = { area: [0.021, 0.028], sheet: [0.028, 0.042] }
+/** 答える前（見本で見比べてもらった時）の区分の地の幅（Q2〜Q6 の案はこの幅で確かめた） */
+export const ASKED_GROUND_BANDS = { area: [0.03, 0.04], sheet: [0.04, 0.06] }
+/** マンスリーの件数（L・M。19px 以上・太さ 600 の大きな字）の色と、件数を置く地（9.2・4.5。WCAG の大きな字は 3:1 以上） */
+export const COUNT_PAIRS = ['--work-count', '--private-count'].flatMap((fg) =>
+  ['--surface', '--surface-2', '--off-fill'].map((bg) => [fg, bg]),
+)
 
 const fmt = (n, d = 2) => n.toFixed(d)
 
 /**
  * その外観の変数が、src/styles.test.ts の決まりを満たすかを確かめる。戻り値は満たさない所の文（空なら通った）。
  * opts.bandScale: 区分の地の差の幅（FRAME-180）を何倍で見るか（地の濃さの案は × 0.7・× 1.4）。外観ごとに、倍率か
- * { トークン: 倍率 }（決まりを割るので倍率を戻したトークンがある時）
+ * { トークン: 倍率 }（決まりを割るので倍率を戻したトークンがある時）。
+ * opts.bands: 区分の地の差の幅（省くと今の幅 GROUND_BANDS。答える前の値を確かめる時は ASKED_GROUND_BANDS）
  */
 export function checkTheme(theme, vars, opts = {}) {
+  const bands = opts.bands ?? GROUND_BANDS
   const out = []
   const name = THEME_NAMES[theme]
   const hex = (n) => {
@@ -423,6 +437,7 @@ export function checkTheme(theme, vars, opts = {}) {
   for (const [fg, bg] of PAIRS_45) ratio(fg, bg, 4.5)
   for (const [fg, bg] of STAGE2_PAIRS) ratio(fg, bg, 4.5, '・段階2')
   for (const bg of ['--bg', '--surface']) ratio('--numeral', bg, 3, '・大きな数字')
+  for (const [fg, bg] of COUNT_PAIRS) ratio(fg, bg, 3, '・マンスリーの件数（大きな字）')
   for (const bg of ['--surface', '--done-bg', ...KIND_GROUNDS]) ratio('--done-text', bg, 3, '・済んだ物')
   for (const t of GRAY_TOKENS) {
     const c = chromaOf(hex(t))
@@ -474,7 +489,7 @@ export function checkTheme(theme, vars, opts = {}) {
     // 区分の地の、面からの差（FRAME-180）。案の倍率の分だけ幅を広げ・狭め、丸めの誤差を 0.002 まで見る
     const scale = opts.bandScale?.[theme] ?? 1
     for (const kind of ['work', 'private']) {
-      for (const [part, [lo, hi]] of Object.entries(GROUND_BANDS)) {
+      for (const [part, [lo, hi]] of Object.entries(bands)) {
         const k = typeof scale === 'number' ? scale : (scale[`--${kind}-${part}`] ?? 1)
         const d = deltaE(hex(`--${kind}-${part}`), hex('--surface'))
         if (d < lo * k - 0.002 || d > hi * k + 0.002)
@@ -614,7 +629,7 @@ export function scaledFrom(surface, color, k) {
  * 決まり（字 4.5:1・ラベルとの明るさの差 0.1 など）を割るトークンは、割らない所まで倍率を 1 に近づける（actual に実際の倍率）。
  * ディープダークは区分の色分けが無いので、カードの地（--work-soft・--private-soft。同じ色）だけを変える
  */
-function depth(themes, k) {
+function depth(themes, k, bands) {
   const tokens = {}
   const notes = []
   const actual = {}
@@ -634,7 +649,10 @@ function depth(themes, k) {
       for (let t = 0; t <= 50 && !chosen; t++) {
         const cand = scaledFrom(surface, hexOf(vars, n), k + ((1 - k) * t) / 50)
         const trial = { ...tokens[theme], [n]: cand.hex, ...(twin ? { [twin]: cand.hex } : {}) }
-        const problems = checkTheme(theme, withTokens(vars, trial), { bandScale: { [theme]: { ...actual[theme], [n]: cand.k } } })
+        const problems = checkTheme(theme, withTokens(vars, trial), {
+          bands,
+          bandScale: { [theme]: { ...actual[theme], [n]: cand.k } },
+        })
         if (!problems.some((p) => p.includes(n) || (twin && p.includes(twin)))) chosen = cand
       }
       if (!chosen) throw new Error(`${THEME_NAMES[theme]}の ${n} は今の値でも決まりを満たしません`)
@@ -663,7 +681,7 @@ export const ACCENT_STEP = 0.06
  * 彩度は 0（色味の無いグレー）。面との明るさの差が 0.06 より小さい地（ダークの --accent-soft など）は、面を越えないよう差の半分まで。
  * 決まり（--on-primary 4.5:1・輪 3:1 など）を割る時は、割らない所まで動きを小さくする。var(--x) のトークンは指す先に付いていく
  */
-function accent(themes, dir) {
+function accent(themes, dir, bands) {
   const tokens = {}
   const notes = []
   for (const theme of THEMES) {
@@ -681,7 +699,9 @@ function accent(themes, dir) {
       for (let t = 0; t <= 60 && !chosen; t++) {
         const step = full * (1 - t / 60)
         const cand = oklchToHex([L + away * dir * step, 0, 0]).hex
-        const relevant = checkTheme(theme, withTokens(vars, { ...tokens[theme], [n]: cand })).filter((p) => mentions(p, n, vars))
+        const relevant = checkTheme(theme, withTokens(vars, { ...tokens[theme], [n]: cand }), { bands }).filter((p) =>
+          mentions(p, n, vars),
+        )
         if (relevant.length === 0) chosen = { hex: cand, step }
       }
       if (!chosen) throw new Error(`${THEME_NAMES[theme]}の ${n} は今の値でも決まりを満たしません`)
@@ -723,7 +743,7 @@ export const WEEKEND_MIN_DE = 0.1
  *   反対の側は平日の字（--text）の側なので、区分の数字からいちばん小さい差（0.10）にとどめ、平日の字からできるだけ離す
  *   （ダークと同じ差まで離すと、ホワイトの土曜の色が平日の字と ΔE 0.07 ほどになり、平日の日付と見分けにくい）
  */
-function weekendMatched(themes) {
+function weekendMatched(themes, bands) {
   const tokens = { white: {}, 'deep-dark': {} }
   const notes = []
   const dark = themes.dark
@@ -742,7 +762,8 @@ function weekendMatched(themes) {
       const kindL = lightness(kindHex)
       const toward = surfaceL > kindL ? 1 : -1
       const passes = (hex) =>
-        checkTheme(theme, withTokens(vars, { ...tokens[theme], [tok]: hex })).filter((p) => p.includes(`${tok} `)).length === 0
+        checkTheme(theme, withTokens(vars, { ...tokens[theme], [tok]: hex }), { bands }).filter((p) => p.includes(`${tok} `))
+          .length === 0
       /** 区分の数字から side の向きへ明るさを動かし、ΔE が de になる色（無ければ null） */
       const atDE = (side, de) => {
         let lo = 0
@@ -838,6 +859,57 @@ export const QUESTIONS = {
   },
 }
 
+// ---------- 作者の答え（2026-11-12。docs/STAGE2-LOOKS.md の「作者の答え」・仕様書 22.） ----------
+
+/**
+ * 答えた問いと選んだ案（now は「今」のまま）。Q2（30°おき）は、■1・■2 の答え（「色の間が近すぎる」「パステルの縛りを外して」）で
+ * どちらも選ばず、24色を作り直して Q9 で聞き直している（Q9 は答えを待つので、ここに無い）。
+ * 選んだ案の値は src/styles.css に入れた（node scripts/sample-variants.mjs --emit css --pick depth-lighter,highlight-full,weekend-matched）
+ */
+export const ANSWERS = { 2: 'labels', 3: 'depth-lighter', 4: 'highlight-full', 5: 'weekend-matched', 6: 'now' }
+
+/**
+ * 答える前（見本で見比べてもらった時。2026-11-11）の src/styles.css の値のうち、答えで替えた物（Q3 A・Q5 B）。
+ * Q2〜Q6 の案は、この値を今の src/styles.css に重ねた物から作る（見本の控えが答えの前と同じになる）
+ */
+export const ASKED_TOKENS = {
+  white: {
+    '--work-soft': '#e4edf8',
+    '--work-area': '#f1f5fb',
+    '--work-sheet': '#ecf2fa',
+    '--work-marker': '#d3e3f7',
+    '--private-soft': '#fae5ed',
+    '--private-area': '#fcf1f5',
+    '--private-sheet': '#fbedf3',
+    '--private-marker': '#f6d3e1',
+    '--sat': '#3f69a3',
+    '--sun': '#ac4257',
+  },
+  dark: {
+    '--work-soft': '#1d2938',
+    '--work-area': '#1a212b',
+    '--work-sheet': '#1c2532',
+    '--work-marker': '#2a3d55',
+    '--private-soft': '#33202a',
+    '--private-area': '#261c22',
+    '--private-sheet': '#2c1f26',
+    '--private-marker': '#4a2a3a',
+  },
+  'deep-dark': {
+    '--work-soft': '#141518',
+    '--private-soft': '#141518',
+    '--sat': '#808b9b',
+    '--sun': '#a08589',
+  },
+}
+/** 答える前の件名のハイライトの形（Q4 A。字の下 6割） */
+export const HIGHLIGHT_ASKED = 'linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%)'
+
+/** 答える前の外観の変数（readThemes の戻り値に ASKED_TOKENS を重ねた物） */
+export function askedThemes(themes) {
+  return Object.fromEntries(THEMES.map((t) => [t, withTokens(themes[t], ASKED_TOKENS[t])]))
+}
+
 /** 案のトークンを、見本に差し込む CSS にする（外観ごとに :root[data-theme=…]） */
 export function tokensCss(tokens) {
   return THEMES.filter((t) => tokens[t] && Object.keys(tokens[t]).length)
@@ -852,22 +924,27 @@ export function tokensCss(tokens) {
 
 /**
  * すべての案を作り、確かめる。css = src/styles.css の中身。戻り値は e2e/samples/variants.json の中身。
+ * 答えた問い（Q2〜Q6）の案は答える前の値（askedThemes）から、まだ答えの無い問い（Q9）の案は今の値から作る。
  * 案が決まりを満たさない時は投げる（書き出さない）
  */
 export function buildVariants(css) {
   const themes = readThemes(css)
+  const asked = askedThemes(themes)
   for (const theme of THEMES) {
     const problems = checkTheme(theme, themes[theme])
     if (problems.length) throw new Error(`今の src/styles.css が決まりを満たしていません:\n${problems.join('\n')}`)
+    const before = checkTheme(theme, asked[theme], { bands: ASKED_GROUND_BANDS })
+    if (before.length) throw new Error(`答える前の値（ASKED_TOKENS）が決まりを満たしていません:\n${before.join('\n')}`)
   }
+  const B = ASKED_GROUND_BANDS
   const made = {
     hue30: { question: 2, letter: 'B', ...hue30() },
-    'depth-lighter': { question: 3, letter: 'A', ...depth(themes, 0.7) },
-    'depth-deeper': { question: 3, letter: 'C', ...depth(themes, 1.4) },
+    'depth-lighter': { question: 3, letter: 'A', ...depth(asked, 0.7, B) },
+    'depth-deeper': { question: 3, letter: 'C', ...depth(asked, 1.4, B) },
     'highlight-full': { question: 4, letter: 'B', tokens: {}, notes: [] },
-    'weekend-matched': { question: 5, letter: 'B', ...weekendMatched(themes) },
-    'accent-lighter': { question: 6, letter: 'A', ...accent(themes, -1) },
-    'accent-deeper': { question: 6, letter: 'C', ...accent(themes, 1) },
+    'weekend-matched': { question: 5, letter: 'B', ...weekendMatched(asked, B) },
+    'accent-lighter': { question: 6, letter: 'A', ...accent(asked, -1, B) },
+    'accent-deeper': { question: 6, letter: 'C', ...accent(asked, 1, B) },
     'labels-a': { question: 9, letter: 'A', ...labelSet('labels-a', themes) },
     'labels-b': { question: 9, letter: 'B', ...labelSet('labels-b', themes) },
   }
@@ -878,9 +955,11 @@ export function buildVariants(css) {
     const tokens = Object.fromEntries(THEMES.filter((t) => m.tokens[t]).map((t) => [t, m.tokens[t]]))
     let css = tokensCss(tokens)
     if (id === 'highlight-full') css = `.kind-marker {\n  background: ${HIGHLIGHT_FULL} !important;\n}\n`
+    const answered = m.question in ANSWERS
     for (const theme of THEMES) {
       const bandScale = m.actual ? { [theme]: m.actual[theme] } : undefined
-      const problems = checkTheme(theme, withTokens(themes[theme], tokens[theme]), { bandScale })
+      const base = answered ? asked[theme] : themes[theme]
+      const problems = checkTheme(theme, withTokens(base, tokens[theme]), { bandScale, bands: answered ? B : GROUND_BANDS })
       if (problems.length) throw new Error(`案 ${id} が決まりを満たしていません:\n${problems.join('\n')}`)
     }
     options[id] = {
@@ -958,7 +1037,7 @@ export function pickTokens(variants, pick) {
 }
 
 /**
- * 選んだ案をまとめて今の src/styles.css に重ね、外観ごとに決まり（checkTheme）を確かめる。戻り値は満たさない所の文（空なら通った）。
+ * 選んだ案をまとめて今の src/styles.css（答えを入れた値）に重ね、外観ごとに決まり（checkTheme）を確かめる。戻り値は満たさない所の文（空なら通った）。
  * 案は1つずつ確かめてあるが、問いをまたいだ組み合わせ（地を濃くして差し色も淡くする、など）は、ここで初めて確かめる。
  * 区分の地の差の幅（FRAME-180）は、地の濃さの案で動かしたトークンだけ、実際に動かした倍率で見る
  */

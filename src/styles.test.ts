@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest'
 import { WIDTH_L, WIDTH_M } from './ui/hooks'
 // 段階2のカレンダーで増える字と地の組（docs/SPEC.md の 4.5・FRAME-146・167・CALENDAR-056・143）は下の「段階2のカレンダーの字と地」。
-// 隣の月の日の淡い数字（--numeral）を休みの地（--off-fill）に置く組は、3:1 に届かないので報告だけにする（確かめ A7。段階2の見本で決める）
+// どれも答え（段階2の見本の ■3・■5）で決めた値で確かめる。隣の月の日の淡い数字（--numeral）を休みの地（--off-fill）に置く組だけは、
+// 3つの外観とも 3:1 にわずかに届かない（2.82〜2.95:1）ので、報告だけのまま（確かめ A7。見本で作者から淡すぎるとの声は無く、
+// 答えの色の値もこの2つのトークンを替えていないので、D06 のとおり --numeral のまま）
 
 // テストでは CSS を import すると（?raw でも）中身が空になるので、ファイルを読む。node:fs の型はアプリの tsconfig に無いので、
 // 名前を変数にして読み込み、使う関数の形だけを書く
@@ -56,21 +58,26 @@ const SPEC_TOKENS: Record<string, readonly [string, string, string]> = {
   '--cover': ['#e0e0dd', '#2a2b2f', '#161719'],
   '--on-cover': ['#25282e', '#e6e5e1', '#aeaca6'],
   '--cover-border': ['#73767d', '#7b7e85', '#68696c'],
-  '--sat': ['#3f69a3', '#8a9bb5', '#808b9b'],
-  '--sun': ['#ac4257', '#c79199', '#a08589'],
+  // 土日祝（段階2の見本の ■5 の答え B: ホワイトとディープダークをダークに合わせて作り直した）
+  '--sat': ['#263958', '#8a9bb5', '#838890'],
+  '--sun': ['#773241', '#c79199', '#98888a'],
   '--off-fill': ['#ebebee', '#272a30', '#1c1e22'],
   '--off-text': ['#5c6068', '#a8aab0', '#8a8984'],
-  '--work-soft': ['#e4edf8', '#1d2938', '#141518'],
-  '--work-area': ['#f1f5fb', '#1a212b', 'var(--surface)'],
-  '--work-sheet': ['#ecf2fa', '#1c2532', 'var(--surface)'],
-  '--work-marker': ['#d3e3f7', '#2a3d55', 'transparent'],
+  // 区分の地とハイライト（■3 の答え A: 面からの差 × 0.7 の淡い地）。--*-count は L・M のマンスリーの件数（作者の気になった所:
+  // 大きく太く、もう少し淡く。--*-text を面の側へ OKLCH の L 0.06）
+  '--work-soft': ['#ecf2fa', '#1b242f', '#121316'],
+  '--work-area': ['#f5f8fc', '#191e26', 'var(--surface)'],
+  '--work-sheet': ['#f2f6fc', '#1b212b', 'var(--surface)'],
+  '--work-marker': ['#e0ebfa', '#243243', 'transparent'],
   '--work-text': ['#2d5288', '#9fc1ec', '#aeaca6'],
+  '--work-count': ['#3d639b', '#8daed8', '#9b9994'],
   '--work-line': ['#7a92b3', '#7a9cc9', '#6d727b'],
-  '--private-soft': ['#fae5ed', '#33202a', '#141518'],
-  '--private-area': ['#fcf1f5', '#261c22', 'var(--surface)'],
-  '--private-sheet': ['#fbedf3', '#2c1f26', 'var(--surface)'],
-  '--private-marker': ['#f6d3e1', '#4a2a3a', 'transparent'],
+  '--private-soft': ['#fcedf2', '#2b1e25', '#121316'],
+  '--private-area': ['#fdf5f8', '#221b20', 'var(--surface)'],
+  '--private-sheet': ['#fcf2f7', '#261d23', 'var(--surface)'],
+  '--private-marker': ['#f9e0ea', '#3a2530', 'transparent'],
   '--private-text': ['#a23d5e', '#f1a8c3', '#aeaca6'],
+  '--private-count': ['#b64f6f', '#dd95b0', '#9b9994'],
   '--private-line': ['#b97f93', '#c48aa1', '#6d727b'],
   '--on-label': ['#17181b', '#17181b', '#e6e5e1'],
   '--done-bg': ['#ededeb', '#222326', '#0b0c0d'],
@@ -502,8 +509,9 @@ describe('差し色とログインの画面はグレー（作者の指摘。docs
 })
 
 describe('区分の色とラベルの色の見分け（docs/SPEC.md の 4.3・4.5）', () => {
-  // ディープダークの線・●（--work-line・--private-line）はラベルのグレーと近い（4.6 の値のまま。段階2の見本で決める）ので、
-  // 確かめるのはホワイトとダークだけ
+  // 確かめるのはホワイトとダークだけ（D20・CALENDAR-263）。ディープダークはラベルの24色もほぼ灰色なので、「ラベルなし」の線・●
+  // （--work-line・--private-line）とラベルの色を色では見分けない（カードは左の一辺の有無、詳細の画面は上の辺の帯の有無で分かる。
+  // 仕様書 4.3。作者に知らせた）
   it.each(['white', 'dark'] as const)('%s: ラベルが無い時の線・●の色は、24色のどれとも OKLab で 0.06 以上離れている', (theme) => {
     for (const line of ['--work-line', '--private-line']) {
       for (const [key] of SPEC_LABELS) {
@@ -583,13 +591,46 @@ describe('段階2のカレンダーの字と地（docs/SPEC.md の 4.5・FRAME-1
     },
   )
 
+  // L・M のマンスリーの件数（9.2）は 19px 以上・太さ 600 の大きな字（WCAG: 太字の 14pt = 18.66px 以上）なので、少し淡い
+  // --work-count・--private-count は件数を置く地（面・乗せた時の --surface-2・休みの日の --off-fill。今日のマス・休みを付ける状態も
+  // この地のまま。前後の月の日には件数を出さない）の上で 3:1 以上。19px より小さくなることのある「99+」のマスと S は --*-text（4.5:1）
+  it.each(THEMES)(
+    '%s: マンスリーの件数の色は、件数を置く3つの地の上で 3:1 以上、--*-text より地の側へ明るさ 0.06 だけ淡い（同じ色合い）',
+    (theme) => {
+      for (const kind of ['work', 'private']) {
+        const pale = color(theme, `--${kind}-count`)
+        const text = color(theme, `--${kind}-text`)
+        for (const ground of ['--surface', '--surface-2', '--off-fill']) {
+          const r = contrast(pale, color(theme, ground))
+          expect(r, `${theme}: --${kind}-count / ${ground}`).toBeGreaterThanOrEqual(3)
+          // 淡くした分だけ比が下がる（--*-text より地に近い）
+          expect(r, `${theme}: --${kind}-count / ${ground}`).toBeLessThan(contrast(text, color(theme, ground)))
+        }
+        const surfaceL = oklab(color(theme, '--surface'))[0]
+        const [textL, ta, tb] = oklab(text)
+        const [paleL, pa, pb] = oklab(pale)
+        // 地の側へ明るさ 0.06（丸めの誤差 0.005 まで）
+        expect(Math.sign(paleL - textL), `${theme} ${kind}`).toBe(Math.sign(surfaceL - textL))
+        expect(Math.abs(paleL - textL), `${theme} ${kind}`).toBeCloseTo(0.06, 2)
+        // 色合いと彩度はそのまま（彩度のあるホワイト・ダークは色相の差 2° まで、彩度の差 0.005 まで）
+        const chroma = (a: number, b: number) => Math.hypot(a, b)
+        expect(Math.abs(chroma(pa, pb) - chroma(ta, tb)), `${theme} ${kind} の彩度`).toBeLessThan(0.005)
+        if (theme !== 'deep-dark') {
+          const hue = (a: number, b: number) => (Math.atan2(b, a) * 180) / Math.PI
+          const dh = Math.abs(((hue(pa, pb) - hue(ta, tb) + 540) % 360) - 180)
+          expect(dh, `${theme} ${kind} の色合い`).toBeLessThan(2)
+        }
+      }
+    },
+  )
+
   it('報告だけ（確かめ A7）: 隣の月の日の淡い数字（--numeral）を休みの地（--off-fill）に置いた時の比', () => {
     const report = THEMES.map((theme) => {
       const ratio = contrast(color(theme, '--numeral'), color(theme, '--off-fill'))
       expect(Number.isFinite(ratio)).toBe(true)
       return `${theme} ${ratio.toFixed(2)}:1${ratio < 3 ? '（3:1 未満）' : ''}`
     })
-    // 見本で淡すぎると決まったら、休みの地の上だけ --text-faint にする（D06）。それまでは落とさずに知らせる
+    // 見本で淡すぎると言われたら、休みの地の上だけ --text-faint にする（D06）。見本の答え（2026-11-12）では言われなかったので、落とさずに知らせる
     console.info(`[A7] --numeral / --off-fill: ${report.join('、')}`)
   })
 })
