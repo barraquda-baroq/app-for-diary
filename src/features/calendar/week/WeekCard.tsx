@@ -307,7 +307,7 @@ export interface AddRowProps {
   open?: boolean
   /** 「＋」を押した（すばやく足すを開く） */
   onAdd?: (date: string, kind: ItemKind) => void
-  /** すばやく足すを閉じた（Esc・入力欄の外を押し終えた・フォーカスを外へ移した） */
+  /** すばやく足すを閉じた（Esc・入力欄の外を押し終えた・フォーカスを外へ移した・キーボードを閉じた） */
   onClose?: () => void
 }
 
@@ -315,7 +315,8 @@ export interface AddRowProps {
  * いちばん下の「＋」の行（28px。7日を横の PC では列に乗せた時だけ出す。10.2・D43）。押すと、その場でその日・その段のすばやく足す
  * （1行の入力欄。12.1）に替わる（D44）。Esc で閉じた時は「＋」にフォーカスを戻す（キーボードで続けて操作できるように）。
  * 外を押して閉じた時は戻さない（押した所の操作のまま）。外を押した時に押し終わってから閉じるのは QuickAdd（S で下のかたまりが
- * ずれて、指の下の別の予定が押されないように。掴んだカードの下で並びが動かないように）
+ * ずれて、指の下の別の予定が押されないように。掴んだカードの下で並びが動かないように）。外を押した・キーボードを閉じた時に、
+ * 字があれば足してから閉じるのも QuickAdd（12.1）
  */
 export function AddRow({ date, kind, open = false, onAdd, onClose }: AddRowProps) {
   const button = useRef<HTMLButtonElement>(null)

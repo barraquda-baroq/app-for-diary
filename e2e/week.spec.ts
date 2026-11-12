@@ -309,6 +309,60 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     expect(await page.locator('.flash').count()).toBe(0)
   })
 
+  test('すばやく足す: ［足す］で足して開いたまま。字を打ったまま外を押すと、足してから閉じて「『件名』を足しました［元に戻す］」。［元に戻す］で消えて書きかけに戻る（12.1・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await cell(page, 'work', '2026-11-12').hover()
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    const input = page.getByTestId('quick-add-input')
+    const add = page.getByTestId('quick-add-button')
+    await expect(input).toBeFocused()
+    // ［足す］は入力欄の右の端の中（34px 幅・入力欄の枠の内側の高さ）。字が無い間は淡い
+    await expect(add).toHaveAttribute('aria-label', '足す')
+    await expect(add).toHaveAttribute('aria-disabled', 'true')
+    const field = await box(input)
+    const btn = await box(add)
+    expect(btn.width).toBeCloseTo(34, 0)
+    expect(btn.height).toBeCloseTo(field.height - 2, 0)
+    near(btn.x + btn.width, field.x + field.width - 1)
+    await input.fill('電話をかける')
+    await expect(add).not.toHaveAttribute('aria-disabled', 'true')
+    await add.click()
+    const first = await itemByTitle(page, '電話をかける')
+    expect(first).toMatchObject({ start: '2026-11-12', kind: 'work', origin: 'calendar', listed: false })
+    await expect(cell(page, 'work', '2026-11-12').getByTestId(`week-card-${first?.id}`)).toBeVisible()
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    await expect(page.locator('.toast')).toHaveCount(0)
+
+    // 字を打ったまま、ほかの日のカードを押す: 押したカードの詳細が開き、打った字は足してから閉じる
+    await input.fill('資料を送る')
+    await page.getByTestId(`week-card-${I.weekly}`).locator('.wk-open').click()
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await expect(page.getByTestId('item-title')).toHaveValue('定例ミーティング')
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    const second = await itemByTitle(page, '資料を送る')
+    expect(second).toMatchObject({ start: '2026-11-12', kind: 'work', origin: 'calendar' })
+    const toast = page.locator('.toast', { hasText: '『資料を送る』を足しました' })
+    await expect(toast).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await expect(cell(page, 'work', '2026-11-12').getByTestId(`week-card-${second?.id}`)).toBeVisible()
+    // ［元に戻す］: 足した予定をゴミ箱へ移し、打った字は書きかけに戻る
+    await toast.getByRole('button', { name: '元に戻す' }).click()
+    await expect(page.getByTestId(`week-card-${second?.id}`)).toHaveCount(0)
+    await page.evaluate(() => window.__ds.flushNow())
+    expect(await page.evaluate((id) => window.__ds.getRaw().items[id] ?? null, second?.id ?? '')).toBeNull()
+    await cell(page, 'work', '2026-11-12').hover()
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    await expect(page.getByTestId('quick-add-input')).toHaveValue('資料を送る')
+    // Esc は足さずに閉じる（書きかけは残る）
+    await page.getByTestId('quick-add-input').press('Escape')
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    expect(await itemByTitle(page, '資料を送る')).toBeNull()
+  })
+
   test('すばやく足すの書きかけは、閉じても読み込み直しても残り、同じ日・同じ段で開き直すと戻る（ITEMS-159）', async ({
     page,
   }) => {
@@ -611,6 +665,50 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
 
+  test('すばやく足す（指）: ［足す］を押すと足して開いたまま（入力欄からフォーカスが外れない）。字を打ったまま外を押す・キーボードを閉じると、足してから閉じる（12.1・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    const add = page.getByTestId('quick-add-button')
+    await expect(input).toBeFocused()
+    // 指の端末: ［足す］の押せる所は 34px 以上（4.11）
+    const btn = await box(add)
+    expect(btn.width).toBeGreaterThanOrEqual(34)
+    expect(btn.height).toBeGreaterThanOrEqual(34)
+    await input.fill('花を買う')
+    // 押している間も入力欄の blur が起きない（mousedown を止める。iPhone ではキーボードが閉じない）
+    await input.evaluate((e) => {
+      const w = window as Window & { quickBlurs?: number }
+      w.quickBlurs = 0
+      e.addEventListener('blur', () => (w.quickBlurs = (w.quickBlurs ?? 0) + 1))
+    })
+    await add.tap()
+    expect(await page.evaluate(() => (window as Window & { quickBlurs?: number }).quickBlurs)).toBe(0)
+    const flowers = await itemByTitle(page, '花を買う')
+    expect(flowers).toMatchObject({ start: '2026-11-10', kind: 'private', origin: 'calendar' })
+    await expect(col(page, '2026-11-10').locator('[data-tier="private"]').getByTestId(`week-card-${flowers?.id}`)).toBeVisible()
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+
+    // 外（上に固定した段の名札の行）を押す: 足してから閉じる
+    await input.fill('本を借りる')
+    await page.locator('.wk-vtags').tap()
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    expect(await itemByTitle(page, '本を借りる')).toMatchObject({ start: '2026-11-10', kind: 'private' })
+    await expect(page.locator('.toast', { hasText: '『本を借りる』を足しました' })).toBeVisible()
+
+    // 押さずにフォーカスが外れた（iPhone のキーボードの上の✓・キーボードを閉じた）: 足してから閉じる
+    await page.getByTestId('week-add-2026-11-12-work').tap()
+    await expect(input).toBeFocused()
+    await input.fill('手紙を出す')
+    await input.evaluate((e) => (e as HTMLInputElement).blur())
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    expect(await itemByTitle(page, '手紙を出す')).toMatchObject({ start: '2026-11-12', kind: 'work' })
+    await expect(page.locator('.toast', { hasText: '『手紙を出す』を足しました' })).toBeVisible()
+  })
+
   test('すばやく足すを開いたまま下のかたまりの予定を押すと、押した予定の詳細が開く（入力欄が閉じて並びが上へずれても、別の予定にならない）', async ({
     page,
   }) => {
@@ -627,5 +725,24 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(page.getByTestId('item-sheet')).toBeVisible()
     await expect(page.getByTestId('item-title')).toHaveValue('展示会の手配')
     await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+  })
+})
+
+test.describe('すばやく足す（iPhone）', { tag: ['@ios'] }, () => {
+  test('字を打ったまま入力欄の外を押すと、足してから閉じて「『件名』を足しました」（12.1・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await input.fill('花を買う')
+    // 押しても何も起きない所（上に固定した段の名札の行）を押す
+    await page.locator('.wk-vtags').tap()
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    await expect(page.locator('.toast', { hasText: '『花を買う』を足しました' })).toBeVisible()
+    const it = await itemByTitle(page, '花を買う')
+    expect(it).toMatchObject({ start: '2026-11-10', kind: 'private', origin: 'calendar' })
+    await expect(col(page, '2026-11-10').locator('[data-tier="private"]').getByTestId(`week-card-${it?.id}`)).toBeVisible()
   })
 })

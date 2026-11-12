@@ -61,6 +61,8 @@ export const testIds = {
   /** 点線の丸（完了にする） */
   done: (id: ID) => `done-${id}`,
   quickAddInput: 'quick-add-input',
+  /** すばやく足すの［足す］（入力欄の右の端の✓） */
+  quickAddButton: 'quick-add-button',
   aiTag: (id: ID) => `ai-tag-${id}`,
 
   // ----- 登録・詳細・複製の画面（12.。欄は画面の並びの順） -----

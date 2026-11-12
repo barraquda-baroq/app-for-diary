@@ -697,6 +697,28 @@ describe('すばやく足す（「＋ 予定を足す」。12.1・ITEMS-123・D4
     expect(sheetOf(router)).toEqual({ kind: 'detail', id: 'w-row' })
   })
 
+  it('［足す］でも足して開いたまま。字を打ったまま外（日付の見出し）を押すと、足してから閉じてお知らせ（22. の段階2の終わりの確かめ）', async () => {
+    const user = userEvent.setup()
+    await renderDay({})
+    await user.click(screen.getByTestId(testIds.dayAdd('work')))
+    const area = screen.getByTestId(testIds.dayArea('work'))
+    await user.type(input() as HTMLInputElement, '伝票の整理')
+    await user.click(within(area).getByTestId(testIds.quickAddButton))
+    expect(within(area).getByText('伝票の整理')).toBeTruthy()
+    expect(input()?.value).toBe('')
+    expect(document.activeElement).toBe(input())
+    expect(useToasts.getState().toasts).toHaveLength(0)
+    await user.type(input() as HTMLInputElement, '鉢植えの水やり')
+    await user.click(screen.getByTestId(testIds.dayHead))
+    expect(input()).toBeNull()
+    expect(Object.values(getData().items).find((it) => it.title === '鉢植えの水やり')).toMatchObject({
+      start: D,
+      kind: 'work',
+      origin: 'calendar',
+    })
+    expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['『鉢植えの水やり』を足しました'])
+  })
+
   it('開いているのは1つだけ（ほかの区切りの行を押すと、そちらに替わる）。見ている日が替わったら閉じる', async () => {
     const user = userEvent.setup()
     const r = await renderDay({})
