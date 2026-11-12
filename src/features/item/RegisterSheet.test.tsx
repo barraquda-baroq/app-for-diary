@@ -104,7 +104,7 @@ describe('題・欄の並び・初めの値（12.2）', () => {
     expect(title.value).toBe('1行目 2行目')
   })
 
-  it('初めの値: 区分は仕事、開始日は渡した日（「11月10日（火）」）で消せない、締め切り日は空（「空なら1日だけ」）、時刻は空、詳しくは全部空', async () => {
+  it('初めの値: 区分は仕事、開始日は渡した日（「11月10日（火）」）で消せない、締め切り日は空（「空なら1日だけ」）、時刻は空、依頼者・メモ・ロック・Task List・ラベルは空', async () => {
     await open()
     expect(sheet().getAttribute('data-kind')).toBe('work')
     expect(sheet().hasAttribute('data-label')).toBe(false)
