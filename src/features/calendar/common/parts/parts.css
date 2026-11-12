@@ -248,13 +248,36 @@
   }
 }
 
-/* ===== すばやく足す（QuickAdd。「＋」の行の所に開く1行の入力欄。12.1） ===== */
+/* ===== すばやく足す（QuickAdd。「＋」の行の所に開く1行の入力欄。12.1） =====
+   ［足す］（✓）は入力欄の右の端の中に重ねる（開いた行の高さと幅は前のまま。列の狭いウィークリーでも、入力欄の外に並べて
+   入力欄を細らせない）。幅は --tap（34px）、高さは入力欄の枠の内側（PC 34px・指の端末と S・M 38px。4.11）。字がある間は
+   --text の濃い✓、無い間は淡くして押しても何もしない（.icon-btn の aria-disabled） */
 .cp-quick {
   display: flex;
   min-width: 0;
   width: 100%;
 }
 
+.cp-quick-field {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .cp-quick .input {
   min-width: 0;
+  padding-right: var(--tap);
+}
+
+.icon-btn.cp-quick-add {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  height: auto;
+}
+
+.icon-btn.cp-quick-add:not([aria-disabled='true']) {
+  color: var(--text);
 }

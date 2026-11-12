@@ -2,11 +2,12 @@
 // （jsdom に無い setPointerCapture・IntersectionObserver・getAnimations・animate だけをこのファイルの中で置く）。jsdom は大きさを
 // 測らないので、どこに落ちたか（重なりの判定）は E2E（e2e/week-drag.spec.ts）で確かめ、ここは掴んだ時の落とせる日の印・
 // 掴めない物・ロック中の揺れ・落とした時の動き（applyDrop）を見る
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getData, replaceAllData } from '../../../../store/appStore'
 import { mkItem, mkTask } from '../../../../domain/testData'
 import type { Item } from '../../../../domain/types'
+import { quickDraftKey, readLocal } from '../../../../store/localDrafts'
 import { useCalendarUi, useToasts } from '../../../../store/uiStore'
 import { renderView, setupCalendarTests, viewProps } from '../../../../test/renderCalendar'
 import { testIds } from '../../common/testIds'
@@ -207,6 +208,25 @@ describe('掴むと、その週の落とせる日すべてに印（useDayDrop。
     vi.useRealTimers()
     await release('touch')
     field.remove()
+  })
+})
+
+describe('すばやく足すを開いたまま掴んだ時（7.11・12.1）', () => {
+  it('打った字は、離した後も足さない（ドラッグのお知らせと重ねない）。入力欄は離した後に閉じ、書きかけは残る', async () => {
+    await renderWeek()
+    fireEvent.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'ドラッグ中の字' } })
+    const card = screen.getByTestId(testIds.weekCard('one'))
+    await grab(card)
+    expect(card.getAttribute('data-dnd-dragging')).toBe('true')
+    // 掴んでいる間は開いたまま（並びを動かさない）
+    expect(screen.getByTestId(testIds.quickAddInput)).toBe(input)
+    await release()
+    await waitFor(() => expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull())
+    expect(Object.values(getData().items).some((it) => it.title === 'ドラッグ中の字')).toBe(false)
+    expect(useToasts.getState().toasts.some((t) => t.message.includes('ドラッグ中の字'))).toBe(false)
+    expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('ドラッグ中の字')
   })
 })
 

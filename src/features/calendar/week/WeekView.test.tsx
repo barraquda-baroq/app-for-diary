@@ -9,7 +9,7 @@ import { mkItem, mkOffDay, mkTask, T0 } from '../../../domain/testData'
 import type { AppData, Item } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
-import { useCalendarUi } from '../../../store/uiStore'
+import { useCalendarUi, useToasts } from '../../../store/uiStore'
 import { quickDraftKey, readLocal } from '../../../store/localDrafts'
 import { renderView, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
 import { sheetOf } from '../common/sheets'
@@ -643,19 +643,18 @@ describe('「＋」→ すばやく足す（12.1・ITEMS-068・D44）', () => {
     expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
   })
 
-  it('押した後に click が来ない時（なぞってスクロールした・長押しした）も閉じる。Esc はすぐ閉じる', async () => {
+  it('押した後に click が来ない時（長押しした）も閉じる。なぞってスクロールした時（フォーカスは入力欄のまま）は閉じない。Esc はすぐ閉じる', async () => {
     const user = userEvent.setup()
     await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
     const add = () => screen.getByTestId(testIds.weekAdd('2026-11-09', 'work'))
     const card = screen.getByTestId(testIds.weekCard('meet'))
-    // なぞってスクロールした（ブラウザが pointercancel）
+    // なぞってスクロールした（ブラウザが pointercancel。指でなぞってもフォーカスは入力欄に残る）: 外を押したとは扱わない（12.1）
     await user.click(add())
     fireEvent.pointerDown(card)
     expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
     fireEvent.pointerCancel(card)
-    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(document.activeElement).toBe(screen.getByTestId(testIds.quickAddInput))
     // 離しても click が来ない（長押し）: 少し待って閉じる
-    await user.click(add())
     fireEvent.pointerDown(card)
     fireEvent.pointerUp(card)
     expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
@@ -676,6 +675,61 @@ describe('「＋」→ すばやく足す（12.1・ITEMS-068・D44）', () => {
     view.setProps(props)
     expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
     expect(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work'))).toBeTruthy()
+  })
+
+  it('入力欄の右の端の［足す］でも足し、開いたまま続けて足せる（22. の段階2の終わりの確かめ）', async () => {
+    const user = userEvent.setup()
+    await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.type(input(), '電話をかける')
+    await user.click(screen.getByTestId(testIds.quickAddButton))
+    const added = Object.values(getData().items).find((it) => it.title === '電話をかける')
+    expect(added).toMatchObject({ start: '2026-11-12', kind: 'work', origin: 'calendar' })
+    const cell = tier('work').querySelectorAll<HTMLElement>('.wk-cell')[4]
+    expect(cell.contains(screen.getByTestId(testIds.weekCard(added?.id ?? '')))).toBe(true)
+    expect(input().value).toBe('')
+    expect(document.activeElement).toBe(input())
+  })
+
+  it('字を打ったまま入力欄の外（カード）を押すと、足してから閉じ（お知らせと［元に戻す］）、押したカードの詳細が開く（22. の段階2の終わりの確かめ）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.type(input(), '資料を送る')
+    await user.click(screen.getByTestId(testIds.weekCard('meet')).querySelector('.wk-open') as HTMLElement)
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
+    const added = Object.values(getData().items).find((it) => it.title === '資料を送る')
+    expect(added).toMatchObject({ start: '2026-11-12', kind: 'work' })
+    expect(useToasts.getState().toasts.map((t) => [t.message, t.action?.label])).toEqual([
+      ['『資料を送る』を足しました', '元に戻す'],
+    ])
+    expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBeNull()
+  })
+
+  it('字を打ったままほかの「＋」を押すと、前の日・段に足してから、押した所に開く（開いているのは1か所）', async () => {
+    const user = userEvent.setup()
+    await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.type(input(), '請求書の発行')
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-09', 'private')))
+    expect(Object.values(getData().items).find((it) => it.title === '請求書の発行')).toMatchObject({
+      start: '2026-11-12',
+      kind: 'work',
+    })
+    expect(screen.getAllByTestId(testIds.quickAddInput)).toHaveLength(1)
+    expect(tier('private').querySelectorAll('.wk-cell')[1].contains(input())).toBe(true)
+    expect(input().value).toBe('')
+  })
+
+  it('Esc で閉じた時は、字があっても足さない（書きかけに残る）', async () => {
+    const user = userEvent.setup()
+    await renderWeek()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.type(input(), '書きかけ')
+    await user.keyboard('{Escape}')
+    expect(Object.values(getData().items).some((it) => it.title === '書きかけ')).toBe(false)
+    expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('書きかけ')
   })
 
   it('S: 日のかたまりの半分の「＋」も、その場で入力欄に替わる', async () => {

@@ -4,7 +4,7 @@
 // - 日付の見出し（丸いラベル＋「11/8」）→ その日のデイリーへ（積む。見ている日はその日。7.12・CALENDAR-192）
 // - 休みのチェック → その日の休みを付ける・外す（offDays の off を切り替えるだけ。記録は消さない。6.5・7.4・D33）
 // - 「＋」の行 → その日・その段のすばやく足す（12.1）。その「＋」の行が、その場で1行の入力欄に替わる（D44）。開くのはいつも1か所
-//   だけで、ほかの「＋」を押すとそちらへ移る（前の入力欄は外を押したので閉じる）。週を移ると閉じる
+//   だけで、ほかの「＋」を押すとそちらへ移る（前の入力欄は外を押したので、字があれば足して閉じる）。週を移ると閉じる
 import { useCallback, useMemo, useState } from 'react'
 import type { ItemKind } from '../../../domain/types'
 import { actions } from '../../../store/actions'
@@ -26,7 +26,7 @@ export interface WeekActions {
   quickAdd: (date: string, kind: ItemKind) => void
   /** 開いているすばやく足す（無ければ null） */
   quick: QuickTarget | null
-  /** すばやく足すを閉じた（Esc・入力欄の外を押した。書きかけは控えたまま） */
+  /** すばやく足すを閉じた（Esc・Tab は書きかけを控えたまま。外を押した・キーボードを閉じた時は、字があれば足してから。12.1） */
   closeQuick: () => void
 }
 

@@ -119,14 +119,15 @@ describe('list 生まれの「今どう出るか」の1行（12.3・6.3 の4通�
   })
 })
 
-describe('お知らせの文（3.9・7.11・12.5・12.7・12.8・6.3）', () => {
+describe('お知らせの文（3.9・7.11・12.1・12.5・12.7・12.8・6.3）', () => {
   it('ドラッグの後: 1日の予定・始点・終点と list 生まれ', () => {
     expect(toastText.moved('2026-11-12')).toBe('11/12（木）へ移しました')
     expect(toastText.startSet('2026-11-10')).toBe('開始日を 11/10（火）にしました')
     expect(toastText.dueSet('2026-11-14')).toBe('締め切り日を 11/14（土）にしました')
   })
 
-  it('完了・複製・削除・Task List に戻した', () => {
+  it('すばやく足すで足した・完了・複製・削除・Task List に戻した', () => {
+    expect(toastText.added('花を買う')).toBe('『花を買う』を足しました')
     expect(toastText.done('定例会議')).toBe('『定例会議』を完了にしました')
     expect(toastText.duplicated('2026-11-17')).toBe('11/17（火）に複製しました')
     expect(toastText.duplicated(null)).toBe('Task List に複製しました')

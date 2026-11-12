@@ -78,6 +78,8 @@ export const toastText = {
   startSet: (d: string): string => `開始日を ${shortDateLabel(d)}にしました`,
   /** 複数日の終点・list 生まれの〆のカードを動かした（7.11・13.6） */
   dueSet: (d: string): string => `締め切り日を ${shortDateLabel(d)}にしました`,
+  /** すばやく足すで、入力欄の外を押した・キーボードを閉じた時に足した（12.1） */
+  added: (title: string): string => `『${title}』を足しました`,
   /** カレンダーの丸・●で完了にした（12.5） */
   done: (title: string): string => `『${title}』を完了にしました`,
   /** 複製した（12.7）。日付は期間の初めの日。日付の無い list 生まれは Task List へ（開発） */
