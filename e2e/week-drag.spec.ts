@@ -95,10 +95,19 @@ async function grabPoint(target: Locator): Promise<Point> {
   return visiblePoint(target)
 }
 
-/** マウスで掴んで to へ動かして離す */
+/**
+ * 落とす所（to か、to を包む列・半分。data-drop を持つ物）が「今その上にある日」（data-drop="hover"）になるまで待つ。dnd-kit は
+ * 指・マウスの下の落とす所を次に描く時に決めるので、動かしてすぐ離すと、重い時は通り道の日に落ちる（離す前に必ず待つ）
+ */
+async function overDropDay(to: Locator) {
+  await expect(to.locator('xpath=ancestor-or-self::*[@data-drop][1]')).toHaveAttribute('data-drop', 'hover')
+}
+
+/** マウスで掴んで to へ動かし、そこが今その上にある日になってから離す（to が落とせる所の時。点の時は待たない） */
 async function mouseDrop(page: Page, from: Locator, to: Locator | Point) {
   const drag = await startMouseDrag(page, await grabPoint(from))
   await drag.moveTo('x' in to ? to : await visiblePoint(to))
+  if (!('x' in to)) await overDropDay(to)
   await drag.drop()
 }
 
@@ -231,6 +240,7 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     drag = await startMouseDrag(page, await grabPoint(endDot(page, I.materials)))
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-14')))
     expect(await markedDates(page, 'work')).toEqual(DAYS.slice(1))
+    await overDropDay(cellL(page, 'work', '2026-11-14'))
     await drag.drop()
     await expect(toast(page, '締め切り日を 11/14（土）にしました')).toBeVisible()
     expect(await itemOf(page, I.materials)).toMatchObject({
@@ -352,6 +362,7 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     const drag = await startMouseDrag(page, await grabPoint(card(page, I.quote)))
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-13')))
     await expect(input).toBeVisible()
+    await overDropDay(cellL(page, 'work', '2026-11-13'))
     await drag.drop()
     await expect(input).toHaveCount(0)
     await expect(toast(page, '締め切り日を 11/13（金）にしました')).toBeVisible()
@@ -479,6 +490,7 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await expect.poll(() => week.evaluate((e) => e.scrollTop), { timeout: 5000 }).toBe(box.max)
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
     await drag.moveTo(await visiblePoint(halfS(page, 'work', '2026-11-14')))
+    await overDropDay(halfS(page, 'work', '2026-11-14'))
     await drag.drop()
     await expect(toast(page, '11/14（土）へ移しました')).toBeVisible()
     expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-14')
