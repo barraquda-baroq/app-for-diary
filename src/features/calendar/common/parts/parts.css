@@ -190,7 +190,7 @@
   min-width: 0;
   max-width: min(320px, calc(100vw - 16px));
   gap: 4px;
-  padding: 10px 12px;
+  padding: 12px;
 }
 
 .cp-via-head {

@@ -144,7 +144,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   height: 52px;
   margin: 0;
   padding: 0;
@@ -192,7 +192,7 @@
 /* 日のマス: 高さ 52px、上の線 2px の --rule-strong（8.2・4.4-3）。左上に日付、その下に曜日 */
 .yr-cell:not(.is-mini) {
   height: 52px;
-  padding: 5px 3px 0;
+  padding: 4px 3px 0;
   border-top: 2px solid var(--rule-strong);
 }
 
@@ -205,7 +205,7 @@
 
 /* マスが狭くて日付と●の間が取れない時は、●の2つの場所を曜日の下の段に下ろす（D28） */
 .yr-cell.is-dots-below .yr-dots {
-  margin-top: 7px;
+  margin-top: 8px;
 }
 
 /* ---------- 小さな月を並べる（領域の幅 870px 未満。M・S はいつも。8.3） ----------
@@ -219,7 +219,7 @@
 
 .yr-minis[data-cols='2'] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: clamp(2px, 100% - 308px, 16px);
+  column-gap: clamp(2px, 100% - 308px, 16px); /* 4.8 の例外: 節の寸法（8.3） */
 }
 
 .yr-minis[data-cols='3'] {
@@ -248,8 +248,8 @@
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  margin: 0 0 4px -6px;
-  padding: 4px 6px;
+  margin: 0 0 4px -8px;
+  padding: 4px 8px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -336,7 +336,7 @@
    1px 上に。22px のマスでは上から 2px で、今日の内側の枠（2px）のすぐ下） */
 .yr-cell.is-mini .yr-dots {
   position: absolute;
-  top: max(2px, 50% - 9px);
+  top: max(2px, 50% - 9px); /* 4.8 の例外: 節の寸法（8.3） */
   right: 2px;
 }
 

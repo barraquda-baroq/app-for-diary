@@ -18,6 +18,8 @@ const ALL_CSS: readonly (readonly [string, string])[] = readdirSync(SRC_DIR, { r
   .map((f) => [f, readFileSync(`${SRC_DIR}${f}`, 'utf8')] as const)
 /** カレンダーの画面の CSS（src/features/calendar の下。年・月・週・日・共通の部品・ドラッグ） */
 const CALENDAR_CSS = ALL_CSS.filter(([name]) => name.startsWith('features/calendar/'))
+/** カレンダーと、登録・詳細の画面の CSS（src/features/calendar・src/features/item の下） */
+const SCREEN_CSS = ALL_CSS.filter(([name]) => name.startsWith('features/calendar/') || name.startsWith('features/item/'))
 
 /** 画面と部品の TS・TSX（テストを除く。src/features と src/ui） */
 const CODE = import.meta.glob(['./features/**/*.{ts,tsx}', './ui/**/*.{ts,tsx}', '!./**/*.test.{ts,tsx}'], {
@@ -271,8 +273,6 @@ describe('差し色は決まった所だけ（FRAME-160・4.4-7）', () => {
     ).toEqual(['.wk-card { background: var(--accent-soft) }', '.y { color: var(--accent) }'])
   })
 
-  const SCREEN_CSS = ALL_CSS.filter(([name]) => name.startsWith('features/calendar/') || name.startsWith('features/item/'))
-
   it('カレンダー・登録と詳細の画面の CSS を読めている', () => {
     expect(SCREEN_CSS.map(([name]) => name)).toEqual(
       expect.arrayContaining(['features/calendar/week/week.css', 'features/item/item.css']),
@@ -340,5 +340,109 @@ describe('マンスリーの件数の字（9.2・4.7。作者の気になった�
     expect(valueOf('.mo-counts', '--mo-private')).toBe('var(--private-count)')
     const back = rules.filter((r) => declarationsOf(r.body).some(([n, v]) => n === '--mo-work' && v === 'var(--work-text)'))
     expect(back.map((r) => r.selector)).toEqual(['.mo-month.is-compact .mo-counts'])
+  })
+})
+
+/**
+ * 余白は 4px を単位にする（0・4・8・12・16・24・32。docs/SPEC.md の 4.8・FRAME-213）。カレンダー・登録と詳細の画面の CSS の余白の宣言
+ * （margin・padding・gap・row-gap・column-gap・inset と top・right・bottom・left。@media の中も）に書いた px の値のうち、3px より大きく
+ * 単位に乗らない物は、4.8 の例外の印を同じ行（宣言の終わりの ; の後ろ）に書いた宣言だけに許す。印は次の形で、分けは 4.8 の（開発）の5つ:
+ *   /* 4.8 の例外: 中央に置く（理由） *\/   分け = 中央に置く・押せる所・節の寸法・線の分・NS のまま
+ * - calc()・clamp()・max() の中の px も1つずつ見る（calc(50% - 14px) の 14px も）。マイナスの値は大きさで見る（-5px は 5px）
+ * - 3px までの値（目で合わせる 1〜3px の寄せ・線の太さ）は単位の外でもよい。em・%・var() は見ない（字の大きさに合わせる間・変数）
+ * - scroll-margin・scroll-padding は見た目の余白ではない（スクロールして止める位置）ので見ない。変数（--…）の値も見ない
+ * - 印が付いているのに単位に乗らない値の無い宣言・余白でない宣言の印は、要らない印として落とす（値を直した後に印だけが残らないように）
+ */
+const SPACING_SCALE = new Set([0, 4, 8, 12, 16, 24, 32])
+const SPACING_PROP =
+  /^(?:(?:margin|padding)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?|gap|row-gap|column-gap|inset(?:-(?:inline|block)(?:-(?:start|end))?)?|top|right|bottom|left)$/
+const EXCEPTION_KINDS = ['中央に置く', '押せる所', '節の寸法', '線の分', 'NS のまま'] as const
+const EXCEPTION_MARK = new RegExp(`/\\*\\s*4\\.8 の例外: (?:${EXCEPTION_KINDS.join('|')})`)
+/** 4.8 の例外の印の形で始まるコメント（分けの正しくない物も） */
+const ANY_EXCEPTION_MARK = /\/\*\s*4\.8 の例外/g
+
+/** 余白の宣言の、4px の単位に乗らない値（3px より大きい px）と、要らない例外の印（[規則のセレクタ, 宣言, 何が] の文） */
+export function offScaleSpacing(source: string): string[] {
+  // コメントを同じ長さの空白にした物で宣言を探し（位置は元のまま）、印は元の文で見る
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+  const lineEnd = (at: number) => {
+    const n = source.indexOf('\n', at)
+    return n < 0 ? source.length : n
+  }
+  const found: string[] = []
+  const usedMarks = new Set<number>()
+  const selectors: string[] = []
+  let start = 0
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i]
+    if (ch !== '{' && ch !== '}' && ch !== ';') continue
+    const text = code.slice(start, i)
+    if (ch === '{') selectors.push(text.trim().replace(/\s+/g, ' '))
+    else {
+      const m = /^\s*([\w-]+)\s*:\s*([\s\S]+?)\s*$/.exec(text)
+      if (m && SPACING_PROP.test(m[1].toLowerCase())) {
+        const [, prop, rawValue] = m
+        const value = rawValue.replace(/\s+/g, ' ')
+        const bad = [...value.matchAll(/(-?\d*\.?\d+)px\b/g)]
+          .map((x) => Math.abs(Number(x[1])))
+          .filter((v) => v > 3 && !SPACING_SCALE.has(v))
+        // 印を見る所: 宣言の始まり（前の宣言の後ろの印・空白は除く）から、宣言の終わり（; か }）の行の終わりまで
+        const from = start + text.search(/\S/)
+        const mark = EXCEPTION_MARK.exec(source.slice(from, lineEnd(i)))
+        const where = `${selectors[selectors.length - 1] ?? ''} { ${prop}: ${value} }`
+        if (mark) usedMarks.add(from + mark.index)
+        if (bad.length && !mark) found.push(`${where}（${bad.join('・')}px が 4px の単位に乗らない）`)
+        if (!bad.length && mark) found.push(`${where}（単位に乗っているのに 4.8 の例外の印がある）`)
+      }
+      if (ch === '}') selectors.pop()
+    }
+    start = i + 1
+  }
+  // どの余白の宣言にも使われていない印（分けの無い印・余白でない宣言の印）
+  for (const m of source.matchAll(ANY_EXCEPTION_MARK)) {
+    if (!usedMarks.has(m.index)) {
+      const line = source.slice(0, m.index).split('\n').length
+      found.push(`${line} 行目の 4.8 の例外の印が、余白の宣言に付いていないか、分け（${EXCEPTION_KINDS.join('・')}）が無い`)
+    }
+  }
+  return found
+}
+
+describe('余白は 4px を単位に（0・4・8・12・16・24・32。例外は 4.8 の印のある所だけ。FRAME-213・4.8）', () => {
+  it('道具: 単位に乗らない余白・印の無い例外・要らない印を見つける', () => {
+    expect(
+      offScaleSpacing(`
+        .a { gap: 8px; padding: 0 16px 24px; margin: -4px 0 0; }
+        .b { gap: 6px; }
+        .c { gap: 6px; /* 4.8 の例外: 中央に置く（36px の中） */ }
+        .d { padding: 1px 3px; margin-top: -2px; top: 0.5px; }
+        .e { left: calc(50% - 14px); }
+        @media (max-width: 899px) { .f::after { inset: -10px var(--hit-x); } }
+        .g { inset: -10px var(--hit-x); /* 4.8 の例外: 押せる所 */ }
+        .h { gap: 0.4em; padding: 2%; margin: var(--x); --pad: 6px; scroll-margin: 5px; }
+        .i {
+          /* 4.8 の例外: 節の寸法 */
+          padding: 6px 10px;
+        }
+        .j { gap: 6px; /* 4.8 の例外: 好みで */ }
+        .k { gap: 8px; /* 4.8 の例外: 中央に置く */ }
+        .l { width: 30px; /* 4.8 の例外: 節の寸法 */ }
+      `),
+    ).toEqual([
+      '.b { gap: 6px }（6px が 4px の単位に乗らない）',
+      '.e { left: calc(50% - 14px) }（14px が 4px の単位に乗らない）',
+      '.f::after { inset: -10px var(--hit-x) }（10px が 4px の単位に乗らない）',
+      '.i { padding: 6px 10px }（6・10px が 4px の単位に乗らない）',
+      '.j { gap: 6px }（6px が 4px の単位に乗らない）',
+      '.k { gap: 8px }（単位に乗っているのに 4.8 の例外の印がある）',
+      // 行の上に書いた印（.i）・分けの無い印（.j）・余白でない宣言の印（.l）
+      expect.stringMatching(/^11 行目の 4\.8 の例外の印が/),
+      expect.stringMatching(/^14 行目の 4\.8 の例外の印が/),
+      expect.stringMatching(/^16 行目の 4\.8 の例外の印が/),
+    ])
+  })
+
+  it.each(SCREEN_CSS)('%s: 余白は 4px の単位（乗らない所は 4.8 の例外の印と分け）', (_name, source) => {
+    expect(offScaleSpacing(source)).toEqual([])
   })
 })
