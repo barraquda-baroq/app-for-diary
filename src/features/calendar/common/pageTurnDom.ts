@@ -6,7 +6,8 @@
 //   なので、ドラッグの落とす所・目立たせる所にならず、押せず（inert・pointer-events: none）、読み上げにも出ない（aria-hidden）。
 //   テストの印・id・name などは外す（本物と同じ印が2つにならないように）。中のスクロールの位置は、置いた後に写す（applyScroll）
 // - めくらない時: 視差効果を減らす設定・画面が裏にある・ドラッグ中（掴んだ物には dnd-kit が data-dnd-dragging を付ける。ドラッグ中に
-//   端で週が替わる時は、めくらずにすぐ替える）・裏から戻って今日へ移す時（skipNextTurn。開いた時と同じ扱い）
+//   端で週が替わる時は、めくらずにすぐ替える）・行き先を決めた所がめくらないと決めた切り替え（skipTurnTo。裏から戻って今日へ移す時は
+//   開いた時と同じ扱い。ドラッグを落とさずにやめて掴んだ週へ戻す時もこれを使う）
 import { prefersReducedMotion } from '../../../ui/motion'
 
 /** めくる向き（next = 次の期間へ。前のページが右の端から持ち上がり、左の端（綴じ目）を軸に左へめくれる。prev = 前の期間へ。逆向き） */
@@ -23,21 +24,51 @@ export function dragActive(): boolean {
   return typeof document !== 'undefined' && document.querySelector('[data-dnd-dragging]') !== null
 }
 
-/** 次にめくらない時刻（performance.now()）の終わり */
-let skipUntil = 0
+/** skipTurnTo の控えを使わずに捨てるまでの長さ（ms。行き先を替えても期間が替わらなかった時に、後の切り替えまで残さない） */
+export const SKIP_TURN_MS = 5000
 
-/** 次の期間の切り替え（ms の間）をめくらずに替える（裏から戻って今日へ移す時。6.4。開いた時と同じく動かさない） */
-export function skipNextTurn(ms = 1000): void {
-  skipUntil = performance.now() + ms
+/** めくらずに替える次の切り替え（その日を含む期間へ替わる時。skipTurnTo） */
+let skip: { date: string; until: number } | null = null
+
+/**
+ * 次の期間の切り替えが、その日（'YYYY-MM-DD'）を含む期間へ替わる物なら、めくらずにすぐ替える。行き先を替える直前に呼ぶ。
+ * 裏から戻って今日へ移す時（6.4。開いた時と同じく動かさない）・ドラッグを落とさずにやめて掴んだ週へ戻す時（7.11）。
+ * 控えは次の切り替え（モードの切り替えも）で使い切る（時刻ではなく行き先で決めるので、描き直すのが遅くても外れず、その後の
+ * 切り替えも止めない）
+ */
+export function skipTurnTo(date: string): void {
+  skip = { date, until: performance.now() + SKIP_TURN_MS }
 }
 
-/** 今、期間の切り替えをめくってよいか（視差効果を減らす設定・画面が裏にある・ドラッグ中・skipNextTurn の間はめくらない） */
+/** モード・期間が替わるたびに1回呼ぶ。新しい期間（from〜to）が skipTurnTo の日を含めば true（めくらない）。控えはここで使い切る */
+export function takeSkip(from: string, to: string): boolean {
+  const s = skip
+  skip = null
+  return s !== null && performance.now() < s.until && from <= s.date && s.date <= to
+}
+
+/** 今、期間の切り替えをめくってよいか（視差効果を減らす設定・画面が裏にある・ドラッグ中はめくらない） */
 export function canTurn(): boolean {
   if (typeof document === 'undefined') return false
   if (prefersReducedMotion()) return false
   if (document.visibilityState === 'hidden') return false
-  if (dragActive()) return false
-  return performance.now() >= skipUntil
+  return !dragActive()
+}
+
+/** E2E の開発用フック（window.__ds.holdTurns。main.tsx）で、めくり終えても箱を外さないでいるか */
+let held = false
+
+/**
+ * E2E の開発用: true の間は、めくる動きが終わっても（動きの終わり・片付けの時間）めくる箱を外さない。押す・キー・次の切り替えでは
+ * いつもどおりすぐ終える。めくっている途中の絵を、時間に追われずに止めて測るため（e2e/helpers.ts の holdTurns・pauseTurn）
+ */
+export function holdTurnsForTest(on: boolean): void {
+  held = on
+}
+
+/** めくり終えても箱を外さないでいるか（holdTurnsForTest） */
+export function turnsHeld(): boolean {
+  return held
 }
 
 /** 写した物から外す属性（同じ印・id が2つにならない・押せない・フォーカスが来ない・ドラッグの印を持たないように） */
@@ -69,6 +100,12 @@ function strip(el: Element): void {
 export interface TurnClone {
   /** 写した要素（.cal-body の写し。まだどこにも置いていない） */
   el: HTMLElement
+  /**
+   * 写した時の元の枠の幅・高さ（px。スクロールバーを含む）。写しはこの大きさで置く（新しい期間の大きさに伸ばし縮めしない。
+   * S・M のマンスリーは行の数で高さが替わる）
+   */
+  width: number
+  height: number
   /** 写した中のスクロールした要素と、その位置（置いた後に applyScroll で当てる。置く前の要素には当たらない） */
   scrolls: { el: Element; top: number; left: number }[]
 }
@@ -87,7 +124,7 @@ export function cloneForTurn(source: HTMLElement): TurnClone {
     if (s && (s.scrollTop || s.scrollLeft)) scrolls.push({ el: to[i], top: s.scrollTop, left: s.scrollLeft })
     strip(to[i])
   }
-  return { el, scrolls }
+  return { el, width: source.offsetWidth, height: source.offsetHeight, scrolls }
 }
 
 /** 置いた写しに、控えたスクロールの位置を当てる */

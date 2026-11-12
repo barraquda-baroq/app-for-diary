@@ -11,6 +11,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import { App } from './App'
+import { holdTurnsForTest } from './features/calendar/common/pageTurnDom'
 import { afterNextPaint, notifyAppReady } from './launch/launchHook'
 import { actions } from './store/actions'
 import { flushNow, getData, getRaw, initStore, replaceAllData, setTrashClock, startTrashPurge } from './store/appStore'
@@ -75,6 +76,11 @@ if (import.meta.env.DEV) {
       })
     },
     updateApplied: () => updateApplied,
+    /**
+     * 画面のテスト用（e2e/helpers.ts の holdTurns・pauseTurn）: true の間は、期間を移った時のページをめくる動きが終わっても、
+     * めくる箱を外さない（めくっている途中の絵を、時間に追われずに止めて測る）。押す・キーではいつもどおりすぐ終える
+     */
+    holdTurns: holdTurnsForTest,
   }
 }
 

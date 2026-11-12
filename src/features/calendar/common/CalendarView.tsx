@@ -34,7 +34,7 @@ const VIEWS: Record<CalendarMode, ComponentType<ViewProps>> = {
 const FIXED: readonly CalendarMode[] = ['week', 'day']
 
 export function CalendarView({ width, headingId }: { width: WidthClass; headingId?: string }) {
-  const { mode, viewed, from, today } = useCalendarRoute()
+  const { mode, viewed, from, to, today } = useCalendarRoute()
   const nav = useCalendarNav()
   const { openRegister } = useItemSheets()
   const offMode = useCalendarUi((s) => s.offMode)
@@ -64,7 +64,7 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
       <div ref={body} className={`cal-body${swipe ? ' is-swipe' : ''}`} data-testid={testIds.calendarBody}>
         <View mode={mode} viewed={viewed} today={today} width={width} area={area} />
       </div>
-      <PageTurn mode={mode} from={from} body={body} />
+      <PageTurn mode={mode} from={from} to={to} body={body} />
     </div>
   )
 }

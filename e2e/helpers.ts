@@ -439,7 +439,16 @@ export async function turnDone(page: Page): Promise<void> {
 }
 
 /**
+ * on の間は、めくる動きが終わってもめくる箱を外さない（開発用フック window.__ds.holdTurns。押す・キーを打つとすぐ終える）。
+ * pauseTurn の前（期間を移す前）に呼ぶ。ページを開き直すと外れる
+ */
+export async function holdTurns(page: Page, on = true): Promise<void> {
+  await page.evaluate((v) => (window as unknown as { __ds: { holdTurns: (on: boolean) => void } }).__ds.holdTurns(v), on)
+}
+
+/**
  * めくっている途中（動きの長さの frac の所）で、めくる動きを止める（その時の絵を見る・測るため。Web Animations の pause）。
+ * 先に holdTurns を呼んでおく（期間を移してからここまでに動きが終わっても、箱が残るので、動きを戻して止められる）。
  * 止めた後は、押す・キーを打つとめくりが終わる
  */
 export async function pauseTurn(page: Page, frac: number): Promise<void> {
