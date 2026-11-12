@@ -10,6 +10,7 @@ import { todayStr } from '../../../domain/dates'
 import { isCalendarPath, paths } from '../../../routes'
 import { useCalendarUi, usePrefs } from '../../../store/uiStore'
 import { parseCalendarPath, resolveViewed, returnToTodayTarget } from './calendarRoute'
+import { skipTurnTo } from './pageTurnDom'
 import { sheetOf } from './sheets'
 
 /**
@@ -60,7 +61,10 @@ export function useReturnToToday(): void {
       })
       if (!target) return
       ui.setViewed(today)
-      if (target !== pathname) void navigate(target, { replace: true })
+      if (target === pathname) return
+      // 開いた時と同じ扱いなので、ページをめくらずにすぐ替える（PageTurn。3.7。今日を含む期間へ替わる時だけ。描き直すのが遅くても外れない）
+      skipTurnTo(today)
+      void navigate(target, { replace: true })
     }
     document.addEventListener('visibilitychange', onVisibility)
     return () => document.removeEventListener('visibilitychange', onVisibility)

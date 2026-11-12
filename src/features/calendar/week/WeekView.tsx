@@ -5,8 +5,9 @@
 // 記録ごとの React.memo。ドラッグは week/dnd（WeekDnd・useItemDrag・useDayDrop）。WeekDnd が週を描く所を受け持ち（renderWeek）、
 // 掴んだまま左右の端に留まって前後の週へ移った間は、掴んだ週も見えないまま描かせる（frozen。掴んだカードを外さないため。7.11）。
 // 今の週のスクロールする要素は WeekScrollerContext で WeekDnd に渡す（端の自動のスクロールと、左右の端を測る。weekScroller.ts）。
-// 見出し → デイリー・休みのチェック・「＋」→ すばやく足すは useWeekActions（weekActions.ts）。ウィークリーは指でなぞっても週を
-// 移らない（［‹］［›］だけ。カードの操作とぶつかるため。3.7。CalendarView の swipeEnabled が週を外す）
+// 見出し → デイリー・休みのチェック・「＋」→ すばやく足すは useWeekActions（weekActions.ts）。S・M の指で横になぞると前後の週へ
+// （ほかのモードと同じ。22. の段階2の終わりの確かめ。画面の枠 common/CalendarView の useSwipe。カードは長押ししてから動かすと掴み、
+// すぐ横へ払うとなぞる。すばやく足すで文字を打っている間・ドラッグ中はなぞっても移らない）
 import { useCallback, useMemo, useRef, type RefObject } from 'react'
 import { addDaysYmd, weekStartOf } from '../../../domain/dates'
 import { useCalendarData } from '../common/parts'

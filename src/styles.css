@@ -66,6 +66,7 @@
   --dur-flash: 1200ms; /* 移った先・押した区切りを目立たせる */
   --dur-shake: 240ms; /* ロック中で掴めない時の揺れ */
   --dur-toast: 160ms; /* お知らせが出る・消える */
+  --dur-turn: 420ms; /* 期間を移った時にページをめくる（src/features/calendar/common/frame.css の .cal-turn） */
 
   /* 大きさ */
   --header-h: 52px;

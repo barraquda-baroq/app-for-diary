@@ -781,6 +781,7 @@ describe('動きの長さと小さな画面の題（docs/SPEC.md の 4.9・4.7�
     ['--dur-flash', '1200ms'],
     ['--dur-shake', '240ms'],
     ['--dur-toast', '160ms'],
+    ['--dur-turn', '420ms'],
   ])('4.9 の表: %s は %s', (name, value) => {
     expect(VARS.white.get(name)).toBe(value)
     // 外観で変えない

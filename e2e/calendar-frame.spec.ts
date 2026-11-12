@@ -1,10 +1,22 @@
 // カレンダーの枠の E2E（docs/SPEC.md の 3.1・3.3〜3.5・3.7・3.8・6.4・7.3・7.12）: 行き先と履歴（積む・置き換える・戻る）、
 // 正しくない行き先・日曜でない週、前回のモード、左のアイコン、高さ（L はページがスクロールしない・S・M の週と日は固定）、
-// 0時を過ぎた時の今日の印、裏から戻って6時間、登録・詳細の小さな画面と「戻る」・Esc、スワイプ。
+// 0時を過ぎた時の今日の印、裏から戻って6時間、登録・詳細の小さな画面と「戻る」・Esc、スワイプ、期間を移った時にページをめくる動き。
 // 今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。モードの画面の中身は各モードの担当の E2E で確かめる
 import { expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, longPressDrag, noHorizontalScroll, openCalendar, seed, touchSwipe } from './helpers'
+import {
+  collectDiagnosticsOnFailure,
+  holdTurns,
+  longPressDrag,
+  noHorizontalScroll,
+  openCalendar,
+  pauseTurn,
+  recordTurns,
+  seed,
+  touchSwipe,
+  turnDone,
+  turnsOf,
+} from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -184,6 +196,122 @@ test.describe('操作の列（PC。3.7・9.5）', { tag: ['@pc'] }, () => {
     await expect(off).toHaveAttribute('aria-pressed', 'false')
   })
 
+  test('［›］［‹］・［今日］・前後の月の日で期間を移るとページをめくり（次へ・前へ）、モードを替えた時はめくらない。めくる間も本物の画面は1つで、めくり終えると押せる（3.7・4.9。22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
+    await recordTurns(page)
+    // 止めて見る間、めくり終えても箱を外さない（押すとすぐ終える）
+    await holdTurns(page)
+    await page.getByTestId('cal-next').click()
+    await at(page, '/month/2026-12')
+    // めくる箱は読み上げに出さず押せない。写した前の期間には、テストの印が残らない
+    const turn = page.locator('.cal-turn')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
+    await pauseTurn(page, 0.3)
+    await expect(turn).toHaveAttribute('aria-hidden', 'true')
+    await expect(turn).toHaveAttribute('inert', '')
+    await expect(turn).toHaveCSS('pointer-events', 'none')
+    expect(await turn.locator('[data-testid]').count()).toBe(0)
+    await expect(page.getByTestId('view-month')).toHaveCount(1)
+    // 押すとすぐめくり終える（押した物はそのまま押せる）
+    await page.getByTestId('cal-prev').click()
+    await at(page, '/month/2026-11')
+    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
+    await expect(turn).toHaveCount(1)
+    await holdTurns(page, false)
+    await page.keyboard.press('Shift')
+    await turnDone(page)
+    // ［今日］: 期間が替わらない時はめくらない、替わる時はめくる
+    await page.getByTestId('cal-today').click()
+    await page.getByTestId('cal-mode-week').click()
+    await at(page, '/week/2026-11-08')
+    await page.getByTestId('cal-mode-day').click()
+    await page.getByTestId('cal-mode-year').click()
+    await at(page, '/year/2026')
+    await page.waitForTimeout(500)
+    expect(await turnsOf(page)).toEqual(['next', 'prev'])
+    await page.getByTestId('cal-mode-month').click()
+    await page.getByTestId('cal-prev').click()
+    await at(page, '/month/2026-10')
+    await turnDone(page)
+    await page.getByTestId('cal-today').click()
+    await at(page, '/month/2026-11')
+    // マンスリーの前後の月の日（同じモードの中の行き来）もめくる
+    await turnDone(page)
+    await page.getByTestId('month-cell-2026-12-05').locator('.mo-hit').click()
+    await at(page, '/month/2026-12')
+    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev', 'prev', 'next', 'next'])
+    // めくり終えると、新しい期間のマスを押せる（デイリーへ）
+    await turnDone(page)
+    await page.getByTestId('month-cell-2026-12-01').locator('.mo-hit').click()
+    await at(page, '/day/2026-12-01')
+  })
+
+  test('視差効果を減らす設定ではページをめくらず、すぐ替わる（4.9）', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+    await recordTurns(page)
+    await page.getByTestId('cal-next').click()
+    await at(page, '/week/2026-11-15')
+    await page.getByTestId('cal-prev').click()
+    await at(page, '/week/2026-11-08')
+    await page.waitForTimeout(300)
+    expect(await turnsOf(page)).toEqual([])
+    await expect(page.locator('.cal-turn')).toHaveCount(0)
+  })
+
+  test('CPU が遅く（4倍）、めくり始めるのが遅れても、イヤーのめくる動きは最後まで動いてから片付く（途中で切らない。3.7）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/year/2026', { data: demoData() })
+    const cdp = await page.context().newCDPSession(page)
+    // めくる箱ごとに、ページのめくる動きが終わった（animationend）か・箱を外した時にもう終わっていたかを控える
+    await page.evaluate(() => {
+      const w = window as unknown as { __e2eTurnEnds: { ended: boolean; endedBeforeRemoved: boolean | null }[] }
+      w.__e2eTurnEnds = []
+      let cur: { ended: boolean; endedBeforeRemoved: boolean | null } | null = null
+      document.addEventListener(
+        'animationend',
+        (e) => {
+          if (cur && (e.animationName === 'cal-turn-out' || e.animationName === 'cal-turn-in')) cur.ended = true
+        },
+        true,
+      )
+      new MutationObserver((list) => {
+        for (const m of list) {
+          for (const n of m.addedNodes)
+            if (n instanceof HTMLElement && n.classList.contains('cal-turn')) {
+              cur = { ended: false, endedBeforeRemoved: null }
+              w.__e2eTurnEnds.push(cur)
+            }
+          for (const n of m.removedNodes)
+            if (n instanceof HTMLElement && n.classList.contains('cal-turn') && cur) cur.endedBeforeRemoved = cur.ended
+        }
+      }).observe(document.querySelector('[data-testid="calendar"]')!, { childList: true })
+    })
+    await recordTurns(page)
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+    try {
+      // 行き先は描き直す前に替わるので、めくる箱が置かれるのを待ってから、めくり終えるのを待つ
+      await page.getByTestId('cal-next').click()
+      await at(page, '/year/2027')
+      await expect.poll(() => turnsOf(page)).toEqual(['next'])
+      await turnDone(page)
+      await page.getByTestId('cal-prev').click()
+      await at(page, '/year/2026')
+      await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
+      await turnDone(page)
+    } finally {
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+    }
+    const ends = await page.evaluate(() => (window as unknown as { __e2eTurnEnds: unknown[] }).__e2eTurnEnds)
+    expect(ends).toEqual([
+      { ended: true, endedBeforeRemoved: true },
+      { ended: true, endedBeforeRemoved: true },
+    ])
+  })
+
   test('マウスで左右になぞっても期間は移らない（スワイプは指だけ。FRAME-075）', async ({ page }) => {
     await openCalendar(page, '/month/2026-11')
     const box = await page.getByTestId('calendar-body').boundingBox()
@@ -333,7 +461,7 @@ test.describe('スマホ（S）の枠', { tag: ['@s'] }, () => {
     await checkFixedHeights(page)
   })
 
-  test('マンスリーで左へなぞると次の月、右へなぞると前の月（置き換える）。週はなぞっても移らない。縦にスクロールしても移らない', async ({
+  test('マンスリーで左へなぞると次の月、右へなぞると前の月（置き換える）。週もなぞると前後の週へ（22. の段階2の終わりの確かめ）。縦にスクロールしても移らない', async ({
     page,
   }) => {
     await openCalendar(page, '/week/2026-11-08')
@@ -358,8 +486,74 @@ test.describe('スマホ（S）の枠', { tag: ['@s'] }, () => {
     await page.goBack()
     await at(page, '/week/2026-11-08')
     await touchSwipe(page, page.getByTestId('calendar-body'), -150, 0)
-    await page.waitForTimeout(200)
+    await at(page, '/week/2026-11-15')
+    await touchSwipe(page, page.getByTestId('calendar-body'), 150, 4)
     await at(page, '/week/2026-11-08')
+  })
+
+  test('幅 360px でページをめくっている途中も、ページ・カレンダーの区切りは横にスクロールしない（めくれた端は切る）', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 780 })
+    for (const path of ['/month/2026-11', '/week/2026-11-08', '/year/2026', '/day/2026-11-10']) {
+      await openCalendar(page, path, { data: demoData() })
+      await holdTurns(page)
+      for (const [dir, frac] of [
+        ['next', 0.2],
+        ['prev', 0.5],
+      ] as const) {
+        await page.getByTestId(`cal-${dir}`).click()
+        await pauseTurn(page, frac)
+        await noHorizontalScroll(page)
+        const body = await page.getByTestId('calendar-body').evaluate((e) => ({ scroll: e.scrollWidth, client: e.clientWidth }))
+        expect(body.scroll, `${path} ${dir}`).toBeLessThanOrEqual(body.client)
+        // めくる箱は .cal-body と同じ所・大きさ
+        const turn = page.locator('.cal-turn')
+        const [a, b] = await Promise.all([turn.boundingBox(), page.getByTestId('calendar-body').boundingBox()])
+        expect(a && b && Math.abs(a.x - b.x) + Math.abs(a.width - b.width), `${path} ${dir}`).toBeLessThanOrEqual(1)
+        // めくれた端は箱で切る（箱の外の操作の列・ヘッダーの上に描かない。横のはみ出しは外の箱でも隠れるので、切り方そのものを見る）
+        const clip = await turn.evaluate((e) => ({ x: getComputedStyle(e).overflowX, contain: getComputedStyle(e).contain }))
+        expect(['clip', 'hidden'], `${path} ${dir}`).toContain(clip.x)
+        expect(clip.contain, `${path} ${dir}`).toContain('paint')
+        await page.keyboard.press('Shift')
+        await turnDone(page)
+      }
+    }
+  })
+
+  test('マンスリーで行の数が替わる時も、めくるページは写した時の大きさのまま（新しい月の高さに伸ばし縮めしない。3.7）', async ({
+    page,
+  }) => {
+    // 2026年12月は5行、2027年1月は6行
+    await openCalendar(page, '/month/2026-12', { data: demoData() })
+    await holdTurns(page)
+    const heightOf = (sel: string) =>
+      page.locator(sel).evaluate((e) => ({ h: (e as HTMLElement).offsetHeight, scroll: e.scrollHeight, client: e.clientHeight }))
+    const dec = (await heightOf('[data-testid="calendar-body"]')).h
+    await page.getByTestId('cal-next').click()
+    await at(page, '/month/2027-01')
+    await pauseTurn(page, 0.3)
+    const jan = (await heightOf('[data-testid="calendar-body"]')).h
+    expect(jan).toBeGreaterThan(dec)
+    // 次へ: めくれていく 12月は 12月の高さのまま（下の 1月の6行目は、めくる間もそのまま見える）。箱は 1月の高さ
+    const out = await heightOf('.cal-turn-page.is-out .cal-turn-body')
+    expect(out.h).toBe(dec)
+    expect(out.scroll).toBeLessThanOrEqual(out.client)
+    expect((await heightOf('.cal-turn-page.is-out')).h).toBe(dec)
+    expect((await heightOf('.cal-turn')).h).toBe(jan)
+    await page.keyboard.press('Shift')
+    await turnDone(page)
+    // 前へ: 下に敷く 1月は 1月の高さのまま（縮めて中だけでスクロールする箱にしない）。めくれて来る 12月は 12月の高さ
+    await page.getByTestId('cal-prev').click()
+    await at(page, '/month/2026-12')
+    await pauseTurn(page, 0.5)
+    const under = await heightOf('.cal-turn-page.is-under .cal-turn-body')
+    expect(under.h).toBe(jan)
+    expect(under.scroll).toBeLessThanOrEqual(under.client)
+    expect((await heightOf('.cal-turn-page.is-in .cal-turn-body')).h).toBe(dec)
+    expect((await heightOf('.cal-turn')).h).toBe(dec)
+    await page.keyboard.press('Shift')
+    await turnDone(page)
   })
 
   test('モードの画面の中だけでスクロールする所（デイリーの区切りなど）の上でも、なぞると前後の日へ。その所の縦のスクロールはそのまま', async ({
@@ -408,6 +602,20 @@ test.describe('スマホ（S）の枠', { tag: ['@s'] }, () => {
 })
 
 test.describe('タブレット（M）の枠', { tag: ['@m'] }, () => {
+  test('ウィークリー（7日を横。段の中だけ縦にスクロールする）でも、カードの上から左へなぞると次の週、右へなぞると前の週（ページをめくる。3.7・10.5。22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+    await recordTurns(page)
+    await touchSwipe(page, page.getByTestId(`week-card-${DEMO_IDS.dinner}`), -200, 4)
+    await at(page, '/week/2026-11-15')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
+    await turnDone(page)
+    await touchSwipe(page, page.getByTestId('calendar-body'), 200, 0)
+    await at(page, '/week/2026-11-08')
+    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
+  })
+
   test('ウィークリー・デイリーは高さを固定し、マンスリーは中身の高さ。下のリストはページのスクロールで届く（FRAME-043・044）', async ({
     page,
   }) => {
@@ -417,6 +625,22 @@ test.describe('タブレット（M）の枠', { tag: ['@m'] }, () => {
 })
 
 test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
+  test('ウィークリーで左へなぞると次の週へ（ページをめくる）、右へなぞると前の週へ（22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+    await recordTurns(page)
+    const card = page.getByTestId(`week-card-${DEMO_IDS.dinner}`)
+    await card.scrollIntoViewIfNeeded()
+    await touchSwipe(page, card, -140, 4)
+    await at(page, '/week/2026-11-15')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
+    await turnDone(page)
+    await touchSwipe(page, page.getByTestId('calendar-body'), 140, 0)
+    await at(page, '/week/2026-11-08')
+    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
+  })
+
   test('登録・詳細のシートは「戻る」で閉じ、モード・期間はそのまま（FRAME-015）', async ({ page }) => {
     await openCalendar(page, '/day/2026-11-10', { data: demoData() })
     await page.getByTestId('cal-add').click()

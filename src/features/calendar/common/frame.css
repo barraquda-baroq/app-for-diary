@@ -3,6 +3,8 @@
    ヘッダー・切り替えの列の高さから決めるので src/features/top/top.css */
 
 .cal {
+  /* 期間を移った時にめくるページ（.cal-turn）を .cal-body の上に置く所 */
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -108,13 +110,146 @@
   padding: 0 16px 16px;
 }
 
-/* S・M のイヤー・マンスリー・デイリーは指で左右になぞると前後の期間へ（3.7）。縦のスクロールはブラウザに任せ、横の動きだけを
+/* S・M はどのモードでも指で左右になぞると前後の期間へ（3.7）。縦のスクロールはブラウザに任せ、横の動きだけを
    受け取る（useSwipe.ts）。モードの画面の中の、中だけでスクロールする所（デイリーの区切り・タイムスケジュールなど）にも同じ値を
    付ける: touch-action はいちばん近いスクロールする箱で区切られるので、そこが既定（auto）のままだと、その上で横になぞった時に
    ブラウザが横のスクロールとして受け取り（pointercancel）、前後へ移らない。:where で強さを 0 にし、モードの画面が自分で決めた値を勝たせる */
 .cal-body.is-swipe,
 :where(.cal-body.is-swipe *) {
   touch-action: pan-y pinch-zoom;
+}
+
+/* ---------- 期間を移った時にページをめくる（3.7・4.9。src/features/calendar/common/PageTurn.tsx） ----------
+   .cal-body と同じ所・大きさの箱（.cal-turn）に、写した .cal-body を1枚のページ（.cal-turn-page）にして置き、左の端（綴じ目）を軸に
+   奥行きを付けて回す。次へ: 前の期間のページ（is-out）が右の端から持ち上がって左へめくれ、下の本物の新しい期間が見えてくる。
+   前へ: 前の期間のページ（is-under。動かない）の上へ、新しい期間のページ（is-in）が左からめくれて来る。
+   箱の外へはみ出すめくれた端は切る（ページ・.cal-body を横にスクロールさせない。ヘッダー・操作の列の上にも出さない）。箱は新しい
+   期間の .cal-body の大きさなので、前の期間の方が高い時（S・M のマンスリーの6行から5行へ）は、前の期間の下の行がめくる間だけ
+   切れる（今の作りの限界。3.7）。押せず（pointer-events: none・inert）、
+   読み上げにも出ない（aria-hidden）。動かすのは transform と opacity だけ。長さは --dur-turn（420ms）・ease-out。
+   視差効果を減らす設定ではめくらない（PageTurn が箱を置かない） */
+.cal-turn {
+  position: absolute;
+  /* カレンダーの中の重なり（いちばん上の 3）より上。上に固定したヘッダー（20）・切り替えの列（15）より下 */
+  z-index: 4;
+  overflow: hidden;
+  overflow: clip;
+  /* 奥行きを付けて回す中身も、この箱で切る（WebKit でも。overflow だけでは切れない版がある） */
+  contain: paint;
+  pointer-events: none;
+}
+
+.cal-turn-page {
+  /* 下に敷くページ（is-under）は箱いっぱい。めくれるページ（is-out・is-in）は PageTurn が写した大きさを付ける */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* 1枚ずつ重なりをまとめる（下のページの中の z-index の付いた物が、上へめくれて来るページの上に出ないように） */
+  isolation: isolate;
+  background: var(--surface);
+  transform-origin: 0 50%;
+  backface-visibility: hidden;
+}
+
+/* めくれるページの影（4.4-3 の「カレンダーには影を付けない」の例外。持ち上がったページだけ。src/calendarCss.test.ts）。
+   影の濃さは不透明度で動かす（box-shadow そのものは動かさない） */
+.cal-turn-page.is-out::before,
+.cal-turn-page.is-in::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: var(--shadow-lift);
+  opacity: 0;
+}
+
+.cal-turn-page.is-out {
+  will-change: transform;
+  animation: cal-turn-out var(--dur-turn) ease-out forwards;
+}
+
+.cal-turn-page.is-in {
+  will-change: transform;
+  animation: cal-turn-in var(--dur-turn) ease-out both;
+}
+
+.cal-turn-page.is-out::before {
+  animation: cal-turn-lift var(--dur-turn) ease-out forwards;
+}
+
+.cal-turn-page.is-in::before {
+  animation: cal-turn-lift var(--dur-turn) ease-out reverse both;
+}
+
+/* 写した .cal-body（左上に、写した時の元の大きさで置く（PageTurn が幅・高さを付ける。新しい期間の大きさに伸ばし縮めしない）。
+   写した中の動き・移り変わりは止め、写した時の見た目のまま） */
+.cal-turn-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+}
+
+.cal-turn-body,
+.cal-turn-body * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* めくれていくほど、持ち上がった端の側を少し暗くする（地の色は変えず、--backdrop を薄く重ねる） */
+.cal-turn-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to left, var(--backdrop), transparent 70%);
+  opacity: 0;
+}
+
+.cal-turn-page.is-out .cal-turn-shade {
+  animation: cal-turn-shade var(--dur-turn) ease-out forwards;
+}
+
+.cal-turn-page.is-in .cal-turn-shade {
+  animation: cal-turn-shade var(--dur-turn) ease-out reverse both;
+}
+
+@keyframes cal-turn-out {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(-90deg);
+  }
+}
+
+@keyframes cal-turn-in {
+  from {
+    transform: rotateY(-90deg);
+  }
+  to {
+    transform: rotateY(0deg);
+  }
+}
+
+@keyframes cal-turn-lift {
+  from {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cal-turn-shade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.5;
+  }
 }
 
 /* ---------- S（599px まで）: 操作の列を2行にし（1行目に左の物、2行目に右の物）、360px に収める（3.7）。物の間は L・M と同じ

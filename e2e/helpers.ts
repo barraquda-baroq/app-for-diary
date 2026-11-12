@@ -408,6 +408,61 @@ export async function touchSwipe(
   else await syntheticTouch(page, points, 0, stepMs)
 }
 
+// ---------- 段階2: 期間を移った時にページをめくる（docs/SPEC.md の 3.7・4.9。src/features/calendar/common/PageTurn.tsx） ----------
+
+/**
+ * これから置かれるめくる箱（.cal-turn）の向き（next・prev）を、置かれるたびに控え始める（turnsOf で読む）。カレンダーを開いた後に呼ぶ
+ * （めくる箱はカレンダーの区切り（calendar）のすぐ下に置かれ、めくり終えると外れる）
+ */
+export async function recordTurns(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __e2eTurns: string[] }
+    w.__e2eTurns = []
+    const cal = document.querySelector('[data-testid="calendar"]')
+    if (!cal) throw new Error('カレンダーがありません')
+    new MutationObserver((list) => {
+      for (const m of list)
+        for (const n of m.addedNodes)
+          if (n instanceof HTMLElement && n.classList.contains('cal-turn')) w.__e2eTurns.push(n.dataset.turn ?? '')
+    }).observe(cal, { childList: true })
+  })
+}
+
+/** recordTurns から置かれためくる箱の向き（置かれた順） */
+export function turnsOf(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __e2eTurns?: string[] }).__e2eTurns ?? [])
+}
+
+/** めくり終えた（めくる箱が無い）まで待つ */
+export async function turnDone(page: Page): Promise<void> {
+  await expect(page.locator('.cal-turn')).toHaveCount(0)
+}
+
+/**
+ * on の間は、めくる動きが終わってもめくる箱を外さない（開発用フック window.__ds.holdTurns。押す・キーを打つとすぐ終える）。
+ * pauseTurn の前（期間を移す前）に呼ぶ。ページを開き直すと外れる
+ */
+export async function holdTurns(page: Page, on = true): Promise<void> {
+  await page.evaluate((v) => (window as unknown as { __ds: { holdTurns: (on: boolean) => void } }).__ds.holdTurns(v), on)
+}
+
+/**
+ * めくっている途中（動きの長さの frac の所）で、めくる動きを止める（その時の絵を見る・測るため。Web Animations の pause）。
+ * 先に holdTurns を呼んでおく（期間を移してからここまでに動きが終わっても、箱が残るので、動きを戻して止められる）。
+ * 止めた後は、押す・キーを打つとめくりが終わる
+ */
+export async function pauseTurn(page: Page, frac: number): Promise<void> {
+  await page.locator('.cal-turn-page.is-out, .cal-turn-page.is-in').first().waitFor({ state: 'attached' })
+  await page.evaluate((f) => {
+    for (const a of document.getAnimations()) {
+      const target = (a.effect as KeyframeEffect | null)?.target
+      if (!target?.closest('.cal-turn')) continue
+      a.pause()
+      a.currentTime = 420 * f
+    }
+  }, frac)
+}
+
 // ---------- 段階2: 途中で止められるドラッグ（ウィークリーのドラッグ。掴んでいる間の様子を見る・撮る。WP11） ----------
 
 /** 掴んだまま止めているドラッグ。moveTo で動かし、drop で離す（drop の後は使わない） */

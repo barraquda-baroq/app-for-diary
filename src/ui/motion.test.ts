@@ -1,7 +1,17 @@
 // 動きの共通の決まり（docs/SPEC.md の 4.9）: 視差効果を減らす設定では、なめらかなスクロールをやめる。
 // 目立たせる枠・ロック中の揺れ・その代わりのロックの印の色を、決まった時間だけ付けて外す
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FLASH_MS, LOCK_ACCENT_MS, SHAKE_MS, flash, prefersReducedMotion, scrollBehavior, shake, vibrate15 } from './motion'
+import {
+  FLASH_MS,
+  LOCK_ACCENT_MS,
+  SHAKE_MS,
+  TURN_MS,
+  flash,
+  prefersReducedMotion,
+  scrollBehavior,
+  shake,
+  vibrate15,
+} from './motion'
 
 const original = window.matchMedia
 
@@ -46,8 +56,8 @@ describe('目立たせる・揺らす（4.9）', () => {
     vi.useRealTimers()
   })
 
-  it('時間は 1,200ms・240ms・600ms', () => {
-    expect([FLASH_MS, SHAKE_MS, LOCK_ACCENT_MS]).toEqual([1200, 240, 600])
+  it('時間は 1,200ms・240ms・600ms・ページをめくる 420ms（--dur-turn）', () => {
+    expect([FLASH_MS, SHAKE_MS, LOCK_ACCENT_MS, TURN_MS]).toEqual([1200, 240, 600, 420])
   })
 
   it.each([false, true])('目立たせる枠は 1.2秒付けて外す（視差効果を減らす設定 %s でも同じ時間。FRAME-231・236）', (reduce) => {

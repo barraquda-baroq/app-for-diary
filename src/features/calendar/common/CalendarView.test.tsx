@@ -1,6 +1,7 @@
 // カレンダーの領域（docs/SPEC.md の 3.4・3.5・3.7・6.4・7.3）: モードの画面に渡す物（ViewProps。領域の大きさは ResizeObserver）、
-// S・M のウィークリー・デイリーの高さの固定、スワイプ（S・M の指だけ・週はしない）、0時を過ぎた時は今日の印だけが移ること、
-// 裏から戻って6時間たった時に今日へ移ること、最後の操作の時刻。モードの画面は受け取った物を出すだけの物に差し替えて確かめる
+// S・M のウィークリー・デイリーの高さの固定、スワイプ（S・M の指だけ。どのモードでも）、期間を移った時にページをめくること、
+// 0時を過ぎた時は今日の印だけが移ること、裏から戻って6時間たった時に今日へ移ること（めくらない）、最後の操作の時刻。
+// モードの画面は受け取った物を出すだけの物に差し替えて確かめる（めくる部品そのものは PageTurn.test.tsx）
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -97,7 +98,7 @@ describe('高さ（3.4・3.5。D15）', () => {
   })
 })
 
-describe('スワイプ（3.7。S・M のイヤー・マンスリー・デイリーの指だけ）', () => {
+describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', () => {
   it('S のマンスリーで左へ 60px 以上なぞると次の月、右へなぞると前の月（置き換える）', async () => {
     const { router } = await renderAt('/month/2026-11', { width: 'S' })
     const body = screen.getByTestId('calendar-body')
@@ -150,17 +151,117 @@ describe('スワイプ（3.7。S・M のイヤー・マンスリー・デイリ�
     expect(router.state.location.pathname).toBe('/month/2026-12')
   })
 
-  it('ウィークリーと L ではスワイプしない（FRAME-074・075）', async () => {
+  it('ウィークリーも S・M ではなぞると前後の週へ（置き換える。22. の段階2の終わりの確かめ。左へなぞる＝次の週）', async () => {
     const week = await renderAt('/week/2026-11-08', { width: 'S' })
-    expect(screen.getByTestId('calendar-body').classList.contains('is-swipe')).toBe(false)
+    expect(screen.getByTestId('calendar-body').classList.contains('is-swipe')).toBe(true)
     drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
-    expect(week.router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(week.router.state.location.pathname).toBe('/week/2026-11-15')
+    expect(week.router.state.historyAction).toBe('REPLACE')
+    drag(screen.getByTestId('calendar-body'), [100, 400], [300, 400])
+    drag(screen.getByTestId('calendar-body'), [100, 400], [300, 400])
+    expect(week.router.state.location.pathname).toBe('/week/2026-11-01')
     week.unmount()
 
+    const tablet = await renderAt('/week/2026-11-08', { width: 'M' })
+    drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
+    expect(tablet.router.state.location.pathname).toBe('/week/2026-11-15')
+  })
+
+  it('文字を打っている間（入力欄にフォーカス）・入力欄の上から・横にスクロールできる所の上から・ドラッグ中はなぞっても移らない', async () => {
+    const { router } = await renderAt('/week/2026-11-08', { width: 'S' })
+    const body = screen.getByTestId('calendar-body')
+    const view = screen.getByTestId('view-week')
+    // すばやく足すの入力欄の代わり
+    const input = document.createElement('input')
+    view.appendChild(input)
+    act(() => input.focus())
+    drag(body, [300, 400], [100, 400])
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // 入力欄の上から押した時（フォーカスが無くても）
+    act(() => input.blur())
+    drag(input, [300, 400], [100, 400])
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // 横にスクロールできる所の上から
+    const wide = document.createElement('div')
+    wide.style.overflowX = 'auto'
+    Object.defineProperty(wide, 'scrollWidth', { configurable: true, value: 800 })
+    Object.defineProperty(wide, 'clientWidth', { configurable: true, value: 300 })
+    const inner = document.createElement('span')
+    wide.appendChild(inner)
+    view.appendChild(wide)
+    drag(inner, [300, 400], [100, 400])
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // ドラッグ中（dnd-kit が掴んだ物に付ける印）
+    const grabbed = document.createElement('div')
+    grabbed.setAttribute('data-dnd-dragging', '')
+    view.appendChild(grabbed)
+    drag(body, [300, 400], [100, 400])
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    grabbed.remove()
+    // チェックの欄（押すだけの物）の上からはなぞれる
+    const check = document.createElement('input')
+    check.type = 'checkbox'
+    view.appendChild(check)
+    drag(check, [300, 400], [100, 400])
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+  })
+
+  it('L ではスワイプしない（FRAME-075）', async () => {
     const wide = await renderAt('/month/2026-11', { width: 'L' })
     expect(screen.getByTestId('calendar-body').classList.contains('is-swipe')).toBe(false)
     drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
     expect(wide.router.state.location.pathname).toBe('/month/2026-11')
+  })
+})
+
+describe('期間を移った時にページをめくる（3.7・4.9。22. の段階2の終わりの確かめ）', () => {
+  /** めくっているページの箱（無ければ null） */
+  const turn = () => screen.getByTestId('calendar').querySelector<HTMLElement>('.cal-turn')
+
+  it('［›］は次へ（is-next）、［‹］は前へ（is-prev）めくる。めくる箱は .cal-body の横に置き、読み上げに出さず押せない', async () => {
+    const user = userEvent.setup()
+    await renderAt('/month/2026-11')
+    expect(turn()).toBeNull()
+    await user.click(screen.getByTestId('cal-next'))
+    expect(turn()?.dataset.turn).toBe('next')
+    expect(turn()?.getAttribute('aria-hidden')).toBe('true')
+    expect(turn()?.hasAttribute('inert')).toBe(true)
+    expect(turn()?.previousElementSibling).toBe(screen.getByTestId('calendar-body'))
+    expect(screen.getByTestId('calendar').dataset.turning).toBe('next')
+    // 写した前の期間には、テストの印が残らない（本物の画面の印は1つのまま）
+    expect(screen.getAllByTestId('view-month')).toHaveLength(1)
+    expect(turn()?.textContent).toContain('"viewed":"2026-11-10"')
+    await user.click(screen.getByTestId('cal-prev'))
+    expect(screen.getByTestId('calendar').querySelectorAll('.cal-turn')).toHaveLength(1)
+    expect(turn()?.dataset.turn).toBe('prev')
+  })
+
+  it('モードを替えた時・［今日］で期間が替わらない時はめくらない。［今日］で期間が替わる時はめくる', async () => {
+    const user = userEvent.setup()
+    await renderAt('/month/2026-11')
+    await user.click(screen.getByTestId('cal-mode-week'))
+    expect(turn()).toBeNull()
+    await user.click(screen.getByTestId('cal-today'))
+    expect(turn()).toBeNull()
+    await user.click(screen.getByTestId('cal-next'))
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(turn()).toBeNull()
+    await user.click(screen.getByTestId('cal-today'))
+    expect(turn()?.dataset.turn).toBe('prev')
+  })
+
+  it('なぞって移った時もめくる（S のウィークリー）', async () => {
+    await renderAt('/week/2026-11-08', { width: 'S' })
+    drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
+    expect(turn()?.dataset.turn).toBe('next')
+  })
+
+  it('視差効果を減らす設定ではめくらない（すぐ替える。4.9）', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderAt('/month/2026-11', { reducedMotion: true })
+    await user.click(screen.getByTestId('cal-next'))
+    expect(router.state.location.pathname).toBe('/month/2026-12')
+    expect(turn()).toBeNull()
   })
 })
 
@@ -216,10 +317,11 @@ describe('裏から戻って6時間（6.4。FRAME-278・CALENDAR-030）', () => 
     return r
   }
 
-  it('6時間たって、見ている期間が前の今日を含んでいれば、新しい今日を含む期間へ置き換える', async () => {
+  it('6時間たって、見ている期間が前の今日を含んでいれば、新しい今日を含む期間へ置き換える（開いた時と同じく、ページはめくらない）', async () => {
     const { router } = await leaveAndReturn('/day/2026-11-10', 6 * HOUR)
     expect(router.state.location.pathname).toBe('/day/2026-11-11')
     expect(router.state.historyAction).toBe('REPLACE')
+    expect(screen.getByTestId('calendar').querySelector('.cal-turn')).toBeNull()
     expect(useCalendarUi.getState().viewed).toBe('2026-11-11')
     setVisibility('visible')
   })
