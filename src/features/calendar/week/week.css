@@ -1143,6 +1143,26 @@
   height: 20px;
 }
 
+/* 指の端末・S・M は、押せる所を上へ広げて 18 × 34px に（::before。見た目は変えない。下は週の終わり）。広げた所の右は 1px 手前で
+   止める（すぐ右の「＋」の行は矢印の右の端に接していて、押した所の端数でその 1px の列を取らないように）。上の半分の上の端には、
+   別のレーンの締め切り日のレールの●（7.8 の 28px。z-index: 1）が来ることがある（土曜の半分が「＋」の行だけの時）ので、矢印は
+   重なりの順を上げず（z-index: auto。半分の中では後ろに描くので、半分の地には勝つ）、●と重なる所はどのレーンの●も勝つ（●の
+   押せる所は変わらない）。隣のレーンの矢印と重なる所は、今までどおり DOM で後ろの矢印が勝つ（4.11。開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-edge.is-down {
+    z-index: auto;
+  }
+
+  .wk-edge.is-down::before {
+    content: '';
+    position: absolute;
+    top: calc(100% - var(--tap));
+    right: 1px;
+    bottom: 0;
+    left: 0;
+  }
+}
+
 .wk-edge.is-down .wk-edge-glyph {
   rotate: 90deg;
 }

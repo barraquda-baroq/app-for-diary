@@ -3,7 +3,8 @@
 //   1400 のどれでも横にスクロールしない（ページも、カレンダーの領域や小さな画面の中のスクロールする所も）
 // - L は、予定を 60件入れた週・日でもページ全体がスクロールせず、カレンダーの下が切れない（カレンダーの領域の中だけ）
 // - 指で操作する端末では、押せる所が 34px 以上（区切りの中の大きさが勝つ所は D08 の例外。下の SMALL_OK に1つずつ理由を書く）。
-//   ::before で広げた所（日付の見出し・受けた表示の中の●・「＞」）と小さな月の名前は、隣の押せる物の押せる所を取らない
+//   ::before で広げた所（日付の見出し・受けた表示の中の●・「＞」・7日を縦の下向きの矢印）と小さな月の名前は、隣の押せる物の押せる所を
+//   取らない
 // - ディープダーク: 区分は位置とアイコン、休みは「休」の字、完了は斜線と✓、今日は太さ・輪でも分かる
 // - Tab で日の見出し・カード・丸・●・数字のボタンへ動け、どれにも見える枠が出る（マンスリーのマス目は Tab で1つだけ止まる）
 // 各モードの中身は各モードの担当の E2E（month・week・day・year・item の spec）で確かめる。データは作り物の
@@ -12,7 +13,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { testIds } from '../src/features/calendar/common/testIds'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS as I, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, openCalendar, openItemMore, sheetReady } from './helpers'
+import { collectDiagnosticsOnFailure, openCalendar, openItemMore, seedData, sheetReady } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -251,12 +252,13 @@ interface SmallOk {
  * 指で操作する端末で、押せる所が 34px より小さくてよい所（D08・確かめ A9: 区切りの中の大きさが勝ち、隣と重ならない時だけ 34px に
  * 広げる）。どれも docs/SPEC.md の 4.11 の表の決めた例外（34px に届かないまま表に無い所は無い）。
  * 大きさは押せる所を測った値（ブラウザが押した点の要素を返す範囲。::before・::after で広げた所も入る）。字の高さで決まる所は、
- * iPhone（WebKit）の字の高さの差を見込んで、Chromium で測った値より 1px 低くしてある
+ * iPhone（WebKit）の字の高さの差を見込んで、Chromium で測った値より 1px 低くしてある。表の大きさより低くしてある所は、その行に書く
  */
 const SMALL_OK: readonly SmallOk[] = [
-  // ウィークリーの1日のカードの丸: 32×28（カードの高さの中。7日を縦の重ねたカードも同じ）（WP7 第2波。D08）
+  // ウィークリーの1日のカードの丸: 32×28（カードの高さの中。7日を縦の重ねたカードも同じ）（WP7 第2波。D08）。幅は表より 2px 狭く
+  // 見る（第3波で CI の書体で測った時の分のまま）
   { sel: '.wk-card:not(.is-start) .wk-done', w: 30, h: 28 },
-  // 始点のカードの丸: 32×36（WP7 第2波。D08）
+  // 始点のカードの丸: 32×36（WP7 第2波。D08）。高さは表より 2px 低く見る（第3波で CI の書体で測った時の分のまま）
   { sel: '.wk-card.is-start:not(.is-two-lines) .wk-done', w: 32, h: 34 },
   // 件名を2行にした始点のカードの丸: 28×20（狭い列。M の指の端末でも。WP7 第3波。D08）
   { sel: '.wk-card.is-start.is-two-lines .wk-done', w: 28, h: 20 },
@@ -272,9 +274,12 @@ const SMALL_OK: readonly SmallOk[] = [
   { sel: '.wk-recv > .wk-end', w: 27, h: 34 },
   // 土曜に始まって縮めた始点のカード（7.8）の横の「＞」: 18×34（左はカードの右の端、右は列の右の端。4.11）。線の端の「＞」は 34×34
   { sel: '.wk-lane > .wk-card.is-shrink ~ .wk-edge', w: 18, h: 34 },
-  // 7日を縦の下向きの矢印: 18×20（レーンは 10px おきで、隣のレーンの矢印と重なる所は DOM で後ろの矢印が勝ち、左のレーンの矢印は
-  // 5.75px ほど。右は「＋」の行、下は週の終わり、上は締め切り日のレールの●。4.11）。高さ 14 は第3波で測った最小（14.75px）
-  { sel: '.wk-edge.is-down', w: 5, h: 14 },
+  // 7日を縦の下向きの矢印: 18×34（上へ広げた。week.css の .wk-edge.is-down::before。4.11）。レーンは 10px おきで、隣のレーンの
+  // 矢印と重なる所は DOM で後ろの矢印が勝ち、左のレーンの矢印は 5.75px ほど（仕事の半分の左の端のレーンは 7日を縦の左の端で切れて
+  // 14.5px。7日を縦の外へ 4px はみ出して全部は見えないので、smallTargets は測らない）。
+  // 締め切り日のレールの●と重なる所は●が勝ち、13px ほど（土曜の半分が「＋」の行だけの時）。高さは矢印の真ん中の列に●が来ないので
+  // いつも 34px
+  { sel: '.wk-edge.is-down', w: 5, h: 34 },
   // Claude の印: 高さ 34px の目安（D26。WP7・WP8 の報告。カードの中の行の高さで 32.5px ほど）
   { sel: '.cp-ai', w: 34, h: 31 },
   // 休みのチェック: 34×34 の目安（WP7 第2波。見出しの行の高さで 32.75px ほど）
@@ -390,7 +395,14 @@ async function tapSizes(
           if ((oy === 'auto' || oy === 'scroll') && e.scrollHeight > e.clientHeight) e.scrollTop = e.scrollHeight
         }
       })
+      // S はカレンダーの領域の下の端が画面の下の端より下にある（4.9）ので、ページも送って下の端まで見せてから測る（全部が見えて
+      // いない物は測らないので、7日を縦の土曜の下向きの矢印と「＋」の行、デイリーのいちばん下の物を測り落とさないように）
+      await page.evaluate(() => {
+        const r = document.querySelector('[data-testid="calendar"]')?.getBoundingClientRect()
+        if (r && r.bottom > innerHeight) window.scrollBy(0, Math.ceil(r.bottom - innerHeight))
+      })
       await note(`${mode}（下まで送った所）`, '[data-testid="calendar"]')
+      await page.evaluate(() => window.scrollTo(0, 0))
     }
   }
   if (!sheets) return found
@@ -447,11 +459,11 @@ async function narrowNoneSizes(page: Page) {
 }
 
 /** 指の端末で押せる所を広げた所（::before。小さな月の名前は position: relative で下の曜日の頭文字の字の箱より上に重ねた。4.11） */
-const GROWN = '.wk-day, .wk-recv > .wk-end, .wk-lane > .wk-edge, .yr-mini-name'
+const GROWN = '.wk-day, .wk-recv > .wk-end, .wk-lane > .wk-edge, .wk-edge.is-down, .yr-mini-name'
 /** 広げる前に戻す（比べるため） */
 const UNGROWN =
-  '.wk-day::before, .wk-recv > .wk-end::before, .wk-lane > .wk-edge::before { display: none !important; } ' +
-  '.wk-day, .yr-mini-name { position: static !important; }'
+  '.wk-day::before, .wk-recv > .wk-end::before, .wk-lane > .wk-edge::before, .wk-edge.is-down::before { display: none !important; } ' +
+  '.wk-day, .yr-mini-name { position: static !important; } .wk-edge.is-down { z-index: 1 !important; }'
 
 /**
  * 広げた押せる所が、隣の押せる物の押せる所を取っていないこと（4.11 の「隣の物と重ならない時だけ広げる」）。targets の物（セレクターと
@@ -534,9 +546,38 @@ async function stolenTaps(page: Page, label: string, targets: [string, number][]
 }
 
 /**
- * いつもの週（受けた表示の中の日曜に終わる●、線の端と縮めた始点のカードの横の「＞」、S はレールの●の上の日付の見出し）とイヤーで、
- * 広げた押せる所が隣の押せる物の押せる所を取っていない。日付の見出しと小さな月の名前はどれも同じ並びなので、初めの3つ（日付の
- * 見出しは日曜・月曜と、字の幅の広い今日の 11/10）
+ * 11/29〜12/5 の週に、土曜の半分が「＋」の行だけになる複数日の予定を2組（仕事は前のレーンが土曜に終わり後ろのレーンが次の週へ続く、
+ * プライベートはその逆）。7日を縦では、土曜の半分の上の端の締め切り日のレールの●（7.8 の 28px）と、下の端の下向きの矢印が重なる
+ */
+function shortSaturday(): Record<string, Item> {
+  const base = demoData().items![I.mail]
+  const items: Record<string, Item> = {}
+  const add = (id: string, p: Partial<Item>) => {
+    items[id] = {
+      ...base,
+      id,
+      label: null,
+      done: false,
+      doneAt: null,
+      doneOn: null,
+      memo: '',
+      startTime: null,
+      endTime: null,
+      ...p,
+    }
+  }
+  add('sat-w-end', { kind: 'work', title: '土曜に終わる作業', start: '2026-11-30', due: '2026-12-05', order: 1 })
+  add('sat-w-next', { kind: 'work', title: '次の週へ続く作業', start: '2026-12-01', due: '2026-12-08', order: 2 })
+  add('sat-p-next', { kind: 'private', title: '次の週へ続く用事', start: '2026-11-30', due: '2026-12-08', order: 3 })
+  add('sat-p-end', { kind: 'private', title: '土曜に終わる用事', start: '2026-12-01', due: '2026-12-05', order: 4 })
+  return items
+}
+
+/**
+ * いつもの週（受けた表示の中の日曜に終わる●、線の端と縮めた始点のカードの横の「＞」、S はレールの●の上の日付の見出しと土曜の下向きの
+ * 矢印）とイヤーで、広げた押せる所が隣の押せる物の押せる所を取っていない。日付の見出しと小さな月の名前はどれも同じ並びなので、
+ * 初めの3つ（日付の見出しは日曜・月曜と、字の幅の広い今日の 11/10）。S は、土曜の半分の上の端の締め切り日のレールの●と下向きの矢印が
+ * 重なる週（shortSaturday）でも、矢印の広げた所が●の押せる所を取らず、●と矢印が SMALL_OK の大きさのまま
  */
 async function grownTapsKeepNeighbours(page: Page) {
   await openCalendar(page, '/week/2026-11-08', { data: demoData() })
@@ -545,7 +586,24 @@ async function grownTapsKeepNeighbours(page: Page) {
     ['.wk-day', 3],
     ['.wk-recv > .wk-end', 9],
     ['.wk-lane > .wk-edge', 9],
+    ['.wk-edge.is-down', 9],
   ])
+  if (await page.locator('.wk-v').count()) {
+    await seedData(page, { items: { ...demoData().items, ...shortSaturday() } })
+    await go(page, 'week', '/week/2026-11-29')
+    await expect(page.getByTestId(testIds.weekEdge('sat-p-next'))).toBeAttached()
+    await expect(page.locator('.wk-v .wk-edge.is-down')).toHaveCount(2)
+    found.push(...(await stolenTaps(page, 'week 11/29', [['.wk-edge.is-down', 2]])))
+    // 下向きの矢印と、それに重なる●の大きさ（下まで送って、全部を見せて測る）
+    await page.locator('.wk-v').evaluate((v) => {
+      v.scrollTop = v.scrollHeight
+      const r = document.querySelector('[data-testid="calendar"]')!.getBoundingClientRect()
+      if (r.bottom > innerHeight) window.scrollBy(0, Math.ceil(r.bottom - innerHeight))
+    })
+    for (const s of await smallTargets(page, `[data-testid="${testIds.weekCol('2026-12-05')}"]`))
+      found.push(`week 11/29 の土曜: ${s}`)
+    await page.evaluate(() => window.scrollTo(0, 0))
+  }
   await go(page, 'year', '/year/2026')
   found.push(...(await stolenTaps(page, 'year', [['.yr-mini-name', 3]])))
   expect(found).toEqual([])
