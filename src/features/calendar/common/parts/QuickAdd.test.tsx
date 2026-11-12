@@ -11,7 +11,7 @@ import { quickDraftKey, readLocal } from '../../../../store/localDrafts'
 import { useToasts } from '../../../../store/uiStore'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
 import { testIds } from '../testIds'
-import { BLUR_SETTLE_MS, CLICK_WAIT_MS, QuickAdd, quickAddDragStarted, type QuickAddProps } from './QuickAdd'
+import { BLUR_SETTLE_MS, CLICK_WAIT_MS, COMMIT_WAIT_MS, QuickAdd, quickAddDragStarted, type QuickAddProps } from './QuickAdd'
 
 setupCalendarTests()
 afterEach(() => {
@@ -728,12 +728,13 @@ describe('日本語の変換を決める前に外れた時も、見えている�
     expect(items().map((i) => i.title)).toEqual(['かいぎ'])
   })
 
-  it('変換中に［足す］を押して足した後も、キーボードの✓で足して閉じる（変換中のままにならない）', async () => {
+  it('変換中に［足す］で足した後も、キーボードの✓で足して閉じる（変換中のままにならない）', async () => {
     const { input, onClose } = await open()
     fakeTimers()
     fireEvent.compositionStart(input)
     typeText(input, 'かいぎ')
-    fireEvent.click(button())
+    pressAdd()
+    fireEvent.compositionEnd(input)
     expect(items().map((i) => i.title)).toEqual(['かいぎ'])
     expect(input.value).toBe('')
     typeText(input, 'next')
@@ -741,6 +742,194 @@ describe('日本語の変換を決める前に外れた時も、見えている�
     advance(BLUR_SETTLE_MS)
     expect(onClose).toHaveBeenCalledWith('blur')
     expect(items().map((i) => i.title)).toEqual(['かいぎ', 'next'])
+  })
+})
+
+/**
+ * ［足す］を押す（指・マウスの順: pointerdown → mousedown → pointerup → click）。between は押してから離すまでにすること
+ * （キーボードが変換を決める・時間がたつ）
+ */
+function pressAdd(between?: () => void) {
+  fireEvent.pointerDown(button(), { button: 0 })
+  between?.()
+  fireEvent.mouseDown(button())
+  fireEvent.pointerUp(button(), { button: 0 })
+  fireEvent.mouseUp(button())
+  fireEvent.click(button())
+}
+
+describe('変換を決める前に［足す］を押した時は、変換を決めてから足す（開発。22. の段階2の終わりの確かめ）', () => {
+  it('押した時（pointerdown）に入力欄から外して変換を決めてもらい、変換の終わり（compositionend）の後に、決まった字を1回だけ足して空に戻す。押し終えるとフォーカスは入力欄（開いたまま）', async () => {
+    const { input, onClose } = await open({ date: '2026-11-12', kind: 'private' })
+    fakeTimers()
+    pageFocused(true)
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    pressAdd(() => {
+      // 入力欄から外した（iPhone はキーボードが変換を終える）。まだ足さず、空にもしない
+      expect(document.activeElement).not.toBe(input)
+      expect(items()).toHaveLength(0)
+      expect(input.value).toBe('かいぎ')
+      // 変換が決まった（選んでいた候補で）
+      typeText(input, '会議')
+      fireEvent.compositionEnd(input, { data: '会議' })
+      expect(items()).toHaveLength(0)
+    })
+    expect(items().map((i) => i.title)).toEqual(['会議'])
+    expect(items()[0]).toMatchObject({ kind: 'private', start: '2026-11-12', origin: 'calendar', listed: false })
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    expect(screen.getByTestId(testIds.quickAddInput)).toBe(input)
+    expect(localStorage.getItem(quickDraftKey('2026-11-12', 'private'))).toBeNull()
+    // 待ちは残らない（後から足さない・閉じない・お知らせも出さない）
+    advance(CLICK_WAIT_MS + BLUR_SETTLE_MS + COMMIT_WAIT_MS)
+    fireEvent.compositionEnd(input)
+    expect(items()).toHaveLength(1)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(toasts()).toHaveLength(0)
+    // 続けて打って Enter で足せる
+    typeText(input, '資料')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(items().map((i) => i.title)).toEqual(['会議', '資料'])
+  })
+
+  it('押し終えた（click）時にまだ変換が終わっていなければ、フォーカスは先に戻し、変換の終わりを待ってから足して空に戻す（それまでは空にしない）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    pressAdd()
+    expect(document.activeElement).toBe(input)
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('かいぎ')
+    typeText(input, '会議')
+    fireEvent.compositionEnd(input, { data: '会議' })
+    expect(items().map((i) => i.title)).toEqual(['会議'])
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    // 変換の終わりがもう一度来ても・待つ長さがたっても、2回は足さない
+    fireEvent.compositionEnd(input)
+    advance(COMMIT_WAIT_MS * 2)
+    expect(items()).toHaveLength(1)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('変換の終わりが来ないまま（iPhone は外れた後に送らないことがある）でも、押してから COMMIT_WAIT_MS で見えている字を1回だけ足す。押し終える前に待ち終えた時は、押し終えた時に足す', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    pressAdd(() => advance(50))
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('かいぎ')
+    advance(COMMIT_WAIT_MS - 50 - 1)
+    expect(items()).toHaveLength(0)
+    advance(1)
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    fireEvent.compositionEnd(input)
+    expect(items()).toHaveLength(1)
+
+    // 長く押していた（待ち終えてから離した）: 離して click が来た時に足す
+    fireEvent.compositionStart(input)
+    typeText(input, 'しりょう')
+    pressAdd(() => {
+      advance(COMMIT_WAIT_MS)
+      expect(items()).toHaveLength(1)
+      expect(input.value).toBe('しりょう')
+    })
+    expect(items().map((i) => i.title)).toEqual(['かいぎ', 'しりょう'])
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('click だけが来た時（押した出来事の無い操作）も、変換中なら入力欄から外して変換を決めてから足す', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    fireEvent.click(button())
+    expect(document.activeElement).toBe(input)
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('かいぎ')
+    fireEvent.compositionEnd(input, { data: 'かいぎ' })
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    expect(input.value).toBe('')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('変換していない時の［足す］は、押しても入力欄から外さない（今のまま。iPhone のキーボードを閉じない）', async () => {
+    const { input } = await open()
+    fakeTimers()
+    typeText(input, '電話')
+    const blurs = vi.fn()
+    input.addEventListener('blur', blurs)
+    // 変換を決めた後（変換の終わりの後）の［足す］も同じ
+    fireEvent.compositionStart(input)
+    fireEvent.compositionEnd(input)
+    pressAdd(() => expect(document.activeElement).toBe(input))
+    expect(blurs).not.toHaveBeenCalled()
+    expect(items().map((i) => i.title)).toEqual(['電話'])
+  })
+
+  it('変換中に［足す］を押したまま click にならなかった（なぞった・長押し）時は、外れたままなので、キーボードを閉じた時と同じく足して閉じる', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    pageFocused(true)
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    fireEvent.pointerDown(button(), { button: 0 })
+    fireEvent.pointerCancel(button())
+    expect(onClose).not.toHaveBeenCalled()
+    advance(BLUR_SETTLE_MS)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('blur')
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    expect(toasts()[0].message).toBe('『かいぎ』を足しました')
+  })
+
+  it('変換中の Enter（変換を決める Enter）は足さず、変換の終わりが来ても足さない。決めた後の Enter で足す（D42）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'しりょう')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    typeText(input, '資料')
+    fireEvent.compositionEnd(input, { data: '資料' })
+    advance(COMMIT_WAIT_MS * 2)
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('資料')
+    expect(document.activeElement).toBe(input)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(items().map((i) => i.title)).toEqual(['資料'])
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('変換の終わりを待っている間に閉じた（Esc）・画面が外した時も、押し終えた［足す］の分は1回だけ足す', async () => {
+    const first = await open()
+    fakeTimers()
+    fireEvent.compositionStart(first.input)
+    typeText(first.input, 'かいぎ')
+    pressAdd()
+    fireEvent.keyDown(first.input, { key: 'Escape' })
+    expect(first.onClose).toHaveBeenCalledWith('escape')
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    advance(COMMIT_WAIT_MS * 2)
+    expect(items()).toHaveLength(1)
+    first.unmount()
+
+    // 開き直す（データは初めから）
+    const again = await open({ date: '2026-11-13' })
+    fireEvent.compositionStart(again.input)
+    typeText(again.input, 'しりょう')
+    pressAdd()
+    again.unmount()
+    expect(items().map((i) => i.title)).toEqual(['しりょう'])
+    expect(items()[0]).toMatchObject({ start: '2026-11-13' })
+    advance(COMMIT_WAIT_MS * 2)
+    expect(items()).toHaveLength(1)
   })
 })
 

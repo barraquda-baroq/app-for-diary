@@ -10,13 +10,21 @@
 //   しなかった）、外を押すと閉じて字が消えたように見えた（書きかけには控えていたが、次に開くまで見えない）ことへの直し
 //   （22. の段階2の終わりの確かめ）。空の時は、どちらも足さずに閉じる。日本語の変換を決める前に外れた時も、見えている字で足す
 //   （変換中かでは分けない。iPhone で変換を決めずに✓を押した時に、また何も起きないことが無いように）
+// - 変換を決める前に［足す］を押した時は、押した時（pointerdown）に入力欄から一度フォーカスを外して変換を決めてもらい（外れると
+//   ブラウザ・キーボードが変換中の字を決める）、変換の終わり（compositionend。来なければ COMMIT_WAIT_MS）の後に、決まった字を
+//   1回だけ足して空に戻す。フォーカスは押し終えた時（click）に入力欄へ戻す（開発。22. の段階2の終わりの確かめ）。作者が iPhone で、
+//   変換を決める前に［足す］を押すと、足した後もキーボードの変換候補が残り続けた: 前の作りは［足す］でフォーカスを入力欄に残した
+//   （mousedown を止めた）ので、押しても変換が終わらず、変換中のまま入力欄を空にしていた。iPhone のキーボード（変換中の字と候補）は、
+//   ページが字を書き換えても知らされず、入力欄の中身と食い違ったまま残る。フォーカスを戻すのは押した出来事の中（iPhone はそうで
+//   ないとキーボードが出ない）。外すのは pointerdown（指の時は click より前の別の出来事。click の中で外してすぐ戻すと、iPhone は
+//   外れたことをキーボードへ伝えない）。押したまま click にならなかった時（なぞった・長押し）は、キーボードを閉じた時と同じ
 // - 足さずに閉じるのは Esc と、キーボード（Tab）でフォーカスを外の物へ移した時（書きかけは残り、次に開くと出る。［足す］へは Tab で
 //   移れ、その次の Tab で外へ出ると閉じる）と、外を押してそのままカードをドラッグした時（WeekDnd が quickAddDragStarted で伝える。
 //   離した後に、ドラッグのお知らせと重ねて足さない。ドラッグを Esc でやめた時も足さない）。窓・アプリの切り替えで外れただけの時と、
 //   ドラッグを始めて画面がフォーカスを外した時（押している間なので、押した方で決める）は、足さず閉じない
 // - 外を押した指でなぞってスクロール・拡大した時（ブラウザが指を受け取った pointercancel）は、外を押したとは扱わない。フォーカスが
 //   入力欄に残っていれば（指でなぞってもフォーカスは動かない）、足さず閉じない（キーボードを出したまま週を見て、続けて打てる）
-// - 日本語の変換中の Enter（isComposing・Safari の keyCode 229）と、空白だけの件名では足さない
+// - 日本語の変換中の Enter（isComposing・Safari の keyCode 229）と、空白だけの件名では足さない（D42）
 // - 外を押して閉じる時は、押し終わってから閉じる（開発）: 押した時（pointerdown）にすぐ閉じると、入力欄が元の行に戻って下の物が
 //   上へずれ（ウィークリーの S は入力欄 40px が「＋」の行 28px に戻る）、指を離した時（click）に指の下にあるのが押した物と違う物に
 //   なる（違う予定の詳細が開く・違う予定が完了になる）。押した所からドラッグを始めた時（ウィークリー）も、並びが掴んだカードの下で
@@ -35,6 +43,7 @@ import {
   type FocusEvent,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { shortDateLabel } from '../../../../domain/dates'
 import { toastText } from '../../../../domain/itemText'
@@ -58,6 +67,13 @@ export const CLICK_WAIT_MS = 300
  * 後から来た時は足さない。iPhone のキーボードが閉じる動きより短い
  */
 export const BLUR_SETTLE_MS = 120
+
+/**
+ * 変換を決める前に［足す］を押して入力欄からフォーカスを外してから、変換の終わり（compositionend）を待つ長さ（ms）。来なければ、
+ * これで見えている字を決まった字として足す（iPhone は外れた後に変換の終わりを送らないことがある。外れた時にキーボードは変換を
+ * 終えている）。軽く押して離すまでより短い（たいていは押し終える前に待ち終わる）
+ */
+export const COMMIT_WAIT_MS = 150
 
 /**
  * 閉じたきっかけ: Esc・入力欄の外を押し終えた・キーボード（Tab）でフォーカスを外の物へ移した・押さずにフォーカスが外れた
@@ -98,8 +114,9 @@ function composing(e: KeyboardEvent): boolean {
 }
 
 /**
- * 押してもフォーカスを入力欄に残す（［足す］。iPhone のキーボードを閉じない・入力欄の blur を起こさない）。フォーカスを移すのは
- * mousedown（指の時も、離した後に来る）なので、そこだけ止める（pointerdown を止めると、指の時は mousedown が来なくなり、止められない）
+ * 押してもフォーカスを入力欄に残す（［足す］。iPhone のキーボードを閉じない・入力欄の blur を起こさない。変換中は、この前の
+ * pointerdown で入力欄から外している）。フォーカスを移すのは mousedown（指の時も、離した後に来る）なので、そこだけ止める
+ * （pointerdown を止めると、指の時は mousedown が来なくなり、止められない）
  */
 function keepFocus(e: ReactMouseEvent): void {
   e.preventDefault()
@@ -145,6 +162,15 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   const away = useRef(false)
   /** 今押している分でドラッグを始めた（quickAddDragStarted。離した後は足さずに閉じる） */
   const dragged = useRef(false)
+  /** 日本語の変換中（compositionstart から compositionend まで。入力欄にフォーカスが来た時は、変換していない所から） */
+  const composingText = useRef(false)
+  /**
+   * 変換中に［足す］を押して入力欄から外し、変換の終わりを待っている（compositionend か COMMIT_WAIT_MS で終わる）。add は［足す］を
+   * 押し終えた（click）後で、待ち終えたら足す
+   */
+  const commit = useRef<{ timer: number; add: boolean } | null>(null)
+  /** 変換中の［足す］を押した分で入力欄から外し、まだ［足す］を押し終えていない（click にならずに押し終えたら、キーボードを閉じた時と同じ） */
+  const blurredForAdd = useRef(false)
 
   /** 字があれば足して、［元に戻す］付きで知らせる（閉じる時）。足せなかった（決まりに合わない件名）時は false */
   const addOnClose = (): boolean => {
@@ -159,9 +185,49 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     return true
   }
 
+  /** 足して、開いたまま次を打てるようにする（入力欄の今の字で。変換中に［足す］を押した時は、変換を決めた後に呼ぶ） */
+  const addNow = () => {
+    // 変換を決めた字は入力欄の中が確か（変換の終わりの後に入力の出来事が来るブラウザもある）
+    const shown = input.current?.value
+    if (shown !== undefined && shown !== latest.current.text) {
+      latest.current = { ...latest.current, text: shown }
+      setDraft({ key: latest.current.key, text: shown })
+      writeLocal(latest.current.key, shown.trim() ? shown : null)
+    }
+    const { date, kind, key, text } = latest.current
+    if (!text.trim()) return
+    const id = attempt(() => actions.addItem({ origin: 'calendar', title: text, kind, start: date }))
+    if (!id) return
+    setDraft({ key, text: '' })
+    latest.current = { ...latest.current, text: '' }
+    setAdded((n) => n + 1)
+    writeLocal(key, null)
+  }
+
+  /**
+   * 変換の終わりを待ち終えた（compositionend・COMMIT_WAIT_MS・閉じる時）。変換は終わったとみなし、［足す］を押し終えていれば、
+   * 決まった字を足す
+   */
+  const endCommit = () => {
+    const c = commit.current
+    if (!c) return
+    window.clearTimeout(c.timer)
+    commit.current = null
+    composingText.current = false
+    if (c.add) addNow()
+  }
+
+  /** 変換中の入力欄からフォーカスを外して、変換を決めてもらう（決まったら endCommit。Chromium は外した時にすぐ決める） */
+  const startCommit = (el: HTMLInputElement) => {
+    commit.current = { timer: window.setTimeout(endCommit, COMMIT_WAIT_MS), add: false }
+    el.blur()
+  }
+
   /** 画面へ閉じたと伝える（外を押した・キーボードを閉じた時は、字があれば足してから。外を押してドラッグした時は足さない） */
   const finish = (pressed: QuickAddCloseReason) => {
     pending.current = null
+    // ［足す］を押した後、変換の終わりを待っている間に閉じる: 押した分を先に足す
+    endCommit()
     const reason = pressed === 'press' && dragged.current ? 'drag' : pressed
     if (ADDS_ON_CLOSE.has(reason) && !addOnClose() && reason === 'blur') {
       // キーボードを閉じただけの時は、足せなければ開いたまま（お知らせを見て打ち直せるように）
@@ -189,6 +255,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     pending.current = null
     closing.current = true
     window.clearTimeout(settleTimer.current)
+    // 先に押し終えた［足す］の分（変換の終わりを待っている間）は足す
+    endCommit()
     latest.current.onClose('escape')
   }
 
@@ -210,6 +278,13 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       window.clearTimeout(p.timer)
       press.current = null
       if (pending.current) finish(pending.current)
+      else if (blurredForAdd.current) {
+        // 変換中の［足す］を押して入力欄から外した分が終わった: click で［足す］まで来れば、その add がフォーカスを戻す（入力欄へ
+        // 戻ると、ここで始めた待ちはやめる）。来なければ（なぞった・長押し）外れたままなので、キーボードを閉じた時と同じに決める
+        blurredForAdd.current = false
+        window.clearTimeout(settleTimer.current)
+        settleTimer.current = window.setTimeout(settle, BLUR_SETTLE_MS)
+      }
     }
     // ブラウザが指を受け取った（なぞってスクロール・拡大した）: 外を押したとは扱わない。フォーカスが入力欄に残っていれば（指で
     // なぞってもフォーカスは動かない）、閉じるのをやめて開いたまま（足さない）。外れていれば（ドラッグした・マウスで押した物へ
@@ -281,6 +356,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       if (press.current) window.clearTimeout(press.current.timer)
       press.current = null
       window.clearTimeout(settleTimer.current)
+      blurredForAdd.current = false
+      // ［足す］を押した後、変換の終わりを待っている間に画面が外した: 押した分は足す
+      endCommit()
       // 閉じた（画面が外した）・日が替わった時は、待つのをやめる。外を押して閉じると決めた後に、押し終わる前に画面が外した
       // （なぞって前後の日へ移った）時は、閉じたとは伝えないが、字があれば足す（ドラッグしている間に週が替わった時は足さない）
       if (pending.current) {
@@ -316,16 +394,30 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     writeLocal(key, next.trim() ? next : null)
   }
 
-  /** Enter・［足す］: 足して、開いたまま次を打てるようにする */
+  /**
+   * Enter・［足す］: 足して、開いたまま次を打てるようにする。変換中に［足す］を押した時は、変換を決めてから足す（押した時の
+   * pointerdown で入力欄から外している。外していない時（読み上げの操作などで click だけが来た）は、ここで外す）
+   */
   const add = () => {
-    if (!text.trim()) return
-    const id = attempt(() => actions.addItem({ origin: 'calendar', title: text, kind, start: date }))
-    if (!id) return
-    setDraft({ key, text: '' })
-    latest.current = { ...latest.current, text: '' }
-    setAdded((n) => n + 1)
-    writeLocal(key, null)
-    input.current?.focus({ preventScroll: true })
+    blurredForAdd.current = false
+    const el = input.current
+    if (composingText.current && !commit.current && el && latest.current.text.trim()) startCommit(el)
+    // フォーカスは入力欄へ（外した時も、押した出来事の中で戻す。iPhone は押した出来事の中でないとキーボードが出ない）
+    el?.focus({ preventScroll: true })
+    if (commit.current) commit.current.add = true
+    else addNow()
+  }
+
+  /**
+   * ［足す］を押した（pointerdown）: 変換中なら、入力欄から一度フォーカスを外して変換を決めてもらう（変換中のまま入力欄を空にすると、
+   * iPhone のキーボードに変換候補が残り続ける。22. の段階2の終わりの確かめ）。画面のなぞりの見張り（カレンダーの中の pointerdown）は
+   * この前に入力欄のフォーカスを見ている（React はいちばん外で聞く）ので、外してもなぞったとはみなされない
+   */
+  const onAddPointerDown = (e: ReactPointerEvent) => {
+    const el = input.current
+    if (e.button !== 0 || !composingText.current || commit.current || !el || !latest.current.text.trim()) return
+    blurredForAdd.current = true
+    startCommit(el)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -359,7 +451,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   const onBlur = (e: FocusEvent<HTMLDivElement>) => {
     const next = e.relatedTarget
     if (next instanceof Node && box.current?.contains(next)) return
-    if (closing.current) return
+    // 変換中の［足す］で変換を決めるために外した（押し終えた時に戻す）
+    if (closing.current || commit.current) return
     // キーボード（Tab など）でほかの物へ移した: 足さずに閉じる（書きかけは残る。押している間の移りは、押し終わってから閉じる）
     if (next instanceof Node) {
       close('focus')
@@ -390,9 +483,21 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
           value={text}
           onChange={(e) => change(e.target.value)}
           onKeyDown={onKeyDown}
+          onCompositionStart={() => {
+            composingText.current = true
+          }}
+          onCompositionUpdate={() => {
+            composingText.current = true
+          }}
+          onCompositionEnd={() => {
+            composingText.current = false
+            endCommit()
+          }}
           onFocus={() => {
-            // 入力欄へ戻った（押し終わりを待っている間は、そのまま閉じる）
+            // 入力欄へ戻った（押し終わりを待っている間は、そのまま閉じる）。フォーカスが来た所は変換していない（外れた後に変換の
+            // 終わりが来ないブラウザで、変換中の印を残さない）
             away.current = false
+            composingText.current = false
             window.clearTimeout(settleTimer.current)
             if (!pending.current) closing.current = false
           }}
@@ -407,6 +512,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
           className="icon-btn cp-quick-add"
           aria-label="足す"
           aria-disabled={blank || undefined}
+          onPointerDown={onAddPointerDown}
           onMouseDown={keepFocus}
           onClick={add}
           data-testid={testIds.quickAddButton}
