@@ -1,8 +1,9 @@
-// ラベルの色を選ぶ所（docs/SPEC.md の 4.6・6.6・12.2 の 5。D35・AMB-ITEMS-01）。左に「なし」、上の行に淡の12色、下の行に濃の12色を
+// ラベルの色を選ぶ所（docs/SPEC.md の 4.6・6.6・12.2 の 8。D35・AMB-ITEMS-01）。左に「なし」、上の行に淡の12色、下の行に濃の12色を
 // 色合いの順（src/domain/labels.ts の LABEL_KEYS）に、丸 28px で 12×2 に並べる（S は丸 24px で、「なし」を別の行に。CSS）。
 // 色の値は外観ごとの CSS 変数（--label-{キー}）で、丸に付けた data-label から引く。選び替えると、画面の上の辺の帯もその場で替わる
 // （包む ItemSheet の data-label）。
-// 呼び名: 付けた呼び名（6.6。同期する）は、選んでいる色（乗せた・フォーカスした色があればその色）の物を欄の名前の横の1行に出す。
+// 呼び名: 付けた呼び名（6.6。同期する）は、選んでいる色（乗せた・フォーカスした色があればその色）の物を、色の並びの下の1行に出す
+// （22. の段階2の見本の確かめの 7.）。この1行の高さはいつも空けておく（乗せた・選んだ時に画面の高さが変わらないように）。
 // 呼び名を付けていない色は、既定の呼び名（「空・淡」など）をツールチップ（title）と読み上げ（aria-label）にだけ使い、画面の字には
 // 出さない（ITEMS-021・022・FRAME-191・192・D12）。各色の下に呼び名を並べるのは設定の「ラベルの色」（段階5）だけ
 import { useState } from 'react'
@@ -36,13 +37,9 @@ export function LabelPicker({ value, labelNames, onChange, labelId }: LabelPicke
   }
   return (
     <div className="it-field">
-      <div className="it-field-label it-label-head">
-        <span id={labelId}>ラベルの色</span>
-        {/* 付けた呼び名だけを出す（読み上げは各色の aria-label で伝わるので、ここは読み上げない） */}
-        <span className="it-label-name" aria-hidden="true">
-          {name ?? ''}
-        </span>
-      </div>
+      <span className="it-field-label" id={labelId}>
+        ラベルの色
+      </span>
       <div className="it-labels" role="group" aria-labelledby={labelId}>
         <button
           type="button"
@@ -53,29 +50,35 @@ export function LabelPicker({ value, labelNames, onChange, labelId }: LabelPicke
         >
           なし
         </button>
-        <div className="it-swatches" onPointerLeave={() => setHovered(null)}>
-          {LABEL_KEYS.map((key) => {
-            const display = labelDisplayName(key, labelNames)
-            const selected = value === key
-            return (
-              <button
-                key={key}
-                type="button"
-                className={cls('it-swatch', selected && 'is-selected')}
-                data-label={key}
-                aria-pressed={selected}
-                aria-label={display}
-                title={display}
-                onClick={() => pick(key)}
-                onPointerEnter={() => setHovered(key)}
-                onFocus={() => setHovered(key)}
-                onBlur={() => setHovered(null)}
-                data-testid={testIds.itemLabel(key)}
-              >
-                {selected ? <CheckIcon /> : null}
-              </button>
-            )
-          })}
+        <div className="it-swatch-col">
+          <div className="it-swatches" onPointerLeave={() => setHovered(null)}>
+            {LABEL_KEYS.map((key) => {
+              const display = labelDisplayName(key, labelNames)
+              const selected = value === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={cls('it-swatch', selected && 'is-selected')}
+                  data-label={key}
+                  aria-pressed={selected}
+                  aria-label={display}
+                  title={display}
+                  onClick={() => pick(key)}
+                  onPointerEnter={() => setHovered(key)}
+                  onFocus={() => setHovered(key)}
+                  onBlur={() => setHovered(null)}
+                  data-testid={testIds.itemLabel(key)}
+                >
+                  {selected ? <CheckIcon /> : null}
+                </button>
+              )
+            })}
+          </div>
+          {/* 付けた呼び名だけを出す（読み上げは各色の aria-label で伝わるので、ここは読み上げない） */}
+          <span className="it-label-name" aria-hidden="true" data-testid={testIds.itemLabelName}>
+            {name ?? ''}
+          </span>
         </div>
       </div>
     </div>

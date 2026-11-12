@@ -47,8 +47,6 @@ export interface Prefs {
   launchAnimation: boolean
   /** 最後に開いていたモード（トップを開くと、このモードの今日を含む期間へ。Q20） */
   lastMode: CalendarMode
-  /** 登録の画面の「詳しく」を開いているか */
-  detailsOpen: boolean
   /** Routine List の入力欄で最後に選んだ種類 */
   routineAddCycle: RoutineCycle
   collapsed: Collapsed
@@ -65,7 +63,6 @@ export const DEFAULT_PREFS: Prefs = {
   appearance: 'system',
   launchAnimation: true,
   lastMode: 'month',
-  detailsOpen: false,
   routineAddCycle: 'daily',
   collapsed: {
     routine: false,
@@ -92,7 +89,10 @@ function migrateFlags(v: unknown, fallback: RoutineFlags): RoutineFlags {
   return Object.fromEntries(ROUTINE_CYCLES.map((c) => [c, bool(raw[c], fallback[c])])) as unknown as RoutineFlags
 }
 
-/** localStorage に保存していた表示の設定を今の形に直す（知らない値・型の違う値・壊れた値は既定値にする） */
+/**
+ * localStorage に保存していた表示の設定を今の形に直す（知らない値・型の違う値・壊れた値は既定値にする）。使わなくなった項目
+ * （段階2の途中まであった「詳しく」の開閉の detailsOpen）は読まず、次に保存した時に消える（docs/SPEC.md の 6.13）
+ */
 export function migratePrefs(stored: unknown): Prefs {
   if (!isRecord(stored)) return DEFAULT_PREFS
   const d = DEFAULT_PREFS
@@ -101,7 +101,6 @@ export function migratePrefs(stored: unknown): Prefs {
     appearance: oneOf(stored.appearance, APPEARANCE_MODES, d.appearance),
     launchAnimation: bool(stored.launchAnimation, d.launchAnimation),
     lastMode: oneOf(stored.lastMode, CALENDAR_MODES, d.lastMode),
-    detailsOpen: bool(stored.detailsOpen, d.detailsOpen),
     routineAddCycle: oneOf(stored.routineAddCycle, ROUTINE_CYCLES, d.routineAddCycle),
     collapsed: {
       routine: bool(c.routine, d.collapsed.routine),
@@ -157,8 +156,8 @@ function savePrefs(prefs: Prefs): void {
 
 /** 今の設定（関数を除く） */
 function currentPrefs(s: PrefsState): Prefs {
-  const { appearance, launchAnimation, lastMode, detailsOpen, routineAddCycle, collapsed } = s
-  return { appearance, launchAnimation, lastMode, detailsOpen, routineAddCycle, collapsed }
+  const { appearance, launchAnimation, lastMode, routineAddCycle, collapsed } = s
+  return { appearance, launchAnimation, lastMode, routineAddCycle, collapsed }
 }
 
 export const usePrefs = create<PrefsState>((set, get) => ({

@@ -1,5 +1,6 @@
-// 登録・詳細の画面の欄（docs/SPEC.md の 12.2・12.3）。並びはどちらも 件名 → 区分 → 日付 → 時刻 → 詳しく（ラベルの色・依頼者・ロック・
-// Task List にも出す・メモ）。真ん中の小さな画面・下からのシート・段階3の右の列のパネルのどれにも入れられるよう、この部品は
+// 登録・詳細の画面の欄（docs/SPEC.md の 12.2・12.3）。並びはどちらも 件名 → 区分 → 依頼者 → 開始日・締め切り日 → 開始・終了の時刻 →
+// メモ → ロック・Task List にも出す → ラベルの色で、どの欄もいつも出す（畳む所は無い。22. の段階2の見本の確かめの 8.・10.）。
+// 文書の順・画面の順・Tab の順は同じ。真ん中の小さな画面・下からのシート・段階3の右の列のパネルのどれにも入れられるよう、この部品は
 // 小さな画面（Modal）を知らず、欄の値（value）と、欄を直した時に呼ぶ物だけを受け取る（FRAME-052）。
 // 欄を直した時の決まりは包む画面が当てる: 日付は onDates（editDates）、時刻は onTimes（editTimes）、ほかは onChange
 // （欄ごとに1回。最後に直した欄の決まりで決める。AMB-ITEMS-29）。
@@ -8,7 +9,6 @@
 import { useId } from 'react'
 import type { AppData } from '../../domain/types'
 import { DateFields } from './fields/DateFields'
-import { DetailsFold } from './fields/DetailsFold'
 import { KindSwitch } from './fields/KindSwitch'
 import { LabelPicker } from './fields/LabelPicker'
 import { MemoField } from './fields/MemoField'
@@ -26,9 +26,6 @@ export interface DetailFormProps {
   value: ItemForm
   /** ラベルの呼び名（6.6。付けた呼び名を色を選ぶ所に出す） */
   labelNames: AppData['labelNames']
-  /** 「詳しく」を開いているか */
-  detailsOpen: boolean
-  onToggleDetails: () => void
   /**
    * 件名・区分・ラベル・依頼者・ロック・Task List にも出す・メモを直した（詳細の画面の文字の欄は、0.6秒止まった時・離れた時。
    * 件名は空にできないので、空の件名では呼ばない）
@@ -77,6 +74,12 @@ export function DetailForm(p: DetailFormProps) {
         </span>
         <KindSwitch value={v.kind} onChange={(kind) => onChange({ kind })} labelledBy={`${id}-kind`} />
       </div>
+      <RequesterField
+        id={`${id}-requester`}
+        value={v.requester}
+        onChange={(requester) => onChange({ requester })}
+        autosave={autosave}
+      />
       <DateFields
         start={v.start}
         due={v.due}
@@ -93,31 +96,19 @@ export function DetailForm(p: DetailFormProps) {
         hint={p.timeHint}
         disabledNote={p.timesDisabledNote}
       />
-      <DetailsFold open={p.detailsOpen} onToggle={p.onToggleDetails}>
-        <LabelPicker
-          value={v.label}
-          labelNames={p.labelNames}
-          onChange={(label) => onChange({ label })}
-          labelId={`${id}-label`}
+      <MemoField id={`${id}-memo`} value={v.memo} onChange={(memo) => onChange({ memo })} autosave={autosave} />
+      {/* ロックと Task List にも出すを1行に（入らなければ折り返す。登録の画面にもロックがある。12.2） */}
+      <div className="it-switches">
+        <SwitchRow label="ロック" checked={v.locked} onChange={(locked) => onChange({ locked })} testId={testIds.itemLock} />
+        <SwitchRow
+          label="Task List にも出す"
+          checked={v.listed}
+          disabled={p.listedDisabled}
+          onChange={(listed) => onChange({ listed })}
+          testId={testIds.itemListed}
         />
-        <RequesterField
-          id={`${id}-requester`}
-          value={v.requester}
-          onChange={(requester) => onChange({ requester })}
-          autosave={autosave}
-        />
-        <div className="it-switches">
-          <SwitchRow label="ロック" checked={v.locked} onChange={(locked) => onChange({ locked })} testId={testIds.itemLock} />
-          <SwitchRow
-            label="Task List にも出す"
-            checked={v.listed}
-            disabled={p.listedDisabled}
-            onChange={(listed) => onChange({ listed })}
-            testId={testIds.itemListed}
-          />
-        </div>
-        <MemoField id={`${id}-memo`} value={v.memo} onChange={(memo) => onChange({ memo })} autosave={autosave} />
-      </DetailsFold>
+      </div>
+      <LabelPicker value={v.label} labelNames={p.labelNames} onChange={(label) => onChange({ label })} labelId={`${id}-label`} />
     </div>
   )
 }

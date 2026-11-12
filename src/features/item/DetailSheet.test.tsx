@@ -1,5 +1,5 @@
 // 予定の詳細の画面（docs/SPEC.md の 12.3・3.8・4.3・6.12・12.5。D11・D47・D48）: 題・上の列・欄の並び、その予定の区分の地と
-// ラベルの帯（知らない区分・ラベルは仕事・ラベルなし）、区分とラベルを選び替えるとその場で替わる、「詳しく」を開いて出す決まり、
+// ラベルの帯（知らない区分・ラベルは仕事・ラベルなし）、区分とラベルを選び替えるとその場で替わる、畳む所が無くどの欄もいつも出す、
 // 件名が空の記録、完了の切り替え（お知らせを出さない）、下の行（作った・完了・Claude が追加）、予定が無い時に閉じる
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,7 +11,7 @@ import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
 import { getRaw, useApp } from '../../store/appStore'
 import { flushAllDrafts } from '../../store/draftRegistry'
-import { usePrefs, useToasts, type Prefs } from '../../store/uiStore'
+import { useToasts, type Prefs } from '../../store/uiStore'
 import { renderView, setupCalendarTests } from '../../test/renderCalendar'
 import { testIds } from '../calendar/common/testIds'
 import { DetailSheet, MORE_MENU_TEST_ID } from './DetailSheet'
@@ -25,7 +25,6 @@ setupCalendarTests()
 const sheet = () => screen.getByTestId(testIds.itemSheet)
 const byId = (id: string) => screen.getByTestId(id)
 const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
-const detailsOpen = () => byId(testIds.itemDetails).getAttribute('aria-expanded') === 'true'
 
 /** 端末の記録 */
 const materials = mkItem({
@@ -50,7 +49,7 @@ async function open(items: Item[], opts: { prefs?: Partial<Prefs> } = {}, id = i
 }
 
 describe('題・上の列・欄（12.3）', () => {
-  it('題は「予定」。上の列に「完了にする」・［複製］・「…」、欄は登録の画面と同じ並び、下の行は最後', async () => {
+  it('題は「予定」。上の列に「完了にする」・［複製］・「…」、欄は登録の画面と同じ並び（22. の 8.・10.）、下の行は最後', async () => {
     await open([materials])
     expect(within(sheet()).getByRole('heading').textContent).toBe('予定')
     const order = [
@@ -59,16 +58,17 @@ describe('題・上の列・欄（12.3）', () => {
       testIds.itemMore,
       testIds.itemTitle,
       testIds.itemKind('work'),
+      testIds.itemRequester,
       testIds.itemStart,
       testIds.itemDue,
       testIds.itemStartTime,
       testIds.itemEndTime,
-      testIds.itemDetails,
-      testIds.itemLabel('none'),
-      testIds.itemRequester,
+      MEMO_VIEW_TEST_ID,
       testIds.itemLock,
       testIds.itemListed,
-      MEMO_VIEW_TEST_ID,
+      testIds.itemLabel('none'),
+      testIds.itemLabel('peony-d'),
+      testIds.itemLabelName,
       testIds.itemFooter,
     ].map(byId)
     for (let i = 1; i < order.length; i++) expect(before(order[i - 1], order[i]), order[i].dataset.testid).toBe(true)
@@ -88,7 +88,7 @@ describe('題・上の列・欄（12.3）', () => {
     expect(sheet().contains(document.activeElement)).toBe(true)
   })
 
-  it('欄はその予定の値: 日付（「11月9日（月）」〜「11月12日（木）」、締め切り日は［×］で消せる）・時刻・詳しく', async () => {
+  it('欄はその予定の値: 依頼者・日付（「11月9日（月）」〜「11月12日（木）」、締め切り日は［×］で消せる）・時刻・メモ・ラベル', async () => {
     await open([materials])
     expect(byId(testIds.itemStart).textContent).toBe('11月9日（月）')
     expect(byId(testIds.itemDue).textContent).toBe('11月12日（木）')
@@ -150,37 +150,31 @@ describe('画面の地と上の辺の帯（4.3・X2・ITEMS-199〜203）', () =>
   })
 })
 
-describe('「詳しく」を開いて出す決まり（D11・AMB-ITEMS-02）', () => {
+describe('畳む所は無く、どの欄もいつも出す（22. の段階2の見本の確かめの 8.・10.）', () => {
   it.each([
-    ['ラベル', { label: 'sky-l' }],
-    ['依頼者', { requester: '営業部' }],
-    ['ロック', { locked: true }],
-    ['Task List にも出す', { listed: true }],
-    ['メモ', { memo: '持ち物' }],
-  ])('%s が入っていれば、detailsOpen が閉じていても開いて出す', async (_name, patch) => {
-    await open([mkItem({ id: 'd', ...patch })], { prefs: { detailsOpen: false } })
-    expect(detailsOpen()).toBe(true)
+    ['何も入っていない予定', mkItem({ id: 'e' })],
+    [
+      'ラベル・依頼者・ロック・Task List・メモの入った予定',
+      mkItem({ id: 'f', label: 'sky-l', requester: '営業部', locked: true, listed: true, memo: '持ち物' }),
+    ],
+    ['list 生まれのタスク', mkTask({ id: 't', due: '2026-11-20' })],
+  ])('%s: 「詳しく」の切り替えは無く、依頼者・メモ・ロック・Task List・ラベルが出ている', async (_name, item) => {
+    await open([item])
+    expect(screen.queryByTestId('item-details')).toBeNull()
+    expect(screen.queryByRole('button', { name: /詳しく/ })).toBeNull()
+    expect(sheet().querySelector('.fold, [aria-expanded][aria-controls]')).toBeNull()
+    const memo = screen.queryByTestId(MEMO_VIEW_TEST_ID) ?? byId(testIds.itemMemo)
+    for (const el of [
+      byId(testIds.itemRequester),
+      memo,
+      byId(testIds.itemLock),
+      byId(testIds.itemListed),
+      byId(testIds.itemLabel('none')),
+    ])
+      expect(el.closest('[hidden]'), el.dataset.testid).toBeNull()
   })
 
-  it('どれも空なら detailsOpen に従う。ここで開け閉めしても detailsOpen に書く', async () => {
-    const { user, unmount } = await open([mkItem({ id: 'e' })], { prefs: { detailsOpen: false } })
-    expect(detailsOpen()).toBe(false)
-    await user.click(byId(testIds.itemDetails))
-    expect(detailsOpen()).toBe(true)
-    expect(usePrefs.getState().detailsOpen).toBe(true)
-    unmount()
-    await open([mkItem({ id: 'e' })])
-    expect(detailsOpen()).toBe(true)
-  })
-
-  it('入っていて開いた詳細で閉じると、detailsOpen も閉じる', async () => {
-    const { user } = await open([materials], { prefs: { detailsOpen: true } })
-    await user.click(byId(testIds.itemDetails))
-    expect(detailsOpen()).toBe(false)
-    expect(usePrefs.getState().detailsOpen).toBe(false)
-  })
-
-  it('付けたラベルの呼び名を、ラベルの欄に出す（ITEMS-021）', async () => {
+  it('付けたラベルの呼び名を、ラベルの色の並びの下の1行に出す（ITEMS-021・4.6）', async () => {
     const onClose = vi.fn()
     await renderView(
       DetailSheet,
@@ -192,7 +186,7 @@ describe('「詳しく」を開いて出す決まり（D11・AMB-ITEMS-02）', (
         },
       },
     )
-    expect(sheet().querySelector('.it-label-name')?.textContent).toBe('社内')
+    expect(byId(testIds.itemLabelName).textContent).toBe('社内')
   })
 })
 
@@ -475,16 +469,13 @@ describe('直したそばから自動で保存する（12.3・ITEMS-207・208・
 
   it('依頼者の欄は、直近 365日に使った名前を回数の多い順に候補に出し、打った字で絞る。選ぶとすぐ保存する（D49）', async () => {
     const old = T0 - 400 * DAY
-    const { user } = await open(
-      [
-        mkItem({ id: 'r', requester: '' }),
-        mkItem({ id: 'r1', requester: '総務', createdAt: T0 - DAY }),
-        mkItem({ id: 'r2', requester: '営業部', createdAt: T0 - 2 * DAY }),
-        mkItem({ id: 'r3', requester: '営業部', createdAt: T0 - 3 * DAY }),
-        mkItem({ id: 'r4', requester: '経理', createdAt: old }),
-      ],
-      { prefs: { detailsOpen: true } },
-    )
+    const { user } = await open([
+      mkItem({ id: 'r', requester: '' }),
+      mkItem({ id: 'r1', requester: '総務', createdAt: T0 - DAY }),
+      mkItem({ id: 'r2', requester: '営業部', createdAt: T0 - 2 * DAY }),
+      mkItem({ id: 'r3', requester: '営業部', createdAt: T0 - 3 * DAY }),
+      mkItem({ id: 'r4', requester: '経理', createdAt: old }),
+    ])
     const input = byId(testIds.itemRequester)
     await user.click(input)
     const list = () => screen.queryByRole('listbox', { name: '依頼者の候補' })
@@ -665,7 +656,7 @@ describe('list 生まれのタスク（12.3・6.3）', () => {
   })
 
   it('カレンダーに出ていない時（①④）は時刻の欄と「Task List にも出す」を押せず、「締め切り日を入れると時刻を入れられます」（ITEMS-212・214）', async () => {
-    await open([mkTask({ id: 't', start: '2026-11-10', due: null, startTime: '10:00' })], { prefs: { detailsOpen: true } })
+    await open([mkTask({ id: 't', start: '2026-11-10', due: null, startTime: '10:00' })])
     expect((byId(testIds.itemStartTime) as HTMLInputElement).disabled).toBe(true)
     expect((byId(testIds.itemStartTime) as HTMLInputElement).value).toBe('10:00')
     expect((byId(testIds.itemEndTime) as HTMLInputElement).disabled).toBe(true)

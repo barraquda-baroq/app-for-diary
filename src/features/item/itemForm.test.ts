@@ -1,11 +1,10 @@
-// 登録・詳細の画面の欄の初めの値と「詳しく」を開いて出すかの決め方（docs/SPEC.md の 12.2・12.3・6.12。D11・D48・AMB-ITEMS-02・26）
+// 登録・詳細の画面の欄の初めの値（docs/SPEC.md の 12.2・12.3・6.12。D48・AMB-ITEMS-26）
 import { describe, expect, it } from 'vitest'
-import { mkItem, mkTask } from '../../domain/testData'
+import { mkItem } from '../../domain/testData'
 import { mkItem as mk } from '../../domain/testData'
 import { deleteConfirmText, IN_TASK_LIST_NOTE } from './deleteItem'
 import {
   detailForm,
-  hasDetails,
   hasDraftText,
   memoParts,
   offCalendarTask,
@@ -17,7 +16,7 @@ import {
 } from './itemForm'
 
 describe('登録の画面の初めの値（12.2・ITEMS-172・177・183）', () => {
-  it('件名は空・区分は仕事・開始日だけ・時刻なし・詳しくは全部空', () => {
+  it('件名は空・区分は仕事・開始日だけ・時刻なし・依頼者・メモ・ロック・Task List・ラベルは空', () => {
     expect(registerForm({ start: '2026-11-10' })).toEqual({
       origin: 'calendar',
       start: '2026-11-10',
@@ -91,27 +90,6 @@ describe('詳細の画面の初めの値', () => {
     expect(rawTitleOf({ title: 3 })).toBe('')
     expect(rawTitleOf({})).toBe('')
     expect(detailForm(mkItem({ title: '（件名なし）' }), rawTitleOf({ title: null })).title).toBe('')
-  })
-})
-
-describe('「詳しく」を開いて出すか（D11・AMB-ITEMS-02）', () => {
-  const base = registerForm({ start: '2026-11-10' })
-  it.each([
-    ['何も無い', {}, false],
-    ['ラベル', { label: 'sky-l' as const }, true],
-    ['依頼者', { requester: '営業部' }, true],
-    ['依頼者が空白だけ', { requester: '  ' }, false],
-    ['ロック', { locked: true }, true],
-    ['calendar 生まれで Task List にも出す', { listed: true }, true],
-    ['メモ', { memo: '持ち物' }, true],
-    ['メモが空白だけ', { memo: '\n ' }, false],
-  ])('%s → %s', (_name, patch, open) => {
-    expect(hasDetails({ ...base, ...patch })).toBe(open)
-  })
-
-  it('list 生まれは Task List に出すのが初めなので、外した時だけ「入っている」とみなす', () => {
-    expect(hasDetails(detailForm(mkTask()))).toBe(false)
-    expect(hasDetails(detailForm(mkTask({ listed: false, due: '2026-11-20' })))).toBe(true)
   })
 })
 

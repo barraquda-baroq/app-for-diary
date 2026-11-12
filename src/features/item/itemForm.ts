@@ -1,5 +1,5 @@
-// 登録・詳細の画面の欄の値（docs/SPEC.md の 6.2・6.12・12.2・12.3）。画面の中で持つ値の形と、開いた時の初めの値、「詳しく」を
-// 開いて出すかの決め方。React・ストアを読まない純粋な関数だけ（DetailForm は登録・詳細・段階3の右の列のパネルのどれにも入る）。
+// 登録・詳細の画面の欄の値（docs/SPEC.md の 6.2・6.12・12.2・12.3）。画面の中で持つ値の形と、開いた時の初めの値。
+// React・ストアを読まない純粋な関数だけ（DetailForm は登録・詳細・段階3の右の列のパネルのどれにも入る）。
 // 欄を直した時の決まり（日付のそろえ方・翌日にする・00:00 を 24:00 に。12.4）は src/domain/itemInput.ts の editDates・editTimes が
 // 持つ（ここでは当てない）。ほかに、詳細の画面で保存する日付・時刻の差分、書きかけか、メモの URL の切り出し
 import { registerDefaults, type RegisterInit, type When } from '../../domain/itemInput'
@@ -8,7 +8,7 @@ import { UNTITLED } from '../../domain/repair'
 import type { Item, ItemKind } from '../../domain/types'
 import { kindOf, labelOf } from '../calendar/common/parts/itemLook'
 
-/** 欄の値（並びは 件名 → 区分 → 日付 → 時刻 → 詳しく（ラベル・依頼者・ロック・Task List にも出す・メモ）。12.2） */
+/** 欄の値（画面の並びは 件名 → 区分 → 依頼者 → 日付 → 時刻 → メモ → ロック・Task List にも出す → ラベルの色。12.2） */
 export interface ItemForm extends When {
   title: string
   kind: ItemKind
@@ -30,7 +30,7 @@ export type FieldPatch = Partial<Pick<ItemForm, 'title' | 'kind' | 'label' | 're
 /**
  * 登録の画面の初めの値（12.2・ITEMS-172・177・183）: 件名は空（段階3の Favorite からは1行目）、区分は開いた場所で決まる時はその区分
  * （無ければ仕事）、開始日はデイリーからはその日・ほかは今日、締め切り日は空、時刻はタイムスケジュールから開いた時だけ。
- * 詳しくはラベルなし・依頼者なし・ロックなし・Task List に出さない・メモ空（段階3の Favorite からはメモに2行目から）
+ * 依頼者なし・メモ空（段階3の Favorite からはメモに2行目から）・ロックなし・Task List に出さない・ラベルなし
  */
 export function registerForm(init: RegisterInit): ItemForm {
   const d = registerDefaults(init)
@@ -69,15 +69,6 @@ export function rawTitleOf(raw: unknown): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const title = (raw as { title?: unknown }).title
   return typeof title === 'string' ? title : ''
-}
-
-/**
- * 「詳しく」の中に入っている物があるか（詳細の画面は、あれば「詳しく」を開いて出す。D11・AMB-ITEMS-02）: ラベル・依頼者・ロック・
- * メモと、Task List にも出すが生まれの初めの値と違う時（calendar 生まれで出す・list 生まれで外した）
- */
-export function hasDetails(f: Pick<ItemForm, 'origin' | 'label' | 'requester' | 'locked' | 'listed' | 'memo'>): boolean {
-  const listedSet = f.origin === 'calendar' ? f.listed : !f.listed
-  return f.label !== null || f.requester.trim() !== '' || f.locked || listedSet || f.memo.trim() !== ''
 }
 
 /** 件名の欄に入れられる字（改行は入れない: 貼った改行は空白にする。200字まではコードポイントで数えて src/domain の limitChars） */

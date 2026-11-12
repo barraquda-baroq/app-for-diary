@@ -2,9 +2,8 @@
 // カード・行を押すと開く（common/sheets.ts の openDetail）。画面の地はその予定の区分の色、上の辺はラベルの色の帯（ItemSheet。X2・4.3）。
 // - 上の列: 点線の丸と「完了にする」（完了なら「完了」。押すと切り替え、お知らせは出さない。12.5）、右に［複製］・「…」（［削除］）
 //   （［×］は小さな画面の題の列）
-// - 欄: 登録の画面と同じ並び（DetailForm）。区分・ラベルを選び替えると、その場で地と帯の色も替わる
-// - 「詳しく」: ラベル・依頼者・ロック・メモ（と生まれの初めと違う Task List にも出す）のどれかが入っていれば開いて出し、どれも
-//   無ければ端末ごとに覚えた detailsOpen に従う。ここで開け閉めしても detailsOpen に書く（D11）
+// - 欄: 登録の画面と同じ並び（DetailForm）で、どの欄もいつも出す（畳む所は無い。22. の段階2の見本の確かめの 8.・10.）。
+//   区分・ラベルを選び替えると、その場で地と帯の色も替わる
 // - 下の行: 作った・完了・Claude が追加（DetailFooter。D47）
 // - 直したそばから自動で保存する（保存のボタンは無い。12.3・FRAME-054）: 文字の欄（件名・依頼者・メモ）は 0.6秒止まった時・離れた時
 //   （閉じる前にも。fields/useAutosave.ts）、日付・時刻・区分・ラベル・切り替えはすぐ。件名は空にできない（空のまま離れると元に戻し、
@@ -25,7 +24,7 @@ import { UNTITLED } from '../../domain/repair'
 import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
 import { getData, getStoredRecord, useApp, useRecord } from '../../store/appStore'
-import { attempt, notify, notifyError, usePrefs } from '../../store/uiStore'
+import { attempt, notify, notifyError } from '../../store/uiStore'
 import { CopyIcon, DotCheckIcon, MoreIcon, TrashIcon } from '../../ui/icons'
 import { PopupMenu } from '../../ui/PopupMenu'
 import { toggleDone } from '../calendar/common/parts'
@@ -37,7 +36,6 @@ import { DetailForm } from './DetailForm'
 import { DuplicateDialog } from './DuplicateDialog'
 import {
   detailForm,
-  hasDetails,
   offCalendarTask,
   rawTitleOf,
   TIMES_NEED_DUE,
@@ -80,12 +78,9 @@ export function DetailSheet({ id, onClose }: DetailSheetProps) {
 function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
   const id = item.id
   const labelNames = useApp((s) => s.data.labelNames)
-  const detailsPref = usePrefs((s) => s.detailsOpen)
-  const setPrefs = usePrefs((s) => s.setPrefs)
   // 欄の値は保存した記録から（直すとすぐ保存し、保存した値がここに戻る。文字の欄は打っている間の下書きを欄の中に持つ）。件名が空かは
   // 端末に書く（書いた）形の記録で見る（件名が空の予定の複製は、保存し終える前も空。D48）
   const form = useMemo(() => detailForm(item, rawTitleOf(getStoredRecord('items', item.id))), [item])
-  const [open, setOpen] = useState(() => hasDetails(form) || detailsPref)
   /** 日付にできなかった理由（6.4。次に日付・時刻を決めるまで） */
   const [dateError, setDateError] = useState<string | null>(null)
   /** 翌日までにした時の「翌日 02:00 まで」（閉じるか、日付・時刻を直すまで。AMB-ITEMS-05） */
@@ -94,11 +89,6 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
   /** 「…」のメニューを開いたボタン（閉じていれば null） */
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const offCalendar = offCalendarTask(form)
-
-  const toggleDetails = () => {
-    setOpen(!open)
-    setPrefs({ detailsOpen: !open })
-  }
 
   /** 直した物を保存する（予定が無くなった後は書かない）。list 生まれの締め切り日を消して Task List に戻した時は知らせる（6.3） */
   const save = (patch: ItemPatch) => {
@@ -198,8 +188,6 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
         mode="detail"
         value={form}
         labelNames={labelNames}
-        detailsOpen={open}
-        onToggleDetails={toggleDetails}
         onChange={onChange}
         onDates={onDates}
         onTimes={onTimes}

@@ -1,4 +1,4 @@
-// 切り替えの行（ロック・Task List にも出す。docs/SPEC.md の 12.2 の 5・12.3・12.6。オンの地は --switch-on。src/styles.css の .switch）
+// 切り替えの行（ロック・Task List にも出す。docs/SPEC.md の 12.2 の 7・12.3・12.6。オンの地は --switch-on。src/styles.css の .switch）
 import type { ReactNode } from 'react'
 import { cls } from '../../calendar/common/parts/itemLook'
 
