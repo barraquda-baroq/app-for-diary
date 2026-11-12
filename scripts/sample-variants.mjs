@@ -19,13 +19,16 @@
 //   accent-deeper   Q6 C  面から離す向きに 0.06
 //   labels-a        Q9 A  ラベルの24色の作り直し（■1・■2 の答え: パステルの縛りを外す）。呼び名は今のまま、色ごとの明るさの段（LABEL_SETS）
 //   labels-b        Q9 B  同じく、24色それぞれに和色の名前（桜・紅・朱・琥珀…）。淡と濃の行で色合いと明るさを互い違いに（LABEL_SETS）
+//   labels-c        Q11 C ラベルの24色に原色に近い色を入れる（Q9 の答え）。淡はやわらかいがはっきりした色、濃は原色に近い色（LABEL_SETS）
+//   labels-d        Q11 D 同じく、24色ともはっきりした色。淡と濃は主に明るさで分ける（LABEL_SETS）。Q11 の A は Q9 の labels-a
 // 「今」（B・Q4 A・Q5 A）は今の src/styles.css のまま。どの案も、src/styles.test.ts と同じ決まり（字 4.5:1、大きな数字・済んだ物 3:1、
 // ラベルと地の明るさの差 0.1、ラベルなしの線と24色の ΔE 0.06 など）で確かめ、通らない案は書き出さずに止める（checkTheme）。
 // アプリの中には入らない（見本は e2e/samples/samples.spec.ts が page.addStyleTag で差し込んで撮る）。
 // 作者の答え（2026-11-12。ANSWERS）: Q3 A・Q4 B・Q5 B・Q6 B（今）を選び、その値は src/styles.css に入れた。答えた問い（Q2〜Q6）の案は、
 // 見本で見比べてもらった時の値（答える前の値 ASKED_TOKENS を今の src/styles.css に重ねた物）から作ったまま残す（見本の控え）。
 // その切り抜きは、答える前の値（e2e/samples/variants.json の asked。askedCss）を敷いてから撮る（「今」の絵が、見比べてもらった時の
-// 「今」になる）。まだ答えの無い Q9 の案は、今の src/styles.css（答えを入れた値）の上で確かめ、そのまま撮る
+// 「今」になる）。ANSWERS に無い Q9・Q11 の案（ラベルの24色）は、今の src/styles.css（答えを入れた値）の上で確かめ、そのまま撮る。
+// Q9（案A・案B）は、作者の答え（2026-11-12「もっとはっきりした原色に近い色も採用しましょう」）でどちらも選ばず、Q11 で聞き直している
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -122,6 +125,19 @@ const NAMES_NOW = Object.fromEntries(LABEL_KEYS.map((k, i) => [k, `${LABEL_NAMES
  *   する。彩度の上限はダーク 0.14・ホワイト 0.15（ギラつかない。Novel Studio の領域の色と同じくらい）
  * labels-b（案B）: 24色に別々の和色の名前を付ける（下の names）。淡と濃の行で色合いを少しずらし、明るさも行の中で互い違いにして
  *   （淡い桜の隣に深い珊瑚、など）、行の中の違いを大きくする。彩度の上限はダーク・ホワイトとも 0.155
+ *
+ * Q11（Q9 の答え「もっとはっきりした原色に近い色も採用しましょう。パステルカラーだけだとぱっと見て違いが分かりづらいです」）:
+ * 原色に近いはっきりした色を入れた2つの案。どちらも、キーと並び・既定の呼び名（桜・淡 … 牡丹・濃）と12の色合いの仲間は今のまま。
+ * 4.1 の「ギラつかないパステル」の上限は外し、濃は色ごとに sRGB に入るいちばん鮮やかな所の近くに置く（どの値も sRGB に入り、
+ * 00・ff の成分は無い。切り詰めた原色は置かない）。どちらも:
+ * - 24色のどの2色も、案A より離れる（ホワイト・ダークで OKLab の ΔE 0.097 ほど以上。案A は 0.081・0.085）。青の仲間・ピンクの仲間も
+ * - 色覚の違い（1型・2型）で見ても、案A よりいちばん近い2色が離れる
+ * - ホワイトは同じ色合いで明るさを下げ、白い地でも 4px の縁が見える（菜の花・濃は金色）。✓（--on-label）はどの外観も 3:1 以上
+ * - ディープダークは今と同じく、ほぼグレー（彩度 0.03 以下）。新しい色合いと明るさの段を写し、位置とアイコンで見分ける（D20・4.3）
+ * labels-c（案C）: 淡はやわらかいがはっきりした色（白みのある色）、濃は原色に近い色（紅・朱・橙・金・黄緑・緑・青緑・空色・青・
+ *   青紫・紫・赤紫）。ダークの濃は彩度 0.215 まで（暗い地の上で光りすぎない）
+ * labels-d（案D）: 24色ともはっきりした色。淡は同じ色合いの濃を明るくした、彩度の高いままの色で、淡と濃は主に明るさで分ける
+ *   （同じ色合いの淡は濃より明るさ 0.12 以上明るい）
  */
 export const LABEL_SETS = {
   'labels-a': {
@@ -232,6 +248,64 @@ export const LABEL_SETS = {
       'wisteria-d': { white: [0.591, 0.155, 290], dark: [0.677, 0.146, 281], 'deep-dark': [0.447, 0.028, 287] },
       'violet-d': { white: [0.533, 0.155, 321], dark: [0.602, 0.15, 323], 'deep-dark': [0.421, 0.028, 326] },
       'peony-d': { white: [0.596, 0.155, 353], dark: [0.664, 0.146, 353], 'deep-dark': [0.459, 0.03, 347] },
+    },
+  },
+  'labels-c': {
+    names: NAMES_NOW,
+    oklch: {
+      'rose-l': { white: [0.833, 0.088, 5], dark: [0.74, 0.14, 13], 'deep-dark': [0.607, 0.028, 18] },
+      'coral-l': { white: [0.73, 0.153, 22], dark: [0.788, 0.126, 51], 'deep-dark': [0.563, 0.028, 63] },
+      'apricot-l': { white: [0.793, 0.131, 58], dark: [0.877, 0.092, 75], 'deep-dark': [0.531, 0.019, 78] },
+      'lemon-l': { white: [0.829, 0.142, 101], dark: [0.951, 0.119, 105], 'deep-dark': [0.606, 0.026, 95] },
+      'lime-l': { white: [0.764, 0.155, 134], dark: [0.852, 0.14, 124], 'deep-dark': [0.579, 0.028, 125] },
+      'mint-l': { white: [0.715, 0.11, 171], dark: [0.801, 0.115, 165], 'deep-dark': [0.532, 0.028, 177] },
+      'teal-l': { white: [0.816, 0.121, 186], dark: [0.905, 0.091, 175], 'deep-dark': [0.57, 0.028, 189] },
+      'sky-l': { white: [0.823, 0.086, 245], dark: [0.838, 0.104, 221], 'deep-dark': [0.605, 0.02, 229] },
+      'blue-l': { white: [0.712, 0.126, 258], dark: [0.761, 0.116, 251], 'deep-dark': [0.551, 0.027, 250] },
+      'wisteria-l': { white: [0.671, 0.152, 300], dark: [0.725, 0.139, 297], 'deep-dark': [0.519, 0.017, 304] },
+      'violet-l': { white: [0.777, 0.105, 306], dark: [0.861, 0.095, 318], 'deep-dark': [0.588, 0.027, 316] },
+      'peony-l': { white: [0.717, 0.155, 341], dark: [0.783, 0.14, 335], 'deep-dark': [0.554, 0.022, 339] },
+      'rose-d': { white: [0.575, 0.208, 7], dark: [0.604, 0.215, 12], 'deep-dark': [0.426, 0.026, 9] },
+      'coral-d': { white: [0.58, 0.162, 38], dark: [0.649, 0.188, 40], 'deep-dark': [0.462, 0.021, 49] },
+      'apricot-d': { white: [0.674, 0.156, 57], dark: [0.693, 0.139, 70], 'deep-dark': [0.414, 0.027, 79] },
+      'lemon-d': { white: [0.719, 0.141, 95], dark: [0.81, 0.157, 90], 'deep-dark': [0.496, 0.028, 90] },
+      'lime-d': { white: [0.647, 0.157, 126], dark: [0.737, 0.162, 123], 'deep-dark': [0.441, 0.025, 118] },
+      'mint-d': { white: [0.556, 0.149, 149], dark: [0.661, 0.176, 148], 'deep-dark': [0.412, 0.028, 158] },
+      'teal-d': { white: [0.611, 0.102, 187], dark: [0.708, 0.112, 182], 'deep-dark': [0.468, 0.021, 180] },
+      'sky-d': { white: [0.58, 0.122, 240], dark: [0.658, 0.134, 236], 'deep-dark': [0.496, 0.028, 236] },
+      'blue-d': { white: [0.524, 0.195, 260], dark: [0.613, 0.198, 262], 'deep-dark': [0.433, 0.011, 238] },
+      'wisteria-d': { white: [0.569, 0.224, 287], dark: [0.571, 0.215, 290], 'deep-dark': [0.414, 0.028, 294] },
+      'violet-d': { white: [0.552, 0.237, 316], dark: [0.643, 0.215, 312], 'deep-dark': [0.484, 0.022, 316] },
+      'peony-d': { white: [0.612, 0.24, 341], dark: [0.679, 0.215, 345], 'deep-dark': [0.453, 0.026, 322] },
+    },
+  },
+  'labels-d': {
+    names: NAMES_NOW,
+    oklch: {
+      'rose-l': { white: [0.726, 0.15, 5], dark: [0.68, 0.17, 10], 'deep-dark': [0.548, 0.029, 8] },
+      'coral-l': { white: [0.694, 0.17, 39], dark: [0.742, 0.138, 37], 'deep-dark': [0.584, 0.029, 37] },
+      'apricot-l': { white: [0.766, 0.146, 65], dark: [0.816, 0.128, 70], 'deep-dark': [0.52, 0.03, 68] },
+      'lemon-l': { white: [0.833, 0.15, 94], dark: [0.9, 0.16, 97], 'deep-dark': [0.605, 0.028, 103] },
+      'lime-l': { white: [0.821, 0.17, 130], dark: [0.848, 0.161, 128], 'deep-dark': [0.555, 0.029, 128] },
+      'mint-l': { white: [0.735, 0.161, 155], dark: [0.787, 0.145, 157], 'deep-dark': [0.52, 0.029, 158] },
+      'teal-l': { white: [0.817, 0.128, 182], dark: [0.875, 0.131, 185], 'deep-dark': [0.586, 0.029, 185] },
+      'sky-l': { white: [0.784, 0.123, 226], dark: [0.816, 0.105, 223], 'deep-dark': [0.546, 0.03, 223] },
+      'blue-l': { white: [0.705, 0.136, 256], dark: [0.739, 0.117, 256], 'deep-dark': [0.606, 0.029, 257] },
+      'wisteria-l': { white: [0.66, 0.169, 288], dark: [0.68, 0.162, 285], 'deep-dark': [0.572, 0.029, 291] },
+      'violet-l': { white: [0.735, 0.167, 311], dark: [0.765, 0.147, 307], 'deep-dark': [0.523, 0.025, 305] },
+      'peony-l': { white: [0.817, 0.128, 338], dark: [0.771, 0.167, 343], 'deep-dark': [0.609, 0.029, 339] },
+      'rose-d': { white: [0.6, 0.223, 9], dark: [0.556, 0.196, 8], 'deep-dark': [0.423, 0.029, 5] },
+      'coral-d': { white: [0.539, 0.188, 32], dark: [0.607, 0.217, 32], 'deep-dark': [0.458, 0.029, 34] },
+      'apricot-d': { white: [0.603, 0.138, 56], dark: [0.64, 0.143, 58], 'deep-dark': [0.4, 0.03, 64] },
+      'lemon-d': { white: [0.674, 0.128, 89], dark: [0.735, 0.143, 94], 'deep-dark': [0.481, 0.029, 100] },
+      'lime-d': { white: [0.654, 0.172, 133], dark: [0.72, 0.182, 134], 'deep-dark': [0.434, 0.028, 127] },
+      'mint-d': { white: [0.545, 0.158, 144], dark: [0.627, 0.178, 146], 'deep-dark': [0.4, 0.029, 152] },
+      'teal-d': { white: [0.648, 0.111, 178], dark: [0.703, 0.119, 178], 'deep-dark': [0.462, 0.03, 182] },
+      'sky-d': { white: [0.608, 0.12, 235], dark: [0.635, 0.118, 230], 'deep-dark': [0.421, 0.029, 230] },
+      'blue-d': { white: [0.518, 0.182, 258], dark: [0.564, 0.19, 259], 'deep-dark': [0.484, 0.03, 258] },
+      'wisteria-d': { white: [0.538, 0.24, 285], dark: [0.556, 0.241, 286], 'deep-dark': [0.451, 0.029, 287] },
+      'violet-d': { white: [0.591, 0.239, 313], dark: [0.631, 0.245, 308], 'deep-dark': [0.4, 0.029, 302] },
+      'peony-d': { white: [0.547, 0.218, 339], dark: [0.619, 0.25, 339], 'deep-dark': [0.487, 0.027, 340] },
     },
   },
 }
@@ -566,7 +640,7 @@ export const cvdDeltaE = (type) => (x, y) => {
 }
 
 /**
- * Q9: ラベルの24色の作り直し（LABEL_SETS の id）。OKLCH の [L, C, h] をそのまま16進にする（sRGB に入らない値は置かない）。
+ * Q9・Q11: ラベルの24色の作り直し（LABEL_SETS の id）。OKLCH の [L, C, h] をそのまま16進にする（sRGB に入らない値は置かない）。
  * notes に、外観ごとのいちばん近い2色と、色覚の違い（1型・2型）で見たいちばん近い2色を、今の値と並べて書く
  */
 function labelSet(id, themes) {
@@ -861,13 +935,25 @@ export const QUESTIONS = {
       { letter: 'B', id: 'labels-b', label: '24色それぞれに和色の名前、淡と濃を互い違いにした24色' },
     ],
   },
+  // Q9 の答え（「原色に近い色も」）から作り直した24色。A は見比べ用の前回の案A（Q9 と同じ labels-a）。Q2・Q9・Q11 の案は同じトークンを
+  // 書き換えるので、どれか1つを選ぶ
+  11: {
+    title: 'ラベルの24色（原色に近い色を入れる）',
+    appearances: THEMES,
+    options: [
+      { letter: 'A', id: 'labels-a', label: '前回の案A（呼び名は今のまま、色ごとに明るさの違う24色）' },
+      { letter: 'C', id: 'labels-c', label: '淡はやわらかく、濃は原色に近いはっきりした色' },
+      { letter: 'D', id: 'labels-d', label: '24色ともはっきりした色、淡と濃は明るさで分ける' },
+    ],
+  },
 }
 
 // ---------- 作者の答え（2026-11-12。docs/STAGE2-LOOKS.md の「作者の答え」・仕様書 22.） ----------
 
 /**
  * 答えた問いと選んだ案（now は「今」のまま）。Q2（30°おき）は、■1・■2 の答え（「色の間が近すぎる」「パステルの縛りを外して」）で
- * どちらも選ばず、24色を作り直して Q9 で聞き直している（Q9 は答えを待つので、ここに無い）。
+ * どちらも選ばず、24色を作り直して Q9 で聞き直している。Q9（案A・案B）も、答え（「原色に近い色も」）でどちらも選ばず、原色に近い色を
+ * 入れて Q11 で聞き直している（Q9・Q11 の案は今の値の上で作るので、ここに無い。Q11 は答えを待つ）。
  * 選んだ案の値は src/styles.css に入れた（node scripts/sample-variants.mjs --emit css --pick depth-lighter,highlight-full,weekend-matched）
  */
 export const ANSWERS = { 2: 'labels', 3: 'depth-lighter', 4: 'highlight-full', 5: 'weekend-matched', 6: 'now' }
@@ -937,7 +1023,7 @@ export function tokensCss(tokens) {
 
 /**
  * すべての案を作り、確かめる。css = src/styles.css の中身。戻り値は e2e/samples/variants.json の中身。
- * 答えた問い（Q2〜Q6）の案は答える前の値（askedThemes）から、まだ答えの無い問い（Q9）の案は今の値から作る。
+ * 答えた問い（Q2〜Q6）の案は答える前の値（askedThemes）から、ANSWERS に無い問い（Q9・Q11）の案は今の値から作る。
  * 案が決まりを満たさない時は投げる（書き出さない）
  */
 export function buildVariants(css) {
@@ -960,6 +1046,9 @@ export function buildVariants(css) {
     'accent-deeper': { question: 6, letter: 'C', ...accent(asked, 1, B) },
     'labels-a': { question: 9, letter: 'A', ...labelSet('labels-a', themes) },
     'labels-b': { question: 9, letter: 'B', ...labelSet('labels-b', themes) },
+    // Q11 の A は Q9 の labels-a（同じ案。上の行で作った物）
+    'labels-c': { question: 11, letter: 'C', ...labelSet('labels-c', themes) },
+    'labels-d': { question: 11, letter: 'D', ...labelSet('labels-d', themes) },
   }
   const options = {}
   for (const [id, m] of Object.entries(made)) {
@@ -1098,7 +1187,7 @@ export function emitCss(variants, pick) {
 }
 
 /**
- * 選んだ案の既定の呼び名（{ キー: 呼び名 }）。呼び名を持つ案（Q9 の labels-a・labels-b）を選んでいなければ今の呼び名（4.6）。
+ * 選んだ案の既定の呼び名（{ キー: 呼び名 }）。呼び名を持つ案（Q9・Q11 の labels-a〜labels-d）を選んでいなければ今の呼び名（4.6）。
  * 呼び名を持つ案を2つ選んだ時は、ラベルの色を2つの案が書き換えるので pickTokens が止める
  */
 export function pickNames(variants, pick) {

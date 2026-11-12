@@ -248,8 +248,8 @@ describe('案（e2e/samples/variants.json）', () => {
     expect(sameVariants(null, json)).toBe(false)
   })
 
-  it('問い（Q2〜Q6・Q9）の選ぶ物は、どれも「今」か作った案', () => {
-    expect(Object.keys(QUESTIONS).map(Number)).toEqual([2, 3, 4, 5, 6, 9])
+  it('問い（Q2〜Q6・Q9・Q11）の選ぶ物は、どれも「今」か作った案', () => {
+    expect(Object.keys(QUESTIONS).map(Number)).toEqual([2, 3, 4, 5, 6, 9, 11])
     const ids = Object.values(QUESTIONS).flatMap((q) => q.options.map((o) => o.id))
     for (const id of ids) expect(id === 'now' || id in options, id).toBe(true)
     for (const id of Object.keys(options)) expect(ids).toContain(id)
@@ -523,19 +523,27 @@ describe('Q6 A・C: グレーの差し色の濃さ（accent-lighter・accent-dee
   })
 })
 
+// ラベルの24色の案（Q9・Q11）の確かめに使う物
+const colorsOf = (id, theme) => Object.fromEntries(LABEL_KEYS.map((k) => [k, options[id].tokens[theme][`--label-${k}`]]))
+const nowColors = (theme) => Object.fromEntries(LABEL_KEYS.map((k) => [k, hexOf(themes[theme], `--label-${k}`)]))
+const both = (bases) => bases.flatMap((b) => [`${b}-l`, `${b}-d`])
+/** 作者が「特に近い」と言った2つの仲間（青の仲間・左のピンクの仲間） */
+const FAMILIES = { 青: both(['teal', 'sky', 'blue', 'wisteria']), ピンク: both(['rose', 'coral', 'peony']) }
+const familyMin = (colors, keys) => {
+  let min = Infinity
+  for (const a of keys) for (const b of keys) if (a < b) min = Math.min(min, deltaE(colors[a], colors[b]))
+  return min
+}
+const hueGap = (a, b) => (b - a + 360) % 360
+/** 色を選ぶ所の行（淡・濃）が、色合いの順のまま一回りする（どの隣も 180° より近く、間の和が 360°） */
+const hueRoundTrip = (oklch, theme, row) => {
+  const hs = LABEL_KEYS.filter((k) => k.endsWith(`-${row}`)).map((k) => oklch[k][theme][2])
+  const gaps = hs.map((h, i) => hueGap(h, hs[(i + 1) % 12]))
+  return gaps.every((g) => g < 180) && gaps.reduce((a, b) => a + b, 0) === 360
+}
+
 describe('Q9: ラベルの24色の作り直し（labels-a・labels-b。■1・■2 の答え）', () => {
   const SETS = ['labels-a', 'labels-b']
-  const colorsOf = (id, theme) => Object.fromEntries(LABEL_KEYS.map((k) => [k, options[id].tokens[theme][`--label-${k}`]]))
-  const nowColors = (theme) => Object.fromEntries(LABEL_KEYS.map((k) => [k, hexOf(themes[theme], `--label-${k}`)]))
-  const both = (bases) => bases.flatMap((b) => [`${b}-l`, `${b}-d`])
-  /** 作者が「特に近い」と言った2つの仲間（青の仲間・左のピンクの仲間） */
-  const FAMILIES = { 青: both(['teal', 'sky', 'blue', 'wisteria']), ピンク: both(['rose', 'coral', 'peony']) }
-  const familyMin = (colors, keys) => {
-    let min = Infinity
-    for (const a of keys) for (const b of keys) if (a < b) min = Math.min(min, deltaE(colors[a], colors[b]))
-    return min
-  }
-  const hueGap = (a, b) => (b - a + 360) % 360
 
   it.each(SETS)('%s: キーと並びは今のまま（データはそのまま使える）、3つの外観の24色を OKLCH の値からそのまま作る', (id) => {
     const o = options[id]
@@ -644,9 +652,169 @@ describe('Q9: ラベルの24色の作り直し（labels-a・labels-b。■1・�
     expect(closestPair(nowColors('dark'))).toMatchObject({ a: 'rose-l', b: 'peony-l' })
   })
 
-  it('labels-a・labels-b は Q2 の hue30 と同じトークンを書き換えるので、一緒には選べない', () => {
+  it('labels-a・labels-b は Q2 の hue30 と同じトークンを書き換えるので、一緒には選べない（Q11 の案とも）', () => {
     expect(() => pickTokens(variants, 'hue30,labels-a')).toThrow(/両方/)
     expect(() => pickTokens(variants, 'labels-a,labels-b')).toThrow(/両方/)
+    expect(() => pickTokens(variants, 'labels-b,labels-c')).toThrow(/両方/)
+    expect(() => pickTokens(variants, 'hue30,labels-d')).toThrow(/両方/)
+    expect(() => pickTokens(variants, 'labels-c,labels-d')).toThrow(/両方/)
+  })
+})
+
+describe('Q11: ラベルの24色に原色に近い色を入れる（labels-c・labels-d。Q9 の答え）', () => {
+  const SETS = ['labels-c', 'labels-d']
+  const BOTH = ['white', 'dark']
+  /** その明るさと色合いで sRGB に入るいちばん大きな彩度（0.002 刻み） */
+  const maxChroma = (L, h) => oklchToHex([L, 0.5, h]).chroma
+  const row = (r) => LABEL_KEYS.filter((k) => k.endsWith(`-${r}`))
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length
+  const circ = (a, b) => Math.min(hueGap(a, b), hueGap(b, a))
+
+  it('選ぶ物は A（見比べ用の前回の案A。Q9 と同じ labels-a）・C・D。Q9 は聞いた時のまま残す', () => {
+    expect(QUESTIONS[11].appearances).toEqual(THEMES)
+    expect(QUESTIONS[11].options.map((o) => [o.letter, o.id])).toEqual([
+      ['A', 'labels-a'],
+      ['C', 'labels-c'],
+      ['D', 'labels-d'],
+    ])
+    expect(QUESTIONS[9].options.map((o) => [o.letter, o.id])).toEqual([
+      ['A', 'labels-a'],
+      ['B', 'labels-b'],
+    ])
+    // Q9・Q11 は ANSWERS に無い（今の値の上で作って撮る）
+    expect(ANSWERS).not.toHaveProperty('9')
+    expect(ANSWERS).not.toHaveProperty('11')
+  })
+
+  it.each(SETS)(
+    '%s: キーと並び・既定の呼び名は今のまま。3つの外観の24色を OKLCH の値からそのまま作り、切り詰めた原色（00・ff の成分）は無い',
+    (id) => {
+      const o = options[id]
+      expect(o.question).toBe(11)
+      expect(o.appearances).toEqual(THEMES)
+      expect(o.names).toEqual({ ...LABEL_DEFAULT_NAMES })
+      expect(Object.keys(LABEL_SETS[id].oklch)).toEqual(LABEL_KEYS)
+      for (const theme of THEMES) {
+        expect(Object.keys(o.tokens[theme])).toEqual(LABEL_KEYS.map((k) => `--label-${k}`))
+        for (const key of LABEL_KEYS) {
+          const made = oklchToHex(LABEL_SETS[id].oklch[key][theme])
+          expect(made.clipped, `${theme} ${key}`).toBe(false)
+          expect(o.tokens[theme][`--label-${key}`]).toBe(made.hex)
+          for (const c of hexToRgb(made.hex).map((v) => Math.round(v * 255)))
+            expect(c > 0 && c < 255, `${theme} ${key} ${made.hex}`).toBe(true)
+        }
+      }
+    },
+  )
+
+  // Q9 の答え「パステルカラーだけだとぱっと見て違いが分かりづらい」: 24色のどの2色も、前回の案A よりはっきり離れる
+  it.each(SETS.flatMap((id) => THEMES.map((t) => [id, t])))(
+    '%s（%s）: どの2色も案A より離れ、青の仲間・ピンクの仲間・色覚の違い（1型・2型）で見ても案A より離れる',
+    (id, theme) => {
+      const mine = colorsOf(id, theme)
+      const a = colorsOf('labels-a', theme)
+      // ホワイトとダークは 0.01 以上（ΔE 0.095 ほど以上）、ほぼグレーのディープダークは案A より離れれば良い
+      const margin = theme === 'deep-dark' ? 0 : 0.01
+      expect(closestPair(mine).d).toBeGreaterThan(closestPair(a).d + margin)
+      // 今（ホワイト 0.031・ダーク 0.026・ディープダーク 0.007）の 3倍以上
+      expect(closestPair(mine).d).toBeGreaterThan(3 * closestPair(nowColors(theme)).d)
+      for (const [name, keys] of Object.entries(FAMILIES))
+        expect(familyMin(mine, keys), `${name}の仲間`).toBeGreaterThan(familyMin(a, keys))
+      for (const type of ['protan', 'deutan'])
+        expect(closestPair(mine, cvdDeltaE(type)).d, type).toBeGreaterThan(closestPair(a, cvdDeltaE(type)).d)
+    },
+  )
+
+  it.each(SETS)(
+    '%s: 濃は原色に近い（その明るさ・色合いで sRGB に入るいちばん鮮やかな所の 8割以上。行の彩度は案A の 1.3倍以上）',
+    (id) => {
+      const o = LABEL_SETS[id].oklch
+      const a = LABEL_SETS['labels-a'].oklch
+      for (const theme of BOTH) {
+        for (const k of row('d')) {
+          const [L, c, h] = o[k][theme]
+          expect(c / maxChroma(L, h), `${theme} ${k}`).toBeGreaterThanOrEqual(0.8)
+        }
+        const cs = (set) => mean(row('d').map((k) => set[k][theme][1]))
+        expect(cs(o), theme).toBeGreaterThan(1.3 * cs(a))
+        // ダークの濃は明るすぎない（暗い地の上で光らない）
+        for (const k of row('d')) expect(o[k][theme][0], `${theme} ${k}`).toBeLessThanOrEqual(theme === 'dark' ? 0.85 : 0.75)
+      }
+    },
+  )
+
+  it('labels-c: 淡はやわらかいがはっきりした色（白みのある色。sRGB のいちばん小さな成分が 0.28 以上）、濃は白みの少ない色', () => {
+    const o = LABEL_SETS['labels-c'].oklch
+    for (const theme of BOTH) {
+      for (const k of row('l')) {
+        const hex = options['labels-c'].tokens[theme][`--label-${k}`]
+        expect(Math.min(...hexToRgb(hex)), `${theme} ${k}`).toBeGreaterThanOrEqual(0.28)
+        expect(o[k][theme][1], `${theme} ${k}`).toBeGreaterThanOrEqual(0.08)
+      }
+      for (const k of row('d')) {
+        const hex = options['labels-c'].tokens[theme][`--label-${k}`]
+        expect(Math.min(...hexToRgb(hex)), `${theme} ${k}`).toBeLessThanOrEqual(0.4)
+      }
+      // ダークの濃は彩度 0.215 まで（光りすぎない）
+      for (const k of row('d')) expect(o[k].dark[1], k).toBeLessThanOrEqual(0.215)
+    }
+  })
+
+  it('labels-d: 淡も彩度の高いままの色（彩度 0.1 以上・その明るさで入るいちばん鮮やかな所の 7割以上）', () => {
+    const o = LABEL_SETS['labels-d'].oklch
+    for (const theme of BOTH)
+      for (const k of row('l')) {
+        const [L, c, h] = o[k][theme]
+        expect(c, `${theme} ${k}`).toBeGreaterThanOrEqual(0.1)
+        expect(c / maxChroma(L, h), `${theme} ${k}`).toBeGreaterThanOrEqual(0.7)
+      }
+  })
+
+  it.each(SETS)(
+    '%s: 淡は同じ色合いの濃より明るく（案D は明るさ 0.12 以上）、12の色合いの仲間と色を選ぶ所の並びは今のまま',
+    (id) => {
+      const o = LABEL_SETS[id].oklch
+      const floor = id === 'labels-d' ? 0.12 : 0.1
+      for (const theme of THEMES) {
+        for (const base of row('l').map((k) => k.slice(0, -2))) {
+          const dL = o[`${base}-l`][theme][0] - o[`${base}-d`][theme][0]
+          expect(dL, `${theme} ${base}`).toBeGreaterThanOrEqual(floor - 1e-9)
+          // 16進にしても淡の方が明るい
+          const hex = (k) => options[id].tokens[theme][`--label-${k}`]
+          expect(lightness(hex(`${base}-l`)) - lightness(hex(`${base}-d`)), `${theme} ${base}`).toBeGreaterThan(floor - 0.01)
+        }
+        for (const r of ['l', 'd']) expect(hueRoundTrip(o, theme, r), `${theme} ${r}`).toBe(true)
+      }
+      // ホワイトとダークの色合いは、今の12の色合い（4.6）から 25° 以内（桜は桜、菜の花は黄、瑠璃は青のまま）
+      for (const theme of BOTH)
+        for (const r of ['l', 'd'])
+          row(r).forEach((k, i) => expect(circ(o[k][theme][2], HUES_NOW[i]), `${theme} ${k}`).toBeLessThanOrEqual(25))
+    },
+  )
+
+  it.each(SETS)('%s: ディープダークはほぼグレー（彩度 0.03 以下）、✓（--on-label）はどの外観も 3:1 以上', (id) => {
+    for (const theme of THEMES)
+      for (const key of LABEL_KEYS) {
+        const hex = options[id].tokens[theme][`--label-${key}`]
+        if (theme === 'deep-dark') {
+          expect(LABEL_SETS[id].oklch[key][theme][1], key).toBeLessThanOrEqual(0.03)
+          expect(chromaOf(hex), key).toBeLessThanOrEqual(0.031)
+        }
+        expect(contrast(hexOf(themes[theme], '--on-label'), hex), `${theme} ${key} の✓`).toBeGreaterThanOrEqual(3)
+      }
+  })
+
+  it('選んだ時の書き出し: 既定の呼び名は今のまま（桜・淡 … 牡丹・濃）、仕様書の表の行も今の呼び名', () => {
+    for (const id of SETS) {
+      expect(pickNames(variants, id)).toEqual({ ...LABEL_DEFAULT_NAMES })
+      const lines = emitSpec(variants, id, css).trim().split('\n')
+      const tok = options[id].tokens
+      expect(lines[2]).toBe(
+        `| 1 | \`rose-l\` | 桜・淡 | \`${tok.white['--label-rose-l']}\` | \`${tok.dark['--label-rose-l']}\` | \`${tok['deep-dark']['--label-rose-l']}\` |`,
+      )
+      expect(lines[25]).toMatch(/^\| 24 \| `peony-d` \| 牡丹・濃 \|/)
+      expect(emitCss(variants, id)).toContain(`  --label-lemon-d: ${tok.white['--label-lemon-d']};`)
+    }
   })
 })
 
@@ -666,10 +834,11 @@ describe('選んだ案を書く形にする（段階2の終わりの --emit css|
     expect(() => pickTokens(variants, 'highlight-full@deep-dark')).toThrow(/ディープダーク.*変えません/)
   })
 
-  // 答えた問い（Q3〜Q6）は答えの値のまま（今の src/styles.css）。まだ答えの無いラベルの24色（Q9: 今のまま・案A・案B）は、
-  // どれを選んでも、答えを入れた今の値の上で決まりを満たす（--emit css --pick labels-a などをそのまま入れられる）
-  it.each(THEMES)('%s: まだ答えの無い Q9 のどれを選んでも、答えを入れた今の値の上で決まりを満たす（checkPick）', (theme) => {
-    for (const pick of ['', 'labels-a', 'labels-b']) expect(checkPick(variants, pick, css), `${theme}: ${pick}`).toEqual([])
+  // 答えた問い（Q3〜Q6）は答えの値のまま（今の src/styles.css）。まだ決まっていないラベルの24色（今のまま・Q9 の案A・案B・
+  // Q11 の案C・案D）は、どれを選んでも、答えを入れた今の値の上で決まりを満たす（--emit css --pick labels-c などをそのまま入れられる）
+  it.each(THEMES)('%s: ラベルの24色（Q9・Q11）のどれを選んでも、答えを入れた今の値の上で決まりを満たす（checkPick）', (theme) => {
+    for (const pick of ['', 'labels-a', 'labels-b', 'labels-c', 'labels-d'])
+      expect(checkPick(variants, pick, css), `${theme}: ${pick}`).toEqual([])
   })
 
   it('checkPick: 選んだ値が決まりを割る時は、その文を返す（--emit はそれを出して止まる）', () => {
