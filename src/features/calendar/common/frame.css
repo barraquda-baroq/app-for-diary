@@ -41,7 +41,7 @@
 .cal-period {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   font-size: inherit;
   font-weight: inherit;
@@ -65,7 +65,7 @@
 .cal-period-label {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   /* 等幅 11px の11字（「11.08–11.14」）と字間が入る幅。週を移っても ‹ › の位置が動かないように */
   min-width: 12.5ch;
   font-family: var(--font-mono);
@@ -117,37 +117,23 @@
   touch-action: pan-y pinch-zoom;
 }
 
-/* 中身ができるまでの仮の画面の文（段階2の各モードの担当が置き換える） */
-.cal-stage-note {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-.cal-empty {
-  margin-top: 16px;
-}
-
-/* ---------- S（599px まで）: 操作の列を2行にし（1行目に左の物、2行目に右の物）、360px に収める（3.7） ---------- */
+/* ---------- S（599px まで）: 操作の列を2行にし（1行目に左の物、2行目に右の物）、360px に収める（3.7）。物の間は L・M と同じ
+   （左 12px・右 8px。4.8 の 4px の単位） ---------- */
 @media (max-width: 599px) {
   .cal-toolbar {
     flex-direction: column;
     align-items: stretch;
-    padding: 12px 12px 10px;
-  }
-
-  .cal-toolbar-left {
-    gap: 10px;
+    padding: 12px;
   }
 
   .cal-toolbar-right {
-    gap: 6px;
     margin-left: 0;
   }
 
+  /* 1字の［年｜月｜週｜日］は押せる所の 34px が幅を決める（左右の余白は 1字が 34px に入るまでの物） */
   .segmented.cal-modes button {
     min-width: var(--tap);
-    padding: 4px 10px;
+    padding: 4px 8px;
   }
 
   .cal-body {

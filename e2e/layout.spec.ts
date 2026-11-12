@@ -2,7 +2,9 @@
 // - 4つのモード（イヤー・マンスリー・ウィークリー・デイリー）と、登録・詳細・確かめの小さな画面が、幅 360・390・412・600・768・960・
 //   1400 のどれでも横にスクロールしない（ページも、カレンダーの領域や小さな画面の中のスクロールする所も）
 // - L は、予定を 60件入れた週・日でもページ全体がスクロールせず、カレンダーの下が切れない（カレンダーの領域の中だけ）
-// - 指で操作する端末では、押せる所が 34px 以上（区切りの中の大きさが勝つ所は D08 の例外。下の SMALL_OK に1つずつ理由を書く）
+// - 指で操作する端末では、押せる所が 34px 以上（区切りの中の大きさが勝つ所は D08 の例外。下の SMALL_OK に1つずつ理由を書く）。
+//   ::before で広げた所（日付の見出し・受けた表示の中の●・「＞」・7日を縦の下向きの矢印）と小さな月の名前は、隣の押せる物の押せる所を
+//   取らない
 // - ディープダーク: 区分は位置とアイコン、休みは「休」の字、完了は斜線と✓、今日は太さ・輪でも分かる
 // - Tab で日の見出し・カード・丸・●・数字のボタンへ動け、どれにも見える枠が出る（マンスリーのマス目は Tab で1つだけ止まる）
 // 各モードの中身は各モードの担当の E2E（month・week・day・year・item の spec）で確かめる。データは作り物の
@@ -11,7 +13,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { testIds } from '../src/features/calendar/common/testIds'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS as I, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, openCalendar, openItemMore, sheetReady } from './helpers'
+import { collectDiagnosticsOnFailure, openCalendar, openItemMore, seedData, sheetReady } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -69,6 +71,39 @@ async function noSideScroll(page: Page, label: string, sheet?: Locator) {
   expect(m.right, `${label}: 小さな画面の右の端`).toBeLessThanOrEqual(m.width + 0.5)
 }
 
+/**
+ * 小さな画面の形（3.8・12.2・FRAME-077・078・ITEMS-165・252・265）: L（幅 900px から）は真ん中の小さな画面（幅 520px まで・角丸
+ * 14px）、M・S は下からせり上がるシート（幅いっぱい・下の端は画面の下の端・高さは最大 92dvh・上の角だけ 16px）。出る動きの後に測る
+ */
+async function sheetShape(dialog: Locator, label: string) {
+  await dialog.evaluate((e) => Promise.all(e.getAnimations({ subtree: true }).map((a) => a.finished)))
+  const m = await dialog.evaluate((e) => {
+    const r = e.getBoundingClientRect()
+    const s = getComputedStyle(e)
+    return {
+      left: r.left,
+      right: r.right,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height,
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      radius: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius],
+    }
+  })
+  if (m.vw >= 900) {
+    expect(m.width, `${label}: 幅`).toBeLessThanOrEqual(520)
+    expect(Math.abs(m.left - (m.vw - m.right)), `${label}: 左右の真ん中`).toBeLessThanOrEqual(1)
+    expect(m.bottom, `${label}: 下の端`).toBeLessThan(m.vh - 1)
+    expect(m.radius, `${label}: 角丸`).toEqual(['14px', '14px', '14px', '14px'])
+  } else {
+    expect([m.left, m.right], `${label}: 幅いっぱい`).toEqual([0, m.vw])
+    expect(Math.abs(m.bottom - m.vh), `${label}: 下の端は画面の下の端`).toBeLessThanOrEqual(1)
+    expect(m.height, `${label}: 高さは最大 92dvh`).toBeLessThanOrEqual(m.vh * 0.92 + 1)
+    expect(m.radius, `${label}: 上の角だけ 16px`).toEqual(['16px', '16px', '0px', '0px'])
+  }
+}
+
 /** 小さな画面を Esc で閉じる（開き終わってから。閉じ終わるまで待つ） */
 async function closeSheet(page: Page) {
   await page.keyboard.press('Escape')
@@ -76,8 +111,8 @@ async function closeSheet(page: Page) {
 }
 
 /**
- * 4つのモードと、登録・詳細（どの欄もいつも出ている）の小さな画面で、横にはみ出さない。confirm なら詳細の［削除］の確かめの小さな画面も
- * （開いて、［やめる］で戻る）
+ * 4つのモードと、登録・詳細（どの欄もいつも出ている）の小さな画面で、横にはみ出さない。小さな画面の形（sheetShape）も見る。confirm なら
+ * 詳細の［削除］の確かめと［複製］の「複製する日を選ぶ」の小さな画面も（開いて形を見て、［やめる］・Esc で詳細へ戻る）
  */
 async function sweep(page: Page, width: number, height: number, { confirm = false } = {}) {
   await page.setViewportSize({ width, height })
@@ -89,26 +124,39 @@ async function sweep(page: Page, width: number, height: number, { confirm = fals
   await page.getByTestId(testIds.calAdd).click()
   let sheet = await sheetReady(page)
   await noSideScroll(page, `${width}px 登録`, sheet)
+  await sheetShape(page.getByTestId(testIds.itemSheet), `${width}px 登録`)
   await closeSheet(page)
   // 詳細の小さな画面（日付と時刻のある複数日の予定。いちばん欄の多い物）
   await page.getByTestId(testIds.dayEvent(I.materials)).locator('.dy-open').click()
   sheet = await sheetReady(page)
   await noSideScroll(page, `${width}px 詳細`, sheet)
+  await sheetShape(page.getByTestId(testIds.itemSheet), `${width}px 詳細`)
   if (confirm) {
     await openItemMore(page)
     await page.getByTestId(testIds.itemDelete).click()
     const dialog = page.getByRole('dialog', { name: '『資料づくり』を削除しますか？' })
     await expect(dialog).toBeVisible()
     await noSideScroll(page, `${width}px 削除の確かめ`, dialog)
+    await sheetShape(dialog, `${width}px 削除の確かめ`)
     await dialog.getByRole('button', { name: 'やめる' }).click()
     await expect(dialog).toHaveCount(0)
+    await sheetReady(page)
+    // 複製する日を選ぶ（12.7）
+    await page.getByTestId(testIds.itemDuplicate).click()
+    // DuplicateDialog.tsx の DUP_TEST_IDS.dialog（部品を読み込むと CSS も読み込むので、値を書く）
+    const dup = page.getByTestId('dup-dialog')
+    await expect(dup).toBeVisible()
+    await noSideScroll(page, `${width}px 複製する日を選ぶ`, dup)
+    await sheetShape(dup, `${width}px 複製する日を選ぶ`)
+    await page.keyboard.press('Escape')
+    await expect(dup).toHaveCount(0)
     await sheetReady(page)
   }
   await closeSheet(page)
 }
 
 test.describe('横にスクロールしない・ページがスクロールしない（PC）', { tag: ['@pc'] }, () => {
-  test('960・1400px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない。960px は始点のカードの件名を2行、1400px は印の多い始点のカードの期間を隠す（FRAME-026・開発）', async ({
+  test('960・1400px: 4つのモードと登録・詳細の小さな画面で横にはみ出さず、小さな画面は真ん中（1400px は削除の確かめと複製する日を選ぶも）。960px は始点のカードの件名を2行、1400px は印の多い始点のカードの期間を隠す（FRAME-026・078・ITEMS-165・252・265・開発）', async ({
     page,
   }) => {
     // 印が3つ（〆・ロック・Claude）の複数日の予定（Task List 生まれ。いつもの週の木〜土）
@@ -137,7 +185,7 @@ test.describe('横にスクロールしない・ページがスクロールし�
     await go(page, 'week', '/week/2026-11-08')
     await expect(page.locator('.wk-card.is-start.is-two-lines').first()).toBeVisible()
     await expect(page.getByTestId(testIds.weekStart(I.materials))).toHaveClass(/is-two-lines/)
-    await sweep(page, 1400, 900)
+    await sweep(page, 1400, 900, { confirm: true })
     // 1400px（列 142px）: 印が3つの始点のカードは、期間を隠して件名を1行目に（is-period-hidden。WP7 の (u)）
     await go(page, 'week', '/week/2026-11-08')
     await expect(page.getByTestId(testIds.weekStart(marks.id))).toHaveClass(/is-period-hidden/)
@@ -248,14 +296,15 @@ interface SmallOk {
 
 /**
  * 指で操作する端末で、押せる所が 34px より小さくてよい所（D08・確かめ A9: 区切りの中の大きさが勝ち、隣と重ならない時だけ 34px に
- * 広げる）。各担当の報告（段階2 第2波・第3波の結合の報告の D08 の一覧）と、仕様の大きさ（docs/SPEC.md の 8.3）にある物。
+ * 広げる）。どれも docs/SPEC.md の 4.11 の表の決めた例外（34px に届かないまま表に無い所は無い）。
  * 大きさは押せる所を測った値（ブラウザが押した点の要素を返す範囲。::before・::after で広げた所も入る）。字の高さで決まる所は、
- * iPhone（WebKit）の字の高さの差を見込んで、Chromium で測った値より 1px 低くしてある
+ * iPhone（WebKit）の字の高さの差を見込んで、Chromium で測った値より 1px 低くしてある。表の大きさより低くしてある所は、その行に書く
  */
 const SMALL_OK: readonly SmallOk[] = [
-  // ウィークリーの1日のカードの丸: 32×28（カードの高さの中。7日を縦の重ねたカードも同じ）（WP7 第2波。D08）
+  // ウィークリーの1日のカードの丸: 32×28（カードの高さの中。7日を縦の重ねたカードも同じ）（WP7 第2波。D08）。幅は表より 2px 狭く
+  // 見る（第3波で CI の書体で測った時の分のまま）
   { sel: '.wk-card:not(.is-start) .wk-done', w: 30, h: 28 },
-  // 始点のカードの丸: 32×36（WP7 第2波。D08）
+  // 始点のカードの丸: 32×36（WP7 第2波。D08）。高さは表より 2px 低く見る（第3波で CI の書体で測った時の分のまま）
   { sel: '.wk-card.is-start:not(.is-two-lines) .wk-done', w: 32, h: 34 },
   // 件名を2行にした始点のカードの丸: 28×20（狭い列。M の指の端末でも。WP7 第3波。D08）
   { sel: '.wk-card.is-start.is-two-lines .wk-done', w: 28, h: 20 },
@@ -266,6 +315,17 @@ const SMALL_OK: readonly SmallOk[] = [
   // 7日を縦のレールの中の締め切り日の●: 18×28（隣の半分・カードに掛からない大きさ。WP7 第2波。D08）。左の端のレールは
   // 隣のレールの●と重なる所を除いて 14px ほど
   { sel: '.wk-end.is-rail', w: 14, h: 28 },
+  // 受けた表示の中の、日曜に終わる●: 27×34（受けた表示の高さの中で 34px、右は受けた表示の枠の外の 4px まで。左は件名、右は次の日の
+  // 列・隣の半分。week.css の .wk-recv > .wk-end::before。4.11）
+  { sel: '.wk-recv > .wk-end', w: 27, h: 34 },
+  // 土曜に始まって縮めた始点のカード（7.8）の横の「＞」: 18×34（左はカードの右の端、右は列の右の端。4.11）。線の端の「＞」は 34×34
+  { sel: '.wk-lane > .wk-card.is-shrink ~ .wk-edge', w: 18, h: 34 },
+  // 7日を縦の下向きの矢印: 18×34（上へ広げた。week.css の .wk-edge.is-down::before。4.11）。レーンは 10px おきで、隣のレーンの
+  // 矢印と重なる所は DOM で後ろの矢印が勝ち、左のレーンの矢印は 5.75px ほど（仕事の半分の左の端のレーンは 7日を縦の左の端で切れて
+  // 14.5px。7日を縦の外へ 4px はみ出して全部は見えないので、smallTargets は測らない）。
+  // 締め切り日のレールの●と重なる所は●が勝ち、13px ほど（土曜の半分が「＋」の行だけの時）。高さは矢印の真ん中の列に●が来ないので
+  // いつも 34px
+  { sel: '.wk-edge.is-down', w: 5, h: 34 },
   // Claude の印: 高さ 34px の目安（D26。WP7・WP8 の報告。カードの中の行の高さで 32.5px ほど）
   { sel: '.cp-ai', w: 34, h: 31 },
   // 休みのチェック: 34×34 の目安（WP7 第2波。見出しの行の高さで 32.75px ほど）
@@ -280,16 +340,6 @@ const SMALL_OK: readonly SmallOk[] = [
   { sel: '.it-swatch', w: 24, h: 24, wide: { w: 28, h: 28 } },
   // イヤーの小さな月のマス: 22px 四方以上（docs/SPEC.md の 8.3・CALENDAR-221）
   { sel: '.yr-cell.is-mini', w: 22, h: 22 },
-  // ----- 以下は D08 の一覧に無く、34px に届かない所（担当へ知らせた。直したら消す） -----
-  // ウィークリーの受けた表示の中の、日曜に終わる●: 22×28（WP7。week.css の .wk-recv > .wk-end）
-  { sel: '.wk-recv > .wk-end', w: 22, h: 28 },
-  // 次の週へ続く「>」: 18×28（WP7。week.css の .wk-edge）。7日を縦の下向きの矢印は 18×20（レールの●と重なる所は除く）
-  { sel: '.wk-lane > .wk-edge', w: 18, h: 28 },
-  { sel: '.wk-edge.is-down', w: 5, h: 14 },
-  // 日付の見出し（押すとその日のデイリー）: 字の高さの 15px（WP7。week.css の .wk-day）
-  { sel: '.wk-day', w: 34, h: 14 },
-  // イヤーの小さな月の名前（押すとその月）: 高さ 32.75px ほど（WP12。year.css の .yr-mini-name）
-  { sel: '.yr-mini-name', w: 34, h: 31 },
 ]
 
 /**
@@ -391,7 +441,14 @@ async function tapSizes(
           if ((oy === 'auto' || oy === 'scroll') && e.scrollHeight > e.clientHeight) e.scrollTop = e.scrollHeight
         }
       })
+      // S はカレンダーの領域の下の端が画面の下の端より下にある（4.9）ので、ページも送って下の端まで見せてから測る（全部が見えて
+      // いない物は測らないので、7日を縦の土曜の下向きの矢印と「＋」の行、デイリーのいちばん下の物を測り落とさないように）
+      await page.evaluate(() => {
+        const r = document.querySelector('[data-testid="calendar"]')?.getBoundingClientRect()
+        if (r && r.bottom > innerHeight) window.scrollBy(0, Math.ceil(r.bottom - innerHeight))
+      })
       await note(`${mode}（下まで送った所）`, '[data-testid="calendar"]')
+      await page.evaluate(() => window.scrollTo(0, 0))
     }
   }
   if (!sheets) return found
@@ -447,9 +504,160 @@ async function narrowNoneSizes(page: Page) {
   expect(await tapSizes(page, { modes: [] })).toEqual([])
 }
 
+/** 指の端末で押せる所を広げた所（::before。小さな月の名前は position: relative で下の曜日の頭文字の字の箱より上に重ねた。4.11） */
+const GROWN = '.wk-day, .wk-recv > .wk-end, .wk-lane > .wk-edge, .wk-edge.is-down, .yr-mini-name'
+/** 広げる前に戻す（比べるため） */
+const UNGROWN =
+  '.wk-day::before, .wk-recv > .wk-end::before, .wk-lane > .wk-edge::before, .wk-edge.is-down::before { display: none !important; } ' +
+  '.wk-day, .yr-mini-name { position: static !important; } .wk-edge.is-down { z-index: 1 !important; }'
+
+/**
+ * 広げた押せる所が、隣の押せる物の押せる所を取っていないこと（4.11 の「隣の物と重ならない時だけ広げる」）。targets の物（セレクターと
+ * 初めの何個か）の箱と ::before の箱を合わせた所（切れて見えない所は除く）を 1px ごとに調べ、広げた物が持ち主の点を、広げる前
+ * （UNGROWN）の持ち主と比べる。前の持ち主は、押せる物の無かった点か、広げた物を中に置いた受けた表示の「押すと詳細」（同じ詳細を開く。
+ * カードの中の丸と同じ）か、広げた物の箱の境の前後 1px（角丸の角と、ブラウザが押した所を画面の点の境に丸める分）であること。
+ * 違う点を「前の持ち主 → 後の持ち主: 点の数」で返す
+ */
+async function stolenTaps(page: Page, label: string, targets: [string, number][]): Promise<string[]> {
+  const out = await page.evaluate(
+    ({ grown, ungrown, targets }) => {
+      const sel =
+        'button, a[href], input:not([type="hidden"]), select, textarea, label, [role="button"], [role="checkbox"], [role="switch"]'
+      const owner = (x: number, y: number) => {
+        const n = document.elementFromPoint(x, y)
+        const c = n?.closest(sel) ?? null
+        return c?.tagName === 'INPUT' && c.closest('label') ? c.closest('label') : c
+      }
+      const name = (c: Element | null) =>
+        c
+          ? `${c.tagName.toLowerCase()}.${String(c.className).trim().split(/\s+/)[0]}「${c.getAttribute('data-testid') ?? c.getAttribute('aria-label') ?? ''}」`
+          : '（なし）'
+      /** 箱と ::before の箱を合わせ、overflow で切る所（祖先）の中に収めた所（前後 1px 広く） */
+      const region = (el: Element) => {
+        const r = el.getBoundingClientRect()
+        let [left, top, right, bottom] = [r.left, r.top, r.right, r.bottom]
+        const ps = getComputedStyle(el, '::before')
+        if (ps.content !== 'none' && ps.position === 'absolute') {
+          const cs = getComputedStyle(el)
+          const pl = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(ps.left)
+          const pt = r.top + parseFloat(cs.borderTopWidth) + parseFloat(ps.top)
+          left = Math.min(left, pl)
+          top = Math.min(top, pt)
+          right = Math.max(right, pl + parseFloat(ps.width))
+          bottom = Math.max(bottom, pt + parseFloat(ps.height))
+        }
+        for (let a = el.parentElement; a; a = a.parentElement) {
+          const cs = getComputedStyle(a)
+          if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+          const b = a.getBoundingClientRect()
+          left = Math.max(left, b.left)
+          top = Math.max(top, b.top)
+          right = Math.min(right, b.right)
+          bottom = Math.min(bottom, b.bottom)
+        }
+        return { x0: Math.floor(left) - 1, y0: Math.floor(top) - 1, x1: Math.ceil(right) + 1, y1: Math.ceil(bottom) + 1 }
+      }
+      const bad = new Map<string, number>()
+      const style = document.createElement('style')
+      style.textContent = ungrown
+      for (const el of targets.flatMap(([t, n]) => [...document.querySelectorAll(t)].slice(0, n))) {
+        el.scrollIntoView({ block: 'center', inline: 'center' })
+        const { x0, y0, x1, y1 } = region(el)
+        const points: [number, number, Element][] = []
+        for (let y = y0 + 0.5; y < y1; y++)
+          for (let x = x0 + 0.5; x < x1; x++) {
+            const b = owner(x, y)
+            if (b?.matches(grown)) points.push([x, y, b])
+          }
+        document.head.append(style)
+        const before = points.map(([x, y]) => owner(x, y))
+        style.remove()
+        points.forEach(([x, y, b], k) => {
+          const a = before[k]
+          if (!a || a === b) return
+          const box = b.getBoundingClientRect()
+          const d = Math.min(Math.abs(x - box.left), Math.abs(box.right - x), Math.abs(y - box.top), Math.abs(box.bottom - y))
+          const near = x >= box.left - 1 && x <= box.right + 1 && y >= box.top - 1 && y <= box.bottom + 1 && d <= 1
+          const card = b.parentElement?.matches('.wk-recv') && a === b.parentElement.querySelector(':scope > .wk-open')
+          if (near || card) return
+          const key = `${name(a)} → ${name(b)}`
+          bad.set(key, (bad.get(key) ?? 0) + 1)
+        })
+      }
+      return [...bad].map(([k, n]) => `${k}: ${n}点`)
+    },
+    { grown: GROWN, ungrown: UNGROWN, targets },
+  )
+  return out.map((s) => `${label}: ${s}`)
+}
+
+/**
+ * 11/29〜12/5 の週に、土曜の半分が「＋」の行だけになる複数日の予定を2組（仕事は前のレーンが土曜に終わり後ろのレーンが次の週へ続く、
+ * プライベートはその逆）。7日を縦では、土曜の半分の上の端の締め切り日のレールの●（7.8 の 28px）と、下の端の下向きの矢印が重なる
+ */
+function shortSaturday(): Record<string, Item> {
+  const base = demoData().items![I.mail]
+  const items: Record<string, Item> = {}
+  const add = (id: string, p: Partial<Item>) => {
+    items[id] = {
+      ...base,
+      id,
+      label: null,
+      done: false,
+      doneAt: null,
+      doneOn: null,
+      memo: '',
+      startTime: null,
+      endTime: null,
+      ...p,
+    }
+  }
+  add('sat-w-end', { kind: 'work', title: '土曜に終わる作業', start: '2026-11-30', due: '2026-12-05', order: 1 })
+  add('sat-w-next', { kind: 'work', title: '次の週へ続く作業', start: '2026-12-01', due: '2026-12-08', order: 2 })
+  add('sat-p-next', { kind: 'private', title: '次の週へ続く用事', start: '2026-11-30', due: '2026-12-08', order: 3 })
+  add('sat-p-end', { kind: 'private', title: '土曜に終わる用事', start: '2026-12-01', due: '2026-12-05', order: 4 })
+  return items
+}
+
+/**
+ * いつもの週（受けた表示の中の日曜に終わる●、線の端と縮めた始点のカードの横の「＞」、S はレールの●の上の日付の見出しと土曜の下向きの
+ * 矢印）とイヤーで、広げた押せる所が隣の押せる物の押せる所を取っていない。日付の見出しと小さな月の名前はどれも同じ並びなので、
+ * 初めの3つ（日付の見出しは日曜・月曜と、字の幅の広い今日の 11/10）。S は、土曜の半分の上の端の締め切り日のレールの●と下向きの矢印が
+ * 重なる週（shortSaturday）でも、矢印の広げた所が●の押せる所を取らず、●と矢印が SMALL_OK の大きさのまま
+ */
+async function grownTapsKeepNeighbours(page: Page) {
+  await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+  await expect(page.getByTestId(testIds.view('week'))).toBeVisible()
+  const found = await stolenTaps(page, 'week', [
+    ['.wk-day', 3],
+    ['.wk-recv > .wk-end', 9],
+    ['.wk-lane > .wk-edge', 9],
+    ['.wk-edge.is-down', 9],
+  ])
+  if (await page.locator('.wk-v').count()) {
+    await seedData(page, { items: { ...demoData().items, ...shortSaturday() } })
+    await go(page, 'week', '/week/2026-11-29')
+    await expect(page.getByTestId(testIds.weekEdge('sat-p-next'))).toBeAttached()
+    await expect(page.locator('.wk-v .wk-edge.is-down')).toHaveCount(2)
+    found.push(...(await stolenTaps(page, 'week 11/29', [['.wk-edge.is-down', 2]])))
+    // 下向きの矢印と、それに重なる●の大きさ（下まで送って、全部を見せて測る）
+    await page.locator('.wk-v').evaluate((v) => {
+      v.scrollTop = v.scrollHeight
+      const r = document.querySelector('[data-testid="calendar"]')!.getBoundingClientRect()
+      if (r.bottom > innerHeight) window.scrollBy(0, Math.ceil(r.bottom - innerHeight))
+    })
+    for (const s of await smallTargets(page, `[data-testid="${testIds.weekCol('2026-12-05')}"]`))
+      found.push(`week 11/29 の土曜: ${s}`)
+    await page.evaluate(() => window.scrollTo(0, 0))
+  }
+  await go(page, 'year', '/year/2026')
+  found.push(...(await stolenTaps(page, 'year', [['.yr-mini-name', 3]])))
+  expect(found).toEqual([])
+}
+
 test.describe('横にスクロールしない・押せる所の大きさ（S）', { tag: ['@s'] }, () => {
   for (const width of [360, 390, 412] as const) {
-    test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない${width === 360 ? '（削除の確かめも）' : ''}（FRAME-026・CALENDAR-226）`, async ({
+    test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さず、小さな画面は下からのシート${width === 360 ? '（削除の確かめと複製する日を選ぶも）' : ''}（FRAME-026・077・078・CALENDAR-226・ITEMS-165・252・265）`, async ({
       page,
     }) => {
       await openCalendar(page, '/month/2026-11', { data: demoData() })
@@ -475,15 +683,21 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
   }) => {
     await narrowNoneSizes(page)
   })
+
+  test('日付の見出し・受けた表示の●・「＞」・小さな月の名前で広げた押せる所は、隣の押せる物（休みのチェック・レールの●・カード）の押せる所を取らない（4.11）', async ({
+    page,
+  }) => {
+    await grownTapsKeepNeighbours(page)
+  })
 })
 
 test.describe('横にスクロールしない・押せる所の大きさ（M）', { tag: ['@m'] }, () => {
-  test('600・768px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない（600px は S と M の境。FRAME-026・計画の R5）', async ({
+  test('600・768px: 4つのモードと登録・詳細の小さな画面で横にはみ出さず、小さな画面は下からのシート（768px は削除の確かめと複製する日を選ぶも。600px は S と M の境。FRAME-026・077・078・ITEMS-165・252・265・計画の R5）', async ({
     page,
   }) => {
     await openCalendar(page, '/month/2026-11', { data: demoData() })
     await sweep(page, 600, 1024)
-    await sweep(page, 768, 1024)
+    await sweep(page, 768, 1024, { confirm: true })
   })
 
   test('指で押せる所は 34px 以上（D08 の例外は SMALL_OK の大きさ以上）。4つのモードと登録・詳細の小さな画面（FRAME-244）', async ({
@@ -514,6 +728,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
     page,
   }) => {
     await narrowNoneSizes(page)
+  })
+
+  test('日付の見出し・受けた表示の●・「＞」・小さな月の名前で広げた押せる所は、隣の押せる物（休みのチェック・レールの●・カード）の押せる所を取らない（4.11）', async ({
+    page,
+  }) => {
+    await grownTapsKeepNeighbours(page)
   })
 })
 

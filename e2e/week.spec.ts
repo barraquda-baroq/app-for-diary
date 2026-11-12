@@ -481,7 +481,8 @@ test.describe('7日を縦（S）', () => {
       await view.evaluate((e) => e.scrollTo(0, 0))
       await noHorizontalScroll(page)
 
-      await page.getByTestId(`week-card-${I.dinner}`).click()
+      // 指で軽く押す（掴むのは長押しだけ。軽く押すと詳細。CALENDAR-161・ITEMS-079。iPhone の WebKit の指の道筋も通す）
+      await page.getByTestId(`week-card-${I.dinner}`).tap()
       await expect(page.getByTestId('item-sheet')).toBeVisible()
       await expect(page.getByTestId('item-sheet')).toContainText('夕食')
     },

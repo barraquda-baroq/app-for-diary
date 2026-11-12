@@ -79,6 +79,18 @@ async function openRegister(page: Page): Promise<void> {
   })
 }
 
+/**
+ * 要素を、そのスクロールの中のいちばん下に出す（ページは上に戻す）。S の登録の画面は欄が入り切らず、ラベルの色の並びの2行目と呼び名の
+ * 1行が下の［やめる］［登録］の行の下に隠れるので、呼び名の1行の下の端が中身の所の下の端に来るまで送って撮る（件名の選んだ文字は
+ * 上へ隠れる。選んだ文字の地は L の登録の画面と Q6 の切り抜きで見る）
+ */
+async function scrollToBottom(target: Locator): Promise<void> {
+  await target.evaluate((e) => {
+    e.scrollIntoView({ block: 'end', inline: 'nearest' })
+    window.scrollTo(0, 0)
+  })
+}
+
 export const SHOTS: readonly Shot[] = [
   { id: 'month', size: 'L', title: 'マンスリー', hash: month, ready: (p) => p.getByTestId(testIds.monthCell(DEMO_TODAY)) },
   { id: 'month', size: 'S', title: 'マンスリー', hash: month, ready: (p) => p.getByTestId(testIds.monthCell(DEMO_TODAY)) },
@@ -172,7 +184,13 @@ export const SHOTS: readonly Shot[] = [
     title: '登録（プライベート・ラベルを選んだ所）',
     hash: `/week/${week}`,
     ready: (p) => p.getByTestId(testIds.weekHead(week)),
-    prepare: openRegister,
+    prepare: async (page) => {
+      await openRegister(page)
+      // 呼び名の1行に字が出るよう、呼び名の付いた色（peony-l「家族」。DEMO_LABEL_NAMES）にする（rose-l は呼び名が無く、行が空く）。
+      // L は Q6 の切り抜きと同じ絵のまま rose-l
+      await page.getByTestId(testIds.itemLabel('peony-l')).click()
+      await scrollToBottom(page.getByTestId(testIds.itemLabelName))
+    },
   },
 ]
 

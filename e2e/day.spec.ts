@@ -405,8 +405,8 @@ test.describe('デイリー（iPhone）', { tag: ['@ios'] }, () => {
     expect(tl.y).toBeGreaterThan(list.y)
     await expect(page.getByTestId(testIds.dayNow)).toBeVisible()
     await expect(page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly))).toBeVisible()
-    // 予定を押すと詳細
-    await page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly)).locator('.dy-ev-open').click()
+    // 予定を指で押すと詳細
+    await page.getByTestId(testIds.dayEvent(DEMO_IDS.weekly)).locator('.dy-ev-open').tap()
     await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
     await expect(page.getByTestId(testIds.itemTitle)).toHaveValue('定例ミーティング')
   })

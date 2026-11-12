@@ -24,7 +24,7 @@
 
 /* ---------- 曜日の行（等幅 11px・500・大文字は .caps。日曜は --sun、土曜は --sat。左寄せで左の余白 8px。丸いラベルにしない） ---------- */
 .mo-head {
-  padding: 12px 0 6px;
+  padding: 12px 0 8px;
 }
 
 .mo-weekday {
@@ -56,7 +56,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 6px 8px; /* 4.8 の例外: 節の寸法（9.1 の上下 6px・左右 8px） */
   border-top: 2px solid var(--rule-strong);
   transition: background-color var(--dur-hover);
 }
@@ -131,7 +131,7 @@
 .mo-date.today-mark {
   width: 22px;
   height: 22px;
-  margin: -4px 0 -4px -5px;
+  margin: -4px 0 -4px -5px; /* 4.8 の例外: 中央に置く（13px の日付を 22px の丸の真ん中に） */
   border-radius: var(--radius-pill);
   color: var(--on-primary);
   font-weight: 600;

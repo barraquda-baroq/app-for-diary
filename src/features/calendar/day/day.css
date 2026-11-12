@@ -16,7 +16,7 @@
 .dy-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: none;
   height: 40px;
   margin: 8px 0;
@@ -81,7 +81,7 @@
 .dy-area-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: none;
   height: 28px;
   padding: 0 12px;
@@ -176,7 +176,7 @@
 
 .dy-row-open {
   flex: 1 1 auto;
-  padding: 10px 0;
+  padding: 10px 0; /* 4.8 の例外: 中央に置く（40px の行に 14px × 1.45 の1行目を真ん中に） */
 }
 
 /* 件名（ui 14px・400・行の高さ 1.45・2行まで。4.7・11.2） */
@@ -190,7 +190,7 @@
 .dy-row-marks {
   position: relative;
   z-index: 1;
-  margin-top: 14px;
+  margin-top: 14px; /* 4.8 の例外: 中央に置く（14px の札を件名の1行目の真ん中に） */
   pointer-events: none;
 }
 
@@ -205,7 +205,7 @@
   align-items: baseline;
   gap: 4px;
   flex: none;
-  margin-top: 13px;
+  margin-top: 13px; /* 4.8 の例外: 中央に置く（等幅 11px を件名の1行目の真ん中に） */
 }
 
 .dy-tail-mark {
@@ -253,7 +253,7 @@
 .icon.dy-add-icon {
   width: 14px;
   height: 14px;
-  margin: 0 13px;
+  margin: 0 13px; /* 4.8 の例外: 中央に置く（14px のアイコンを行頭の●の 40px の列の真ん中に） */
 }
 
 .dy-add:hover {
@@ -381,7 +381,7 @@
   align-items: flex-start;
   column-gap: 4px;
   min-width: 0;
-  padding: 4px 6px 4px 30px;
+  padding: 4px 6px 4px 30px; /* 4.8 の例外: 節の寸法（11.3 の上下 4px・左 10px・右 6px。左は点線の丸 16px と間 4px を足す） */
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -392,7 +392,7 @@
 }
 
 .dy-box.no-ring {
-  padding-left: 10px;
+  padding-left: 10px; /* 4.8 の例外: 節の寸法（11.3 の左 10px） */
 }
 
 /* 完了（7.9）: 地 --done-bg（ハイライトは部品が付けない・斜線・字 --done-text・ラベルの一辺は残す）。時刻・印の字も件名と同じ
@@ -412,7 +412,7 @@
 .dy-ring {
   position: absolute;
   top: 0;
-  left: 5px;
+  left: 5px; /* 4.8 の例外: 節の寸法（24px の押せる所の中の 16px の丸を、枠から 11.3 の 10px に） */
   z-index: 2;
 }
 
@@ -452,23 +452,23 @@
     content: '';
     position: absolute;
     top: 0;
-    left: -5px;
+    left: -5px; /* 4.8 の例外: 押せる所 */
     width: 30px;
     height: var(--tap);
   }
 
   /* AI の札の押せる所（左右は parts.css の --cp-ai-hit-x。6px、「AI」の札は幅が 34px になるまで） */
   .dy-ev-marks .cp-ai::after {
-    inset: -5px var(--cp-ai-hit-x) -15px;
+    inset: -5px var(--cp-ai-hit-x) -15px; /* 4.8 の例外: 押せる所 */
   }
 
   /* 狭い枠では AI の札が2行目（時刻の行）にあるので、上の件名には広げない（下と左右だけ。枠の外は枠の overflow で切れる） */
   .dy-box.is-narrow .dy-ev-marks .cp-ai::after {
-    inset: 0 var(--cp-ai-hit-x) -15px;
+    inset: 0 var(--cp-ai-hit-x) -15px; /* 4.8 の例外: 押せる所 */
   }
 
   .dy-row-marks .cp-ai::after {
-    inset: -10px var(--cp-ai-hit-x);
+    inset: -10px var(--cp-ai-hit-x); /* 4.8 の例外: 押せる所 */
   }
 }
 
@@ -547,8 +547,8 @@
 /* カードの下から部分の終わりまでの 2px の線（ラベルの色、無ければ土台の色。完了は --done-text）。点線の丸の真下に */
 .dy-span-line {
   position: absolute;
-  left: 17px;
-  bottom: 5px;
+  left: 17px; /* 4.8 の例外: 中央に置く（点線の丸の真ん中の真下） */
+  bottom: 5px; /* 4.8 の例外: 中央に置く（終わりの● 10px の真ん中まで） */
   width: var(--span-w);
   background: var(--kind-line);
 }

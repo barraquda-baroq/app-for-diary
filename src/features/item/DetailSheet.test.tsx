@@ -4,6 +4,7 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { displayHm } from '../../domain/dates'
 import { DATE_REFUSED } from '../../domain/itemInput'
 import { mkItem, mkTask, T0, DAY } from '../../domain/testData'
 import { trashNotice } from '../../domain/trash'
@@ -642,6 +643,40 @@ describe('日付と時刻の決まり（12.4・6.3・6.4）', () => {
     expect([endOptions[0], endOptions.at(-1)]).toEqual(['0:05', '24:00'])
     expect(endOptions).not.toContain('0:00')
   })
+
+  it.each([
+    ['開始が空', 'start', null, '09:00'],
+    ['終了が空・開始 22:30', 'end', '22:30', '23:30'],
+    ['終了が空・開始 23:30', 'end', '23:30', '24:00'],
+  ] as const)(
+    '時刻の一覧は、値が無ければ 9:00 の所、終了は開始の1時間後の所（24:00 まで）を上の端に見せて開き、↓で始めるのもそこ（%s。12.2 の 5・ITEMS-175・AMB-ITEMS-07）',
+    async (_case, which, startTime, want) => {
+      // jsdom は並べないので、選び肢の上の位置を「何番目 × 28px」にする（一覧はそこまで送る）
+      const offsetTop = vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.parentElement ? [...this.parentElement.children].indexOf(this) * 28 : 0
+      })
+      try {
+        const { user } = await open([mkItem({ id: 'a', startTime, endTime: null })])
+        const field = byId(which === 'start' ? testIds.itemStartTime : testIds.itemEndTime) as HTMLInputElement
+        await user.click(field)
+        const list = within(byId(timeListTestId(which))).getByRole('listbox')
+        const options = [...list.querySelectorAll('[role="option"]')]
+        const at = options.findIndex((o) => o.textContent === displayHm(want))
+        expect(at).toBeGreaterThan(0)
+        expect(list.scrollTop).toBe(at * 28)
+        // 値が無いので印（今の値）は無い
+        expect(list.querySelector('.is-current')).toBeNull()
+        // 閉じて、↓で開くと、その所から選び始める（Enter でそのまま選ぶ）
+        await user.keyboard('{Escape}')
+        expect(screen.queryByTestId(timeListTestId(which))).toBeNull()
+        field.focus()
+        await user.keyboard('{ArrowDown}{Enter}')
+        expect(stored('a')[which === 'start' ? 'startTime' : 'endTime']).toBe(want)
+      } finally {
+        offsetTop.mockRestore()
+      }
+    },
+  )
 
   it('時刻の一覧は ↑↓ で移り Enter で選ぶ。読めない字は元に戻して理由を出す（AMB-ITEMS-07）', async () => {
     const { user } = await open([mkItem({ id: 'k', startTime: '09:00' })])

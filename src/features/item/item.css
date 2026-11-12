@@ -26,7 +26,7 @@
 .modal-title-icon {
   display: inline-flex;
   align-items: center;
-  margin-right: 6px;
+  margin-right: 8px;
   vertical-align: -2px;
   color: var(--text-muted);
 }
@@ -92,8 +92,7 @@
 .segmented.it-kind button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
+  gap: 6px; /* 4.8 の例外: NS のまま（NS の .btn のアイコンと字の間） */
 }
 
 .segmented.it-kind .icon {
@@ -155,10 +154,10 @@
 .it-date {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 6px; /* 4.8 の例外: NS のまま（.input の形に合わせた欄。左の 10px とアイコン 16px と合わせて、字を時刻の欄と同じ 32px から） */
   width: 100%;
   min-height: 36px;
-  padding: 6px 10px;
+  padding: 6px 10px; /* 4.8 の例外: NS のまま（.input と同じ） */
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -183,7 +182,7 @@
 
 /* ［×］で消せる欄は、右に［×］の分を空ける */
 .it-date-wrap.is-clearable .it-date {
-  padding-right: 34px;
+  padding-right: 34px; /* 4.8 の例外: 節の寸法（［×］の 34px の分） */
 }
 
 .it-clear {
@@ -202,7 +201,7 @@
 .it-time .icon {
   position: absolute;
   top: 50%;
-  left: 10px;
+  left: 10px; /* 4.8 の例外: NS のまま（.input の左の 10px） */
   width: 16px;
   height: 16px;
   translate: 0 -50%;
@@ -255,7 +254,7 @@
 .it-swatches {
   display: grid;
   grid-template-columns: repeat(12, 28px);
-  gap: 5px;
+  gap: 5px; /* 4.8 の例外: 線の分（選んだ色の 4px の輪が隣の丸に付かないよう、輪の外に 1px） */
 }
 
 .it-swatch {
@@ -308,7 +307,7 @@
   /* 幅は字の幅で決まるので、書体が変わっても押せる所が 34px を下回らないように */
   min-width: var(--tap);
   height: 28px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -329,7 +328,7 @@
 .it-switches {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 28px;
+  gap: 8px 24px;
 }
 
 .it-switch {
@@ -401,8 +400,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 14px;
-  padding-top: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--rule);
   font-size: 12px;
   line-height: 1.5;
@@ -454,7 +453,7 @@
 .it-memo-view {
   position: relative;
   min-height: 36px;
-  padding: 6px 36px 6px 10px;
+  padding: 6px 36px 6px 10px; /* 4.8 の例外: NS のまま（.input と同じ 6px 10px）・節の寸法（右は［書き換える］の 34px と上・右の 1px の分） */
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -507,7 +506,7 @@
   display: flex;
   align-items: center;
   min-height: 32px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-sm);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -539,7 +538,7 @@
 
 /* ===== 小さな月のカレンダー（fields/MiniMonth.tsx。日曜始まり・今日の印・土日祝の色。12.2・ITEMS-170） ===== */
 .it-mm-pop {
-  padding: 6px 8px 8px;
+  padding: 8px;
 }
 
 .it-mm-head {
@@ -705,7 +704,7 @@
   }
 
   .it-date-wrap.is-clearable .it-date {
-    padding-right: 28px;
+    padding-right: 28px; /* 4.8 の例外: 節の寸法（［×］の 18px のアイコンの手前まで） */
   }
 
   .it-pair {

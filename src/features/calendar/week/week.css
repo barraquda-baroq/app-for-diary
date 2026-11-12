@@ -136,7 +136,7 @@
   align-content: center;
   column-gap: 2px;
   height: 52px;
-  padding: 6px 4px 4px;
+  padding: 6px 4px 4px; /* 4.8 の例外: 線の分（上は 4px に帯の上の 2px の線を足し、52px の中の真ん中に） */
 }
 
 /* 2行（列が 120px より狭い時。64px）: 1行目に丸いラベルと日付、2行目に休みのチェックと祝日名。列が 90px ほどより狭くて
@@ -150,7 +150,7 @@
   column-gap: 4px;
   align-content: center;
   height: 64px;
-  padding: 6px 4px 4px 6px;
+  padding: 6px 4px 4px; /* 4.8 の例外: 線の分（上は 4px に帯の上の 2px の線を足し、64px の中の真ん中に） */
 }
 
 .wk-head.is-rows-2 .wk-day {
@@ -189,6 +189,43 @@
 
 .wk-day .pill {
   flex: none;
+}
+
+/* 指の端末・S・M は、押せる所を高さ 34px 以上に広げる（::before。見た目は変えない。幅はボタンの幅のまま。4.11）。
+   - 7日を横の1行（52px）: ボタンの真ん中から上下に 17px（見出しの中。右の休みのチェックには掛からない）
+   - 7日を縦の日のかたまりの見出し（32px）: 上はかたまりの上の 2px の --rule-strong の上まで、下はかたまりの半分の上の端へ 1px
+     （35px。いちばん上の日曜のかたまりは、上に固定した段の名札の行（z-index: 2）のすぐ下なので、上へ広げた分が名札の行との境の
+     端数で欠けても 34px 残るように）。半分の上の端には締め切り日のレールの●（.wk-end.is-rail。z-index: 1）の押せる所があり、
+     同じ z-index で DOM で後ろの●が勝つ（●の押せる所は変わらない）。DOM で後ろのかたまりの半分（position: relative。押せる物では
+     ない）は、見出しとの境で 1px 足らず上に掛かって押した所を取る（Chromium の倍率 2.625 で測った）ので、z-index: 1 で上に置く
+   - M の2行（64px）: 見出しの上の端から下の端まで（.wk-heads の overflow: hidden で見出しの中に切れる）。丸いラベルの下は
+     休みのチェックの押せる所で、DOM で後ろの休みのチェック（position: relative の .wk-off）が上に重なって勝つので、日付の字の
+     下の祝日名の所までが日付の見出しになる（休みのチェックの押せる所は変わらない）（開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-day {
+    position: relative;
+  }
+
+  .wk-day::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% - var(--tap) / 2);
+    height: var(--tap);
+  }
+
+  .wk-head.is-block .wk-day::before {
+    z-index: 1;
+    top: calc(50% - var(--tap) / 2 - 1px);
+    height: calc(var(--tap) + 1px);
+  }
+
+  .wk-head.is-rows-2 .wk-day::before {
+    top: -64px; /* 4.8 の例外: 押せる所 */
+    bottom: -64px; /* 4.8 の例外: 押せる所 */
+    height: auto;
+  }
 }
 
 /* 等幅の「11/8」（13px・月日は 0 で埋めない。土曜 --sat、日曜・祝日 --sun。今日は太さ 600。7.1・7.3） */
@@ -248,7 +285,7 @@
 
 @media (max-width: 899px), (pointer: coarse) {
   .wk-off-input {
-    inset: -9px -4px;
+    inset: -9px -4px; /* 4.8 の例外: 押せる所 */
     min-width: var(--tap);
     min-height: var(--tap);
   }
@@ -304,7 +341,7 @@
 .wk-tag {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: none;
   height: 24px;
   padding: 0 8px;
@@ -407,7 +444,7 @@
 /* ---------- 線（2px・レーンのカードの高さの真ん中 18px。7.8・D42） ---------- */
 .wk-line {
   position: absolute;
-  top: 17px;
+  top: 17px; /* 4.8 の例外: 節の寸法（2px の線の真ん中をレーンのカードの真ん中 18px に。7.8） */
   height: var(--span-w);
   background: var(--wk-line);
   pointer-events: none;
@@ -452,7 +489,7 @@
   align-items: start;
   column-gap: 4px;
   min-height: 44px;
-  padding: 6px 8px 6px 34px;
+  padding: 6px 8px 6px 34px; /* 4.8 の例外: 節の寸法（10.2 の上下 6px・左 12px・右 8px。左は点線の丸 16px と間 6px を足す） */
   border-radius: var(--radius-sm);
   background: var(--kind-soft);
   cursor: pointer;
@@ -576,24 +613,24 @@
 @media (max-width: 899px), (pointer: coarse) {
   .wk-card .wk-marks .cp-ai::after,
   .wk-recv .wk-marks .cp-ai::after {
-    inset: -10px var(--cp-ai-hit-x);
+    inset: -10px var(--cp-ai-hit-x); /* 4.8 の例外: 押せる所 */
   }
 
   /* 始点のカードは札が上の端の近くにあるので、上はカードの上の端まで・下へ広げる */
   .wk-card.is-start .wk-marks .cp-ai::after {
-    inset: -5px var(--cp-ai-hit-x) -13px;
+    inset: -5px var(--cp-ai-hit-x) -13px; /* 4.8 の例外: 押せる所 */
   }
 
   /* 印を下の行に置いた始点のカード・受けた表示（is-marks-low・is-two-lines）は、札が下の端の近くにあるので上へ広げる
      （36px の中に収める） */
   .wk-card.is-start.is-marks-low .wk-marks .cp-ai::after,
   .wk-card.is-start.is-two-lines .wk-marks .cp-ai::after {
-    inset: -13px var(--cp-ai-hit-x) -4px;
+    inset: -13px var(--cp-ai-hit-x) -4px; /* 4.8 の例外: 押せる所 */
   }
 
   .wk-recv.is-marks-low .wk-marks .cp-ai::after,
   .wk-recv.is-two-lines .wk-marks .cp-ai::after {
-    inset: -14px var(--cp-ai-hit-x) -2px;
+    inset: -14px var(--cp-ai-hit-x) -2px; /* 4.8 の例外: 押せる所 */
   }
 }
 
@@ -646,7 +683,7 @@
 
 /* 土曜に始まって次の週へ続く時は 14px 縮めて、あいた所に「>」（線は引かない） */
 .wk-card.is-start.is-shrink {
-  margin-right: 18px;
+  margin-right: 18px; /* 4.8 の例外: 節の寸法（右のあき 4px に 7.8 の縮める 14px を足す） */
 }
 
 .wk-card.is-start .wk-done {
@@ -707,7 +744,7 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: 'open';
   padding-left: 8px;
-  padding-right: 6px;
+  padding-right: 6px; /* 4.8 の例外: 節の寸法（weekModel.ts の TWO_LINES と同じ値。変えると件名の折り返しが変わる） */
 }
 
 .wk-card.is-start.is-two-lines .wk-done {
@@ -739,7 +776,7 @@
 .wk-card.is-start.is-two-lines .wk-marks,
 .wk-recv.is-two-lines .wk-marks {
   position: absolute;
-  right: 6px;
+  right: 6px; /* 4.8 の例外: 節の寸法（右の余白の TWO_LINES と同じ 6px） */
   bottom: 4px;
   display: flex;
   align-items: center;
@@ -819,12 +856,12 @@
 }
 
 .wk-recv.is-two-lines.has-dot .wk-marks {
-  right: 22px;
+  right: 22px; /* 4.8 の例外: 節の寸法（中の●の 22px の箱の分） */
 }
 
 /* 日曜に終わる時は右の端の中に●（線は引かない） */
 .wk-recv.has-dot {
-  padding-right: 22px;
+  padding-right: 22px; /* 4.8 の例外: 節の寸法（中の●の 22px の箱の分。weekModel.ts の receivedTextPx と同じ） */
 }
 
 .wk-recv > .wk-end {
@@ -832,6 +869,20 @@
   top: 3px;
   width: 22px;
   height: 28px;
+}
+
+/* 指の端末・S・M は、押せる所を受けた表示の高さの中で 34px に、右は受けた表示の枠の外の 4px（列・半分の右の端）まで広げる
+   （::before。27 × 34px）。左は件名（受けた表示の押すと詳細のボタンの字）、右は次の日の列・隣の半分なので、幅は 34px に届かない
+   （4.11 の表。開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-recv > .wk-end::before {
+    content: '';
+    position: absolute;
+    top: calc(50% - var(--tap) / 2);
+    left: 0;
+    right: -5px; /* 4.8 の例外: 押せる所 */
+    height: var(--tap);
+  }
 }
 
 /* 完了: 点線の枠と字を --done-text（7.9） */
@@ -859,7 +910,7 @@
 }
 
 .wk-lane > .wk-end {
-  left: calc(50% - 14px);
+  left: calc(50% - 14px); /* 4.8 の例外: 中央に置く（28px の押せる所を列の真ん中に） */
   top: 4px;
 }
 
@@ -905,6 +956,24 @@
 .wk-lane > .wk-edge {
   right: 0;
   top: 4px;
+}
+
+/* 指の端末・S・M は、押せる所を 34px 四方に広げる（::before。レーンの高さ 40px の中で上下に 3px、左は線の上へ 16px。右は列の右の
+   端のまま）。土曜に始まって縮めた始点のカード（.is-shrink。7.8）の横では、左はカードの右の端までなので 18 × 34px（4.11 の表。開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-lane > .wk-edge::before {
+    content: '';
+    position: absolute;
+    top: calc(50% - var(--tap) / 2);
+    right: 0;
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .wk-lane > .wk-card.is-shrink ~ .wk-edge::before {
+    left: 0;
+    width: auto;
+  }
 }
 
 .wk-edge-glyph {
@@ -1074,6 +1143,26 @@
   height: 20px;
 }
 
+/* 指の端末・S・M は、押せる所を上へ広げて 18 × 34px に（::before。見た目は変えない。下は週の終わり）。広げた所の右は 1px 手前で
+   止める（すぐ右の「＋」の行は矢印の右の端に接していて、押した所の端数でその 1px の列を取らないように）。上の半分の上の端には、
+   別のレーンの締め切り日のレールの●（7.8 の 28px。z-index: 1）が来ることがある（土曜の半分が「＋」の行だけの時）ので、矢印は
+   重なりの順を上げず（z-index: auto。半分の中では後ろに描くので、半分の地には勝つ）、●と重なる所はどのレーンの●も勝つ（●の
+   押せる所は変わらない）。隣のレーンの矢印と重なる所は、今までどおり DOM で後ろの矢印が勝つ（4.11。開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-edge.is-down {
+    z-index: auto;
+  }
+
+  .wk-edge.is-down::before {
+    content: '';
+    position: absolute;
+    top: calc(100% - var(--tap));
+    right: 1px;
+    bottom: 0;
+    left: 0;
+  }
+}
+
 .wk-edge.is-down .wk-edge-glyph {
   rotate: 90deg;
 }
@@ -1083,7 +1172,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: none;
   height: 20px;
   min-width: 0;

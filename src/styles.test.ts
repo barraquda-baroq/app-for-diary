@@ -696,6 +696,52 @@ describe('段階2のカレンダーの字と地（docs/SPEC.md の 4.5・FRAME-1
   })
 })
 
+describe('動きの長さと小さな画面の題（docs/SPEC.md の 4.9・4.7。FRAME-212・225・230）', () => {
+  it.each([
+    ['--dur-hover', '120ms'],
+    ['--dur-backdrop', '120ms'],
+    ['--dur-pop', '140ms'],
+    ['--dur-menu', '120ms'],
+    ['--dur-panel', '180ms'],
+    ['--dur-fold', '180ms'],
+    ['--dur-lift', '120ms'],
+    ['--dur-settle', '160ms'],
+    ['--dur-flash', '1200ms'],
+    ['--dur-shake', '240ms'],
+    ['--dur-toast', '160ms'],
+  ])('4.9 の表: %s は %s', (name, value) => {
+    expect(VARS.white.get(name)).toBe(value)
+    // 外観で変えない
+    for (const theme of ['dark', 'deep-dark'] as const) expect(ownVars(theme).has(name), `${theme} で ${name}`).toBe(false)
+  })
+
+  /** その規則（@media の外。「,」で並べた中の1つでもよい）に書いた、その性質の値 */
+  const propOf = (selector: string, prop: string) => {
+    const r = topLevelRules(css).filter((r) => r.selector.split(',').some((s) => s.trim() === selector))
+    const values = r.flatMap((x) => [...stripComments(x.body).matchAll(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'g'))])
+    return values.map((m) => m[1].trim().replace(/\s+/g, ' ')).at(-1)
+  }
+
+  it('小さな画面・下からのシートは 140ms の pop-in（少し下から・少し大きくなりながら）。S・M のシートも同じ動き（FRAME-225）', () => {
+    expect(propOf('.modal', 'animation')).toBe('pop-in var(--dur-pop) ease-out')
+    expect(stripComments(css)).toMatch(
+      /@keyframes pop-in \{\s*from \{\s*opacity: 0;\s*transform: translateY\(6px\) scale\(0\.98\);\s*\}\s*\}/,
+    )
+    // S・M（シートにする幅）の .modal は形だけを替え、動きは替えない
+    const sheet = /@media \(max-width: 899px\) \{([\s\S]*?)\n\}/.exec(stripComments(css))?.[1] ?? ''
+    expect(sheet).toMatch(/\.modal \{[^}]*border-radius: var\(--radius-sheet\) var\(--radius-sheet\) 0 0;/)
+    expect(sheet).not.toMatch(/animation/)
+  })
+
+  it('小さな画面の題（「予定を登録」「予定」「タスク」「複製する日を選ぶ」）は 17px・700・行の高さ 1.35（NS。FRAME-212）', () => {
+    expect(propOf('.modal-head h2', 'font-size')).toBe('17px')
+    expect(propOf('h2', 'font-weight')).toBe('700')
+    expect(propOf('h2', 'line-height')).toBe('1.35')
+    expect(propOf('.modal-head h2', 'font-weight')).toBeUndefined()
+    expect(propOf('.modal-head h2', 'line-height')).toBeUndefined()
+  })
+})
+
 describe('部品の書き方', () => {
   /** 色のトークンの規則（3つの外観）を除いた残り */
   function componentCss(source: string): string {

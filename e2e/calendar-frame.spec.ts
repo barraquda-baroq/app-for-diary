@@ -3,6 +3,7 @@
 // 0時を過ぎた時の今日の印、裏から戻って6時間、登録・詳細の小さな画面と「戻る」・Esc、スワイプ。
 // 今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。モードの画面の中身は各モードの担当の E2E で確かめる
 import { expect, test, type Page } from '@playwright/test'
+import { DEMO_IDS, demoData } from './fixtures/demoData'
 import { collectDiagnosticsOnFailure, longPressDrag, noHorizontalScroll, openCalendar, seed, touchSwipe } from './helpers'
 
 collectDiagnosticsOnFailure()
@@ -416,10 +417,17 @@ test.describe('タブレット（M）の枠', { tag: ['@m'] }, () => {
 })
 
 test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
-  test('登録のシートは「戻る」で閉じる（FRAME-015）', async ({ page }) => {
-    await openCalendar(page, '/day/2026-11-10')
+  test('登録・詳細のシートは「戻る」で閉じ、モード・期間はそのまま（FRAME-015）', async ({ page }) => {
+    await openCalendar(page, '/day/2026-11-10', { data: demoData() })
     await page.getByTestId('cal-add').click()
     await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await page.goBack()
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await at(page, '/day/2026-11-10')
+    // 詳細（予定を指で押して開く）
+    await page.getByTestId(`day-event-${DEMO_IDS.weekly}`).locator('.dy-ev-open').tap()
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await expect(page.getByTestId('item-title')).toHaveValue('定例ミーティング')
     await page.goBack()
     await expect(page.getByTestId('item-sheet')).toHaveCount(0)
     await at(page, '/day/2026-11-10')
