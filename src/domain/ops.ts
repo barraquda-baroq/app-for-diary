@@ -210,6 +210,7 @@ export function restoreItemDates(data: AppData, id: ID, prev: ItemDates, at: num
  * （listed）を写す。写さない物: 日付（dates にする）・完了（未完了）・作った日時（今）・by／ai／via（手で作った物）・知らない項目。
  * id は新しく、order は今（ITEMS-014・257・258）。締め切り日の無い list 生まれは listed: true にする（どこにも出ない項目を作らない。
  * AMB-ITEMS-22）。写す時刻で1日の予定の終了 = 開始になる時は終了時刻を空に、終了 < 開始になる日付にはできない（DATE_REFUSED。ITEMS-259）。
+ * 件名は data（表示用の記録）の件名を写す。端末の記録の件名が空の予定の複製を端末に空のまま書くのは src/store/actions.ts（D48）。
  * 戻り値は新しい id
  */
 export function duplicateItem(

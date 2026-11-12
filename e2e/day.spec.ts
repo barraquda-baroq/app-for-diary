@@ -6,7 +6,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { testIds } from '../src/features/calendar/common/testIds'
 import { DEMO_IDS, DEMO_NOW, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, touchSwipe } from './helpers'
+import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, sheetReady, touchSwipe } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -25,16 +25,6 @@ async function box(target: Locator) {
   const b = await target.boundingBox()
   if (!b) throw new Error('要素が見えていません')
   return b
-}
-
-/**
- * 小さな画面（登録・詳細）が開き終わるまで待つ（Esc を聞き始めるのは、中へフォーカスを移すのと同じ時。見えた直後に Esc を押すと
- * まだ聞いていないことがある）
- */
-async function sheetReady(page: Page) {
-  const sheet = page.getByTestId(testIds.itemSheet)
-  await expect(sheet).toBeVisible()
-  await expect.poll(() => sheet.evaluate((el) => el.contains(document.activeElement))).toBe(true)
 }
 
 /** 今の行き先（# の後ろ）が path になるまで待つ */
@@ -194,7 +184,7 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     expect(m.y - last.y).toBeLessThan(await hourPx(page))
     // 押すと隠れた予定の一覧、押すと詳細（ITEMS-148）
     await more.click()
-    const item = page.getByRole('menuitem', { name: '社内の確認、14:45–15:30' })
+    const item = page.getByTestId(testIds.dayMoreList).getByRole('menuitem', { name: '社内の確認、14:45–15:30' })
     await expect(item).toBeVisible()
     await item.click()
     await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
@@ -400,7 +390,7 @@ test.describe('デイリー（S）', { tag: ['@s'] }, () => {
     const more = page.getByTestId(testIds.dayMore)
     await expect(more).toHaveText('+2')
     await more.tap()
-    await expect(page.getByRole('menuitem')).toHaveCount(2)
+    await expect(page.getByTestId(testIds.dayMoreList).getByRole('menuitem')).toHaveCount(2)
     await page.getByRole('menuitem', { name: '社内の確認、14:45–15:30' }).tap()
     await expect(page.getByTestId(testIds.itemSheet)).toBeVisible()
     await expect(page.getByTestId(testIds.itemTitle)).toHaveValue('社内の確認')

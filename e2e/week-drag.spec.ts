@@ -6,7 +6,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, openCalendar, rawItem, startLongPress, startMouseDrag, touchSwipe } from './helpers'
+import {
+  collectDiagnosticsOnFailure,
+  openCalendar,
+  rawItem,
+  sheetReady,
+  startLongPress,
+  startMouseDrag,
+  touchSwipe,
+} from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -56,12 +64,6 @@ async function openWeek(page: Page, opts: { appearance?: 'white' | 'deep-dark'; 
   await expect(page.getByTestId('view-week')).toBeVisible()
 }
 
-/** 小さな画面（詳細）が開き終わるまで待つ（day.spec.ts と同じ） */
-async function sheetReady(page: Page) {
-  await expect(sheet(page)).toBeVisible()
-  await expect.poll(() => sheet(page).evaluate((el) => el.contains(document.activeElement))).toBe(true)
-}
-
 /**
  * 要素の見えている所（スクロールする要素・画面の中に入っている所）の真ん中。段の中・週の中はスクロールするので、列やかたまりの
  * 箱の真ん中は見えていない所にあることがある
@@ -93,10 +95,19 @@ async function grabPoint(target: Locator): Promise<Point> {
   return visiblePoint(target)
 }
 
-/** マウスで掴んで to へ動かして離す */
+/**
+ * 落とす所（to か、to を包む列・半分。data-drop を持つ物）が「今その上にある日」（data-drop="hover"）になるまで待つ。dnd-kit は
+ * 指・マウスの下の落とす所を次に描く時に決めるので、動かしてすぐ離すと、重い時は通り道の日に落ちる（離す前に必ず待つ）
+ */
+async function overDropDay(to: Locator) {
+  await expect(to.locator('xpath=ancestor-or-self::*[@data-drop][1]')).toHaveAttribute('data-drop', 'hover')
+}
+
+/** マウスで掴んで to へ動かし、そこが今その上にある日になってから離す（to が落とせる所の時。点の時は待たない） */
 async function mouseDrop(page: Page, from: Locator, to: Locator | Point) {
   const drag = await startMouseDrag(page, await grabPoint(from))
   await drag.moveTo('x' in to ? to : await visiblePoint(to))
+  if (!('x' in to)) await overDropDay(to)
   await drag.drop()
 }
 
@@ -173,11 +184,28 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     // 浮く: 1.03倍・不透明度 0.95・--shadow-lift（0 6px 20px）（FRAME-229・CALENDAR-162）
     expect(lifted).toMatchObject({ dragging: 'true', scale: '1.03', opacity: '0.95' })
     expect(lifted.shadow).toMatch(/0px 6px 20px/)
-    // 落とせる日の地は --accent-soft・1px の --accent の線（上にある日は実線、ほかは点線）
-    const outline = (l: Locator) => l.evaluate((e) => `${getComputedStyle(e).outlineStyle} ${getComputedStyle(e).outlineWidth}`)
-    expect(await outline(target)).toBe('solid 1px')
-    expect(await outline(cellL(page, 'work', '2026-11-13'))).toBe('dashed 1px')
-    expect(await outline(cellL(page, 'private', '2026-11-13'))).toMatch(/^none/)
+    // 落とせる日の地は --accent-soft・--accent の枠（ほかの落とせる日は 1px の点線、今その上にある日ははっきり分かるよう 2px の線。開発）
+    const outline = (l: Locator) =>
+      l.evaluate((e) => {
+        const cs = getComputedStyle(e)
+        return { look: `${cs.outlineStyle} ${cs.outlineWidth}`, color: cs.outlineColor, ground: cs.backgroundColor }
+      })
+    const hovered = await outline(target)
+    const other = await outline(cellL(page, 'work', '2026-11-13'))
+    expect(hovered.look).toBe('solid 2px')
+    expect(other.look).toBe('dashed 1px')
+    const accent = await page.evaluate(() => {
+      const probe = document.createElement('div')
+      probe.style.color = 'var(--accent)'
+      document.body.appendChild(probe)
+      const c = getComputedStyle(probe).color
+      probe.remove()
+      return c
+    })
+    expect(hovered.color).toBe(accent)
+    expect(other.color).toBe(accent)
+    expect(hovered.ground).toBe(other.ground)
+    expect((await outline(cellL(page, 'private', '2026-11-13'))).look).toMatch(/^none/)
     await drag.drop()
 
     await expect(target.getByTestId(`week-card-${I.meeting}`)).toBeVisible()
@@ -212,6 +240,7 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     drag = await startMouseDrag(page, await grabPoint(endDot(page, I.materials)))
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-14')))
     expect(await markedDates(page, 'work')).toEqual(DAYS.slice(1))
+    await overDropDay(cellL(page, 'work', '2026-11-14'))
     await drag.drop()
     await expect(toast(page, '締め切り日を 11/14（土）にしました')).toBeVisible()
     expect(await itemOf(page, I.materials)).toMatchObject({
@@ -333,6 +362,7 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     const drag = await startMouseDrag(page, await grabPoint(card(page, I.quote)))
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-13')))
     await expect(input).toBeVisible()
+    await overDropDay(cellL(page, 'work', '2026-11-13'))
     await drag.drop()
     await expect(input).toHaveCount(0)
     await expect(toast(page, '締め切り日を 11/13（金）にしました')).toBeVisible()
@@ -460,6 +490,7 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await expect.poll(() => week.evaluate((e) => e.scrollTop), { timeout: 5000 }).toBe(box.max)
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
     await drag.moveTo(await visiblePoint(halfS(page, 'work', '2026-11-14')))
+    await overDropDay(halfS(page, 'work', '2026-11-14'))
     await drag.drop()
     await expect(toast(page, '11/14（土）へ移しました')).toBeVisible()
     expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-14')

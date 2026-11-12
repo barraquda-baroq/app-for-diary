@@ -8,7 +8,7 @@ import { UNDO_REFUSED } from '../domain/ops'
 import { dataWith, mkItem } from '../domain/testData'
 import { DomainError, emptyData, type AppData, type Item } from '../domain/types'
 import { actions, type Actions } from './actions'
-import { flushNow, getData, initStore, resetStoreForTests } from './appStore'
+import { flushNow, getData, getStoredRecord, initStore, resetStoreForTests } from './appStore'
 
 let seq = 0
 let p: Persistence
@@ -90,6 +90,49 @@ describe('知らない値は actions の操作で消えない（形3・ITEMS-037
     actions.updateItem('i1', { kind: 'private' })
     await flushNow()
     expect(await rawItem('i1')).toMatchObject({ kind: 'private', label: 'new-color', extra: { x: 1 } })
+  })
+})
+
+describe('件名が空の予定の複製（12.7・D48）', () => {
+  /** 端末の記録の件名が空の予定（表示用は「（件名なし）」） */
+  const blank = mkItem({ id: 'b0', title: '', start: '2026-11-10', memo: '元のメモ' })
+
+  it('端末の記録の件名を写す: 空の件名の複製は、端末に書く記録も空（「（件名なし）」の字を書かない）。表示用は「（件名なし）」', async () => {
+    await start(dataWith({ items: [blank] }))
+    expect(getData().items.b0.title).toBe('（件名なし）')
+    const id = actions.duplicateItem('b0', { start: '2026-11-17', due: null })
+    // 表示用の複製は読み込み直した時と同じ形、端末に書く形は保存する前から空（詳細の欄は空でプレースホルダ）
+    expect(getData().items[id].title).toBe('（件名なし）')
+    expect((getStoredRecord('items', id) as Item).title).toBe('')
+    await flushNow()
+    expect(await rawItem(id)).toMatchObject({ title: '', start: '2026-11-17', memo: '元のメモ' })
+    expect(await rawItem('b0')).toMatchObject({ title: '' })
+  })
+
+  it('保存する前に複製を直しても（メモ・日付）、件名は空のまま書き、直した所は書く。後で動かしても空のまま', async () => {
+    await start(dataWith({ items: [blank] }))
+    const id = actions.duplicateItem('b0', { start: '2026-11-17', due: null })
+    actions.updateItem(id, { memo: '直したメモ' })
+    await flushNow()
+    expect(await rawItem(id)).toMatchObject({ title: '', memo: '直したメモ' })
+    actions.moveItemDates(id, { start: '2026-11-18', due: null, clearEnd: false })
+    await flushNow()
+    expect(await rawItem(id)).toMatchObject({ title: '', start: '2026-11-18' })
+  })
+
+  it('保存する前に件名を入れたら、その件名を書く', async () => {
+    await start(dataWith({ items: [blank] }))
+    const id = actions.duplicateItem('b0', { start: '2026-11-17', due: null })
+    actions.updateItem(id, { title: '入れた件名' })
+    await flushNow()
+    expect((await rawItem(id)).title).toBe('入れた件名')
+  })
+
+  it('本当に「（件名なし）」という件名の予定の複製は、その字を写す', async () => {
+    await start(dataWith({ items: [mkItem({ id: 'r', title: '（件名なし）' })] }))
+    const id = actions.duplicateItem('r', { start: '2026-11-17', due: null })
+    await flushNow()
+    expect((await rawItem(id)).title).toBe('（件名なし）')
   })
 })
 

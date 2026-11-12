@@ -385,7 +385,10 @@
   padding: 0 4px;
 }
 
-/* 落とせる日（ドラッグの間。地を --accent-soft にして 1px の --accent の点線の枠、今その上にある日は線の枠。7.11・D25） */
+/*
+ * 落とせる日（ドラッグの間。地を --accent-soft にして 1px の --accent の点線の枠。7.11・D25）。今その上にある日は、ほかの落とせる日と
+ * はっきり分かるよう 2px の --accent の線の枠（開発）。枠は列の内側に描く（隣の列・段に掛けない）
+ */
 .wk-cell[data-drop='ok'],
 .wk-cell[data-drop='hover'],
 .wk-half[data-drop='ok'],
@@ -397,7 +400,8 @@
 
 .wk-cell[data-drop='hover'],
 .wk-half[data-drop='hover'] {
-  outline-style: solid;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* ---------- 線（2px・レーンのカードの高さの真ん中 18px。7.8・D42） ---------- */
@@ -942,8 +946,8 @@
   outline-offset: -2px;
 }
 
-/* すばやく足す（12.1）: 押した「＋」の行が、その場で1行の入力欄に替わる（D44。共通の部品 QuickAdd）。PC の L は字を 13px・
-   高さ 30px に（狭い列でも打った字が見えるように）。指の端末・S・M は入力欄の決まりのまま（40px・16px。iOS のズームを防ぐ） */
+/* すばやく足す（12.1）: 押した「＋」の行が、その場で1行の入力欄に替わる（D44。共通の部品 QuickAdd）。入力欄は決まりのまま
+   （PC 36px・15px、スマホ 40px・16px。4.7・4.8・4.11） */
 .wk-quick {
   flex: none;
   margin: 4px 4px 0;
@@ -951,14 +955,6 @@
 
 .wk-v .wk-quick {
   margin: 0;
-}
-
-@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
-  .wk-quick .input {
-    min-height: 30px;
-    padding: 4px 6px;
-    font-size: 13px;
-  }
 }
 
 /* 7日を横の PC（上に載せられる端末）では、列に乗せた時（・中にフォーカスがある時）だけ出す。指の端末ではいつも（D43） */
@@ -996,6 +992,11 @@
 
 .wk-vtags .wk-tag + .wk-tag {
   padding-left: 8px;
+}
+
+/* 登録した・落とした先のカードを見える所まで出す時（week/weekScroller.ts の revealInWeek）に、上に固定した名札の行（24px）の下に出す */
+.wk-v :is(.wk-card, .wk-recv, .wk-end, .wk-over) {
+  scroll-margin-top: 24px;
 }
 
 /* 日のかたまり（上に 2px の --rule-strong。休みの日はかたまりの地を --off-fill（.cp-offday）） */

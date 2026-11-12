@@ -76,6 +76,8 @@ let chain: Promise<void> = Promise.resolve()
 let channel: BroadcastChannel | null = null
 /** 次の保存で送信待ちに付ける、受け取り箱の依頼ごとのまとまり（依頼の id → 書いた記録のキー） */
 let pendingGroups = new Map<string, string[]>()
+/** 端末に書く形が表示用の形と違う、このタブで作った記録のうち、まだ書き終えていない物（「表/id」→ 記録。CommitOptions の stored） */
+let pendingStored = new Map<string, StoredForm>()
 const tabId = Math.random().toString(36).slice(2)
 
 type Listener = () => void
@@ -157,6 +159,52 @@ export async function initStore(p: Persistence = createPersistence()): Promise<v
 export interface CommitOptions {
   /** 受け取り箱の依頼ごとのまとまり（src/domain/inbox.ts の touched。19.5） */
   groups?: ReadonlyMap<string, readonly string[]>
+  /**
+   * この変更で新しく作った記録のうち、端末に書く形が表示用の形と違う物（その表・id と、端末に書く記録）。複製で写す空の件名
+   * （表示用は「（件名なし）」、端末の記録は空のまま。D48）。保存の時は、その形に、その後このタブで直した項目だけを重ねて書く
+   */
+  stored?: readonly Change[]
+}
+
+/** 端末に書く形が表示用と違う新しい記録（shown = 作った時の表示用の記録、stored = 端末に書く記録） */
+interface StoredForm {
+  table: TableName
+  id: string
+  shown: AnyRecord
+  stored: AnyRecord
+}
+
+function addStored(next: AppData, stored: readonly Change[] | undefined): void {
+  if (!stored) return
+  for (const ch of stored) {
+    const shown = (next[ch.table] as Record<string, AnyRecord>)[ch.id]
+    if (shown && ch.record) pendingStored.set(`${ch.table}/${ch.id}`, { table: ch.table, id: ch.id, shown, stored: ch.record })
+  }
+}
+
+/**
+ * 保存するデータに、端末に書く形が表示用と違う新しい記録（CommitOptions の stored）をその形で入れる。その後このタブで直した項目は
+ * 重ねる（storedRecord に、その形を raw・作った時の表示用の記録を直す前として渡す）。もう端末にある（書き終えた）・消した記録はそのまま
+ */
+function withStoredForms(rawNext: AppData, next: AppData, forms: Iterable<StoredForm>): AppData {
+  let out: Tables | null = null
+  for (const f of forms) {
+    if ((raw[f.table] as Record<string, AnyRecord>)[f.id] !== undefined) continue
+    const now = (next[f.table] as Record<string, AnyRecord>)[f.id]
+    const rec = storedRecord(f.table, f.stored as never, f.shown as never, now as never) as AnyRecord | undefined
+    if (rec === undefined) continue
+    out ??= { ...rawNext } as unknown as Tables
+    out[f.table] = { ...out[f.table], [f.id]: rec }
+  }
+  return out ? (out as unknown as AppData) : rawNext
+}
+
+/**
+ * 端末に書く（書いた）形の記録: 端末の記録（raw）か、まだ書き終えていない、端末に書く形が表示用と違う新しい記録（CommitOptions の
+ * stored）はその形。どちらも無ければ undefined（このタブで作ってまだ保存していない記録は、表示用の記録がそのまま端末に書く形）
+ */
+export function getStoredRecord(table: TableName, id: string): unknown {
+  return (raw[table] as Record<string, unknown>)[id] ?? pendingStored.get(`${table}/${id}`)?.stored
 }
 
 function addGroups(groups: ReadonlyMap<string, readonly string[]> | undefined): void {
@@ -173,6 +221,7 @@ export function commit(next: AppData, opts: CommitOptions = {}): void {
   const { data } = useApp.getState()
   if (next === data) return
   addGroups(opts.groups)
+  addStored(next, opts.stored)
   useApp.setState({ data: next, saveStatus: 'pending' })
   scheduleSave()
 }
@@ -321,15 +370,22 @@ async function saveOnce(): Promise<boolean> {
   useApp.setState({ saveStatus: 'saving' })
   const groups = pendingGroups
   pendingGroups = new Map()
+  // 端末に書く形が表示用と違う新しい記録は、書き終えるまで残す（書いている間に開いた詳細も、その形を読めるように。getStoredRecord）
+  const forms = [...pendingStored.entries()]
   try {
     const notes: ConflictNote[] = []
     // 形3: raw に、このタブで変えた項目と日付・時刻の並びの直しだけを重ねて書く
-    const rawNext = storedData(raw, persisted, next)
+    const rawNext = withStoredForms(
+      storedData(raw, persisted, next),
+      next,
+      forms.map(([, f]) => f),
+    )
     const outcome = await persistence.save(raw, rawNext, conflictHooks(notes), groups.size ? { groups } : undefined)
     const dropped: Change[] = []
     for (const t of Object.keys(outcome.dropped) as TableName[])
       for (const id of outcome.dropped[t] ?? []) dropped.push({ table: t, id, record: null })
     raw = applyChanges(raw, [...outcome.written, ...dropped])
+    for (const [k, f] of forms) if (pendingStored.get(k) === f) pendingStored.delete(k)
     const rawWritten = raw
     const mergedCount = Object.values(outcome.merged).reduce((n, a) => n + (a?.length ?? 0), 0) + dropped.length
     // 別タブの変更と合わせたレコード・競合の控えは、修復した表示用の内容にしてから使う
@@ -571,6 +627,7 @@ export async function replaceAllData(
     raw = stored
     persisted = repairData(stored).data
     pendingGroups = new Map()
+    pendingStored = new Map()
     clearRecoveryJournal()
     useApp.setState({ data: persisted, saveStatus: 'saved', saveError: null, externalChange: false })
     channel?.postMessage({ from: tabId })
@@ -891,6 +948,7 @@ export function resetStoreForTests(): void {
   raw = emptyData()
   persisted = emptyData()
   pendingGroups = new Map()
+  pendingStored = new Map()
   savedListeners.clear()
   externalListeners.clear()
   adoptedJournalKeys = []

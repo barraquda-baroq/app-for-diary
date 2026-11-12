@@ -434,6 +434,7 @@ describe('押した時の動き（WP8B）', () => {
     expect(more.getAttribute('aria-expanded')).toBe('false')
     await user.click(more)
     const menu = screen.getByRole('menu', { name: 'ほかに 1件の予定' })
+    expect(menu).toBe(screen.getByTestId(testIds.dayMoreList))
     expect(more.getAttribute('aria-expanded')).toBe('true')
     const items = within(menu).getAllByRole('menuitem')
     expect(items.map(menuText)).toEqual(['社内の確認 14:45–15:30'])

@@ -22,7 +22,7 @@ export interface PopupMenuItem {
   disabled?: boolean
   /** 項目の下に出す短い説明（押せない理由など） */
   hint?: string
-  /** hint を等幅の字で出す（時刻・日付だけの説明。docs/SPEC.md の 4.4-1） */
+  /** hint を等幅の字で出す（時刻・日付だけの説明。docs/SPEC.md の 4.7） */
   monoHint?: boolean
   testId?: string
 }

@@ -223,6 +223,21 @@ describe('件名が空の記録（D48・AMB-ITEMS-26）', () => {
     await open([mkItem({ id: 'r', title: '（件名なし）' })])
     expect((byId(testIds.itemTitle) as HTMLTextAreaElement).value).toBe('（件名なし）')
   })
+
+  it('件名が空の予定の複製も、欄は空・プレースホルダ（保存し終える前に［開く］で開いても。12.7）', async () => {
+    const { user, setProps, onClose } = await open([mkItem({ id: 'n', title: '', start: '2026-11-10' })])
+    await user.click(byId(testIds.itemDuplicate))
+    await user.click(byId(testIds.dupStart))
+    await user.click(byId(DATE_PICKER_TEST_ID).querySelector('[data-date="2026-11-17"]') as HTMLElement)
+    await user.click(byId(testIds.dupSubmit))
+    const copy = Object.values(useApp.getState().data.items).find((i) => i.id !== 'n') as Item
+    expect(copy.start).toBe('2026-11-17')
+    // お知らせの［開く］で開いた時と同じく、その予定の詳細にする
+    setProps({ id: copy.id, onClose })
+    const title = byId(testIds.itemTitle) as HTMLTextAreaElement
+    expect(title.value).toBe('')
+    expect(title.placeholder).toBe('（件名なし）')
+  })
 })
 
 describe('完了（12.5）', () => {
@@ -732,6 +747,17 @@ describe('複製・削除の入口と、重なった小さな画面（12.7・12.
     expect(trash).toHaveBeenCalledWith('a')
     // 確かめて消した物はお知らせを出さない（ゴミ箱の画面は段階5。AMB-ITEMS-24）
     expect(useToasts.getState().toasts).toEqual([])
+  })
+
+  it('削除の確かめは開くと中にフォーカスがあり、［やめる］で閉じると「…」へ戻る（詳細はそのまま）', async () => {
+    const { user, onClose } = await open([materials])
+    await user.click(byId(testIds.itemMore))
+    await user.click(byId(testIds.itemDelete))
+    const dialog = screen.getByRole('dialog', { name: '『資料づくり』を削除しますか？' })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    await user.click(within(dialog).getByRole('button', { name: 'やめる' }))
+    expect(document.activeElement).toBe(byId(testIds.itemMore))
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it.each([

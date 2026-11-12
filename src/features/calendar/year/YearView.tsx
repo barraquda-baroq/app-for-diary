@@ -14,8 +14,9 @@
 // - キーボード（PC）: 日のマスの中で Tab で止まるのは1つのマス（初めは見ている日。フォーカスが来たマスに移り、‹ ›・今日で見ている日が
 //   替わると見ている日に戻る）だけ。マスの間は矢印キー・Home・End で動く（行き先は yearModel.ts の yearMove。年の外へは出ない）。
 //   月の見出しは、それぞれ Tab で止まるボタン。受け持ったキーは preventDefault する（ページをスクロールしない。段階5で ← →（前後の
-//   期間。3.10）を入れる時は、preventDefault 済みの物を見送る）
-import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+//   期間。3.10）を入れる時は、preventDefault 済みの物を見送る）。日のマスにフォーカスがある時に並べ方が替わったら（窓の幅を変えて
+//   870px をまたいだ）、新しい並べ方の同じ日のマスへフォーカスを移す（body へ落とさない。開発）
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { cls, useCalendarData } from '../common/parts'
 import { testIds } from '../common/testIds'
 import type { ViewProps } from '../common/types'
@@ -24,6 +25,23 @@ import { YearMinis } from './YearMinis'
 import { buildYear, dotsRow, miniColumns, rowsCellPx, yearLayout, yearMove } from './yearModel'
 import { YearRows } from './YearRows'
 import './year.css'
+
+/**
+ * 1つの並べ方（行・小さな月）を包む。並べ方が替わって外れる時（外れる要素を外す前に呼ばれる）に、日のマスにフォーカスがあれば、
+ * その日付を onLeave に渡す
+ */
+function LayoutHost({ onLeave, children }: { onLeave: (date: string) => void; children: ReactNode }) {
+  useLayoutEffect(
+    () => () => {
+      const active = document.activeElement
+      if (!(active instanceof HTMLElement) || !active.classList.contains('yr-cell')) return
+      const date = active.dataset.date
+      if (date) onLeave(date)
+    },
+    [onLeave],
+  )
+  return children
+}
 
 export function YearView({ viewed, today, width, area }: ViewProps) {
   const y = Number(viewed.slice(0, 4))
@@ -59,6 +77,19 @@ export function YearView({ viewed, today, width, area }: ViewProps) {
     [layout],
   )
 
+  // 並べ方が替わる時に日のマスにフォーカスがあったら、新しい並べ方の同じ日のマスへ移す（LayoutHost が外れる前に日付を控える）
+  const refocus = useRef<string | null>(null)
+  const onLeave = useCallback((date: string) => {
+    refocus.current = date
+  }, [])
+  useLayoutEffect(() => {
+    const date = refocus.current
+    refocus.current = null
+    // 外したマスと一緒にフォーカスが body へ落ちた時だけ（その間にほかへ移っていたら、そのまま）
+    if (date === null || (document.activeElement && document.activeElement !== document.body)) return
+    root.current?.querySelector<HTMLElement>(`.yr-cell[data-date="${date}"]`)?.focus()
+  }, [layout])
+
   return (
     <div
       ref={root}
@@ -67,27 +98,29 @@ export function YearView({ viewed, today, width, area }: ViewProps) {
       data-layout={layout}
       onKeyDown={onKeyDown}
     >
-      {layout === 'rows' ? (
-        <YearRows
-          y={y}
-          months={months}
-          dots={dotsRow(rowsCellPx(area.width))}
-          tabDate={tabDate}
-          onCell={onCell}
-          onMonth={onMonth}
-          onFocusCell={onFocusCell}
-        />
-      ) : (
-        <YearMinis
-          y={y}
-          months={months}
-          columns={miniColumns(area.width, width)}
-          tabDate={tabDate}
-          onCell={onCell}
-          onMonth={onMonth}
-          onFocusCell={onFocusCell}
-        />
-      )}
+      <LayoutHost key={layout} onLeave={onLeave}>
+        {layout === 'rows' ? (
+          <YearRows
+            y={y}
+            months={months}
+            dots={dotsRow(rowsCellPx(area.width))}
+            tabDate={tabDate}
+            onCell={onCell}
+            onMonth={onMonth}
+            onFocusCell={onFocusCell}
+          />
+        ) : (
+          <YearMinis
+            y={y}
+            months={months}
+            columns={miniColumns(area.width, width)}
+            tabDate={tabDate}
+            onCell={onCell}
+            onMonth={onMonth}
+            onFocusCell={onFocusCell}
+          />
+        )}
+      </LayoutHost>
     </div>
   )
 }

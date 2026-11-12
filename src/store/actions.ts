@@ -11,9 +11,10 @@ import { backupJson, parseBackup, restoreData, type BackupOptions } from '../dom
 import type { DatePatch } from '../domain/drag'
 import * as I from '../domain/inbox'
 import * as O from '../domain/ops'
+import { untitledByRepair } from '../domain/repair'
 import * as T from '../domain/trash'
-import type { AppData, ID } from '../domain/types'
-import { commit, commitRaw, getData, loadFromDisk, replaceAllData } from './appStore'
+import type { AppData, ID, Item } from '../domain/types'
+import { commit, commitRaw, getData, getStoredRecord, loadFromDisk, replaceAllData } from './appStore'
 
 function apply(fn: (d: AppData) => AppData): void {
   commit(fn(getData()))
@@ -22,6 +23,21 @@ function apply(fn: (d: AppData) => AppData): void {
 function run<R>(fn: (d: AppData) => { data: AppData; result: R }): R {
   const r = fn(getData())
   commit(r.data)
+  return r.result
+}
+
+/**
+ * 複製する（12.7）。複製は表示用の記録から作るが、件名は端末の記録の件名を写す: 端末の記録の件名が空の予定（表示用は「（件名なし）」）の
+ * 複製は、端末に書く記録の件名も空のまま（「（件名なし）」の字を書かない。詳細の欄は空でプレースホルダ。D48）。表示用の複製の件名は
+ * 「（件名なし）」のまま（読み込み直した時と同じ形。直す・動かす時の決まりの確かめで、空の件名として断らない）
+ */
+function duplicate(id: ID, dates: { start: string | null; due: string | null }): ID {
+  const data = getData()
+  const r = O.duplicateItem(data, id, dates)
+  const src = data.items[id]
+  const blank = src !== undefined && untitledByRepair(src, getStoredRecord('items', id))
+  const stored: Item = { ...r.data.items[r.result], title: '' }
+  commit(r.data, blank ? { stored: [{ table: 'items', id: stored.id, record: stored }] } : {})
   return r.result
 }
 
@@ -49,7 +65,7 @@ export const actions = {
   /** ドラッグの［元に戻す］（開始日・締め切り日・終了時刻だけ。戻せない時は DomainError の O.UNDO_REFUSED。D25） */
   restoreItemDates: (id: ID, prev: O.ItemDates) => apply((d) => O.restoreItemDates(d, id, prev)),
   /** 複製する（12.7。日付は複製する日を選ぶ小さな画面で決めた値）。戻り値は新しい id（［開く］で詳細へ） */
-  duplicateItem: (id: ID, dates: { start: string | null; due: string | null }) => run((d) => O.duplicateItem(d, id, dates)),
+  duplicateItem: (id: ID, dates: { start: string | null; due: string | null }) => duplicate(id, dates),
 
   // 休み・ラベルの呼び名（6.5・6.6）
   setOffDay: (date: string, off: boolean) => apply((d) => O.setOffDay(d, date, off)),

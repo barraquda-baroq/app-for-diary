@@ -2,7 +2,7 @@
 // 保存の時に書き戻すのは日付と時刻の並びの直しだけ（知らない kind・label・項目は残す）
 import { describe, expect, it } from 'vitest'
 import { isInTaskList } from './items'
-import { itemDateFixes, repairData, storedData, storedRecord } from './repair'
+import { itemDateFixes, repairData, storedData, storedRecord, untitledByRepair } from './repair'
 import { T0, dataWith, mkCheck, mkFavorite, mkItem, mkMim, mkOffDay, mkRoutine, mkTask } from './testData'
 import { emptyData, type AppData, type Item } from './types'
 
@@ -49,6 +49,18 @@ describe('項目（6.12）', () => {
   it('知らない kind → work、知らない label → なし、空の件名 → 「（件名なし）」', () => {
     const r = repairOne(mkItem({ kind: 'family' as never, label: 'gold-l', title: '  ' }))
     expect(r).toMatchObject({ kind: 'work', label: null, title: '（件名なし）' })
+  })
+
+  it('untitledByRepair: 表示の「（件名なし）」が、端末の記録の空の件名を直した物か（本当の件名「（件名なし）」・まだ端末に無い記録は違う。D48）', () => {
+    const shown = { title: '（件名なし）' }
+    expect(untitledByRepair(shown, { title: '' })).toBe(true)
+    expect(untitledByRepair(shown, { title: '  ' })).toBe(true)
+    expect(untitledByRepair(shown, { title: null })).toBe(true)
+    expect(untitledByRepair(shown, {})).toBe(true)
+    expect(untitledByRepair(shown, { title: '（件名なし）' })).toBe(false)
+    expect(untitledByRepair(shown, undefined)).toBe(false)
+    // このタブで件名を直した後（端末の記録はまだ空）
+    expect(untitledByRepair({ title: '直した件名' }, { title: '' })).toBe(false)
   })
 
   it('知らない項目は消さずに残す（新しい版のアプリが足した項目）', () => {

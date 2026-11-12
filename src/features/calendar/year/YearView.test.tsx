@@ -277,6 +277,30 @@ describe('キーボード（4.12）', () => {
     expect([...view().querySelectorAll('.yr-cell[tabindex="0"]')].map((c) => c.getAttribute('data-date'))).toEqual(['2026-11-10'])
   })
 
+  it('日のマスにフォーカスがある時に並べ方が替わったら（870px をまたいだ）、新しい並べ方の同じ日のマスへフォーカスを移す（開発）', async () => {
+    const { setProps } = await renderView(YearView, props(), { path: '/year/2026' })
+    act(() => cell('2026-03-03').focus())
+    const before = cell('2026-03-03')
+    setProps(props({ area: { width: 794, height: 700 } }))
+    expect(view().getAttribute('data-layout')).toBe('mini')
+    expect(cell('2026-03-03')).not.toBe(before)
+    expect(document.activeElement).toBe(cell('2026-03-03'))
+    // 矢印キーで続けて動ける（小さな月の ↓ は次の週）
+    fireEvent.keyDown(cell('2026-03-03'), { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(cell('2026-03-10'))
+    setProps(props({ area: { width: 994, height: 700 } }))
+    expect(view().getAttribute('data-layout')).toBe('rows')
+    expect(document.activeElement).toBe(cell('2026-03-10'))
+  })
+
+  it('日のマスにフォーカスが無い時は、並べ方が替わってもフォーカスを動かさない', async () => {
+    const { setProps } = await renderView(YearView, props(), { path: '/year/2026' })
+    const month = screen.getByTestId(testIds.yearMonth(3))
+    act(() => month.focus())
+    setProps(props({ area: { width: 794, height: 700 } }))
+    expect(document.activeElement?.classList.contains('yr-cell')).toBe(false)
+  })
+
   it('並べ方が替わっても（窓の幅を変えた時）、Tab で止まるマスはフォーカスの来たマスのまま', async () => {
     const { setProps } = await renderView(YearView, props(), { path: '/year/2026' })
     act(() => cell('2026-03-03').focus())
