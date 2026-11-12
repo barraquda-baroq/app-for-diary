@@ -71,6 +71,39 @@ async function noSideScroll(page: Page, label: string, sheet?: Locator) {
   expect(m.right, `${label}: 小さな画面の右の端`).toBeLessThanOrEqual(m.width + 0.5)
 }
 
+/**
+ * 小さな画面の形（3.8・12.2・FRAME-077・078・ITEMS-165・252・265）: L（幅 900px から）は真ん中の小さな画面（幅 520px まで・角丸
+ * 14px）、M・S は下からせり上がるシート（幅いっぱい・下の端は画面の下の端・高さは最大 92dvh・上の角だけ 16px）。出る動きの後に測る
+ */
+async function sheetShape(dialog: Locator, label: string) {
+  await dialog.evaluate((e) => Promise.all(e.getAnimations({ subtree: true }).map((a) => a.finished)))
+  const m = await dialog.evaluate((e) => {
+    const r = e.getBoundingClientRect()
+    const s = getComputedStyle(e)
+    return {
+      left: r.left,
+      right: r.right,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height,
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      radius: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius],
+    }
+  })
+  if (m.vw >= 900) {
+    expect(m.width, `${label}: 幅`).toBeLessThanOrEqual(520)
+    expect(Math.abs(m.left - (m.vw - m.right)), `${label}: 左右の真ん中`).toBeLessThanOrEqual(1)
+    expect(m.bottom, `${label}: 下の端`).toBeLessThan(m.vh - 1)
+    expect(m.radius, `${label}: 角丸`).toEqual(['14px', '14px', '14px', '14px'])
+  } else {
+    expect([m.left, m.right], `${label}: 幅いっぱい`).toEqual([0, m.vw])
+    expect(Math.abs(m.bottom - m.vh), `${label}: 下の端は画面の下の端`).toBeLessThanOrEqual(1)
+    expect(m.height, `${label}: 高さは最大 92dvh`).toBeLessThanOrEqual(m.vh * 0.92 + 1)
+    expect(m.radius, `${label}: 上の角だけ 16px`).toEqual(['16px', '16px', '0px', '0px'])
+  }
+}
+
 /** 小さな画面を Esc で閉じる（開き終わってから。閉じ終わるまで待つ） */
 async function closeSheet(page: Page) {
   await page.keyboard.press('Escape')
@@ -78,8 +111,8 @@ async function closeSheet(page: Page) {
 }
 
 /**
- * 4つのモードと、登録・詳細（どの欄もいつも出ている）の小さな画面で、横にはみ出さない。confirm なら詳細の［削除］の確かめの小さな画面も
- * （開いて、［やめる］で戻る）
+ * 4つのモードと、登録・詳細（どの欄もいつも出ている）の小さな画面で、横にはみ出さない。小さな画面の形（sheetShape）も見る。confirm なら
+ * 詳細の［削除］の確かめと［複製］の「複製する日を選ぶ」の小さな画面も（開いて形を見て、［やめる］・Esc で詳細へ戻る）
  */
 async function sweep(page: Page, width: number, height: number, { confirm = false } = {}) {
   await page.setViewportSize({ width, height })
@@ -91,26 +124,39 @@ async function sweep(page: Page, width: number, height: number, { confirm = fals
   await page.getByTestId(testIds.calAdd).click()
   let sheet = await sheetReady(page)
   await noSideScroll(page, `${width}px 登録`, sheet)
+  await sheetShape(page.getByTestId(testIds.itemSheet), `${width}px 登録`)
   await closeSheet(page)
   // 詳細の小さな画面（日付と時刻のある複数日の予定。いちばん欄の多い物）
   await page.getByTestId(testIds.dayEvent(I.materials)).locator('.dy-open').click()
   sheet = await sheetReady(page)
   await noSideScroll(page, `${width}px 詳細`, sheet)
+  await sheetShape(page.getByTestId(testIds.itemSheet), `${width}px 詳細`)
   if (confirm) {
     await openItemMore(page)
     await page.getByTestId(testIds.itemDelete).click()
     const dialog = page.getByRole('dialog', { name: '『資料づくり』を削除しますか？' })
     await expect(dialog).toBeVisible()
     await noSideScroll(page, `${width}px 削除の確かめ`, dialog)
+    await sheetShape(dialog, `${width}px 削除の確かめ`)
     await dialog.getByRole('button', { name: 'やめる' }).click()
     await expect(dialog).toHaveCount(0)
+    await sheetReady(page)
+    // 複製する日を選ぶ（12.7）
+    await page.getByTestId(testIds.itemDuplicate).click()
+    // DuplicateDialog.tsx の DUP_TEST_IDS.dialog（部品を読み込むと CSS も読み込むので、値を書く）
+    const dup = page.getByTestId('dup-dialog')
+    await expect(dup).toBeVisible()
+    await noSideScroll(page, `${width}px 複製する日を選ぶ`, dup)
+    await sheetShape(dup, `${width}px 複製する日を選ぶ`)
+    await page.keyboard.press('Escape')
+    await expect(dup).toHaveCount(0)
     await sheetReady(page)
   }
   await closeSheet(page)
 }
 
 test.describe('横にスクロールしない・ページがスクロールしない（PC）', { tag: ['@pc'] }, () => {
-  test('960・1400px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない。960px は始点のカードの件名を2行、1400px は印の多い始点のカードの期間を隠す（FRAME-026・開発）', async ({
+  test('960・1400px: 4つのモードと登録・詳細の小さな画面で横にはみ出さず、小さな画面は真ん中（1400px は削除の確かめと複製する日を選ぶも）。960px は始点のカードの件名を2行、1400px は印の多い始点のカードの期間を隠す（FRAME-026・078・ITEMS-165・252・265・開発）', async ({
     page,
   }) => {
     // 印が3つ（〆・ロック・Claude）の複数日の予定（Task List 生まれ。いつもの週の木〜土）
@@ -139,7 +185,7 @@ test.describe('横にスクロールしない・ページがスクロールし�
     await go(page, 'week', '/week/2026-11-08')
     await expect(page.locator('.wk-card.is-start.is-two-lines').first()).toBeVisible()
     await expect(page.getByTestId(testIds.weekStart(I.materials))).toHaveClass(/is-two-lines/)
-    await sweep(page, 1400, 900)
+    await sweep(page, 1400, 900, { confirm: true })
     // 1400px（列 142px）: 印が3つの始点のカードは、期間を隠して件名を1行目に（is-period-hidden。WP7 の (u)）
     await go(page, 'week', '/week/2026-11-08')
     await expect(page.getByTestId(testIds.weekStart(marks.id))).toHaveClass(/is-period-hidden/)
@@ -611,7 +657,7 @@ async function grownTapsKeepNeighbours(page: Page) {
 
 test.describe('横にスクロールしない・押せる所の大きさ（S）', { tag: ['@s'] }, () => {
   for (const width of [360, 390, 412] as const) {
-    test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない${width === 360 ? '（削除の確かめも）' : ''}（FRAME-026・CALENDAR-226）`, async ({
+    test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さず、小さな画面は下からのシート${width === 360 ? '（削除の確かめと複製する日を選ぶも）' : ''}（FRAME-026・077・078・CALENDAR-226・ITEMS-165・252・265）`, async ({
       page,
     }) => {
       await openCalendar(page, '/month/2026-11', { data: demoData() })
@@ -646,12 +692,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
 })
 
 test.describe('横にスクロールしない・押せる所の大きさ（M）', { tag: ['@m'] }, () => {
-  test('600・768px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない（600px は S と M の境。FRAME-026・計画の R5）', async ({
+  test('600・768px: 4つのモードと登録・詳細の小さな画面で横にはみ出さず、小さな画面は下からのシート（768px は削除の確かめと複製する日を選ぶも。600px は S と M の境。FRAME-026・077・078・ITEMS-165・252・265・計画の R5）', async ({
     page,
   }) => {
     await openCalendar(page, '/month/2026-11', { data: demoData() })
     await sweep(page, 600, 1024)
-    await sweep(page, 768, 1024)
+    await sweep(page, 768, 1024, { confirm: true })
   })
 
   test('指で押せる所は 34px 以上（D08 の例外は SMALL_OK の大きさ以上）。4つのモードと登録・詳細の小さな画面（FRAME-244）', async ({
