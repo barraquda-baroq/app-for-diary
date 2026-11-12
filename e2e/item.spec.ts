@@ -298,7 +298,49 @@ test.describe('登録の画面（スマホ）', { tag: ['@s'] }, () => {
     await page.goBack()
     await expect(sheet).toHaveCount(0)
   })
+
+  test('字を打つ欄はどれも字が 16px 以上（登録・詳細の小さな画面の件名・依頼者・時刻・メモと、すばやく足すの欄。iOS のズームを防ぐ。FRAME-199・ITEMS-190）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+    const found: string[] = []
+    // 登録
+    await page.getByTestId('cal-add').click()
+    await settled(sheetOf(page))
+    found.push(...(await typedFields(sheetOf(page), '登録')))
+    await page.goBack()
+    await expect(sheetOf(page)).toHaveCount(0)
+    // 詳細（メモの無い予定は、メモの欄も入力欄のまま）
+    await page.getByTestId(`week-start-${DEMO_IDS.materials}`).locator('.wk-open').click()
+    await settled(sheetOf(page))
+    found.push(...(await typedFields(sheetOf(page), '詳細')))
+    await page.goBack()
+    await expect(sheetOf(page)).toHaveCount(0)
+    // すばやく足す（12.1）
+    await page.getByTestId('week-add-2026-11-10-work').click()
+    const quick = page.getByTestId('quick-add-input')
+    await expect(quick).toBeVisible()
+    found.push(...(await typedFields(quick.locator('xpath=..'), 'すばやく足す')))
+    expect(found.filter((f) => !f.endsWith(': 16px'))).toEqual([])
+    // 確かめた欄（どれか1つでも名前が変わったら、確かめ漏れにならないよう落とす）
+    for (const id of ['item-title', 'item-requester', 'item-start-time', 'item-end-time', 'item-memo'])
+      expect(found, id).toContain(`登録 ${id}: 16px`)
+    for (const id of ['item-title', 'item-requester', 'item-start-time', 'item-end-time'])
+      expect(found, id).toContain(`詳細 ${id}: 16px`)
+    expect(found).toContain('すばやく足す quick-add-input: 16px')
+  })
 })
+
+/** その中の字を打つ欄（チェックを除く input・textarea）の字の大きさ（「場所 data-testid: 大きさ」） */
+function typedFields(root: Locator, where: string): Promise<string[]> {
+  return root
+    .locator('input:not([type="checkbox"]):not([type="hidden"]), textarea')
+    .evaluateAll(
+      (els, w) =>
+        els.map((e) => `${w} ${e.getAttribute('data-testid') ?? e.tagName.toLowerCase()}: ${getComputedStyle(e).fontSize}`),
+      where,
+    )
+}
 
 test.describe('登録の画面の長さ（スマホ）', { tag: ['@s'] }, () => {
   test('どの欄もいつも出すので S の登録の画面は縦に長く、シートの中だけがスクロールして、いちばん下のラベルの色まで届く（12.2・22. の 10.）', async ({
@@ -452,6 +494,10 @@ test.describe('登録の画面（iPhone）', { tag: ['@ios'] }, () => {
     await expect(title).toBeVisible()
     const size = await title.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
     expect(size).toBeGreaterThanOrEqual(16)
+    // 件名のほかの字を打つ欄（依頼者・時刻・メモ）も 16px（詳細の画面・すばやく足すの欄は Pixel 7 の「字を打つ欄はどれも…」で見る）
+    const fields = await typedFields(sheetOf(page), '登録')
+    expect(fields.length).toBeGreaterThanOrEqual(5)
+    expect(fields.filter((f) => !f.endsWith(': 16px'))).toEqual([])
     // キーボードが出て見えている範囲が縮むと、シートを --kb で持ち上げる（作り物の visualViewport。FRAME-086・ITEMS-191）
     await settled(sheetOf(page))
     await expect.poll(() => shrinkViewport(page, 300)).toBe('300px')
