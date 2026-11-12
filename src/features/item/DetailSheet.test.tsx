@@ -1,4 +1,4 @@
-// 予定の詳細の画面（docs/SPEC.md の 12.3・3.8・4.3・6.12・12.5。D11・D47・D48）: 題・上の列・欄の並び、その予定の区分の地と
+// 予定の詳細の画面（docs/SPEC.md の 12.3・3.8・4.3・6.12・12.5。D47・D48）: 題・上の列・欄の並び、その予定の区分の地と
 // ラベルの帯（知らない区分・ラベルは仕事・ラベルなし）、区分とラベルを選び替えるとその場で替わる、畳む所が無くどの欄もいつも出す、
 // 件名が空の記録、完了の切り替え（お知らせを出さない）、下の行（作った・完了・Claude が追加）、予定が無い時に閉じる
 import { act, fireEvent, screen, within } from '@testing-library/react'
@@ -49,7 +49,7 @@ async function open(items: Item[], opts: { prefs?: Partial<Prefs> } = {}, id = i
 }
 
 describe('題・上の列・欄（12.3）', () => {
-  it('題は「予定」。上の列に「完了にする」・［複製］・「…」、欄は登録の画面と同じ並び（22. の 8.・10.）、下の行は最後', async () => {
+  it('題は「予定」。上の列に「完了にする」・［複製］・「…」、欄は登録の画面と同じ並び（22. の作者の気になった所の 2.）、下の行は最後', async () => {
     await open([materials])
     expect(within(sheet()).getByRole('heading').textContent).toBe('予定')
     const order = [
@@ -457,6 +457,43 @@ describe('直したそばから自動で保存する（12.3・ITEMS-207・208・
     expect(stored('m').memo).toBe('案内は https://example.com/guide. を見る（地図あり）')
     expect(screen.queryByTestId(testIds.itemMemo)).toBeNull()
     expect(byId(MEMO_VIEW_TEST_ID).textContent).toContain('（地図あり）')
+  })
+
+  it('メモから離れてもすぐ保存し、押している間は入力欄のまま。押し終わって（click・離して 0.3秒）から文章に戻す（12.3）', async () => {
+    const { user } = await open([mkItem({ id: 'e', memo: '' })], {}, 'e')
+    const memo = byId(testIds.itemMemo) as HTMLTextAreaElement
+    await user.type(memo, 'あとで')
+    const lock = byId(testIds.itemLock)
+    // 押した時（pointerdown の後）にフォーカスが外れる。保存はすぐ、入力欄（4行）は残して下の物を動かさない
+    fireEvent.pointerDown(lock)
+    act(() => memo.blur())
+    expect(stored('e').memo).toBe('あとで')
+    expect(byId(testIds.itemMemo)).toBe(memo)
+    fireEvent.pointerUp(lock)
+    expect(screen.queryByTestId(MEMO_VIEW_TEST_ID)).toBeNull()
+    // 押し終わり（click）で、押した物が効いてから文章に戻る
+    fireEvent.click(lock)
+    expect(stored('e').locked).toBe(true)
+    expect(screen.queryByTestId(testIds.itemMemo)).toBeNull()
+    expect(byId(MEMO_VIEW_TEST_ID).textContent).toBe('あとで')
+    // click が来ない時（長押し・なぞった）は、離して 0.3秒で戻す。押している間に入力欄へ戻った時は入力欄のまま
+    await user.click(byId(MEMO_VIEW_TEST_ID).querySelector('.it-memo-text span') as HTMLElement)
+    const again = byId(testIds.itemMemo) as HTMLTextAreaElement
+    vi.useFakeTimers({ now: T0 })
+    fireEvent.pointerDown(sheet())
+    act(() => again.blur())
+    act(() => again.focus())
+    fireEvent.pointerUp(sheet())
+    act(() => vi.advanceTimersByTime(300))
+    expect(byId(testIds.itemMemo)).toBe(again)
+    fireEvent.pointerDown(sheet())
+    act(() => again.blur())
+    fireEvent.pointerUp(sheet())
+    act(() => vi.advanceTimersByTime(299))
+    expect(byId(testIds.itemMemo)).toBe(again)
+    act(() => vi.advanceTimersByTime(1))
+    expect(screen.queryByTestId(testIds.itemMemo)).toBeNull()
+    // 押していない時（Tab など）は、離れたらすぐ文章に戻す（上のメモのテスト）
   })
 
   it('メモの［書き換える］（キーボードで届く所）でも入力欄になる。空のメモは初めから入力欄', async () => {

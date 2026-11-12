@@ -108,10 +108,11 @@ describe('詳細の画面で保存する日付・時刻の差分', () => {
 
 describe('書きかけか（12.2・ITEMS-186）・カレンダーに出ていないタスクか（12.3）', () => {
   it.each([
-    [{ title: '', memo: '' }, false],
-    [{ title: '  ', memo: '\n' }, false],
-    [{ title: '会議', memo: '' }, true],
-    [{ title: '', memo: '持ち物' }, true],
+    [{ title: '', requester: '', memo: '' }, false],
+    [{ title: '  ', requester: ' ', memo: '\n' }, false],
+    [{ title: '会議', requester: '', memo: '' }, true],
+    [{ title: '', requester: '総務', memo: '' }, true],
+    [{ title: '', requester: '', memo: '持ち物' }, true],
   ])('%o → %s', (f, want) => {
     expect(hasDraftText(f)).toBe(want)
   })

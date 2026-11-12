@@ -196,6 +196,40 @@ test.describe('詳細の画面（PC）', { tag: ['@pc'] }, () => {
   })
 })
 
+test.describe('詳細のメモを打った後に押した物（どの端末も）', { tag: ['@pc', '@m', '@s'] }, () => {
+  // メモが空の予定の詳細は、メモを4行の入力欄で出す。打った後にほかの物を押すと、入力欄は1行の文章に戻って下の物が上へ（L は
+  // 真ん中に置いた画面ごと縮んで上の物も下へ。M は下から出したシートの上の端が下がって［×］も）ずれる。押し終わるまで戻さないので、
+  // 押した物は押した時の並びのまま押される（12.3。12.1 のすばやく足すと同じ）
+  for (const target of ['item-lock', 'item-listed', 'item-label-sky-l', 'modal-close'] as const) {
+    test(`メモを打ってから ${target} を押すと、押した物がそのまま効く（メモも保存する）`, async ({ page, hasTouch }) => {
+      if ((page.viewportSize()?.width ?? 0) < 600) await page.setViewportSize({ width: 390, height: 844 })
+      await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+      await openDetailByHistory(page, DEMO_IDS.mail)
+      const sheet = sheetOf(page)
+      await settled(sheet)
+      await page.getByTestId('item-memo').fill('あとで')
+      // ロック・Task List は切り替えの行（字と丸）を押す
+      const press =
+        target === 'item-lock' || target === 'item-listed'
+          ? page.locator('label', { has: page.getByTestId(target) })
+          : page.getByTestId(target)
+      await press.scrollIntoViewIfNeeded()
+      if (hasTouch) await press.tap()
+      else await press.click()
+      if (target === 'modal-close') await expect(sheet).toHaveCount(0)
+      else if (target === 'item-label-sky-l') await expect(sheet).toHaveAttribute('data-label', 'sky-l')
+      else await expect(page.getByTestId(target)).toBeChecked()
+      // 押し終わった後は、メモを文章に戻す（閉じた時は出ていない）
+      if (target !== 'modal-close') await expect(page.getByTestId('item-memo-view')).toBeVisible()
+      await expect.poll(async () => (await rawItem(page, DEMO_IDS.mail))?.memo).toBe('あとで')
+      const raw = await rawItem(page, DEMO_IDS.mail)
+      if (target === 'item-lock') expect(raw?.locked).toBe(true)
+      if (target === 'item-listed') expect(raw?.listed).toBe(true)
+      if (target === 'item-label-sky-l') expect(raw?.label).toBe('sky-l')
+    })
+  }
+})
+
 /** 今フォーカスのある所から Tab を n 回押し、移った先の data-testid を順に返す */
 async function tabOrder(page: Page, n: number): Promise<(string | null)[]> {
   const out: (string | null)[] = []

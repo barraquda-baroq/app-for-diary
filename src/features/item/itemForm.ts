@@ -88,9 +88,12 @@ export function whenChanges(cur: When, next: When): Partial<Pick<When, 'start' |
   return out
 }
 
-/** 登録の画面が書きかけか（件名かメモに字がある。閉じる前に「書きかけを捨てますか？」と確かめる。12.2・ITEMS-186） */
-export function hasDraftText(f: Pick<ItemForm, 'title' | 'memo'>): boolean {
-  return f.title.trim() !== '' || f.memo.trim() !== ''
+/**
+ * 登録の画面が書きかけか（件名・依頼者・メモのどれかに字がある。閉じる前に「書きかけを捨てますか？」と確かめる。12.2・ITEMS-186。
+ * 依頼者は、畳む所をやめて区分のすぐ下に出すようになったので、打った字を黙って捨てないよう数える（開発））
+ */
+export function hasDraftText(f: Pick<ItemForm, 'title' | 'requester' | 'memo'>): boolean {
+  return f.title.trim() !== '' || f.requester.trim() !== '' || f.memo.trim() !== ''
 }
 
 /**

@@ -34,7 +34,7 @@ const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) 
 const labelName = (id: string, name: string): LabelName => ({ id, name, updatedAt: 1, by: 'user', ai: null, via: null })
 
 describe('題・欄の並び・初めの値（12.2）', () => {
-  it('題は「予定を登録」。欄は 件名 → 区分 → 依頼者 → 開始日・締め切り日 → 開始・終了 → メモ → ロック・Task List → ラベルの色 の順（22. の 10.）', async () => {
+  it('題は「予定を登録」。欄は 件名 → 区分 → 依頼者 → 開始日・締め切り日 → 開始・終了 → メモ → ロック・Task List → ラベルの色 の順（22. の作者の気になった所の 2.）', async () => {
     await open()
     expect(within(sheet()).getByRole('heading').textContent).toBe('予定を登録')
     const order = [
@@ -436,9 +436,12 @@ describe('書きかけのまま閉じる時の確かめ（12.2・ITEMS-186・AMB
     },
   )
 
-  it('メモだけに字がある時も確かめる。件名・メモが空なら確かめずに閉じる', async () => {
+  it.each([
+    ['メモ', testIds.itemMemo],
+    ['依頼者', testIds.itemRequester],
+  ])('%sだけに字がある時も確かめる。件名・依頼者・メモが空なら確かめずに閉じる', async (_name, field) => {
     const { user, onClose, unmount } = await open()
-    await user.type(byId(testIds.itemMemo), 'あとで')
+    await user.type(byId(field), 'あとで')
     await user.click(byId(testIds.itemCancel))
     expect(discardDialog()).not.toBeNull()
     expect(onClose).not.toHaveBeenCalled()
