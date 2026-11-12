@@ -429,7 +429,7 @@ function withAiTags() {
  * 細く、札の左右に 6px 広げるだけでは 32px にしかならなかった（::after は札の枠の内側から測るので、22px の札は 20 + 12px）
  */
 async function aiTagSizes(page: Page) {
-  await openCalendar(page, '/month/2026-11', { data: withAiTags(), prefs: { detailsOpen: true } })
+  await openCalendar(page, '/month/2026-11', { data: withAiTags() })
   expect(await tapSizes(page, { modes: [MODES[2], MODES[3]], sheets: false })).toEqual([])
 }
 
@@ -476,7 +476,7 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
   test('字の幅が広い書体でも、点線の丸の押せる所は D08 の大きさのまま（AI の札の押せる所が丸に掛かっても丸が勝つ。CI の書体で 29.25px に縮んだ）', async ({
     page,
   }) => {
-    await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
     // 端末の書体の違い（CI の Linux の書体では「Claude」の札が手元より 1px ほど広い）より大きく、札の字の幅を 6px 広げる。並べ方は
     // weekModel.ts の marksPx が札の幅のおおよそ（42px）で決めるので、札が見込みより広い書体と同じになる（768px の狭い列のカードでは、
     // 丸の行の右に置いた札の押せる所が丸の押せる所に掛かる）
