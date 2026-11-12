@@ -273,9 +273,12 @@
   }
 }
 
-/* 指で操作する端末・S・M は押せる所を 34px 以上に（4.11） */
+/* 指で操作する端末・S・M は押せる所を 34px 以上に（4.11）。すぐ下の曜日の頭文字（9px）の字の箱は行の高さより 1.5px ほど上に出て、
+   DOM で後ろなので名前のボタンの下の端に重なり、押せる所が 32.75px に縮んでいた。名前を position: relative にして上に重ねる
+   （見た目は変わらない。頭文字は押せない字）（開発） */
 @media (max-width: 899px), (pointer: coarse) {
   .yr-mini-name {
+    position: relative;
     min-height: var(--tap);
     margin-bottom: 0;
   }

@@ -2,7 +2,8 @@
 // - 4つのモード（イヤー・マンスリー・ウィークリー・デイリー）と、登録・詳細・確かめの小さな画面が、幅 360・390・412・600・768・960・
 //   1400 のどれでも横にスクロールしない（ページも、カレンダーの領域や小さな画面の中のスクロールする所も）
 // - L は、予定を 60件入れた週・日でもページ全体がスクロールせず、カレンダーの下が切れない（カレンダーの領域の中だけ）
-// - 指で操作する端末では、押せる所が 34px 以上（区切りの中の大きさが勝つ所は D08 の例外。下の SMALL_OK に1つずつ理由を書く）
+// - 指で操作する端末では、押せる所が 34px 以上（区切りの中の大きさが勝つ所は D08 の例外。下の SMALL_OK に1つずつ理由を書く）。
+//   ::before で広げた所（日付の見出し・受けた表示の中の●・「＞」）と小さな月の名前は、隣の押せる物の押せる所を取らない
 // - ディープダーク: 区分は位置とアイコン、休みは「休」の字、完了は斜線と✓、今日は太さ・輪でも分かる
 // - Tab で日の見出し・カード・丸・●・数字のボタンへ動け、どれにも見える枠が出る（マンスリーのマス目は Tab で1つだけ止まる）
 // 各モードの中身は各モードの担当の E2E（month・week・day・year・item の spec）で確かめる。データは作り物の
@@ -248,7 +249,7 @@ interface SmallOk {
 
 /**
  * 指で操作する端末で、押せる所が 34px より小さくてよい所（D08・確かめ A9: 区切りの中の大きさが勝ち、隣と重ならない時だけ 34px に
- * 広げる）。各担当の報告（段階2 第2波・第3波の結合の報告の D08 の一覧）と、仕様の大きさ（docs/SPEC.md の 8.3）にある物。
+ * 広げる）。どれも docs/SPEC.md の 4.11 の表の決めた例外（34px に届かないまま表に無い所は無い）。
  * 大きさは押せる所を測った値（ブラウザが押した点の要素を返す範囲。::before・::after で広げた所も入る）。字の高さで決まる所は、
  * iPhone（WebKit）の字の高さの差を見込んで、Chromium で測った値より 1px 低くしてある
  */
@@ -266,6 +267,14 @@ const SMALL_OK: readonly SmallOk[] = [
   // 7日を縦のレールの中の締め切り日の●: 18×28（隣の半分・カードに掛からない大きさ。WP7 第2波。D08）。左の端のレールは
   // 隣のレールの●と重なる所を除いて 14px ほど
   { sel: '.wk-end.is-rail', w: 14, h: 28 },
+  // 受けた表示の中の、日曜に終わる●: 27×34（受けた表示の高さの中で 34px、右は受けた表示の枠の外の 4px まで。左は件名、右は次の日の
+  // 列・隣の半分。week.css の .wk-recv > .wk-end::before。4.11）
+  { sel: '.wk-recv > .wk-end', w: 27, h: 34 },
+  // 土曜に始まって縮めた始点のカード（7.8）の横の「＞」: 18×34（左はカードの右の端、右は列の右の端。4.11）。線の端の「＞」は 34×34
+  { sel: '.wk-lane > .wk-card.is-shrink ~ .wk-edge', w: 18, h: 34 },
+  // 7日を縦の下向きの矢印: 18×20（レーンは 10px おきで、隣のレーンの矢印と重なる所は DOM で後ろの矢印が勝ち、左のレーンの矢印は
+  // 5.75px ほど。右は「＋」の行、下は週の終わり、上は締め切り日のレールの●。4.11）。高さ 14 は第3波で測った最小（14.75px）
+  { sel: '.wk-edge.is-down', w: 5, h: 14 },
   // Claude の印: 高さ 34px の目安（D26。WP7・WP8 の報告。カードの中の行の高さで 32.5px ほど）
   { sel: '.cp-ai', w: 34, h: 31 },
   // 休みのチェック: 34×34 の目安（WP7 第2波。見出しの行の高さで 32.75px ほど）
@@ -280,16 +289,6 @@ const SMALL_OK: readonly SmallOk[] = [
   { sel: '.it-swatch', w: 24, h: 24, wide: { w: 28, h: 28 } },
   // イヤーの小さな月のマス: 22px 四方以上（docs/SPEC.md の 8.3・CALENDAR-221）
   { sel: '.yr-cell.is-mini', w: 22, h: 22 },
-  // ----- 以下は D08 の一覧に無く、34px に届かない所（担当へ知らせた。直したら消す） -----
-  // ウィークリーの受けた表示の中の、日曜に終わる●: 22×28（WP7。week.css の .wk-recv > .wk-end）
-  { sel: '.wk-recv > .wk-end', w: 22, h: 28 },
-  // 次の週へ続く「>」: 18×28（WP7。week.css の .wk-edge）。7日を縦の下向きの矢印は 18×20（レールの●と重なる所は除く）
-  { sel: '.wk-lane > .wk-edge', w: 18, h: 28 },
-  { sel: '.wk-edge.is-down', w: 5, h: 14 },
-  // 日付の見出し（押すとその日のデイリー）: 字の高さの 15px（WP7。week.css の .wk-day）
-  { sel: '.wk-day', w: 34, h: 14 },
-  // イヤーの小さな月の名前（押すとその月）: 高さ 32.75px ほど（WP12。year.css の .yr-mini-name）
-  { sel: '.yr-mini-name', w: 34, h: 31 },
 ]
 
 /**
@@ -447,6 +446,111 @@ async function narrowNoneSizes(page: Page) {
   expect(await tapSizes(page, { modes: [] })).toEqual([])
 }
 
+/** 指の端末で押せる所を広げた所（::before。小さな月の名前は position: relative で下の曜日の頭文字の字の箱より上に重ねた。4.11） */
+const GROWN = '.wk-day, .wk-recv > .wk-end, .wk-lane > .wk-edge, .yr-mini-name'
+/** 広げる前に戻す（比べるため） */
+const UNGROWN =
+  '.wk-day::before, .wk-recv > .wk-end::before, .wk-lane > .wk-edge::before { display: none !important; } ' +
+  '.wk-day, .yr-mini-name { position: static !important; }'
+
+/**
+ * 広げた押せる所が、隣の押せる物の押せる所を取っていないこと（4.11 の「隣の物と重ならない時だけ広げる」）。targets の物（セレクターと
+ * 初めの何個か）の箱と ::before の箱を合わせた所（切れて見えない所は除く）を 1px ごとに調べ、広げた物が持ち主の点を、広げる前
+ * （UNGROWN）の持ち主と比べる。前の持ち主は、押せる物の無かった点か、広げた物を中に置いた受けた表示の「押すと詳細」（同じ詳細を開く。
+ * カードの中の丸と同じ）か、広げた物の箱の境の前後 1px（角丸の角と、ブラウザが押した所を画面の点の境に丸める分）であること。
+ * 違う点を「前の持ち主 → 後の持ち主: 点の数」で返す
+ */
+async function stolenTaps(page: Page, label: string, targets: [string, number][]): Promise<string[]> {
+  const out = await page.evaluate(
+    ({ grown, ungrown, targets }) => {
+      const sel =
+        'button, a[href], input:not([type="hidden"]), select, textarea, label, [role="button"], [role="checkbox"], [role="switch"]'
+      const owner = (x: number, y: number) => {
+        const n = document.elementFromPoint(x, y)
+        const c = n?.closest(sel) ?? null
+        return c?.tagName === 'INPUT' && c.closest('label') ? c.closest('label') : c
+      }
+      const name = (c: Element | null) =>
+        c
+          ? `${c.tagName.toLowerCase()}.${String(c.className).trim().split(/\s+/)[0]}「${c.getAttribute('data-testid') ?? c.getAttribute('aria-label') ?? ''}」`
+          : '（なし）'
+      /** 箱と ::before の箱を合わせ、overflow で切る所（祖先）の中に収めた所（前後 1px 広く） */
+      const region = (el: Element) => {
+        const r = el.getBoundingClientRect()
+        let [left, top, right, bottom] = [r.left, r.top, r.right, r.bottom]
+        const ps = getComputedStyle(el, '::before')
+        if (ps.content !== 'none' && ps.position === 'absolute') {
+          const cs = getComputedStyle(el)
+          const pl = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(ps.left)
+          const pt = r.top + parseFloat(cs.borderTopWidth) + parseFloat(ps.top)
+          left = Math.min(left, pl)
+          top = Math.min(top, pt)
+          right = Math.max(right, pl + parseFloat(ps.width))
+          bottom = Math.max(bottom, pt + parseFloat(ps.height))
+        }
+        for (let a = el.parentElement; a; a = a.parentElement) {
+          const cs = getComputedStyle(a)
+          if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+          const b = a.getBoundingClientRect()
+          left = Math.max(left, b.left)
+          top = Math.max(top, b.top)
+          right = Math.min(right, b.right)
+          bottom = Math.min(bottom, b.bottom)
+        }
+        return { x0: Math.floor(left) - 1, y0: Math.floor(top) - 1, x1: Math.ceil(right) + 1, y1: Math.ceil(bottom) + 1 }
+      }
+      const bad = new Map<string, number>()
+      const style = document.createElement('style')
+      style.textContent = ungrown
+      for (const el of targets.flatMap(([t, n]) => [...document.querySelectorAll(t)].slice(0, n))) {
+        el.scrollIntoView({ block: 'center', inline: 'center' })
+        const { x0, y0, x1, y1 } = region(el)
+        const points: [number, number, Element][] = []
+        for (let y = y0 + 0.5; y < y1; y++)
+          for (let x = x0 + 0.5; x < x1; x++) {
+            const b = owner(x, y)
+            if (b?.matches(grown)) points.push([x, y, b])
+          }
+        document.head.append(style)
+        const before = points.map(([x, y]) => owner(x, y))
+        style.remove()
+        points.forEach(([x, y, b], k) => {
+          const a = before[k]
+          if (!a || a === b) return
+          const box = b.getBoundingClientRect()
+          const d = Math.min(Math.abs(x - box.left), Math.abs(box.right - x), Math.abs(y - box.top), Math.abs(box.bottom - y))
+          const near = x >= box.left - 1 && x <= box.right + 1 && y >= box.top - 1 && y <= box.bottom + 1 && d <= 1
+          const card = b.parentElement?.matches('.wk-recv') && a === b.parentElement.querySelector(':scope > .wk-open')
+          if (near || card) return
+          const key = `${name(a)} → ${name(b)}`
+          bad.set(key, (bad.get(key) ?? 0) + 1)
+        })
+      }
+      return [...bad].map(([k, n]) => `${k}: ${n}点`)
+    },
+    { grown: GROWN, ungrown: UNGROWN, targets },
+  )
+  return out.map((s) => `${label}: ${s}`)
+}
+
+/**
+ * いつもの週（受けた表示の中の日曜に終わる●、線の端と縮めた始点のカードの横の「＞」、S はレールの●の上の日付の見出し）とイヤーで、
+ * 広げた押せる所が隣の押せる物の押せる所を取っていない。日付の見出しと小さな月の名前はどれも同じ並びなので、初めの3つ（日付の
+ * 見出しは日曜・月曜と、字の幅の広い今日の 11/10）
+ */
+async function grownTapsKeepNeighbours(page: Page) {
+  await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+  await expect(page.getByTestId(testIds.view('week'))).toBeVisible()
+  const found = await stolenTaps(page, 'week', [
+    ['.wk-day', 3],
+    ['.wk-recv > .wk-end', 9],
+    ['.wk-lane > .wk-edge', 9],
+  ])
+  await go(page, 'year', '/year/2026')
+  found.push(...(await stolenTaps(page, 'year', [['.yr-mini-name', 3]])))
+  expect(found).toEqual([])
+}
+
 test.describe('横にスクロールしない・押せる所の大きさ（S）', { tag: ['@s'] }, () => {
   for (const width of [360, 390, 412] as const) {
     test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない${width === 360 ? '（削除の確かめも）' : ''}（FRAME-026・CALENDAR-226）`, async ({
@@ -474,6 +578,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
     page,
   }) => {
     await narrowNoneSizes(page)
+  })
+
+  test('日付の見出し・受けた表示の●・「＞」・小さな月の名前で広げた押せる所は、隣の押せる物（休みのチェック・レールの●・カード）の押せる所を取らない（4.11）', async ({
+    page,
+  }) => {
+    await grownTapsKeepNeighbours(page)
   })
 })
 
@@ -514,6 +624,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
     page,
   }) => {
     await narrowNoneSizes(page)
+  })
+
+  test('日付の見出し・受けた表示の●・「＞」・小さな月の名前で広げた押せる所は、隣の押せる物（休みのチェック・レールの●・カード）の押せる所を取らない（4.11）', async ({
+    page,
+  }) => {
+    await grownTapsKeepNeighbours(page)
   })
 })
 

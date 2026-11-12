@@ -191,6 +191,43 @@
   flex: none;
 }
 
+/* 指の端末・S・M は、押せる所を高さ 34px 以上に広げる（::before。見た目は変えない。幅はボタンの幅のまま。4.11）。
+   - 7日を横の1行（52px）: ボタンの真ん中から上下に 17px（見出しの中。右の休みのチェックには掛からない）
+   - 7日を縦の日のかたまりの見出し（32px）: 上はかたまりの上の 2px の --rule-strong の上まで、下はかたまりの半分の上の端へ 1px
+     （35px。いちばん上の日曜のかたまりは、上に固定した段の名札の行（z-index: 2）のすぐ下なので、上へ広げた分が名札の行との境の
+     端数で欠けても 34px 残るように）。半分の上の端には締め切り日のレールの●（.wk-end.is-rail。z-index: 1）の押せる所があり、
+     同じ z-index で DOM で後ろの●が勝つ（●の押せる所は変わらない）。DOM で後ろのかたまりの半分（position: relative。押せる物では
+     ない）は、見出しとの境で 1px 足らず上に掛かって押した所を取る（Chromium の倍率 2.625 で測った）ので、z-index: 1 で上に置く
+   - M の2行（64px）: 見出しの上の端から下の端まで（.wk-heads の overflow: hidden で見出しの中に切れる）。丸いラベルの下は
+     休みのチェックの押せる所で、DOM で後ろの休みのチェック（position: relative の .wk-off）が上に重なって勝つので、日付の字の
+     下の祝日名の所までが日付の見出しになる（休みのチェックの押せる所は変わらない）（開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-day {
+    position: relative;
+  }
+
+  .wk-day::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% - var(--tap) / 2);
+    height: var(--tap);
+  }
+
+  .wk-head.is-block .wk-day::before {
+    z-index: 1;
+    top: calc(50% - var(--tap) / 2 - 1px);
+    height: calc(var(--tap) + 1px);
+  }
+
+  .wk-head.is-rows-2 .wk-day::before {
+    top: -64px;
+    bottom: -64px;
+    height: auto;
+  }
+}
+
 /* 等幅の「11/8」（13px・月日は 0 で埋めない。土曜 --sat、日曜・祝日 --sun。今日は太さ 600。7.1・7.3） */
 .wk-md {
   font-size: 13px;
@@ -834,6 +871,20 @@
   height: 28px;
 }
 
+/* 指の端末・S・M は、押せる所を受けた表示の高さの中で 34px に、右は受けた表示の枠の外の 4px（列・半分の右の端）まで広げる
+   （::before。27 × 34px）。左は件名（受けた表示の押すと詳細のボタンの字）、右は次の日の列・隣の半分なので、幅は 34px に届かない
+   （4.11 の表。開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-recv > .wk-end::before {
+    content: '';
+    position: absolute;
+    top: calc(50% - var(--tap) / 2);
+    left: 0;
+    right: -5px;
+    height: var(--tap);
+  }
+}
+
 /* 完了: 点線の枠と字を --done-text（7.9） */
 .wk-recv.is-done .cp-marks {
   color: var(--done-text);
@@ -905,6 +956,24 @@
 .wk-lane > .wk-edge {
   right: 0;
   top: 4px;
+}
+
+/* 指の端末・S・M は、押せる所を 34px 四方に広げる（::before。レーンの高さ 40px の中で上下に 3px、左は線の上へ 16px。右は列の右の
+   端のまま）。土曜に始まって縮めた始点のカード（.is-shrink。7.8）の横では、左はカードの右の端までなので 18 × 34px（4.11 の表。開発） */
+@media (max-width: 899px), (pointer: coarse) {
+  .wk-lane > .wk-edge::before {
+    content: '';
+    position: absolute;
+    top: calc(50% - var(--tap) / 2);
+    right: 0;
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .wk-lane > .wk-card.is-shrink ~ .wk-edge::before {
+    left: 0;
+    width: auto;
+  }
 }
 
 .wk-edge-glyph {
