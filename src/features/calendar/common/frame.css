@@ -111,12 +111,37 @@
 }
 
 /* S・M はどのモードでも指で左右になぞると前後の期間へ（3.7）。縦のスクロールはブラウザに任せ、横の動きだけを
-   受け取る（useSwipe.ts）。モードの画面の中の、中だけでスクロールする所（デイリーの区切り・タイムスケジュールなど）にも同じ値を
-   付ける: touch-action はいちばん近いスクロールする箱で区切られるので、そこが既定（auto）のままだと、その上で横になぞった時に
-   ブラウザが横のスクロールとして受け取り（pointercancel）、前後へ移らない。:where で強さを 0 にし、モードの画面が自分で決めた値を勝たせる */
-.cal-body.is-swipe,
-:where(.cal-body.is-swipe *) {
+   受け取る（useSwipe.ts）。なぞりを聞くのはカレンダーの区切りの全部（操作の列とモードの画面）。モードの画面の中の、中だけで
+   スクロールする所（デイリーの区切り・タイムスケジュールなど）にも同じ値を付ける: touch-action はいちばん近いスクロールする箱で
+   区切られるので、そこが既定（auto）のままだと、その上で横になぞった時にブラウザが横のスクロールとして受け取り（pointercancel）、
+   前後へ移らない。:where で強さを 0 にし、モードの画面が自分で決めた値を勝たせる */
+.cal.is-swipe,
+:where(.cal.is-swipe *) {
   touch-action: pan-y pinch-zoom;
+}
+
+/* カレンダーの区切りの左右の、画面の端までの余白（S・M の 16px と枠の 1px。ノッチの分が広い時はその分）も、なぞりを聞く所にする
+   （22. の段階2の終わりの確かめ: 画面の外から大きく払うと、指はこの余白から始まる。前の作りはここで指を受け取らず、ブラウザが
+   横のスクロールとして取っていた）。透明な帯を区切りの外に置くだけで、並び・見た目は変えない。帯を押した指の出来事は .cal に届く。
+   帯は画面の端で止める（ページを横にスクロールさせない。e2e の noHorizontalScroll）。帯の幅は S・M の積んだ区切りの左右の余白
+   （src/features/top/top.css の .top-stack）と同じ式 */
+.top-stack .cal.is-swipe::before,
+.top-stack .cal.is-swipe::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  touch-action: pan-y pinch-zoom;
+}
+
+.top-stack .cal.is-swipe::before {
+  right: 100%;
+  width: calc(max(var(--gutter), var(--safe-left)) + 1px);
+}
+
+.top-stack .cal.is-swipe::after {
+  left: 100%;
+  width: calc(max(var(--gutter), var(--safe-right)) + 1px);
 }
 
 /* ---------- 期間を移った時にページをめくる（3.7・4.9。src/features/calendar/common/PageTurn.tsx） ----------
