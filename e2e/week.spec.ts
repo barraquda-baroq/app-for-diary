@@ -8,6 +8,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
   collectDiagnosticsOnFailure,
+  holdTurns,
   longPressDrag,
   noHorizontalScroll,
   openCalendar,
@@ -498,6 +499,39 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId(`week-start-${I.materials}`)).not.toHaveClass(/is-two-lines/)
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/week/2026-11-08')
   })
+
+  test('すばやく足すに字を打ったまま［›］を押すと、足してから閉じ、次の週へ移ってページをめくる（めくるページの写しにも入力欄は無い。3.7・12.1）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await recordTurns(page)
+    // めくり終えても箱を外さない（めくるページの写しを見るため。押す・キーを打つと終わる）
+    await holdTurns(page)
+    await cell(page, 'work', '2026-11-12').hover()
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await input.fill('めくる前の字')
+    await page.getByTestId('cal-next').click()
+    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/week/2026-11-15')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
+    await expect(page.locator('.cal-turn')).toHaveCount(1)
+    // 打った字は元の日に足した（お知らせは1つ）。本物の画面にも、めくっていく前の週の写しにも、入力欄は無い（閉じてから写した）
+    expect(await itemByTitle(page, 'めくる前の字')).toMatchObject({ start: '2026-11-12', kind: 'work', origin: 'calendar' })
+    await expect(page.locator('.toast', { hasText: '『めくる前の字』を足しました' })).toBeVisible()
+    await expect(page.locator('.toast')).toHaveCount(1)
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    await expect(page.locator('.cal-turn .cp-quick-input')).toHaveCount(0)
+    expect(await page.evaluate(() => localStorage.getItem('diary-studio:draft:quick:2026-11-12:work'))).toBeNull()
+    // キーを打つとめくりが終わる。前の週へ戻ると、足した予定がある（前へめくる）
+    await holdTurns(page, false)
+    await page.keyboard.press('Shift')
+    await turnDone(page)
+    await page.getByTestId('cal-prev').click()
+    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
+    const added = await itemByTitle(page, 'めくる前の字')
+    await expect(cell(page, 'work', '2026-11-12').getByTestId(`week-card-${added?.id}`)).toBeVisible()
+  })
 })
 
 test.describe('7日を横（M）', { tag: ['@m'] }, () => {
@@ -773,6 +807,32 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(page.getByTestId('item-sheet')).toBeVisible()
     await expect(page.getByTestId('item-title')).toHaveValue('展示会の手配')
     await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+  })
+
+  test('すばやく足すに字を打っている間に指で左右になぞっても、週は移らない（文字を打っている間。3.7）。入力欄の外を押した時と同じく、足してから閉じる。閉じた後のなぞりでは週が移ってめくる（12.1）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await recordTurns(page)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await input.fill('なぞる前の字')
+    await touchSwipe(page, page.getByTestId('calendar-body'), -160, 0)
+    // 押し終えてから閉じる（離して CLICK_WAIT_MS の後）。週はそのまま、めくらない
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    await page.waitForTimeout(300)
+    expect(await page.evaluate(() => window.location.hash)).toBe('#/week/2026-11-08')
+    expect(await turnsOf(page)).toEqual([])
+    expect(await itemByTitle(page, 'なぞる前の字')).toMatchObject({ start: '2026-11-10', kind: 'private', origin: 'calendar' })
+    await expect(page.locator('.toast', { hasText: '『なぞる前の字』を足しました' })).toBeVisible()
+    await expect(page.locator('.toast')).toHaveCount(1)
+    // 閉じた後は、なぞると次の週へ移ってめくる（めくるページの写しに入力欄は無い）
+    await touchSwipe(page, page.getByTestId('calendar-body'), -160, 0)
+    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/week/2026-11-15')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
+    await expect(page.locator('.cal-turn .cp-quick-input')).toHaveCount(0)
+    await turnDone(page)
   })
 })
 

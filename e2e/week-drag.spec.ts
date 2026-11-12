@@ -13,10 +13,12 @@ import {
   collectDiagnosticsOnFailure,
   openCalendar,
   rawItem,
+  recordTurns,
   sheetReady,
   startLongPress,
   startMouseDrag,
   touchSwipe,
+  turnsOf,
   type DragSession,
 } from './helpers'
 
@@ -710,6 +712,76 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     expect(page.url()).toBe(url)
     await expect(sat.getByTestId(`week-card-${I.meeting}`)).toBeVisible()
   })
+
+  test('掴んだまま端で週を移る時と、落とさずにやめて掴んだ週へ戻る時は、ページをめくらない（カードは浮いたまま）。ドラッグの後の［›］ではめくる（3.7・7.11）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await recordTurns(page)
+    const y = (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y
+    const park = await weekPoint(page, 0.5, y)
+    // 1回目: 次の週へ移ってから Esc でやめる（掴んだ週へ戻る）
+    let drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    await drag.moveTo(await bandPoint(page, 1, y))
+    await leaveOnWeek(page, drag, '2026-11-15', park)
+    await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
+    await expect(page.locator('.cal-turn')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await onWeek(page, '2026-11-08')
+    await expect(page.locator('[data-dnd-placeholder], [data-dnd-dragging]')).toHaveCount(0)
+    await drag.drop()
+    await noToast(page)
+    expect(await turnsOf(page)).toEqual([])
+    await expect(page.locator('.wk-slot')).toHaveCount(1)
+    // 2回目: 次の週へ移って、その週の日へ落とす（その週に残る）
+    drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    await drag.moveTo(await bandPoint(page, 1, y))
+    await leaveOnWeek(page, drag, '2026-11-15', park)
+    const target = cellL(page, 'work', '2026-11-18')
+    await drag.moveTo(await visiblePoint(target))
+    await overDropDay(target)
+    await drag.drop()
+    await expect(toast(page, '11/18（水）へ移しました')).toBeVisible()
+    await expect(page.locator('.wk-slot')).toHaveCount(1)
+    await expect(target.getByTestId(`week-card-${I.meeting}`)).toBeVisible()
+    expect(await turnsOf(page)).toEqual([])
+    // ドラッグの後も、［›］ではいつもどおりめくる
+    await page.getByTestId('cal-next').click()
+    await onWeek(page, '2026-11-22')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
+  })
+
+  test('すばやく足すに字を打ったまま、カードを掴んで次の週へ移って落とすと、打った字は足さずに閉じる（お知らせは落とした時の物だけ。書きかけは残る。めくらない。12.1・7.11）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await recordTurns(page)
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await input.fill('週をまたぐ字')
+    const y = (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y
+    const drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    await drag.moveTo(await bandPoint(page, 1, y))
+    await leaveOnWeek(page, drag, '2026-11-15', await weekPoint(page, 0.5, y))
+    const target = cellL(page, 'work', '2026-11-18')
+    await drag.moveTo(await visiblePoint(target))
+    await overDropDay(target)
+    await drag.drop()
+    await expect(toast(page, '11/18（水）へ移しました')).toBeVisible()
+    await expect(page.locator('.wk-slot')).toHaveCount(1)
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    // 少し待っても（離してから CLICK_WAIT_MS の後に閉じる時も）、足した知らせは出ず、予定も足さない
+    await page.waitForTimeout(500)
+    await expect(page.locator('.toast')).toHaveCount(1)
+    expect(await page.evaluate(() => Object.values(window.__ds.getData().items).some((it) => it.title === '週をまたぐ字'))).toBe(
+      false,
+    )
+    expect(await page.evaluate(() => localStorage.getItem('diary-studio:draft:quick:2026-11-12:work'))).toBe('週をまたぐ字')
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-18')
+    await onWeek(page, '2026-11-15')
+    expect(await turnsOf(page)).toEqual([])
+  })
 })
 
 test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
@@ -1067,6 +1139,38 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await noToast(page)
     await expect(sheet(page)).toHaveCount(0)
     expect((await itemOf(page, I.gym))?.start).toBe('2026-11-12')
+  })
+
+  test('長押しで掴んだまま画面の右の端で次の週へ移っても、操作の列の上で離して掴んだ週へ戻っても、ページをめくらない。掴んだ指の動きはなぞったとみなさない。その後のなぞりではめくる（3.7・7.11）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await recordTurns(page)
+    const grab = await grabPoint(card(page, I.meeting))
+    const drag = await startLongPress(page, grab)
+    await lifted(page)
+    const width = await page.evaluate(() => window.innerWidth)
+    // 指を画面の右の端へ寄せる（右へ払う向き。なぞったとみなせば前の週へ移る）
+    await drag.moveTo({ x: width - 3, y: grab.y })
+    await reachWeek(page, '2026-11-15')
+    await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
+    expect(await turnsOf(page)).toEqual([])
+    await expect(page.locator('.cal-turn')).toHaveCount(0)
+    // 落とせない所（操作の列の上）で離す: 掴んだ週へ戻り、カードは元の所へ（知らせは出さない）
+    await drag.moveTo(await visiblePoint(page.getByTestId('cal-period')), { steps: 1, stepMs: 0 })
+    await drag.drop()
+    await onWeek(page, '2026-11-08')
+    await expect(page.locator('[data-dnd-placeholder], [data-dnd-dragging]')).toHaveCount(0)
+    await noToast(page)
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(page.locator('.wk-slot')).toHaveCount(1)
+    await page.waitForTimeout(300)
+    expect(page.url()).toMatch(weekUrl('2026-11-08'))
+    expect(await turnsOf(page)).toEqual([])
+    // ドラッグの後も、指でなぞるといつもどおり週が移ってめくる
+    await touchSwipe(page, page.getByTestId('calendar-body'), -160, 0)
+    await onWeek(page, '2026-11-15')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
   })
 })
 
