@@ -35,11 +35,13 @@ import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import { useItemDrag, type DragHandle, type WeekCtx } from './dnd'
 import { cardLayout, laneMarksBelow, marksPx, receivedTwoLines, startCardLook } from './weekModel'
-import { revealInWeek } from './weekScroller'
 import './week.css'
 
-/** 目立たせる時に見える所まで出す（useFlashTarget の scroll。block: nearest と同じで、ページは動かさずに週の中だけ） */
-const FLASH_SCROLL = { scroll: revealInWeek } as const
+/**
+ * 目立たせる時に見える所まで出す（useFlashTarget の scroll。block・inline: nearest と同じで、ページは動かさずに週・段の中だけ。
+ * src/ui/scrollWithin.ts）
+ */
+const FLASH_SCROLL = { scroll: true } as const
 
 /**
  * 掴む所と目立たせる所を1つの要素に付ける ref（目立たせるのは登録・ドラッグで移った予定。4.9）。目立たせる時は、段・日のかたまりの

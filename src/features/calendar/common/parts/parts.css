@@ -143,12 +143,20 @@
 }
 
 /* AI の札（Claude が足した物。枠だけの小さな札・10px。カードの中の別のボタン。7.7・D26）。字は ui の書体
-   （等幅にするのは日付・曜日・月・時刻・件数・見出しの英語・締め切り日だけ。4.4-1・FRAME-147） */
+   （等幅にするのは日付・曜日・月・時刻・件数・見出しの英語・締め切り日だけ。4.4-1・FRAME-147）。
+   幅は 22px 以上（「AI」の札の幅が書体で変わらないように。src/features/calendar/week/weekModel.ts の marksPx・
+   src/features/calendar/day/dayModel.ts の MARK_PX の「AI」22px と同じ） */
 .cp-ai {
+  /* 指の端末で押せる所（week.css・day.css の ::after）を左右に広げる量: 札の左右に 6px、それで 34px（--tap）に届かない細い札
+     （「AI」）は、押せる所の幅がちょうど --tap になるまで（札の幅・書体によらず 34px 以上。D08。％は ::after の入れ物の札の
+     枠の内側の幅に対して。枠の 1px の分があるので、22px の札でも左右に 6px では 32px にしかならない） */
+  --cp-ai-hit-x: min(-6px, calc(50% - var(--tap) / 2));
   position: relative;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   flex: none;
+  min-width: 22px;
   height: 14px;
   padding: 0 4px;
   border: 1px solid currentColor;

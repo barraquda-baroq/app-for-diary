@@ -12,6 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type { ID, ItemKind } from '../../../../domain/types'
 import { flashMatches, useCalendarUi, type FlashTarget } from '../../../../store/uiStore'
 import { FLASH_MS, flash, scrollBehavior } from '../../../../ui/motion'
+import { scrollIntoViewWithin } from '../../../../ui/scrollWithin'
 
 /** 目立たせる所のキー（目立たせる側・目立たせられる側が同じ物を使う） */
 export const flashKey = {
@@ -58,10 +59,10 @@ function matchedSeq(f: FlashTarget | null, joined: string): number {
 
 export interface FlashOptions {
   /**
-   * 目立たせる時に、要素を見える所まで動かす（true: scrollIntoView の block: nearest。スクロールの中の要素。視差効果を減らす設定では
-   * すぐに）。関数を渡すと、その関数で動かす（ウィークリーは週の中だけを動かす。week/weekScroller.ts の revealInWeek）
+   * 目立たせる時に、要素を見える所まで動かす（カレンダーの中のスクロールだけを動かし、ページは動かさない。src/ui/scrollWithin.ts。
+   * 視差効果を減らす設定ではすぐに。デイリーの行・予定の枠、ウィークリーのカード・受けた表示）
    */
-  scroll?: boolean | ((el: Element) => void)
+  scroll?: boolean
 }
 
 /**
@@ -75,8 +76,8 @@ export function useFlashTarget<T extends Element = HTMLElement>(
   const joined = keys == null ? '' : typeof keys === 'string' ? keys : keys.join('\n')
   const seq = useCalendarUi((s) => matchedSeq(s.flash, joined))
   // 描いた時の値（要素が付いた時・seq が替わった時に読む）
-  const latest = useRef({ seq, scroll: opts.scroll ?? false })
-  latest.current = { seq, scroll: opts.scroll ?? false }
+  const latest = useRef({ seq, scroll: Boolean(opts.scroll) })
+  latest.current = { seq, scroll: Boolean(opts.scroll) }
   const node = useRef<T | null>(null)
   /** 目立たせ終えた seq（同じ seq で2回目立たせない） */
   const done = useRef(0)
@@ -89,8 +90,7 @@ export function useFlashTarget<T extends Element = HTMLElement>(
     done.current = s
     flash(el)
     until.current = Date.now() + FLASH_MS
-    if (scroll === true) el.scrollIntoView?.({ block: 'nearest', behavior: scrollBehavior() })
-    else if (scroll) scroll(el)
+    if (scroll) scrollIntoViewWithin(el, { behavior: scrollBehavior() })
     clearAfter(s, FLASH_MS)
   }, [])
 

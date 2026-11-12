@@ -4,6 +4,7 @@
 // 開いた時は anchorValue の所（時刻は値の所・開始の1時間後・9:00 の所。AMB-ITEMS-07）を一覧の上の端に見せる
 import { useLayoutEffect, useRef } from 'react'
 import { keepFocus } from '../../../ui/keys'
+import { scrollIntoViewWithin } from '../../../ui/scrollWithin'
 import { cls } from '../../calendar/common/parts/itemLook'
 import { Popover } from './Popover'
 
@@ -59,10 +60,10 @@ export function OptionList({
     if (el) list.scrollTop = el.offsetTop
   })
 
-  // ↑↓で移った選び肢を見える所へ
+  // ↑↓で移った選び肢を見える所へ（一覧の中だけを、すぐに。小さな画面・ページは動かさない）
   useLayoutEffect(() => {
     const el = active >= 0 ? (ref.current?.children[active] as HTMLElement | undefined) : undefined
-    el?.scrollIntoView?.({ block: 'nearest' })
+    scrollIntoViewWithin(el, { behavior: 'auto' })
   }, [active])
 
   return (

@@ -440,9 +440,12 @@
 /* ===================== 予定の部品（WeekCard.tsx） ===================== */
 
 /* カード（10.2）: 幅は列の幅 − 8px、高さ 44px 以上、角丸 6px、余白 上下 6px・左 12px（点線の丸 16px と間 6px を足して 34px）・右 8px、
-   地は土台の色、ラベルの左の一辺 4px。文字の選択と iPhone の長押しのメニューを止める（7.11） */
+   地は土台の色、ラベルの左の一辺 4px。文字の選択と iPhone の長押しのメニューを止める（7.11）。
+   中の重なり（点線の丸・印・「押すと詳細」）の順はカードの中だけで決める（isolation。上に固定した段の名札などの、カードの外の物との
+   順は変えない。transform などと違い、掴んだカードの位置はずれない（G9）） */
 .wk-card {
   position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: 'open marks';
@@ -494,10 +497,13 @@
   color: var(--done-text);
 }
 
-/* 点線の丸（16px）: 左上。押せる所は丸の周りに、カードの枠の中だけ（32 × 28px。4.11・D08） */
+/* 点線の丸（16px）: 左上。押せる所は丸の周りに、カードの枠の中だけ（32 × 28px。4.11・D08）。大きさは決まった値で、字の幅で変わらない。
+   右上の印（.wk-marks）より上に重ねる: 列が狭くて印を丸の行に置いた時（is-stacked）、AI の札の押せる所（指の端末で左右に 6px か、幅 34px まで広げる）が
+   丸の押せる所に掛かることがあり、札の幅は書体で変わる（「Claude」は 42px の見込みより広いことがある）ので、重なった所は丸が勝つ
+   （CI の書体で丸の押せる所が 29.25px に縮んだ） */
 .wk-card .wk-done {
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   left: 4px;
   top: 0;
   width: 32px;
@@ -565,28 +571,29 @@
 }
 
 /* 指の端末では AI の札の押せる所を、カードの枠の中で 34px ほどまで広げる（カードどうしの 4px のすき間には少し掛かるが、隣のカード
-   には掛からない。始点のカード・受けた表示は 36px の中に収める。AMB-CAL-15・D08） */
+   には掛からない。始点のカード・受けた表示は 36px の中に収める。AMB-CAL-15・D08）。左右は parts.css の --cp-ai-hit-x（6px。
+   「AI」の札は幅が 34px になるまで） */
 @media (max-width: 899px), (pointer: coarse) {
   .wk-card .wk-marks .cp-ai::after,
   .wk-recv .wk-marks .cp-ai::after {
-    inset: -10px -6px;
+    inset: -10px var(--cp-ai-hit-x);
   }
 
   /* 始点のカードは札が上の端の近くにあるので、上はカードの上の端まで・下へ広げる */
   .wk-card.is-start .wk-marks .cp-ai::after {
-    inset: -5px -6px -13px;
+    inset: -5px var(--cp-ai-hit-x) -13px;
   }
 
   /* 印を下の行に置いた始点のカード・受けた表示（is-marks-low・is-two-lines）は、札が下の端の近くにあるので上へ広げる
      （36px の中に収める） */
   .wk-card.is-start.is-marks-low .wk-marks .cp-ai::after,
   .wk-card.is-start.is-two-lines .wk-marks .cp-ai::after {
-    inset: -13px -6px -4px;
+    inset: -13px var(--cp-ai-hit-x) -4px;
   }
 
   .wk-recv.is-marks-low .wk-marks .cp-ai::after,
   .wk-recv.is-two-lines .wk-marks .cp-ai::after {
-    inset: -14px -6px -2px;
+    inset: -14px var(--cp-ai-hit-x) -2px;
   }
 }
 
@@ -973,6 +980,9 @@
 .wk-v {
   overflow-x: hidden;
   overflow-y: auto;
+  /* 中の物を見える所へ出す時（落とした後・目立たせる時・Tab で移った時。src/ui/scrollWithin.ts も見込む）は、上に固定した名札の
+     行（24px。.wk-vtags）の下に出す */
+  scroll-padding-top: 24px;
 }
 
 /* いちばん上の段の名札の行（24px・上に固定）: 左半分「WORK 仕事」、右半分「PRIVATE プライベート」 */
@@ -994,16 +1004,9 @@
   padding-left: 8px;
 }
 
-/* 登録した・落とした先のカードを見える所まで出す時（week/weekScroller.ts の revealInWeek）に、上に固定した名札の行（24px）の下に出す */
-.wk-v :is(.wk-card, .wk-recv, .wk-end, .wk-over) {
-  scroll-margin-top: 24px;
-}
-
 /* 日のかたまり（上に 2px の --rule-strong。休みの日はかたまりの地を --off-fill（.cp-offday）） */
 .wk-block {
   border-top: 2px solid var(--rule-strong);
-  /* 見出しへ移った時に、上に固定した名札の行の下に隠れないように */
-  scroll-margin-top: 24px;
 }
 
 /* かたまりの見出し（32px）: 丸いラベル＋「11/8」＋祝日名、右の端に休みのチェック */
@@ -1013,8 +1016,8 @@
   height: 32px;
   padding: 0 8px 0 4px;
   column-gap: 8px;
-  /* 見出しへ移った時に、上に固定した名札の行（24px）とかたまりの上の線（2px）の下に出す */
-  scroll-margin-top: 26px;
+  /* 見出しへ移った時に、かたまりの上の線（2px）の下に出す（上に固定した名札の行の分は .wk-v の scroll-padding-top） */
+  scroll-margin-top: 2px;
 }
 
 .wk-head.is-block .wk-holiday-slot {

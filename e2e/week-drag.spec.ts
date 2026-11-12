@@ -133,6 +133,19 @@ async function recordPulses(page: Page) {
 }
 const recordedPulses = (page: Page) => page.evaluate(() => (window as unknown as { __pulses: string[] }).__pulses)
 
+/**
+ * ページ（document）のスクロールを控える（一瞬だけ動いて戻った時も残るように、動くたびに scrollY を控える）。控えは pageScrolls で
+ * 読む。週・段の中のスクロールは数えない（要素のスクロールの出来事は window へ伝わらない）
+ */
+async function recordPageScroll(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __pageScrolls: number[] }
+    w.__pageScrolls = []
+    window.addEventListener('scroll', () => w.__pageScrolls.push(window.scrollY))
+  })
+}
+const pageScrolls = (page: Page) => page.evaluate(() => (window as unknown as { __pageScrolls: number[] }).__pageScrolls)
+
 /** 動かした予定（夜 23:00〜次の日 01:00。始点を次の日へ落とすと、1日の予定で終了 < 開始になる。CALENDAR-175 の例） */
 function withLateWork(): DemoData {
   const data = demoData()
@@ -279,6 +292,9 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     // 週の外（右の列のリスト）へ（CALENDAR-178）
     drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
     await drag.moveTo(await visiblePoint(page.getByText('Routine List')))
+    // 週の外では、上にある日の線の枠が消える（途中で通った日の枠が残っている間に離すと、その日へ落ちる。負荷の高い時は、動かした後の
+    // 当たりの計算が離すのに間に合わないことがあった）
+    await expect(page.locator('[data-drop="hover"]')).toHaveCount(0)
     await drag.drop()
     await noToast(page)
     expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
@@ -474,7 +490,10 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
   }) => {
     await openWeek(page)
     const week = page.getByTestId('view-week')
-    const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
+    const grab = await grabPoint(card(page, I.meeting))
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+    await recordPageScroll(page)
+    const drag = await startLongPress(page, grab)
     await lifted(page)
     const box = await week.evaluate((e) => {
       const r = e.getBoundingClientRect()
@@ -494,6 +513,13 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await drag.drop()
     await expect(toast(page, '11/14（土）へ移しました')).toBeVisible()
     expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-14')
+    // 落とした後: 移った先のカードは週の中だけをスクロールして、画面の中に全部見える所まで出る（CALENDAR-181）。ページのいちばん上
+    // では週の下の端が画面の下に少し出ている（3.5・D15）が、そこへ出すためにページを動かさない（G4。CI で scrollY が 4 になった）
+    const moved = halfS(page, 'work', '2026-11-14').getByTestId(`week-card-${I.meeting}`)
+    await expect(moved).toBeInViewport({ ratio: 1 })
+    await page.waitForTimeout(400) // なめらかなスクロールが終わるまで
+    await expect(moved).toBeInViewport({ ratio: 1 })
+    expect(await pageScrolls(page)).toEqual([])
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
 

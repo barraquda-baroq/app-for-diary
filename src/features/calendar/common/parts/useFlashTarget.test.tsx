@@ -4,8 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { T0 } from '../../../../domain/testData'
 import { useCalendarUi } from '../../../../store/uiStore'
 import { FLASH_MS } from '../../../../ui/motion'
+import { scrollIntoViewWithin } from '../../../../ui/scrollWithin'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
 import { FLASH_STALE_MS, flashKey, useFlashTarget } from './useFlashTarget'
+
+// 見える所まで動かすのは src/ui/scrollWithin.ts（中身はそのまま動かし、呼ばれた物を見る）
+vi.mock('../../../../ui/scrollWithin', { spy: true })
 
 setupCalendarTests()
 
@@ -157,17 +161,45 @@ describe('見える所まで動かす（scroll）', () => {
     [true, 'auto'],
   ] as const)('視差効果を減らす設定 %s → behavior %s', async (reducedMotion, behavior) => {
     await renderView<BoxProps>(Box, { keys: flashKey.item('a'), scroll: true }, { reducedMotion })
-    const spy = vi.mocked(Element.prototype.scrollIntoView)
-    spy.mockClear()
+    vi.mocked(scrollIntoViewWithin).mockClear()
     target(flashKey.item('a'))
-    expect(spy).toHaveBeenCalledWith({ block: 'nearest', behavior })
+    expect(scrollIntoViewWithin).toHaveBeenCalledWith(box(), { behavior })
+  })
+
+  it('動かすのはカレンダーの中のスクロールだけで、ページ（window）と scrollIntoView は使わない（S・M でページが動かないように。G4）', async () => {
+    await renderView<BoxProps>(Box, { keys: flashKey.item('a'), scroll: true })
+    // 目立たせる物を、スクロールする所（画面の下に 5px はみ出した週の中）の下の端に置く
+    const week = box().parentElement as HTMLElement
+    week.style.overflowY = 'auto'
+    week.getBoundingClientRect = () => new DOMRect(0, 214, 400, 630)
+    Object.defineProperties(week, {
+      clientHeight: { configurable: true, value: 630 },
+      scrollHeight: { configurable: true, value: 1500 },
+    })
+    const weekTo = vi.fn()
+    week.scrollTo = weekTo as unknown as typeof week.scrollTo
+    box().getBoundingClientRect = () => new DOMRect(0, 800, 200, 44)
+    const screenHeight = window.innerHeight
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 839 })
+    const pageTo = vi.spyOn(window, 'scrollTo')
+    const intoView = vi.mocked(Element.prototype.scrollIntoView)
+    intoView.mockClear()
+    try {
+      target(flashKey.item('a'))
+      // 画面の下の端（839px）まで: 844 − 839 = 5px
+      expect(weekTo).toHaveBeenCalledWith({ left: 0, top: 5, behavior: 'smooth' })
+      expect(pageTo).not.toHaveBeenCalled()
+      expect(intoView).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: screenHeight })
+      pageTo.mockRestore()
+    }
   })
 
   it('scroll を渡さなければ動かさない', async () => {
     await renderView<BoxProps>(Box, { keys: flashKey.item('a') })
-    const spy = vi.mocked(Element.prototype.scrollIntoView)
-    spy.mockClear()
+    vi.mocked(scrollIntoViewWithin).mockClear()
     target(flashKey.item('a'))
-    expect(spy).not.toHaveBeenCalled()
+    expect(scrollIntoViewWithin).not.toHaveBeenCalled()
   })
 })

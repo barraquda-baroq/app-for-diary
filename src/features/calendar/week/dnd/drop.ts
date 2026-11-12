@@ -8,7 +8,8 @@
 // - 動かさなかった時（元の日・落とせない所・取り消し）: dnd-kit の落とす時の動きで、浮いた物が元の場所へ戻る（SETTLE_BACK）
 // 視差効果を減らす設定ではどちらも動かさない（dnd-kit も自分で止める。目立たせる枠は motion.ts のとおり出る。CALENDAR-265・FRAME-238）
 // 移った先のカードは、並びの決まり（7.5）で指を離した所より下（段・日のかたまりの見えていない所）に入ることがあるので、目立たせる
-// 間に見える所まで出す（ウィークリーの中だけ。week/weekScroller.ts の revealInWeek。CALENDAR-181）
+// 間に見える所まで出す（WeekDnd が src/ui/scrollWithin.ts の scrollIntoViewWithin で。CALENDAR-181）。動かすのは週・段の中の
+// スクロールだけで、ページは動かさない（WP11s の G4）
 import { dropPatch, dropToast } from '../../../../domain/drag'
 import { actions } from '../../../../store/actions'
 import { attempt, notify, useCalendarUi } from '../../../../store/uiStore'

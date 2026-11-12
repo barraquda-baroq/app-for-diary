@@ -165,6 +165,14 @@ describe('件名・時刻・印（4.3・4.5・7.7・7.9）', () => {
     expect(parts('.cp-ai::after').get('inset')).toBe('-4px')
   })
 
+  it('AI の札の幅は 22px 以上、指の端末で押せる所を左右に広げる量は 6px か、押せる所の幅が --tap になるまで（細い「AI」の札。D08）', () => {
+    const ai = parts('.cp-ai')
+    expect(ai.get('min-width')).toBe('22px')
+    // ％は ::after の入れ物の札の枠の内側の幅: 「AI」の札（22px・内側 20px）は 10 − 17 = −7px で、押せる所は 20 + 14 = 34px
+    expect(ai.get('--cp-ai-hit-x')).toBe('min(-6px, calc(50% - var(--tap) / 2))')
+    expect(COMMON).toMatch(/--tap:\s*34px/)
+  })
+
   it('ラベルの左の一辺は box-shadow: inset 4px 0 0 色（ラベルがある時だけ。FRAME-219）', () => {
     expect(common('.label-edge[data-label]').get('box-shadow')).toBe('inset var(--edge-w) 0 0 var(--label)')
     expect(COMMON).toMatch(/--edge-w:\s*4px/)

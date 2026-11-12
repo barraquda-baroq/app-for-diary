@@ -387,6 +387,8 @@
   background: var(--surface);
   color: var(--text);
   overflow: hidden;
+  /* 中の重なり（点線の丸・印・「押すと詳細」）の順は枠の中だけで決める（今の時刻の線・「+n」の札など、枠の外の物との順は変えない） */
+  isolation: isolate;
 }
 
 .dy-box.no-ring {
@@ -404,12 +406,14 @@
   color: var(--done-text);
 }
 
-/* 左上の点線の丸（16px。押せる所 24px。押すと完了） */
+/* 左上の点線の丸（16px。押せる所 24px。押すと完了）。印（.dy-ev-marks）より上に重ねる: 狭い枠・1行にまとめた枠では、AI の札の押せる所
+   （指の端末で左右に 6px か、幅 34px まで広げる。札の幅は書体で変わる）が丸の押せる所に掛かることがあるので、重なった所は丸が勝つ（ウィークリーの
+   カードと同じ） */
 .dy-ring {
   position: absolute;
   top: 0;
   left: 5px;
-  z-index: 1;
+  z-index: 2;
 }
 
 .dy-ev-open {
@@ -453,17 +457,18 @@
     height: var(--tap);
   }
 
+  /* AI の札の押せる所（左右は parts.css の --cp-ai-hit-x。6px、「AI」の札は幅が 34px になるまで） */
   .dy-ev-marks .cp-ai::after {
-    inset: -5px -6px -15px;
+    inset: -5px var(--cp-ai-hit-x) -15px;
   }
 
   /* 狭い枠では AI の札が2行目（時刻の行）にあるので、上の件名には広げない（下と左右だけ。枠の外は枠の overflow で切れる） */
   .dy-box.is-narrow .dy-ev-marks .cp-ai::after {
-    inset: 0 -6px -15px;
+    inset: 0 var(--cp-ai-hit-x) -15px;
   }
 
   .dy-row-marks .cp-ai::after {
-    inset: -10px -6px;
+    inset: -10px var(--cp-ai-hit-x);
   }
 }
 

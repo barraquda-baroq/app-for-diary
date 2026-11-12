@@ -395,7 +395,7 @@ describe('登録した予定（item:{id}）を目立たせて、週の中で見�
     act(() => useCalendarUi.getState().flashTarget(`item:${id}`))
     expect(el.classList.contains('flash')).toBe(true)
     // block: nearest と同じ（カードの下の端を見える所の下の端に合わせる）。ページは動かさない
-    expect(scrollTo).toHaveBeenCalledWith({ top: 540 - 300, behavior: 'smooth' })
+    expect(scrollTo).toHaveBeenCalledWith({ left: 0, top: 540 - 300, behavior: 'smooth' })
     expect(native).not.toHaveBeenCalled()
     expect(page).not.toHaveBeenCalled()
   })
@@ -416,7 +416,7 @@ describe('登録した予定（item:{id}）を目立たせて、週の中で見�
     const el = screen.getByTestId(testIds.weekCard('meet'))
     const scrollTo = layout(el.closest('.wk-tier-body') as HTMLElement, el)
     act(() => useCalendarUi.getState().flashTarget('item:meet'))
-    expect(scrollTo).toHaveBeenCalledWith({ top: 240, behavior: 'auto' })
+    expect(scrollTo).toHaveBeenCalledWith({ left: 0, top: 240, behavior: 'auto' })
   })
 })
 
