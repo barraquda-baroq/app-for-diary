@@ -1,6 +1,7 @@
-// ウィークリーのドラッグで日を動かす決まり（docs/SPEC.md の 7.10・7.11・13.6）: 7.11 の表の4通り、動かせない時（ロック・週の外・
+// ウィークリーのドラッグで日を動かす決まり（docs/SPEC.md の 7.10・7.11・13.6）: 7.11 の表の4通り、動かせない時（ロック・
 // 違う区分・開始日 > 締め切り日・1日の予定で終了 < 開始）、終了 = 開始で終了を空に、元の日は何もしない、見えていない始点・終点、
-// 完了した予定、〆のカード、落とせる日の一覧、お知らせの文（CALENDAR-184: ドラッグで動かせる日は単体のテストで全部確かめる）
+// 完了した予定、〆のカード、掴んだ週の外（前後の週）の日、落とせる日の一覧、お知らせの文（CALENDAR-184: ドラッグで動かせる日は
+// 単体のテストで全部確かめる）
 import { describe, expect, it } from 'vitest'
 import { canGrab, dropDays, dropPatch, dropToast, type DatePatch, type Handle, type WeekCtx } from './drag'
 import { mkItem, mkTask } from './testData'
@@ -68,10 +69,9 @@ describe('動かせない時（CALENDAR-165・175・177・7.10）', () => {
     expect(dropDays(locked, 'card', WEEK).size).toBe(0)
   })
 
-  it('週の外には落とせない（週の外へは詳細で日付を変える）', () => {
-    expect(drop(oneDay, 'card', '2026-11-15')).toBeNull()
-    expect(drop(oneDay, 'card', '2026-11-07')).toBeNull()
+  it('日付でない所には落とせない', () => {
     expect(drop(oneDay, 'card', '2026-13-01')).toBeNull()
+    expect(drop(oneDay, 'card', '')).toBeNull()
   })
 
   it('仕事 ↔ プライベートはまたげない', () => {
@@ -114,6 +114,67 @@ describe('動かせない時（CALENDAR-165・175・177・7.10）', () => {
     expect(canGrab(mkTask(), 'card', WEEK)).toEqual({ ok: false, reason: 'hiddenEndpoint' })
     expect(canGrab(mkTask({ start: '2026-11-10' }), 'card', WEEK)).toEqual({ ok: false, reason: 'hiddenEndpoint' })
     expect(canGrab(mkItem({ start: '2026-11-20' }), 'card', WEEK)).toEqual({ ok: false, reason: 'hiddenEndpoint' })
+  })
+})
+
+describe('掴んだ週の外（前後の週）の日（掴んだまま左右の端に留まって移った週。22. の段階2の終わりの確かめ）', () => {
+  it('1日の予定・〆のカードは、どの週の日へも同じ決まりで移る', () => {
+    expect(drop(oneDay, 'card', '2026-11-18')).toEqual(patch('2026-11-18', null))
+    expect(drop(oneDayWithDue, 'card', '2026-11-03')).toEqual(patch('2026-11-03', '2026-11-03'))
+    expect(drop(dueTask, 'card', '2026-11-21')).toEqual(patch(null, '2026-11-21'))
+    expect(drop(sameDayTask, 'card', '2026-12-01')).toEqual(patch('2026-12-01', '2026-12-01'))
+  })
+
+  it('始点は締め切り日まで（前の週へは延びる）、終点は開始日から（次の週へは延びる）。開始日 ≤ 締め切り日（I1）', () => {
+    expect(drop(span, 'start', '2026-11-02')).toEqual(patch('2026-11-02', '2026-11-12'))
+    expect(drop(span, 'end', '2026-11-20')).toEqual(patch('2026-11-09', '2026-11-20'))
+    // 次の週へ続く予定（11/12〜11/18）の始点は、次の週の締め切り日まで置ける（その日に置くと1日の予定）
+    const toNextWeek = mkItem({ id: 'q', start: '2026-11-12', due: '2026-11-18' })
+    expect(drop(toNextWeek, 'start', '2026-11-17')).toEqual(patch('2026-11-17', '2026-11-18'))
+    expect(drop(toNextWeek, 'start', '2026-11-18')).toEqual(patch('2026-11-18', '2026-11-18'))
+    expect(drop(toNextWeek, 'start', '2026-11-19')).toBeNull()
+    // 前の週から続く予定（11/5〜11/10）の終点は、前の週の開始日までしか戻せない
+    const fromLastWeek = mkItem({ id: 'p', start: '2026-11-05', due: '2026-11-10' })
+    expect(drop(fromLastWeek, 'end', '2026-11-05')).toEqual(patch('2026-11-05', '2026-11-05'))
+    expect(drop(fromLastWeek, 'end', '2026-11-04')).toBeNull()
+  })
+
+  it('1日の予定で終了 < 開始になる日・違う区分・ロック中は、前後の週でも落とせない（6.4・CALENDAR-165・7.10）', () => {
+    const night = mkItem({ id: 'n', start: '2026-11-10', due: '2026-11-11', startTime: '23:00', endTime: '01:00' })
+    expect(drop(night, 'end', '2026-11-17')).toEqual(patch('2026-11-10', '2026-11-17'))
+    expect(drop(oneDay, 'card', '2026-11-18', 'private')).toBeNull()
+    expect(drop({ ...oneDay, locked: true }, 'card', '2026-11-18')).toBeNull()
+  })
+
+  it('掴めるかは掴んだ週で決める（掴む所が掴んだ週に見えていない物は、前後の週でも落とせない。CALENDAR-176・177）', () => {
+    const nextWeek = { from: '2026-11-15', to: '2026-11-21' }
+    // 11/12〜11/18 の終点は 11/8 の週では見えていないので、その週で掴んだことにはならない
+    const toNextWeek = mkItem({ id: 'q', start: '2026-11-12', due: '2026-11-18' })
+    expect(drop(toNextWeek, 'end', '2026-11-20')).toBeNull()
+    expect(dropPatch(toNextWeek, 'end', { date: '2026-11-20', kind: 'work' }, nextWeek)).toEqual(
+      patch('2026-11-12', '2026-11-20'),
+    )
+  })
+
+  it('印を付ける日は、今見ている週の日（掴んだ週で決めた決まりで）', () => {
+    const nextWeek = { from: '2026-11-15', to: '2026-11-21' }
+    const days = dropDays(oneDay, 'card', WEEK, nextWeek)
+    expect([...days.keys()]).toEqual([
+      '2026-11-15',
+      '2026-11-16',
+      '2026-11-17',
+      '2026-11-18',
+      '2026-11-19',
+      '2026-11-20',
+      '2026-11-21',
+    ])
+    expect(days.get('2026-11-18')).toEqual(patch('2026-11-18', null))
+    // 始点は締め切り日（11/12）まで: 次の週には落とせる日が無い。前の週は全部
+    expect(dropDays(span, 'start', WEEK, nextWeek).size).toBe(0)
+    expect(dropDays(span, 'start', WEEK, { from: '2026-11-01', to: '2026-11-07' }).size).toBe(7)
+    // 終点は開始日（11/9）から: 前の週には無い
+    expect(dropDays(span, 'end', WEEK, { from: '2026-11-01', to: '2026-11-07' }).size).toBe(0)
+    expect(dropDays(span, 'end', WEEK, nextWeek).size).toBe(7)
   })
 })
 

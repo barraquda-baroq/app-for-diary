@@ -75,7 +75,7 @@ interface HalfProps {
 
 /** 日のかたまりの半分（その日・その区分。落とせる所） */
 function Half({ day, kind, week, halfPx, actions }: HalfProps) {
-  const drop = useDayDrop({ date: day.date, kind: kind.kind, week })
+  const drop = useDayDrop({ date: day.date, kind: kind.kind })
   const half = kind.vertical[day.date]
   const singles = kind.singles[day.date] ?? []
   const textPx = verticalCardTextPx(halfPx, kind.rails)

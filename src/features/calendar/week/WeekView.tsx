@@ -2,12 +2,13 @@
 // （WeekHorizontal）、S は7日を縦（WeekVertical）（10.1。カレンダーの領域の幅では決めない）。領域の幅は、7日を横の列の幅
 // （見出しを2行にするか・始点のカードの期間が入るか）と、7日を縦の半分の幅だけに使う（D53）。
 // データは useCalendarData() の一覧から weekModel.ts の buildWeek で週の形を作る（表が変わった時だけ作り直す）。カード・●・＞は
-// 記録ごとの React.memo。ドラッグは week/dnd（WeekDnd・useItemDrag・useDayDrop）。
-// スクロールする要素は WeekScrollerContext で WeekDnd に渡す（自動のスクロールをウィークリーの中だけにする。weekScroller.ts）。
+// 記録ごとの React.memo。ドラッグは week/dnd（WeekDnd・useItemDrag・useDayDrop）。WeekDnd が週を描く所を受け持ち（renderWeek）、
+// 掴んだまま左右の端に留まって前後の週へ移った間は、掴んだ週も見えないまま描かせる（frozen。掴んだカードを外さないため。7.11）。
+// 今の週のスクロールする要素は WeekScrollerContext で WeekDnd に渡す（端の自動のスクロールと、左右の端を測る。weekScroller.ts）。
 // 見出し → デイリー・休みのチェック・「＋」→ すばやく足すは useWeekActions（weekActions.ts）。ウィークリーは指でなぞっても週を
 // 移らない（［‹］［›］だけ。カードの操作とぶつかるため。3.7。CalendarView の swipeEnabled が週を外す）
-import { useMemo, useRef } from 'react'
-import { weekStartOf } from '../../../domain/dates'
+import { useCallback, useMemo, useRef, type RefObject } from 'react'
+import { addDaysYmd, weekStartOf } from '../../../domain/dates'
 import { useCalendarData } from '../common/parts'
 import type { ViewProps } from '../common/types'
 import { WeekDnd, type WeekCtx } from './dnd'
@@ -20,34 +21,51 @@ import './week.css'
 
 export function WeekView({ viewed, today, width, area }: ViewProps) {
   const sunday = weekStartOf(viewed)
+  const week = useMemo<WeekCtx>(() => ({ from: sunday, to: addDaysYmd(sunday, 6) }), [sunday])
+  const scroller = useRef<HTMLDivElement>(null)
+  const renderWeek = useCallback(
+    (w: WeekCtx, frozen: boolean) => (
+      <WeekBody sunday={w.from} today={today} width={width} area={area} scroller={frozen ? null : scroller} />
+    ),
+    [today, width, area],
+  )
+  return (
+    <WeekScrollerContext.Provider value={scroller}>
+      <WeekDnd week={week} viewed={viewed} layout={width === 'S' ? 'S' : 'wide'} renderWeek={renderWeek} />
+    </WeekScrollerContext.Provider>
+  )
+}
+
+interface WeekBodyProps extends Pick<ViewProps, 'today' | 'width' | 'area'> {
+  sunday: string
+  /** 今の週のスクロールする要素を受け取る ref（見えないまま残す掴んだ週は null） */
+  scroller: RefObject<HTMLDivElement | null> | null
+}
+
+/** 1つの週（今の週か、掴んだまま別の週へ移った間の掴んだ週） */
+function WeekBody({ sunday, today, width, area, scroller }: WeekBodyProps) {
   const { list, off } = useCalendarData()
   const model = useMemo(() => buildWeek(sunday, list, off, today), [sunday, list, off, today])
   const week = useMemo<WeekCtx>(() => ({ from: model.sunday, to: model.saturday }), [model.sunday, model.saturday])
-  const scroller = useRef<HTMLDivElement>(null)
+  const own = useRef<HTMLDivElement>(null)
   const actions = useWeekActions(model.sunday)
-  return (
-    <WeekScrollerContext.Provider value={scroller}>
-      <WeekDnd week={week}>
-        {width === 'S' ? (
-          <WeekVertical
-            model={model}
-            today={today}
-            week={week}
-            halfPx={weekHalfPx(area.width)}
-            actions={actions}
-            scroller={scroller}
-          />
-        ) : (
-          <WeekHorizontal
-            model={model}
-            today={today}
-            week={week}
-            columnPx={weekColumnPx(area.width)}
-            actions={actions}
-            scroller={scroller}
-          />
-        )}
-      </WeekDnd>
-    </WeekScrollerContext.Provider>
+  return width === 'S' ? (
+    <WeekVertical
+      model={model}
+      today={today}
+      week={week}
+      halfPx={weekHalfPx(area.width)}
+      actions={actions}
+      scroller={scroller ?? own}
+    />
+  ) : (
+    <WeekHorizontal
+      model={model}
+      today={today}
+      week={week}
+      columnPx={weekColumnPx(area.width)}
+      actions={actions}
+      scroller={scroller ?? own}
+    />
   )
 }

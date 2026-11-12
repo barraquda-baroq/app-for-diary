@@ -241,10 +241,11 @@ describe('カレンダーには影を付けない（ドラッグ中の --shadow-
 /**
  * 差し色（--accent・--primary とその仲間）を使ってよい所（docs/SPEC.md の 4.4-7・FRAME-160）: フォーカスの枠、今日の印、選んでいる所
  * （押した状態・選んだ値・↑↓で移った所・チェックした休み）、落とせる所、目立たせる枠、今の時刻の線。ほかに本文で決めた所: イヤーの
- * 小さな月の今月の名前（8.3）、休みを付ける状態のマスの点線の枠と帯（9.5）
+ * 小さな月の今月の名前（8.3）、休みを付ける状態のマスの点線の枠と帯（9.5）、ウィークリーで掴んだまま左右の端に留まった時の目印の帯
+ * （.wk-cue。7.11）
  */
 const ACCENT_OK =
-  /:focus-visible|\[aria-pressed='true'\]|\[data-drop=|\.(?:is-(?:today|on|current|active|selected|this-month)|today-mark|flash|dy-now|mo-banner)(?![\w-])|\.mo-month\.is-off /
+  /:focus-visible|\[aria-pressed='true'\]|\[data-drop=|\.(?:is-(?:today|on|current|active|selected|this-month)|today-mark|flash|dy-now|mo-banner|wk-cue)(?![\w-])|\.mo-month\.is-off /
 
 /** 差し色のトークンを使う宣言か（--on-accent・--on-primary は差し色の上の字の色なので除く） */
 const usesAccent = (value: string) => /var\(--(?:accent|primary)(?:-[\w-]+)?\)/.test(value)

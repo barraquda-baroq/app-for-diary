@@ -4,12 +4,16 @@
 // - 掴み方: マウスは 5px を超えて動かす、指・ペンは 0.4秒（8px 以内）押し続ける（gesture.ts の値。CALENDAR-158・159）。すぐ動かした
 //   指はスクロール（CALENDAR-160）。キーボードでは掴まない（Enter・Space は詳細を開く。詳細の日付の欄で同じことができる。G2・CALENDAR-183）
 // - カードの中の点線の丸・AI の札の上から押しても掴める（どれもカードの入れ物の中。dnd-kit の初めの決まりは、中のボタンからは掴まない）
-// - 掴むと、その週の落とせる日すべてに印（地 --accent-soft と 1px の --accent の点線、上にある日は線。D25・CALENDAR-166）。
+// - 掴むと、見ている週の落とせる日すべてに印（地 --accent-soft と 1px の --accent の点線、上にある日は線。D25・CALENDAR-166）。
 //   区分は掴んだ物と同じ段だけ（CALENDAR-165・ITEMS-098）。指で掴んだ時は 15ms 振動（CALENDAR-163）。文字を打っている欄
 //   （すばやく足す）からはフォーカスを外す（指で動かし始めた時に、週がその欄の所へ飛ばないように）
 // - 浮いた見た目は dnd.css（1.03倍・--shadow-lift・0.95・120ms。G1）。読み上げの案内（英語）は出さない（Accessibility を外す。G2）
-// - 画面の端（60px）に近づくと、ウィークリーのスクロールの中だけを自動でスクロールする（ページは動かさない。G3・G4・CALENDAR-167・
-//   ITEMS-099）
+// - 画面の端（edges.ts・edgeDriver.ts。dnd-kit の自動のスクロールは使わない）: 上下の端の 60px では週の中（S は週、L・M は段の中）
+//   だけを自動でスクロールする（ページは動かさない。G3・G4・CALENDAR-167・ITEMS-099）。左右の端の帯に 0.6秒留まると前・次の週へ
+//   移る（［‹］［›］と同じ移り方。置き換える。ページをめくる動きは付けない）。留まっている間は目印の帯を出す（22. の段階2の終わりの確かめ）
+// - 掴んだまま別の週へ移った間も、掴んだ物（dnd-kit が浮かせている元のカード）を外さないように、掴んだ週を見えないまま残す
+//   （WeekSlot の is-frozen。落とす所は止める）。今の週は別の入れ物に描く。落とすと今の週に残り、落とさずにやめると（Esc・落とせない
+//   所で離す・指を取られた）掴んだ週へ戻って、浮いたカードが元の所へ戻る
 // - 落とした時は drop.ts（動かす・お知らせ・目立たせる・収める）。動かさなかった時は、浮いたカードが元の場所へ 160ms で戻る
 import {
   Accessibility,
@@ -18,9 +22,9 @@ import {
   Feedback,
   PointerActivationConstraints,
   PointerSensor,
-  Scroller,
   type DragDropManager,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragStartEvent,
 } from '@dnd-kit/dom'
 import { DragDropProvider, useDraggable, useDroppable } from '@dnd-kit/react'
@@ -28,19 +32,27 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type ReactElement,
   type ReactNode,
-  type RefObject,
 } from 'react'
 import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
 import type { Item, ItemKind } from '../../../../domain/types'
+import { useCalendarUi } from '../../../../store/uiStore'
+import { ChevronLeftIcon, ChevronRightIcon } from '../../../../ui/icons'
 import { vibrate15 } from '../../../../ui/motion'
 import { scrollIntoViewWithin, toastInset } from '../../../../ui/scrollWithin'
+import { testIds } from '../../common/testIds'
+import { useCalendarNav } from '../../common/useCalendarRoute'
 import { useWeekScroller } from '../weekScroller'
 import { applyDrop, settle, SETTLE_BACK } from './drop'
+import { EdgeDriver, type EdgeCue } from './edgeDriver'
+import { WEEK_EDGE_PX } from './edges'
 import { activationOf, pointerKind } from './gesture'
 import { useLockGesture } from './lockGesture'
 import {
@@ -58,9 +70,6 @@ import {
 } from './types'
 import './dnd.css'
 
-/** 画面の端からこの幅（px）に入ると自動でスクロールする（S の縦の並びは上下 60px。10.4・ITEMS-099） */
-export const AUTO_SCROLL_EDGE_PX = 60
-
 /** 掴み方（マウスは距離、指・ペンは長押し）。中のボタン（点線の丸・AI の札・詳細を開くボタン）の上から押しても掴む */
 const SENSORS = [
   PointerSensor.configure({
@@ -76,37 +85,49 @@ const SENSORS = [
 
 type PluginEntry = (typeof defaultPreset.plugins)[number]
 
-/** 使う plugin: 自動のスクロール・カーソル（grabbing）・浮いた見た目（落とす時の動きは落とすたびに決める）・文字の選択を止める */
+/**
+ * 使う plugin: カーソル（grabbing）・浮いた見た目（落とす時の動きは落とすたびに決める）・文字の選択を止める。自動のスクロールは
+ * edgeDriver.ts が受け持つ（AutoScroller を外す）
+ */
 const PLUGINS = defaultPreset.plugins.flatMap((p): PluginEntry[] => {
   if (p === Feedback) return [Feedback.configure({ dropAnimation: null })]
-  if (p === Accessibility) return []
+  if (p === Accessibility || p === AutoScroller) return []
   return [p]
 })
 
-// ---------- 掴んでいる間の落とせる日（落とす所ごとに、その日が変わった時だけ描き直す） ----------
+// ---------- 掴んでいる間の落とせる日・目印の帯（変わった時だけ、それを使う所を描き直す） ----------
 
-/** 掴んでいる物の区分と、その週の落とせる日（元の日も含む。D25） */
+/** 掴んでいる物の区分と、見ている週の落とせる日（元の日も含む。D25） */
 interface ActiveDrag {
   kind: ItemKind
   days: ReadonlySet<string>
 }
 
-class ActiveDragStore {
-  private value: ActiveDrag | null = null
+/** 外から読む値の入れ物（useSyncExternalStore で読む） */
+class Signal<T> {
+  private value: T
   private readonly listeners = new Set<() => void>()
+  constructor(value: T) {
+    this.value = value
+  }
   readonly subscribe = (fn: () => void) => {
     this.listeners.add(fn)
     return () => {
       this.listeners.delete(fn)
     }
   }
-  set(next: ActiveDrag | null): void {
+  readonly get = () => this.value
+  set(next: T): void {
+    if (next === this.value) return
     this.value = next
     for (const fn of this.listeners) fn()
   }
+}
+
+class ActiveDragStore extends Signal<ActiveDrag | null> {
   /** その日・その区分が、今掴んでいる物の落とせる日か */
   marks(date: string, kind: ItemKind): boolean {
-    const v = this.value
+    const v = this.get()
     return v !== null && v.kind === kind && v.days.has(date)
   }
 }
@@ -114,44 +135,9 @@ class ActiveDragStore {
 const ActiveDragContext = createContext<ActiveDragStore | null>(null)
 const noSubscribe = () => () => {}
 
-// ---------- 自動のスクロール（G3・G4） ----------
-
-/** px の幅を、dnd-kit の AutoScroller の threshold（スクロールする要素の大きさに対する割合）にする */
-const edgeFraction = (size: number) => (size > 0 ? Math.min(0.5, AUTO_SCROLL_EDGE_PX / size) : 0)
-
-/** from から week（含む）までで、いちばん近い縦にスクロールする要素 */
-function verticalScroller(from: Element | undefined, week: HTMLElement): HTMLElement {
-  for (let el = from?.parentElement ?? null; el && week.contains(el); el = el.parentElement) {
-    const y = getComputedStyle(el).overflowY
-    if ((y === 'auto' || y === 'scroll') && el.scrollHeight > el.clientHeight) return el
-  }
-  return week
-}
-
-/** getScrollableElements を絞った Scroller（manager ごとに1回） */
-const limited = new WeakSet<object>()
-
-/**
- * 掴むたびに、自動のスクロールの端の幅を 60px にし（dnd-kit は割合なので、縦はカードの入っているスクロールの高さ、横は週が横に
- * スクロールする時だけ週の幅から直す）、スクロールする物をウィークリーの中だけにする（週の端まで行った後にページを動かさない）
- */
-function limitAutoScroll(manager: DragDropManager, week: RefObject<HTMLElement | null>, source: Element | undefined): void {
-  const el = week.current
-  if (!el) return
-  const auto = manager.registry.plugins.get(AutoScroller)
-  const sideways = el.scrollWidth > el.clientWidth
-  auto?.configure({
-    threshold: { x: sideways ? edgeFraction(el.clientWidth) : 0, y: edgeFraction(verticalScroller(source, el).clientHeight) },
-  })
-  const scroller = manager.registry.plugins.get(Scroller)
-  if (!scroller || limited.has(scroller)) return
-  limited.add(scroller)
-  const all = scroller.getScrollableElements
-  scroller.getScrollableElements = () => {
-    const found = all()
-    const root = week.current
-    return found && root ? new Set([...found].filter((x) => root.contains(x))) : found
-  }
+/** 掴んだ物の、見ている週 shown の落とせる日（掴めるかは掴んだ週で決める） */
+function activeOf(data: DragData, shown: WeekCtx): ActiveDrag {
+  return { kind: data.item.kind, days: new Set(dropDays(data.item, data.handle, data.week, shown).keys()) }
 }
 
 // ---------- 入力欄のフォーカス ----------
@@ -167,44 +153,220 @@ function blurTextField(): void {
     el.blur()
 }
 
+// ---------- 週の入れ物（掴んだまま別の週へ移った間は、掴んだ週を見えないまま残す） ----------
+
+/** 見えないまま残している掴んだ週の中か（その週の落とす所は止める） */
+const FrozenWeekContext = createContext(false)
+
+function WeekSlot({ frozen, children }: { frozen: boolean; children: ReactNode }) {
+  return (
+    <FrozenWeekContext.Provider value={frozen}>
+      <div className={frozen ? 'wk-slot is-frozen' : 'wk-slot'} aria-hidden={frozen || undefined}>
+        {children}
+      </div>
+    </FrozenWeekContext.Provider>
+  )
+}
+
+/** 掴んだまま週が替わった後、落とす所を数え直すコマ数（今の週の落とす所の大きさが測られるまで。0.3秒ほど） */
+const RECOUNT_FRAMES = 20
+
+/** 掴んだ週と、その時に見ていた日 */
+interface Origin {
+  week: WeekCtx
+  viewed: string
+}
+
+/**
+ * 落とし終えてから（dnd-kit が浮いた物を片付け終えてから）fn を呼ぶ。片付ける前に週の入れ物を描き直すと、移った先に新しく出たカード
+ * （掴んだ物と同じ id）を dnd-kit が掴んだ物として浮かせたままの間が長くなる（数十 ms、移った先で浮いて見える）
+ */
+function afterDrop(m: DragDropManager, fn: () => void, frames = 120): void {
+  requestAnimationFrame(() => (m.dragOperation.status.idle || frames <= 0 ? fn() : afterDrop(m, fn, frames - 1)))
+}
+
+// ---------- 目印の帯（左右の端に留まっている間） ----------
+
+function EdgeCueView({ cue }: { cue: Signal<EdgeCue | null> }) {
+  const c = useSyncExternalStore(cue.subscribe, cue.get, () => null)
+  if (!c) return null
+  const next = c.side > 0
+  const style = {
+    left: c.left,
+    top: c.top,
+    width: c.width,
+    height: c.height,
+    '--cue-ms': `${c.period}ms`,
+  } as CSSProperties
+  return (
+    <div
+      className={`wk-cue ${next ? 'is-next' : 'is-prev'} is-label-${c.label}`}
+      style={style}
+      data-edge-cue=""
+      data-side={next ? 'next' : 'prev'}
+      data-testid={testIds.weekEdgeCue}
+      aria-hidden="true"
+    >
+      {/* 満ちる地（留まった時間。続けて移る時はやり直す） */}
+      <span key={c.since} className="wk-cue-fill" />
+      <span className="wk-cue-body">
+        {next ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+        {/* 縦に1字ずつ（帯が狭いので。縦書きの設定は字が重なる端末があるので使わない） */}
+        <span className="wk-cue-label">
+          {[...(next ? '次の週へ' : '前の週へ')].map((ch, i) => (
+            <span key={i}>{ch}</span>
+          ))}
+        </span>
+      </span>
+    </div>
+  )
+}
+
 // ---------- WeekDnd ----------
 
+export interface WeekDndProps {
+  /** 今見ている週 */
+  week: WeekCtx
+  /** 今見ている日（落とさずにやめた時に、掴んだ週と一緒に戻す） */
+  viewed: string
+  /** 7日を縦（S）か横（L・M）か（左右の端の帯の幅。edges.ts） */
+  layout: 'S' | 'wide'
+  /** 週を描く（frozen は、掴んだまま別の週へ移った間の、見えないまま残す掴んだ週） */
+  renderWeek: (week: WeekCtx, frozen: boolean) => ReactNode
+}
+
 /** ウィークリーを包む（ドラッグの受け持ち。段階2はウィークリーだけ、段階3で TopPage へ上げる。D52） */
-export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode }): ReactElement {
+export function WeekDnd({ week, viewed, layout, renderWeek }: WeekDndProps): ReactElement {
   const scroller = useWeekScroller()
-  const [store] = useState(() => new ActiveDragStore())
+  const nav = useCalendarNav()
+  const [store] = useState(() => new ActiveDragStore(null))
+  const [cue] = useState(() => new Signal<EdgeCue | null>(null))
+  /** 今の週の入れ物の key（掴んだまま別の週へ移って落とした後は、その週の入れ物の key へ進める） */
+  const [liveKey, setLiveKey] = useState(0)
+  const stageEl = useRef<HTMLDivElement>(null)
+  /** 掴んでいる物（離すまで） */
+  const dragging = useRef<DragData | null>(null)
+  /**
+   * 掴んだ週（掴んでいる間と、落とさずにやめて掴んだ週へ戻るまで・別の週へ落として入れ物を片付けるまで）。描く時に今の週と比べ、
+   * 違えば掴んだ週の入れ物を見えないまま残す（週が替わる時は行き先が替わって描き直すので、ここは描き直しを起こさない ref）
+   */
+  const origin = useRef<Origin | null>(null)
+  /** 別の週へ落とした後、入れ物を片付けるのを待っている */
+  const rekey = useRef(false)
+  const manager = useRef<DragDropManager | null>(null)
+  // 描くたびに新しい値を置く（掴んでいる間の出来事は、その時の週・見ている日・行き来で決める）
+  const latest = useRef({ week, viewed, nav, layout })
+  latest.current = { week, viewed, nav, layout }
+
+  const [driver] = useState(
+    () =>
+      new EdgeDriver({
+        root: () => scroller.current,
+        stage: () => stageEl.current,
+        band: () => WEEK_EDGE_PX[latest.current.layout === 'S' ? 'S' : 'wide'],
+        onShift: (side) => latest.current.nav.shift(side),
+        onCue: (c) => cue.set(c),
+      }),
+  )
+
+  // 週が替わった: 掴んでいる間なら、落とせる日の印を今の週で付け直し、指を止めたままでも落とす所を数え直す（dnd-kit は指の位置が
+  // 変わらない間は数え直さないので、前の週の日（見えないまま残した掴んだ週の日）が「上にある日」のまま残り、そのまま離すとその日へ
+  // 落ちる。今の週の落とす所の大きさは少し後に測られるので、数コマの間数え直す）。やめて掴んだ週へ戻ってきたら、残していた掴んだ週を
+  // 今の週に戻す
+  useEffect(() => {
+    const data = dragging.current
+    if (data) {
+      store.set(activeOf(data, week))
+      driver.remeasure()
+      const m = manager.current
+      let frames = 0
+      let id = 0
+      const recount = () => {
+        if (!dragging.current || !m) return
+        m.collisionObserver.forceUpdate(true)
+        if (++frames < RECOUNT_FRAMES) id = requestAnimationFrame(recount)
+      }
+      recount()
+      return () => cancelAnimationFrame(id)
+    }
+    if (!rekey.current && origin.current?.week.from === week.from) origin.current = null
+    return undefined
+  }, [week, store, driver])
+
+  // 描き終えずに外れた時（掴んだままモードを替えたなど）は止める
+  useEffect(
+    () => () => {
+      driver.stop()
+      if (dragging.current) useCalendarUi.getState().setDragging(false)
+    },
+    [driver],
+  )
+
+  /** 別の週へ落とした後: 掴んだ週の入れ物を外し、今の週の入れ物をそのまま今の週にする */
+  const settleStage = useCallback(() => {
+    if (!rekey.current) return
+    rekey.current = false
+    origin.current = null
+    setLiveKey((k) => k + 1)
+  }, [])
 
   const onDragStart = useCallback(
-    (event: DragStartEvent, manager: DragDropManager) => {
+    (event: DragStartEvent, m: DragDropManager) => {
       const data = asDragData(event.operation.source?.data)
       if (!data) return
-      const days = dropDays(data.item, data.handle, week)
-      store.set({ kind: data.item.kind, days: new Set(days.keys()) })
+      settleStage()
+      manager.current = m
+      dragging.current = data
+      const { week: shown, viewed: day } = latest.current
+      origin.current = { week: data.week, viewed: day }
+      useCalendarUi.getState().setDragging(true)
+      store.set(activeOf(data, shown))
       blurTextField()
       const activator = event.operation.activatorEvent
       if (activator instanceof PointerEvent && pointerKind(activator.pointerType) === 'touch') vibrate15()
-      limitAutoScroll(manager, scroller, event.operation.source?.element)
+      driver.start(event.operation.position.current)
     },
-    [store, week, scroller],
+    [store, driver, settleStage],
+  )
+
+  const onDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      driver.move(event.to ?? event.operation.position.current)
+    },
+    [driver],
   )
 
   const onDragEnd = useCallback(
-    (event: DragEndEvent, manager: DragDropManager) => {
+    (event: DragEndEvent, m: DragDropManager) => {
+      driver.stop()
       store.set(null)
+      dragging.current = null
+      useCalendarUi.getState().setDragging(false)
       const { source, target } = event.operation
       const data = asDragData(source?.data)
-      const drop = asDropData(target?.data)
-      const moved = !event.canceled && data !== null && drop !== null && applyDrop(data, drop, week)
-      const feedback = manager.registry.plugins.get(Feedback)
+      // 見えないまま残した掴んだ週の日（止めてある）には落とさない（週が替わった直後に数え直す前に離した時）
+      const drop = target && !target.disabled ? asDropData(target.data) : null
+      const moved = !event.canceled && data !== null && drop !== null && applyDrop(data, drop)
+      const feedback = m.registry.plugins.get(Feedback)
       // 動かした時、元のカードは React が外す（戻る動きは見えない）ので、すぐ片付けて移った先のカードを収める。
       // 動かさなかった時は、浮いたカードが元の場所へ戻る
       if (feedback) feedback.dropAnimation = moved ? null : SETTLE_BACK
+      // 掴んだ週の外へ移っていたか
+      const away = data !== null && data.week.from !== latest.current.week.from
+      if (away && moved) {
+        // 今の週に残る（落とし終えてから、掴んだ週の入れ物を片付ける）
+        rekey.current = true
+        afterDrop(m, settleStage)
+      } else if (away && origin.current) {
+        // 落とさずにやめた: 掴んだ週へ戻る（掴んだ週の入れ物は、戻ってから今の週の入れ物に戻る。上の useEffect）
+        latest.current.nav.goTo(origin.current.viewed)
+      } else origin.current = null
       if (moved && data) {
         // 移った先の要素（始点・●を動かして1日の予定になった時は、カード。元の要素は外れている）を見える所まで出し、収める
         const ids = [source?.id, dragId(data.item.id, 'card')]
         requestAnimationFrame(() => {
           const el = ids
-            .map((id) => (id === undefined ? undefined : manager.registry.draggables.get(id)?.element))
+            .map((id) => (id === undefined ? undefined : m.registry.draggables.get(id)?.element))
             .find((x) => x?.isConnected)
           // 出す所は、収める動き（1.03倍から）を掛ける前の大きさで測る。週・段の中だけを動かし、ページは動かさない（G4）。落とした時に
           // 見える所へ出すのはここだけ（目立つ側は applyDrop の flashInPlace で動かない。●を動かした時に、目立つ始点のカード・受けた
@@ -215,12 +377,31 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
         })
       }
     },
-    [store, week],
+    [store, driver, settleStage],
   )
 
+  const live = week
+  // 掴んだ週の入れ物（掴んだまま別の週へ移った間）。描いている間に読む ref だが、変わるのは週が替わる（行き先が替わって描き直す）時と、
+  // 別の週へ落として片付ける（liveKey を進めて描き直す）時だけ
+  const o = origin.current
+  const frozen = o && o.week.from !== live.from ? o.week : null
   return (
-    <DragDropProvider sensors={SENSORS} plugins={PLUGINS} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <ActiveDragContext.Provider value={store}>{children}</ActiveDragContext.Provider>
+    <DragDropProvider sensors={SENSORS} plugins={PLUGINS} onDragStart={onDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd}>
+      <ActiveDragContext.Provider value={store}>
+        <div ref={stageEl} className="wk-stage">
+          {/* 掴んだ週（掴んだまま別の週へ移った間だけ。見えないまま残す）。入れ物の key は、掴んだ時の今の週の入れ物と同じにして、
+              掴んだカードを外さない */}
+          {frozen ? (
+            <WeekSlot key={`w${liveKey}`} frozen>
+              {renderWeek(frozen, true)}
+            </WeekSlot>
+          ) : null}
+          <WeekSlot key={`w${frozen ? liveKey + 1 : liveKey}`} frozen={false}>
+            {renderWeek(live, false)}
+          </WeekSlot>
+          <EdgeCueView key="cue" cue={cue} />
+        </div>
+      </ActiveDragContext.Provider>
     </DragDropProvider>
   )
 }
@@ -230,11 +411,11 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
 /**
  * 予定を掴めるようにする（item:{id}:{card|start|end}）。掴めない物（ロック中・その週に見えていない端。drag.ts の canGrab）は
  * dnd-kit に要素を渡さない。ロック中なら grabProps で掴もうとした時に揺らす（lockGesture.ts）。受けた表示と＞はこれを呼ばない
- * （CALENDAR-176）
+ * （CALENDAR-176）。week はその物を描いている週（掴んだ週になる）
  */
 export function useItemDrag({ item, handle, week }: { item: Item; handle: DragHandle; week: WeekCtx }): ItemDrag {
   const check = canGrab(item, handle, week)
-  const data = useMemo<DragData>(() => ({ item, handle }), [item, handle])
+  const data = useMemo<DragData>(() => ({ item, handle, week }), [item, handle, week])
   const draggable = useDraggable({ id: dragId(item.id, handle), data, disabled: !check.ok })
   const isDragging = draggable.isDragging
   const dndRef = draggable.ref
@@ -248,10 +429,12 @@ export function useItemDrag({ item, handle, week }: { item: Item; handle: DragHa
 
 /**
  * その日・その区分の段を落とせる所にする（day:{date}:{kind}。段階3のリストの行からも同じ所に落とす）。落とせるかは drag.ts の
- * dropPatch（落とせない日は dnd-kit が落とす先にしない）、印は掴んだ時の dropDays（D25）
+ * dropPatch（掴んだ週で決める。落とせない日は dnd-kit が落とす先にしない）、印は掴んだ時・週が替わった時の dropDays（D25）。
+ * 見えないまま残している掴んだ週の中では、落とす所にしない
  */
-export function useDayDrop({ date, kind, week }: { date: string; kind: ItemKind; week: WeekCtx }): DayDrop {
+export function useDayDrop({ date, kind }: { date: string; kind: ItemKind }): DayDrop {
   const store = useContext(ActiveDragContext)
+  const frozen = useContext(FrozenWeekContext)
   const marked = useSyncExternalStore(
     store?.subscribe ?? noSubscribe,
     () => store?.marks(date, kind) ?? false,
@@ -261,13 +444,13 @@ export function useDayDrop({ date, kind, week }: { date: string; kind: ItemKind;
   const accept = useCallback(
     (source: { data: unknown }) => {
       const d = asDragData(source.data)
-      return d !== null && dropPatch(d.item, d.handle, { date, kind }, week) !== null
+      return d !== null && dropPatch(d.item, d.handle, { date, kind }, d.week) !== null
     },
-    [date, kind, week],
+    [date, kind],
   )
-  const droppable = useDroppable({ id: dropId(date, kind), data, accept })
+  const droppable = useDroppable({ id: dropId(date, kind), data, accept, disabled: frozen })
   const hover = droppable.isDropTarget
   const ref = droppable.ref
-  const state: DropState = !marked ? 'none' : hover ? 'hover' : 'ok'
+  const state: DropState = !marked || frozen ? 'none' : hover ? 'hover' : 'ok'
   return useMemo(() => ({ ref, state }), [ref, state])
 }

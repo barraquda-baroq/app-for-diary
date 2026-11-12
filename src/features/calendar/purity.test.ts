@@ -1,7 +1,8 @@
 // 決まりの部分が画面・保存の仕組みに頼らないこと（docs/SPEC.md の 2.9。段階6のコネクタが src/domain をそのまま使う）。
-// src/domain の下と、画面の形を決める純粋な関数（src/features の *Model.ts・行き先・期間の表記・スワイプ・ロック中の掴み方）は、
-// React・画面の部品（src/ui。どれも React か画面に頼る）・状態の入れ物（zustand・src/store）・同期（src/sync・Firebase）・
-// 端末の保存（src/db・Dexie）・dnd-kit を読み込まない（型だけの読み込みも。モードや幅の区分の型は common/types.ts から読む）
+// src/domain の下と、画面の形を決める純粋な関数（src/features の *Model.ts・行き先・期間の表記・スワイプ・ロック中の掴み方・
+// 掴んでいる間の画面の端）は、React・画面の部品（src/ui。どれも React か画面に頼る）・状態の入れ物（zustand・src/store）・
+// 同期（src/sync・Firebase）・端末の保存（src/db・Dexie）・dnd-kit を読み込まない（型だけの読み込みも。モードや幅の区分の型は
+// common/types.ts から読む）
 import { describe, expect, it } from 'vitest'
 
 /** 確かめるファイル（[src/ からの場所, 中身]）。まだ無いファイルは読まれないだけ */
@@ -13,6 +14,7 @@ const PURE = import.meta.glob(
     './common/calendarHeading.ts',
     './common/swipe.ts',
     './week/dnd/gesture.ts',
+    './week/dnd/edges.ts',
     '!../../**/*.test.ts',
   ],
   { query: '?raw', import: 'default', eager: true },

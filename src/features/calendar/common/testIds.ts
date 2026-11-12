@@ -40,6 +40,8 @@ export const testIds = {
   weekReceived: (id: ID) => `week-received-${id}`,
   weekEdge: (id: ID) => `week-edge-${id}`,
   weekOverflow: (date: string, id: ID) => `week-overflow-${date}-${id}`,
+  /** 掴んでいる間の、左右の端の目印の帯（前・次の週へ。7.11） */
+  weekEdgeCue: 'week-edge-cue',
 
   // ----- デイリー（11.） -----
   dayHead: 'day-head',

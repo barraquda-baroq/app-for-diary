@@ -3,7 +3,7 @@ import type { HTMLAttributes } from 'react'
 import type { Handle } from '../../../../domain/drag'
 import type { ID, Item, ItemKind } from '../../../../domain/types'
 
-/** 見ている週（日曜・土曜の 'YYYY-MM-DD'。src/domain/drag.ts の WeekCtx と同じ形） */
+/** 週（日曜・土曜の 'YYYY-MM-DD'。src/domain/drag.ts の WeekCtx と同じ形） */
 export interface WeekCtx {
   from: string
   to: string
@@ -30,10 +30,14 @@ export interface DayDrop {
   state: DropState
 }
 
-/** 掴んだ物に持たせる値（dnd-kit の draggable の data）: 掴んだ時の予定（表示用に直した物）と掴む所 */
+/**
+ * 掴んだ物に持たせる値（dnd-kit の draggable の data）: 掴んだ時の予定（表示用に直した物）・掴む所・掴んだ週（掴んだまま前後の週へ
+ * 移っても、掴めるかは掴んだ週で決める。src/domain/drag.ts の dropPatch）
+ */
 export interface DragData {
   item: Item
   handle: DragHandle
+  week: WeekCtx
 }
 
 /** 落とす所に持たせる値（dnd-kit の droppable の data。段階3の Task List の行からも同じ所に落とすので、日と区分だけ。D52） */
@@ -53,7 +57,11 @@ export function asDragData(data: unknown): DragData | null {
   if (!data || typeof data !== 'object') return null
   const d = data as Partial<DragData>
   const handle = d.handle
-  return d.item && typeof d.item.id === 'string' && (handle === 'card' || handle === 'start' || handle === 'end')
+  return d.item &&
+    typeof d.item.id === 'string' &&
+    (handle === 'card' || handle === 'start' || handle === 'end') &&
+    typeof d.week?.from === 'string' &&
+    typeof d.week.to === 'string'
     ? (d as DragData)
     : null
 }

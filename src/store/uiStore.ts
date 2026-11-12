@@ -295,6 +295,11 @@ export interface CalendarUi {
   flash: FlashTarget | null
   /** 最後に押した・キーを打った時刻（ミリ秒。裏から戻って6時間たったら今日へ移す決まり 6.4 に使う。D31） */
   lastInteraction: number
+  /**
+   * ウィークリーで予定を掴んでいる間 true（week/dnd の WeekDnd が付け外しする）。掴んだまま左右の端に留まって週が替わる時は、ページを
+   * めくる動きを付けずにすぐ替える（期間を移る動きを付ける所は、これが true の間は動かさない。7.11）
+   */
+  dragging: boolean
 }
 
 export interface CalendarUiState extends CalendarUi {
@@ -312,13 +317,14 @@ export interface CalendarUiState extends CalendarUi {
   clearFlash: (seq: number) => void
   /** 押した・打った（at は省くと今） */
   touch: (at?: number) => void
+  setDragging: (on: boolean) => void
 }
 
 let flashSeq = 0
 
 /** 初めの状態（テストで戻す時にも使う） */
 export function initialCalendarUi(): CalendarUi {
-  return { viewed: null, offMode: false, flash: null, lastInteraction: Date.now() }
+  return { viewed: null, offMode: false, flash: null, lastInteraction: Date.now(), dragging: false }
 }
 
 export const useCalendarUi = create<CalendarUiState>((set, get) => ({
@@ -337,6 +343,7 @@ export const useCalendarUi = create<CalendarUiState>((set, get) => ({
     if (get().flash?.seq === seq) set({ flash: null })
   },
   touch: (at = Date.now()) => set({ lastInteraction: at }),
+  setDragging: (dragging) => set({ dragging }),
 }))
 
 /** その所を目立たせる時か */

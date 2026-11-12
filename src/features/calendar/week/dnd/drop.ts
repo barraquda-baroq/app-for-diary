@@ -16,7 +16,7 @@ import { actions } from '../../../../store/actions'
 import { attempt, notify, useCalendarUi } from '../../../../store/uiStore'
 import { prefersReducedMotion } from '../../../../ui/motion'
 import { flashKey, UNDO_LABEL } from '../../common/parts'
-import type { DragData, DropData, WeekCtx } from './types'
+import type { DragData, DropData } from './types'
 
 /** 落とした後に収まる時間（ms。src/styles.css の --dur-settle と同じ） */
 export const SETTLE_MS = 160
@@ -25,11 +25,12 @@ export const SETTLE_MS = 160
 export const SETTLE_BACK = { duration: SETTLE_MS, easing: 'ease-out' } as const
 
 /**
- * 掴んだ物（data）を落とす所（target）に落とす。動かした時は true（お知らせを出し、目立たせるキーを置いた）。
- * 元の日・落とせない日・決まりで断られた時は false（断られた時のエラーのお知らせは attempt が出す）
+ * 掴んだ物（data）を落とす所（target）に落とす（掴んだ週の外の日も。掴めるかは data の掴んだ週で決める）。動かした時は true
+ * （お知らせを出し、目立たせるキーを置いた）。元の日・落とせない日・決まりで断られた時は false（断られた時のエラーのお知らせは
+ * attempt が出す）
  */
-export function applyDrop(data: DragData, target: DropData, week: WeekCtx): boolean {
-  const { item, handle } = data
+export function applyDrop(data: DragData, target: DropData): boolean {
+  const { item, handle, week } = data
   const patch = dropPatch(item, handle, target, week)
   if (patch === null || patch === 'same') return false
   const prev = attempt(() => actions.moveItemDates(item.id, patch))

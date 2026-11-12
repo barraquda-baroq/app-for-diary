@@ -147,6 +147,17 @@ describe('掴むと、その週の落とせる日すべてに印（useDayDrop。
     expect(card.hasAttribute('data-dnd-dragging')).toBe(false)
   })
 
+  it('掴んでいる間は画面の状態 dragging が true（掴んだまま週が替わる時は、期間を移る動きを付けない印。7.11）。週の入れ物は1つ', async () => {
+    await renderWeek()
+    expect(useCalendarUi.getState().dragging).toBe(false)
+    await grab(screen.getByTestId(testIds.weekCard('one')))
+    expect(useCalendarUi.getState().dragging).toBe(true)
+    expect(document.querySelectorAll('.wk-slot')).toHaveLength(1)
+    await release()
+    expect(useCalendarUi.getState().dragging).toBe(false)
+    expect(document.querySelectorAll('.wk-slot.is-frozen')).toHaveLength(0)
+  })
+
   it('始点のカードは締め切り日まで、終点の●は開始日から（drag.ts の dropDays と同じ）', async () => {
     await renderWeek()
     await grab(screen.getByTestId(testIds.weekStart('multi')))
@@ -324,13 +335,13 @@ describe('掴めない物（CALENDAR-150・176・ITEMS-249）', () => {
 })
 
 describe('落とした時（applyDrop。7.11・3.9・FRAME-231）', () => {
-  const data = (id: string, handle: 'card' | 'start' | 'end' = 'card') => ({ item: getData().items[id], handle })
+  const data = (id: string, handle: 'card' | 'start' | 'end' = 'card') => ({ item: getData().items[id], handle, week: WEEK })
 
   it('動かし、「11/12（木）へ移しました［元に戻す］」を出し、移った先のカードを目立たせる。［元に戻す］で戻る', async () => {
     await renderWeek()
     let moved = false
     await act(async () => {
-      moved = applyDrop(data('one'), { date: '2026-11-12', kind: 'work' }, WEEK)
+      moved = applyDrop(data('one'), { date: '2026-11-12', kind: 'work' })
     })
     expect(moved).toBe(true)
     expect(getData().items.one.start).toBe('2026-11-12')
@@ -345,9 +356,9 @@ describe('落とした時（applyDrop。7.11・3.9・FRAME-231）', () => {
   it('始点は「開始日を…」、終点・〆は「締め切り日を…」', async () => {
     await renderWeek()
     await act(async () => {
-      applyDrop(data('multi', 'start'), { date: '2026-11-08', kind: 'work' }, WEEK)
-      applyDrop(data('multi', 'end'), { date: '2026-11-14', kind: 'work' }, WEEK)
-      applyDrop(data('quote'), { date: '2026-11-13', kind: 'work' }, WEEK)
+      applyDrop(data('multi', 'start'), { date: '2026-11-08', kind: 'work' })
+      applyDrop(data('multi', 'end'), { date: '2026-11-14', kind: 'work' })
+      applyDrop(data('quote'), { date: '2026-11-13', kind: 'work' })
     })
     expect(useToasts.getState().toasts.map((t) => t.message)).toEqual([
       '開始日を 11/8（日）にしました',
@@ -360,18 +371,18 @@ describe('落とした時（applyDrop。7.11・3.9・FRAME-231）', () => {
 
   it('元の日・違う区分・ロック中は何もしない（知らせも出さない）', async () => {
     await renderWeek()
-    expect(applyDrop(data('one'), { date: '2026-11-10', kind: 'work' }, WEEK)).toBe(false)
-    expect(applyDrop(data('one'), { date: '2026-11-12', kind: 'private' }, WEEK)).toBe(false)
-    expect(applyDrop(data('locked'), { date: '2026-11-13', kind: 'work' }, WEEK)).toBe(false)
+    expect(applyDrop(data('one'), { date: '2026-11-10', kind: 'work' })).toBe(false)
+    expect(applyDrop(data('one'), { date: '2026-11-12', kind: 'private' })).toBe(false)
+    expect(applyDrop(data('locked'), { date: '2026-11-13', kind: 'work' })).toBe(false)
     expect(useToasts.getState().toasts).toEqual([])
     expect(useCalendarUi.getState().flash).toBeNull()
   })
 
   it('掴んだ後にロックされていた時は、決まりのエラーを知らせて動かさない', async () => {
     await renderWeek()
-    const stale = { item: { ...getData().items.locked, locked: false }, handle: 'card' as const }
+    const stale = { item: { ...getData().items.locked, locked: false }, handle: 'card' as const, week: WEEK }
     await act(async () => {
-      expect(applyDrop(stale, { date: '2026-11-13', kind: 'work' }, WEEK)).toBe(false)
+      expect(applyDrop(stale, { date: '2026-11-13', kind: 'work' })).toBe(false)
     })
     expect(useToasts.getState().toasts).toMatchObject([{ kind: 'error', message: 'ロック中の予定は動かせません。' }])
     expect(getData().items.locked.start).toBe('2026-11-12')
@@ -380,7 +391,7 @@ describe('落とした時（applyDrop。7.11・3.9・FRAME-231）', () => {
   it('［元に戻す］の前に予定が消えた（ほかの端末でゴミ箱へ移したなど）時は、戻せない旨を知らせる', async () => {
     await renderWeek()
     await act(async () => {
-      applyDrop(data('one'), { date: '2026-11-12', kind: 'work' }, WEEK)
+      applyDrop(data('one'), { date: '2026-11-12', kind: 'work' })
     })
     const [toast] = useToasts.getState().toasts
     await act(async () => {
@@ -403,8 +414,10 @@ describe('id と受け渡す値（D52）', () => {
 
   it('知らない data は読まない（段階3で別の物が来ても読み違えない）', () => {
     const item = mkItem()
-    expect(asDragData({ item, handle: 'start' })).toEqual({ item, handle: 'start' })
-    expect(asDragData({ item, handle: 'row' })).toBeNull()
+    expect(asDragData({ item, handle: 'start', week: WEEK })).toEqual({ item, handle: 'start', week: WEEK })
+    expect(asDragData({ item, handle: 'row', week: WEEK })).toBeNull()
+    // 掴んだ週の無い物は読まない（掴めるかは掴んだ週で決める）
+    expect(asDragData({ item, handle: 'start' })).toBeNull()
     expect(asDragData(null)).toBeNull()
     expect(asDropData({ date: '2026-11-12', kind: 'work', extra: 1 })).toEqual({ date: '2026-11-12', kind: 'work' })
     expect(asDropData({ date: '2026-11-12', kind: 'other' })).toBeNull()

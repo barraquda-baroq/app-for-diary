@@ -108,6 +108,11 @@ export interface CalendarNav {
   /** ［今日］: 今日を含む期間へ（置き換える。見ている日は今日。FRAME-064） */
   goToday: () => void
   /**
+   * 今のモードのまま、その日を含む期間へ（置き換える。見ている日はその日）。ウィークリーで掴んだまま前後の週へ移った後、落とさずに
+   * やめた時に、掴んだ週へ戻す（7.11）
+   */
+  goTo: (date: string) => void
+  /**
    * その日の月のマンスリーへ（見ている日はその日。7.12）。イヤーの日・月の見出しからはモードが替わるので積み、マンスリーの前後の月の
    * 日からは同じモードの中で期間を移るだけなので［›］［‹］と同じく置き換える（履歴に積むのはモードを替えた時。3.1・FRAME-014・016）
    */
@@ -157,6 +162,7 @@ export function useCalendarNav(): CalendarNav {
         const { mode, today } = current()
         go(mode, today, true)
       },
+      goTo: (date) => go(current().mode, date, true),
       openMonth: (date) => go('month', date),
       openDay: (date, flash) => {
         if (flash) ui().flashTarget(`day-area:${flash}`, `day-events:${flash}`)
