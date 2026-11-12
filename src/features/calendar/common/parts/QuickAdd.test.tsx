@@ -11,7 +11,7 @@ import { quickDraftKey, readLocal } from '../../../../store/localDrafts'
 import { useToasts } from '../../../../store/uiStore'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
 import { testIds } from '../testIds'
-import { BLUR_SETTLE_MS, CLICK_WAIT_MS, QuickAdd, type QuickAddProps } from './QuickAdd'
+import { BLUR_SETTLE_MS, CLICK_WAIT_MS, QuickAdd, quickAddDragStarted, type QuickAddProps } from './QuickAdd'
 
 setupCalendarTests()
 afterEach(() => {
@@ -230,13 +230,20 @@ describe('外を押した時は、押し終わってから閉じる（開発。�
     expect(onClose).toHaveBeenCalledWith('press')
   })
 
-  it('pointercancel（なぞってスクロールした）ですぐ閉じる', async () => {
-    const { onClose } = await open()
+  it('pointercancel（指でなぞってスクロールした）は外を押したとは扱わず、フォーカスが入力欄に残っていれば閉じない。押した物へフォーカスが移っていれば、すぐ閉じる', async () => {
+    const { input, onClose } = await open()
     const outside = screen.getByTestId('outside')
     fireEvent.pointerDown(outside)
+    fireEvent.pointerCancel(outside)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(input)
+    // マウスで押した物へフォーカスが移った後の pointercancel（押した物をつまんで動かした）は、押し終わった時と同じ
+    fireEvent.pointerDown(outside)
+    act(() => outside.focus())
     expect(onClose).not.toHaveBeenCalled()
     fireEvent.pointerCancel(outside)
     expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
   })
 
   it('離しても click が来ない時（長押し・ドラッグ）は、離してから CLICK_WAIT_MS で閉じる', async () => {
@@ -381,6 +388,38 @@ describe('入力欄の外を押すと、字があれば足してから閉じる�
     await vi.waitFor(() => expect(readLocal(quickDraftKey('2026-11-10', 'work'))).toBe('見積もりの提出'))
   })
 
+  it('［元に戻す］の時に、同じ日・同じ区分の入力欄が空で開いていれば、戻した字をそこにも出す（続けて打つと、その後ろに足される）', async () => {
+    vi.spyOn(actions, 'trashItem').mockResolvedValue('entry-1')
+    const user = userEvent.setup()
+    const first = await open()
+    await user.type(first.input, '見積もりの提出')
+    await user.click(screen.getByTestId('outside'))
+    first.unmount()
+    // 同じ所を開き直した（書きかけは消えているので空）
+    const again = await open()
+    expect(again.input.value).toBe('')
+    await act(async () => toasts()[0].action?.run())
+    await vi.waitFor(() => expect(again.input.value).toBe('見積もりの提出'))
+    await user.type(again.input, 'を急ぐ')
+    expect(readLocal(quickDraftKey('2026-11-10', 'work'))).toBe('見積もりの提出を急ぐ')
+  })
+
+  it('［元に戻す］の時に、開いている入力欄に字があれば、そちらを残す', async () => {
+    vi.spyOn(actions, 'trashItem').mockResolvedValue('entry-1')
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('使えない')
+    })
+    const user = userEvent.setup()
+    const first = await open()
+    await user.type(first.input, '一件目')
+    await user.click(screen.getByTestId('outside'))
+    first.unmount()
+    const again = await open()
+    await user.type(again.input, '打っている字')
+    await act(async () => toasts()[0].action?.run())
+    expect(again.input.value).toBe('打っている字')
+  })
+
   it('［元に戻す］の時に、その日・その区分に新しい書きかけがあれば上書きしない。ゴミ箱へ移せなかった時は書きかけに戻さない', async () => {
     const trash = vi.spyOn(actions, 'trashItem').mockResolvedValue('entry-1')
     const user = userEvent.setup()
@@ -414,25 +453,38 @@ describe('入力欄の外を押すと、字があれば足してから閉じる�
     expect(toasts()).toHaveLength(0)
   })
 
-  it('pointercancel（なぞってスクロールした）・離して click が来ない時（長押し）も、足して閉じる', async () => {
-    const { input, onClose, unmount } = await open()
-    typeText(input, '一件目')
-    fireEvent.pointerDown(screen.getByTestId('outside'))
-    fireEvent.pointerCancel(screen.getByTestId('outside'))
-    expect(onClose).toHaveBeenCalledWith('press')
-    expect(items().map((i) => i.title)).toEqual(['一件目'])
-    unmount()
-
-    const again = await open()
+  it('離して click が来ない時（長押し）も、離してから CLICK_WAIT_MS で足して閉じる', async () => {
+    const { input, onClose } = await open()
     fakeTimers()
-    typeText(again.input, '二件目')
+    typeText(input, '二件目')
     fireEvent.pointerDown(screen.getByTestId('outside'))
     fireEvent.pointerUp(screen.getByTestId('outside'))
     advance(CLICK_WAIT_MS - 1)
     expect(items()).toHaveLength(0)
     advance(1)
-    expect(again.onClose).toHaveBeenCalledWith('press')
+    expect(onClose).toHaveBeenCalledWith('press')
     expect(items().map((i) => i.title)).toEqual(['二件目'])
+  })
+
+  it('外を押した指でなぞってスクロールした（pointercancel。フォーカスは入力欄のまま）時は、足さず閉じない。その後に外を押すと足して閉じる', async () => {
+    const { input, onClose } = await open()
+    typeText(input, 'まだ打っている途')
+    const outside = screen.getByTestId('outside')
+    fireEvent.pointerDown(outside)
+    fireEvent.pointerCancel(outside)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
+    expect(screen.getByTestId(testIds.quickAddInput)).toBe(input)
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('まだ打っている途')
+    // 続けて打ってから外を軽く押す: ふつうに足して閉じる
+    typeText(input, 'まだ打っている途中')
+    fireEvent.pointerDown(outside)
+    fireEvent.click(outside)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
+    expect(items().map((i) => i.title)).toEqual(['まだ打っている途中'])
   })
 
   it('押し終わる前に画面が外した（なぞって前後の日・週へ移った）時も、字があれば元の日に足す（閉じたとは伝えない）', async () => {
@@ -610,16 +662,85 @@ describe('足さない時・閉じない時（22. の段階2の終わりの確�
     expect(screen.getByTestId(testIds.quickAddInput)).toBe(input)
   })
 
-  it('日本語の変換中に外れた時は、足さず閉じない（変換を決める Enter・空の件名と同じく足さない）', async () => {
+  it('外を押してそのままドラッグした（quickAddDragStarted）時は、離した後に足さずに閉じ（drag）、書きかけを残す。お知らせも出さない', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    typeText(input, 'ドラッグ中の字')
+    const card = screen.getByTestId('outside')
+    fireEvent.pointerDown(card)
+    act(() => quickAddDragStarted())
+    pageFocused(true)
+    act(() => input.blur())
+    // ドラッグを Esc でやめた（Esc はドラッグへ行き、入力欄には来ない）
+    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.pointerUp(card)
+    advance(CLICK_WAIT_MS)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('drag')
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
+    expect(localStorage.getItem(quickDraftKey('2026-11-10', 'work'))).toBe('ドラッグ中の字')
+  })
+
+  it('ドラッグしている間に画面が外した（週が替わった）時も、足さない。ドラッグの後の次の押した分は、ふつうに足す', async () => {
+    const first = await open()
+    typeText(first.input, 'ドラッグ中の字')
+    fireEvent.pointerDown(screen.getByTestId('outside'))
+    act(() => quickAddDragStarted())
+    first.unmount()
+    fireEvent.click(document.body)
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
+
+    // 押していない時のドラッグの知らせは、何もしない。次の外を押した分は足す
+    const again = await open()
+    act(() => quickAddDragStarted())
+    expect(again.input.value).toBe('ドラッグ中の字')
+    fireEvent.pointerDown(screen.getByTestId('outside'))
+    fireEvent.click(screen.getByTestId('outside'))
+    expect(again.onClose).toHaveBeenCalledWith('press')
+    expect(items().map((i) => i.title)).toEqual(['ドラッグ中の字'])
+  })
+})
+
+describe('日本語の変換を決める前に外れた時も、見えている字で足す（22. の段階2の終わりの確かめ）', () => {
+  it('変換中に外れて、変換の終わり（compositionend）が後から来ても、足して閉じる（iPhone で変換を決めずに✓を押した）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, '会議')
+    keyboardDone(input)
+    fireEvent.compositionEnd(input)
+    advance(BLUR_SETTLE_MS)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('blur')
+    expect(items().map((i) => i.title)).toEqual(['会議'])
+  })
+
+  it('変換の終わりが来ないまま外れた時も、見えている字で足して閉じる', async () => {
     const { input, onClose } = await open()
     fakeTimers()
     fireEvent.compositionStart(input)
     typeText(input, 'かいぎ')
     keyboardDone(input)
-    advance(BLUR_SETTLE_MS * 3)
-    expect(onClose).not.toHaveBeenCalled()
-    expect(items()).toHaveLength(0)
-    expect(localStorage.getItem(quickDraftKey('2026-11-10', 'work'))).toBe('かいぎ')
+    advance(BLUR_SETTLE_MS)
+    expect(onClose).toHaveBeenCalledWith('blur')
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+  })
+
+  it('変換中に［足す］を押して足した後も、キーボードの✓で足して閉じる（変換中のままにならない）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    fireEvent.click(button())
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    expect(input.value).toBe('')
+    typeText(input, 'next')
+    keyboardDone(input)
+    advance(BLUR_SETTLE_MS)
+    expect(onClose).toHaveBeenCalledWith('blur')
+    expect(items().map((i) => i.title)).toEqual(['かいぎ', 'next'])
   })
 })
 

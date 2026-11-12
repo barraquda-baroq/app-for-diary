@@ -709,6 +709,32 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(page.locator('.toast', { hasText: '『手紙を出す』を足しました' })).toBeVisible()
   })
 
+  test('すばやく足す（指）: 字を打ったまま、外から指でなぞって週をスクロールしても、足さず閉じない（キーボードを出したまま見て、続けて打てる。12.1）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const week = page.getByTestId('view-week')
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await input.fill('まだ打っている途')
+    // 入力欄の外（下のかたまりのカード）から上へなぞって、週の中をスクロールする
+    const top = await week.evaluate((e) => e.scrollTop)
+    await touchSwipe(page, page.getByTestId(`week-card-${I.weekly}`), 0, -200, { steps: 10, durationMs: 300 })
+    await expect.poll(() => week.evaluate((e) => e.scrollTop)).toBeGreaterThan(top)
+    await page.waitForTimeout(400)
+    await expect(input).toBeVisible()
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('まだ打っている途')
+    expect(await itemByTitle(page, 'まだ打っている途')).toBeNull()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    // 続けて打ってから外を軽く押すと、足して閉じる
+    await input.fill('まだ打っている途中')
+    await page.locator('.wk-vtags').tap()
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    expect(await itemByTitle(page, 'まだ打っている途中')).toMatchObject({ start: '2026-11-10', kind: 'private' })
+  })
+
   test('すばやく足すを開いたまま下のかたまりの予定を押すと、押した予定の詳細が開く（入力欄が閉じて並びが上へずれても、別の予定にならない）', async ({
     page,
   }) => {
@@ -729,12 +755,18 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
 })
 
 test.describe('すばやく足す（iPhone）', { tag: ['@ios'] }, () => {
-  test('字を打ったまま入力欄の外を押すと、足してから閉じて「『件名』を足しました」（12.1・22. の段階2の終わりの確かめ）', async ({
+  test('［足す］で足して開いたまま。字を打ったまま入力欄の外を押すと、足してから閉じて「『件名』を足しました」（12.1・22. の段階2の終わりの確かめ）', async ({
     page,
   }) => {
     await openWeek(page)
     await page.getByTestId('week-add-2026-11-10-private').tap()
     const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    // ［足す］: 足して開いたまま（入力欄のフォーカスが残る。mousedown を止めている。Safari はボタンへフォーカスを移さない）
+    await input.fill('本を返す')
+    await page.getByTestId('quick-add-button').tap()
+    await expect.poll(() => itemByTitle(page, '本を返す')).toMatchObject({ start: '2026-11-10', kind: 'private' })
+    await expect(input).toHaveValue('')
     await expect(input).toBeFocused()
     await input.fill('花を買う')
     // 押しても何も起きない所（上に固定した段の名札の行）を押す

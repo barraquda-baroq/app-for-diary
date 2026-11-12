@@ -406,14 +406,16 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     await noToast(page)
   })
 
-  test('〆のカード（Task List 生まれ）を動かすと締め切り日が変わる。完了した予定も動かせる。すばやく足すを開いたままでも動かせる', async ({
+  test('〆のカード（Task List 生まれ）を動かすと締め切り日が変わる。完了した予定も動かせる。すばやく足すを開いたままでも動かせる（打った字は足さない）', async ({
     page,
   }) => {
     await openWeek(page)
-    // すばやく足すを開いている間に掴んでも、離すまで入力欄は閉じない（並びが動かない。QuickAdd）。離した後に閉じる
+    // すばやく足すを開いている間に掴んでも、離すまで入力欄は閉じない（並びが動かない。QuickAdd）。離した後に、打った字を足さずに
+    // 閉じる（お知らせは落とした時の物だけ。書きかけは残る。12.1・7.11）
     await page.getByTestId('week-add-2026-11-12-work').click()
     const input = page.getByTestId('quick-add-input')
     await expect(input).toBeVisible()
+    await input.fill('ドラッグ中の字')
     const drag = await startMouseDrag(page, await grabPoint(card(page, I.quote)))
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-13')))
     await expect(input).toBeVisible()
@@ -421,6 +423,11 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     await drag.drop()
     await expect(input).toHaveCount(0)
     await expect(toast(page, '締め切り日を 11/13（金）にしました')).toBeVisible()
+    await expect(page.locator('.toast')).toHaveCount(1)
+    expect(
+      await page.evaluate(() => Object.values(window.__ds.getData().items).some((it) => it.title === 'ドラッグ中の字')),
+    ).toBe(false)
+    expect(await page.evaluate(() => localStorage.getItem('diary-studio:draft:quick:2026-11-12:work'))).toBe('ドラッグ中の字')
     await page.evaluate(() => window.__ds.flushNow())
     expect(await rawItem(page, I.quote)).toMatchObject({ origin: 'list', start: null, due: '2026-11-13' })
     await expect(cellL(page, 'work', '2026-11-13').getByTestId(`week-card-${I.quote}`)).toBeVisible()
@@ -671,6 +678,7 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await page.getByTestId('week-add-2026-11-12-work').click()
     const input = page.getByTestId('quick-add-input')
     await expect(input).toBeFocused()
+    await input.fill('ドラッグ中の字')
     // スマホでは入力欄がキーボードの下に隠れることがある。ここでは押さずに（閉じずに）入力欄を見えない所へずらしておく
     await week.evaluate((e) => {
       e.scrollTop = 0
@@ -689,6 +697,11 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await expect(toast(page, '11/9（月）へ移しました')).toBeVisible()
     expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-09')
     await expect(input).toHaveCount(0)
+    // 打った字は足さない（お知らせは落とした時の物だけ。12.1・7.11）
+    await expect(page.locator('.toast')).toHaveCount(1)
+    expect(
+      await page.evaluate(() => Object.values(window.__ds.getData().items).some((it) => it.title === 'ドラッグ中の字')),
+    ).toBe(false)
   })
 
   test('ロック中のカードを長押しすると揺れるだけ（浮かず、振動せず、知らせも詳細も出ない）', async ({ page }) => {

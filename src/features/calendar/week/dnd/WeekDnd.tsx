@@ -6,7 +6,8 @@
 // - カードの中の点線の丸・AI の札の上から押しても掴める（どれもカードの入れ物の中。dnd-kit の初めの決まりは、中のボタンからは掴まない）
 // - 掴むと、その週の落とせる日すべてに印（地 --accent-soft と 1px の --accent の点線、上にある日は線。D25・CALENDAR-166）。
 //   区分は掴んだ物と同じ段だけ（CALENDAR-165・ITEMS-098）。指で掴んだ時は 15ms 振動（CALENDAR-163）。文字を打っている欄
-//   （すばやく足す）からはフォーカスを外す（指で動かし始めた時に、週がその欄の所へ飛ばないように）
+//   （すばやく足す）からはフォーカスを外す（指で動かし始めた時に、週がその欄の所へ飛ばないように）。開いているすばやく足すには
+//   ドラッグを始めたと伝える（離した後に、打った字を足さずに閉じる。12.1）
 // - 浮いた見た目は dnd.css（1.03倍・--shadow-lift・0.95・120ms。G1）。読み上げの案内（英語）は出さない（Accessibility を外す。G2）
 // - 画面の端（60px）に近づくと、ウィークリーのスクロールの中だけを自動でスクロールする（ページは動かさない。G3・G4・CALENDAR-167・
 //   ITEMS-099）
@@ -36,6 +37,7 @@ import {
   type RefObject,
 } from 'react'
 import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
+import { quickAddDragStarted } from '../../common/parts/QuickAdd'
 import type { Item, ItemKind } from '../../../../domain/types'
 import { vibrate15 } from '../../../../ui/motion'
 import { scrollIntoViewWithin, toastInset } from '../../../../ui/scrollWithin'
@@ -159,7 +161,8 @@ function limitAutoScroll(manager: DragDropManager, week: RefObject<HTMLElement |
 /**
  * 掴んだ時に、文字を打っている欄（すばやく足すの入力欄など）からフォーカスを外す。指で掴むとフォーカスは欄に残ったままで、Chromium は
  * 指を動かし始めた時に、その欄を見える所へ出そうと週をスクロールする（欄が見えていない時は、掴んだカードの下の日が飛ぶ）。マウスは
- * 押した時にフォーカスがカードへ移るので同じになる。欄は閉じない（すばやく足すは、押し終わってから閉じる。QuickAdd）
+ * 押した時にフォーカスがカードへ移るので同じになる。欄は閉じない（すばやく足すは、押し終わってから、打った字を足さずに閉じる。
+ * quickAddDragStarted・QuickAdd・12.1）
  */
 function blurTextField(): void {
   const el = document.activeElement
@@ -181,6 +184,7 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
       const days = dropDays(data.item, data.handle, week)
       store.set({ kind: data.item.kind, days: new Set(days.keys()) })
       blurTextField()
+      quickAddDragStarted()
       const activator = event.operation.activatorEvent
       if (activator instanceof PointerEvent && pointerKind(activator.pointerType) === 'touch') vibrate15()
       limitAutoScroll(manager, scroller, event.operation.source?.element)

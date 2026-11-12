@@ -643,19 +643,18 @@ describe('「＋」→ すばやく足す（12.1・ITEMS-068・D44）', () => {
     expect(sheetOf(router.state.location.state)).toEqual({ kind: 'detail', id: 'meet' })
   })
 
-  it('押した後に click が来ない時（なぞってスクロールした・長押しした）も閉じる。Esc はすぐ閉じる', async () => {
+  it('押した後に click が来ない時（長押しした）も閉じる。なぞってスクロールした時（フォーカスは入力欄のまま）は閉じない。Esc はすぐ閉じる', async () => {
     const user = userEvent.setup()
     await renderWeek({ width: 'S', area: { width: 341, height: 600 } })
     const add = () => screen.getByTestId(testIds.weekAdd('2026-11-09', 'work'))
     const card = screen.getByTestId(testIds.weekCard('meet'))
-    // なぞってスクロールした（ブラウザが pointercancel）
+    // なぞってスクロールした（ブラウザが pointercancel。指でなぞってもフォーカスは入力欄に残る）: 外を押したとは扱わない（12.1）
     await user.click(add())
     fireEvent.pointerDown(card)
     expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
     fireEvent.pointerCancel(card)
-    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(document.activeElement).toBe(screen.getByTestId(testIds.quickAddInput))
     // 離しても click が来ない（長押し）: 少し待って閉じる
-    await user.click(add())
     fireEvent.pointerDown(card)
     fireEvent.pointerUp(card)
     expect(screen.getByTestId(testIds.quickAddInput)).toBeTruthy()
