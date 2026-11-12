@@ -38,6 +38,40 @@ function setVisibility(state: 'visible' | 'hidden') {
   })
 }
 
+/** 指の touch の出来事を to（初めは document）へ送る（jsdom には Touch が無いので、座標の入った物を持たせる） */
+function touch(type: string, x: number, y: number, down: boolean, to: EventTarget = document) {
+  const ev = new Event(type, { bubbles: true })
+  const list = [{ clientX: x, clientY: y }]
+  Object.defineProperty(ev, 'touches', { value: down ? list : [] })
+  Object.defineProperty(ev, 'changedTouches', { value: list })
+  to.dispatchEvent(ev)
+}
+
+/** 指の PointerEvent（pointerType: touch・pointerId: 7） */
+const touchPointer = (type: string, x: number, y: number) =>
+  new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y })
+
+/**
+ * iPhone（WebKit）の払い: 要素の上で押し、初めの点まで pointer で動かしたところでブラウザが指を取り（pointercancel）、その後は
+ * touch の出来事だけが来て、最後の点で離す（touchend）
+ */
+function iosFlick(el: Element, from: [number, number], first: [number, number], rest: [number, number][]) {
+  act(() => {
+    fireEvent(el, touchPointer('pointerdown', ...from))
+    document.dispatchEvent(touchPointer('pointermove', ...first))
+    document.dispatchEvent(touchPointer('pointercancel', ...first))
+    for (const [x, y] of rest) touch('touchmove', x, y, true)
+    touch('touchend', ...rest[rest.length - 1], false)
+  })
+}
+
+/** 親指の弧の点（a から b へ n 回。横は同じ割合で進み、縦は進んだ割合の2乗で逸れる。a は含めない） */
+const thumbArc = (a: [number, number], b: [number, number], n: number): [number, number][] =>
+  Array.from({ length: n }, (_, i) => {
+    const t = (i + 1) / n
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t * t]
+  })
+
 /** 指（pointerType）で要素の上をなぞる（押す → 離す） */
 function drag(el: Element, from: [number, number], to: [number, number], pointerType = 'touch', cancel = false) {
   act(() => {
@@ -219,20 +253,10 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
   it('初めに少し縦へ動いてブラウザに取られた（pointercancel）指も、横に払い続けて離せば移る（touch の出来事で追う）。端末が取った指（touchcancel）・縦のスクロールは移らない', async () => {
     const { router } = await renderAt('/week/2026-11-08', { width: 'S' })
     const body = screen.getByTestId('calendar-body')
-    /** touch の出来事（jsdom には Touch が無いので、座標の入った物を持たせる） */
-    const touch = (type: string, x: number, y: number, down: boolean) => {
-      const ev = new Event(type, { bubbles: true })
-      const list = [{ clientX: x, clientY: y }]
-      Object.defineProperty(ev, 'touches', { value: down ? list : [] })
-      Object.defineProperty(ev, 'changedTouches', { value: list })
-      document.dispatchEvent(ev)
-    }
     const gesture = (moves: [number, number][], end: 'touchend' | 'touchcancel') =>
       act(() => {
-        const pe = (type: string, x: number, y: number) =>
-          new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y })
-        fireEvent(body, pe('pointerdown', 360, 500))
-        document.dispatchEvent(pe('pointermove', 350, 488))
+        fireEvent(body, touchPointer('pointerdown', 360, 500))
+        document.dispatchEvent(touchPointer('pointermove', 350, 488))
         document.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerType: 'touch', pointerId: 7 }))
         for (const [x, y] of moves) touch('touchmove', x, y, true)
         const [x, y] = moves[moves.length - 1]
@@ -248,7 +272,7 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
     )
     expect(router.state.location.pathname).toBe('/week/2026-11-15')
     expect(router.state.historyAction).toBe('REPLACE')
-    // iPhone の画面の端からの「戻る」の身振りなど、端末が指を取った時
+    // アプリの切り替えなど、端末が指を取った時
     gesture(
       [
         [300, 485],
@@ -264,6 +288,69 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
       ],
       'touchend',
     )
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+  })
+
+  it('iPhone（WebKit）の払い: 少しでも縦に揺れると 12px ほどの所でブラウザに取られる。その後の親指の弧（押した所と離した所で 34°）も、取られていない時と同じく 45° まで移る', async () => {
+    const { router } = await renderAt('/week/2026-11-08', { width: 'S' })
+    const body = screen.getByTestId('calendar-body')
+    // 右の端の 30px 内側から 300px 左へ、終わりが 200px 上。12px 動いて 0.5px 縦に揺れた所で取られる
+    iosFlick(body, [360, 500], [348, 499.5], thumbArc([360, 500], [60, 300], 10))
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+    expect(router.state.historyAction).toBe('REPLACE')
+    // 左から右へ払っても同じ（前の週へ）
+    iosFlick(body, [30, 500], [42, 499.5], thumbArc([30, 500], [330, 300], 10))
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // 全体が 45° を超える弧は移らない
+    iosFlick(body, [360, 500], [348, 499.5], thumbArc([360, 500], [160, 285], 8))
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+  })
+
+  it('払っている間に押した要素が描き直しで外れても（touch の出来事は外れた要素へ送られ、document まで伝わらない）、離すまで追って移る', async () => {
+    const { router } = await renderAt('/week/2026-11-08', { width: 'S' })
+    const cell = document.createElement('div')
+    screen.getByTestId('calendar-body').appendChild(cell)
+    act(() => {
+      fireEvent(cell, touchPointer('pointerdown', 360, 500))
+      document.dispatchEvent(touchPointer('pointermove', 348, 499.5))
+      document.dispatchEvent(touchPointer('pointercancel', 348, 499.5))
+      cell.remove()
+      for (const [x, y] of thumbArc([360, 500], [60, 470], 10)) touch('touchmove', x, y, true, cell)
+      touch('touchend', 60, 470, false, cell)
+    })
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+  })
+
+  it('離す出来事が来ないまま残った指は、次に指が触れた時に捨てる（touchcancel が pointercancel より先に来た指・touch の出来事が途中で来なくなった指。後の別の指を前の押した所から測らない）', async () => {
+    const { router } = await renderAt('/week/2026-11-08', { width: 'S' })
+    const body = screen.getByTestId('calendar-body')
+    /** カレンダーの外（document.body）で同じ番号の指が押し、横に払って離す */
+    const outside = () =>
+      act(() => {
+        fireEvent(document.body, touchPointer('pointerdown', 380, 495))
+        touch('touchmove', 300, 495, true)
+        touch('touchmove', 60, 495, true)
+        touch('touchend', 60, 495, false)
+      })
+    // touchcancel が先に来て、その後に pointercancel
+    act(() => {
+      fireEvent(body, touchPointer('pointerdown', 360, 500))
+      document.dispatchEvent(touchPointer('pointermove', 350, 499))
+      touch('touchcancel', 350, 499, false)
+      document.dispatchEvent(touchPointer('pointercancel', 350, 499))
+    })
+    outside()
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // 取られた後、touch の出来事が来なくなった（iPhone の画面の端からの「戻る」の身振りが勝った時など）
+    act(() => {
+      fireEvent(body, touchPointer('pointerdown', 360, 500))
+      document.dispatchEvent(touchPointer('pointermove', 350, 499))
+      document.dispatchEvent(touchPointer('pointercancel', 350, 499))
+    })
+    outside()
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // その後のなぞりは今までどおり
+    drag(body, [300, 400], [100, 400])
     expect(router.state.location.pathname).toBe('/week/2026-11-15')
   })
 

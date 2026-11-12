@@ -7,6 +7,9 @@
 // 縦のスクロールは邪魔しない: 付けている間は CSS の touch-action: pan-y（frame.css の .cal.is-swipe）で、縦はブラウザに
 // スクロールさせ、横の動きだけを受け取る。初めの動きが縦の指はブラウザが縦のスクロールとして取り（pointercancel）、数えない。
 // 横に払い始めた（初めの動きが縦と決まっていない）指をブラウザが取った時は、離すまで touch の出来事で追う（swipe.ts）。
+// iPhone（WebKit）は pan-y の所で指が少しでも縦に動くと指を取るので、iPhone の払いはほとんどがこの道を通る（その時は、指の縦の
+// 動きの分だけページ・週の中も縦に送られる。止めると縦のスクロールも止まるので止めない）。touch の出来事は document と押した要素の
+// 両方で聞く（押した要素が描き直しで外れると、touch の出来事は外れた要素へ送られ、document まで伝わらない）。
 // 長押ししてから動かした指（ドラッグの掴み方）はなぞったとみなさない。決まり（60px・30°・弧は 45°・400ms・8px・24px）は swipe.ts。
 // なぞって移った後 300ms の間にカレンダーの中へ来た click は打ち消す（払った指で、離した所のボタンを押さない）。
 // なぞったとみなさない時（ウィークリーでなぞれるようにした時に足した。22. の段階2の終わりの確かめ。どのモードでも同じ）:
@@ -14,7 +17,9 @@
 // - 文字を打っている間（すばやく足すの入力欄などにフォーカスがある。押した所が入力欄の時も）
 // - 横に動かす物の上から押した時（入力欄・横にスクロールできる所。今の S・M の並べ方には、カレンダーの中に横にスクロールする所は
 //   無いが、並べ方を替えた時のために入れておく）
-// - ほかの指が触れた時（拡大・縮小）・端末が指を取った時（touchcancel。iPhone の画面の端からの「戻る」の身振りなど）
+// - ほかの指が触れた時（拡大・縮小）・端末が指を取った時（touchcancel。アプリの切り替え・通知を引き出す時など）。iPhone の画面の
+//   端からの「戻る」「進む」の身振りは、ページの指の出来事より先に端末が取る（指の出来事が途中で来なくなるか touchcancel が来る。
+//   どちらでも数えない。離す出来事が来ないまま残った指は、次に指が触れた時に捨てる）
 import { useEffect, useRef, type RefObject } from 'react'
 import { dragActive } from './pageTurnDom'
 import { endSwipe, moveSwipe, startSwipe, SWIPE_CLICK_GUARD_MS, takeSwipe, type SwipeTrack } from './swipe'
@@ -54,6 +59,21 @@ export function useSwipe(ref: RefObject<HTMLElement | null>, enabled: boolean, o
     let id = -1
     /** この時刻（performance.now()）までにカレンダーの中へ来た click は打ち消す（なぞって移った直後） */
     let guardUntil = 0
+    /**
+     * 押した要素。touch の出来事は、押した要素が描き直しで外れた後も外れた要素へ送られ、document まで伝わらない（前の払いで期間が
+     * 替わる途中に次の払いを始めた時など）ので、ここでも聞く。document と両方に来た時の2回目は何もしない（同じ点の動き・離した後）
+     */
+    let pressed: EventTarget | null = null
+    const listenPressed = (target: EventTarget | null) => {
+      if (pressed === target) return
+      pressed?.removeEventListener('touchmove', touchMove as EventListener)
+      pressed?.removeEventListener('touchend', touchEnd as EventListener)
+      pressed?.removeEventListener('touchcancel', touchCancel)
+      pressed = target
+      pressed?.addEventListener('touchmove', touchMove as EventListener, { passive: true })
+      pressed?.addEventListener('touchend', touchEnd as EventListener)
+      pressed?.addEventListener('touchcancel', touchCancel)
+    }
 
     /** 離した所で決める（移るなら移って、続く click を打ち消す） */
     const finish = (x: number, y: number) => {
@@ -73,10 +93,12 @@ export function useSwipe(ref: RefObject<HTMLElement | null>, enabled: boolean, o
       if (isTextEntry(document.activeElement) || needsSideways(e.target, el) || dragActive()) return
       id = e.pointerId
       track = startSwipe(e.clientX, e.clientY, e.timeStamp)
+      listenPressed(e.target)
     }
-    // 聞く所の外に触れたほかの指も、拡大・縮小なのでやめる
-    const otherDown = (e: PointerEvent) => {
-      if (track && e.pointerId !== id) track = null
+    // 新しい指が触れたら、追っていた指はやめる（document の捕まえる段なので、聞く所の中の指は down より先に来る）。ほかの指なら
+    // 拡大・縮小、同じ番号なら離す出来事が来ないまま残った指（端末が取った時など。後の別の指を前の押した所から測らない）
+    const anyDown = () => {
+      track = null
     }
     const move = (e: PointerEvent) => {
       if (!track || track.taken || e.pointerId !== id) return
@@ -106,9 +128,9 @@ export function useSwipe(ref: RefObject<HTMLElement | null>, enabled: boolean, o
       if (t) finish(t.clientX, t.clientY)
       else track = null
     }
-    // 端末が指を取った（iPhone の画面の端からの「戻る」の身振り・アプリの切り替えなど）時は数えない
+    // 端末が指を取った（アプリの切り替えなど）時は数えない。pointercancel より先に来ても（まだ取られていない指も）やめる
     const touchCancel = () => {
-      if (track?.taken) track = null
+      track = null
     }
     const click = (e: MouseEvent) => {
       if (performance.now() > guardUntil) return
@@ -118,7 +140,7 @@ export function useSwipe(ref: RefObject<HTMLElement | null>, enabled: boolean, o
       e.stopPropagation()
     }
     el.addEventListener('pointerdown', down)
-    document.addEventListener('pointerdown', otherDown, true)
+    document.addEventListener('pointerdown', anyDown, true)
     // 動かす・離すのは、押した要素が描き直しで外れた後のこともあるので document で聞く
     document.addEventListener('pointermove', move, { passive: true })
     document.addEventListener('pointerup', up)
@@ -129,8 +151,9 @@ export function useSwipe(ref: RefObject<HTMLElement | null>, enabled: boolean, o
     // React の onClick より先に打ち消す（window の捕まえる段）
     window.addEventListener('click', click, true)
     return () => {
+      listenPressed(null)
       el.removeEventListener('pointerdown', down)
-      document.removeEventListener('pointerdown', otherDown, true)
+      document.removeEventListener('pointerdown', anyDown, true)
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerup', up)
       document.removeEventListener('pointercancel', cancel)

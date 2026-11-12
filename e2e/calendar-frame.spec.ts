@@ -7,6 +7,7 @@ import { DEMO_IDS, demoData } from './fixtures/demoData'
 import {
   collectDiagnosticsOnFailure,
   holdTurns,
+  iosCancelledTouch,
   longPressDrag,
   noHorizontalScroll,
   openCalendar,
@@ -531,6 +532,30 @@ test.describe('スマホ（S）の枠', { tag: ['@s'] }, () => {
     }
   })
 
+  test('iPhone の払い（少しでも縦に揺れると 12px ほどの所でブラウザに取られ、その後は touch の出来事だけが来る）でも、30px 内側からの親指の弧（34°）と画面の端から端への払いで、どのモードでも次・前の期間へ（22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    for (const [from, next, back] of PERIODS) {
+      await openCalendar(page, from, { data: demoData() })
+      const vw = page.viewportSize()?.width ?? 412
+      const y = await flickY(page)
+      const length = await page.evaluate(() => history.length)
+      // 右の端の 30px 内側から 300px 左へ、終わりが 200px 上（12px ずつ 25回）。12px 動いた所で取られる（払い始めが決まる 24px の前）
+      await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: vw - 330, y: y - 200 }, 25))
+      await at(page, next)
+      await turnDone(page)
+      // 左から右へ払っても同じ（前へ）
+      await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: 330, y: y - 200 }, 25))
+      await at(page, back)
+      await turnDone(page)
+      // 右の画面の端（区切りの外の余白）から左の画面の端まで
+      await iosCancelledTouch(page, thumbArc({ x: vw - 3, y }, { x: 3, y: y - 40 }, 34))
+      await at(page, next)
+      await turnDone(page)
+      expect(await page.evaluate(() => history.length), from).toBe(length)
+    }
+  })
+
   test('大きく払えるようにしても、縦のスクロールはそのまま（画面の端の余白からでも。期間は移らない）', async ({ page }) => {
     // イヤー（ページがスクロールする）: 左の端の余白から上へ・斜めに上へ（水平から 78°）送る
     await openCalendar(page, '/year/2026', { data: demoData() })
@@ -690,6 +715,21 @@ test.describe('タブレット（M）の枠', { tag: ['@m'] }, () => {
     await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
   })
 
+  test('画面の端（カレンダーの区切りの外の余白）から外へ大きく払っても次・前の期間へ（置き換える。22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
+    const vw = page.viewportSize()?.width ?? 768
+    const y = await flickY(page)
+    const length = await page.evaluate(() => history.length)
+    await touchPath(page, thumbArc({ x: vw - 3, y }, { x: 3, y: y - 40 }, 16))
+    await at(page, '/month/2026-12')
+    await turnDone(page)
+    await touchPath(page, thumbArc({ x: 3, y }, { x: vw - 3, y: y - 40 }, 16))
+    await at(page, '/month/2026-11')
+    expect(await page.evaluate(() => history.length)).toBe(length)
+  })
+
   test('ウィークリー・デイリーは高さを固定し、マンスリーは中身の高さ。下のリストはページのスクロールで届く（FRAME-043・044）', async ({
     page,
   }) => {
@@ -715,7 +755,7 @@ test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
     await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
   })
 
-  test('ウィークリーで画面の右の端（カレンダーの区切りの外の余白）から左の端まで大きく払うと次の週へ、左の端から払うと前の週へ（22. の段階2の終わりの確かめ）', async ({
+  test('ウィークリーで画面の右の端（カレンダーの区切りの外の余白）から左の端まで大きく払うと次の週へ、左の端から払うと前の週へ。途中で pointercancel が来て touch の出来事だけになった親指の弧でも次の週へ（22. の段階2の終わりの確かめ）', async ({
     page,
   }) => {
     await openCalendar(page, '/week/2026-11-08', { data: demoData() })
@@ -728,6 +768,10 @@ test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
     await turnDone(page)
     await touchPath(page, thumbArc({ x: 3, y }, { x: vw - 3, y: y - 120 }, 12))
     await at(page, '/week/2026-11-08')
+    await turnDone(page)
+    // iPhone の本物の指のように、12px 動いた所で pointercancel が来て、その後は touch の出来事だけが来る払い（親指の弧。34°）
+    await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: vw - 330, y: y - 200 }, 25))
+    await at(page, '/week/2026-11-15')
   })
 
   test('登録・詳細のシートは「戻る」で閉じ、モード・期間はそのまま（FRAME-015）', async ({ page }) => {

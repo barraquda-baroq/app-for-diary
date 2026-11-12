@@ -5,8 +5,10 @@
 // 大きく払った時（22. の段階2の終わりの確かめ。iPhone のホーム画面のアプリで「画面の外から外へ大きく払うと替わらない」への直し）:
 // - 親指で大きく払うと弧を描き、終わりが上（下）へ逸れる。初めの動き（押した所から 24px まで）が水平から 30° 以内なら横に払い
 //   始めたと決め、全体が 45° 以内なら移る（初めから斜め・縦の動きは今までどおり全体で 30° 以内）
-// - 初めに少し縦へ動いたために、ブラウザが縦のスクロールとして指を取った（pointercancel）時も、横に払い始めた指（初めの動きが
-//   縦と決まっていない指）は離すまで追い（touch の出来事）、全体で 60px 以上・30° 以内なら移る（縦のスクロールは取らない）
+// - ブラウザが縦のスクロールとして指を取った（pointercancel）時も、横に払い始めた指（初めの動きが縦と決まっていない指）は離すまで
+//   追い（touch の出来事）、取られていない時と同じ決まり（60px 以上。払い始めが横なら全体で 45° まで）で移る（縦のスクロールは
+//   取らない）。iPhone（WebKit）は touch-action: pan-y の所で指が少しでも縦に動くと縦のスクロールを始めて指を取る（10〜15px ほど
+//   動いた所）ので、iPhone の払いはほとんどがこの道を通る。Chromium は初めの動きが縦寄りの時だけ取る
 // React・ストアを読まない（純粋な関数。src/features/calendar/purity.test.ts）。指の出来事を拾うのは useSwipe.ts
 import type { CalendarMode, WidthClass } from './types'
 
@@ -63,7 +65,7 @@ export interface SwipeTrack {
   moved: boolean
   /** 払い始めの向き（押した所から 24px まで動いた時）: side = 水平から 30° 以内、other = それより縦、null = まだ決まらない */
   lead: 'side' | 'other' | null
-  /** ブラウザが指を取った（pointercancel。縦のスクロールを始めた）後か。その後は touch の出来事で追う */
+  /** ブラウザが指を取った（pointercancel。縦のスクロールを始めた）後か。その後は touch の出来事で追う（決まりは取られる前と同じ） */
   taken: boolean
 }
 
@@ -93,7 +95,7 @@ export function moveSwipe(s: SwipeTrack, x: number, y: number, t: number): Swipe
 
 /**
  * ブラウザが指を取った（pointercancel）。払い始めが縦と決まっていた指は数えない（null。縦のスクロール）。ほかは、離すまで
- * touch の出来事で追う（初めに少し縦へ動いてブラウザが取った、横に払う指）
+ * touch の出来事で追う（iPhone で少しでも縦に揺れた、横に払う指。Chromium で初めに少し縦へ動いた、横に払う指）
  */
 export function takeSwipe(s: SwipeTrack): SwipeTrack | null {
   return s.lead === 'other' ? null : { ...s, taken: true }
@@ -101,13 +103,12 @@ export function takeSwipe(s: SwipeTrack): SwipeTrack | null {
 
 /**
  * 離した所から、移る向き（null = 移らない）。横に 60px 以上で、全体が水平から 30° 以内か、横に払い始めた指は 45° 以内。
- * ブラウザに取られた後の指は、全体が 30° 以内の時だけ（ページが縦に送られた分は戻さないので、はっきり横の時だけにする）
+ * ブラウザに取られた後の指も同じ（iPhone はほとんどの払いを取るので、取られた指だけ厳しくすると親指の弧が iPhone で移らない。
+ * 取られた指で払い始めが縦と決まった物は、moveSwipe・takeSwipe が先に外している）
  */
 export function endSwipe(s: SwipeTrack, x: number, y: number): 1 | -1 | null {
-  const dx = x - s.x0
-  const dy = y - s.y0
-  if (s.taken) return s.lead === 'other' ? null : swipeDirection(dx, dy)
-  return swipeDirection(dx, dy, s.lead === 'side' ? SWIPE_ARC_MAX_DEG : SWIPE_MAX_DEG)
+  if (s.taken && s.lead === 'other') return null
+  return swipeDirection(x - s.x0, y - s.y0, s.lead === 'side' ? SWIPE_ARC_MAX_DEG : SWIPE_MAX_DEG)
 }
 
 /**

@@ -419,6 +419,82 @@ export async function touchPath(page: Page, points: Point[], { stepMs = 12, via 
 }
 
 /**
+ * iPhone（WebKit）で、touch-action: pan-y の所を横に払った指の出来事を真似て送る（docs/SPEC.md の 3.7）。WebKit は指が少しでも縦に
+ * 動くと縦のスクロールを始めて pointer を取る（pointercancel）が、touch の出来事は離すまで送り続ける。points の初めの点で押し、
+ * 押した所から cancelAt（px）動いた所で pointercancel を送り、その後は touchmove だけ、最後の点で touchend。どの出来事も押した所の
+ * 要素に送る（document まで伝わる。押した要素が外れた後の touch の出来事は、本物と同じく外れた要素へ）。Chromium・WebKit の
+ * どちらでも同じ合成した出来事（スクロールはしない）。Touch を作れないブラウザでは、座標を持たせた Event を送る
+ */
+export async function iosCancelledTouch(page: Page, points: Point[], { cancelAt = 12, stepMs = 12 } = {}) {
+  await page.evaluate(
+    async ({ points, cancelAt, stepMs }) => {
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+      const [first] = points
+      const target = document.elementFromPoint(first.x, first.y) ?? document.body
+      // pointer は、押した要素が描き直しで外れた後は指の下の要素へ（syntheticTouch と同じ）。touch の出来事は本物と同じく、外れた後も
+      // 押した要素へ送る（document まで伝わらない）
+      const pointer = (type: string, p: { x: number; y: number }, buttons: number) =>
+        (target.isConnected ? target : (document.elementFromPoint(p.x, p.y) ?? document.body)).dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: type !== 'pointercancel',
+            composed: true,
+            // syntheticTouch と同じ番号（dnd-kit の setPointerCapture で掴むのをやめないように）
+            pointerId: 1,
+            pointerType: 'touch',
+            isPrimary: true,
+            clientX: p.x,
+            clientY: p.y,
+            button: 0,
+            buttons,
+            width: 10,
+            height: 10,
+            pressure: buttons ? 0.5 : 0,
+          }),
+        )
+      const touch = (type: string, p: { x: number; y: number }, ended: boolean) => {
+        const init = { identifier: 1, target, clientX: p.x, clientY: p.y, screenX: p.x, screenY: p.y, pageX: p.x, pageY: p.y }
+        let ev: Event
+        try {
+          const t = new Touch(init)
+          const list = ended ? [] : [t]
+          ev = new TouchEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            touches: list,
+            targetTouches: list,
+            changedTouches: [t],
+          })
+        } catch {
+          ev = new Event(type, { bubbles: true, cancelable: true, composed: true })
+          Object.defineProperty(ev, 'touches', { value: ended ? [] : [init] })
+          Object.defineProperty(ev, 'targetTouches', { value: ended ? [] : [init] })
+          Object.defineProperty(ev, 'changedTouches', { value: [init] })
+        }
+        target.dispatchEvent(ev)
+      }
+      pointer('pointerdown', first, 1)
+      touch('touchstart', first, false)
+      let cancelled = false
+      for (const p of points.slice(1)) {
+        await wait(stepMs)
+        if (!cancelled && Math.hypot(p.x - first.x, p.y - first.y) >= cancelAt) {
+          pointer('pointercancel', p, 0)
+          cancelled = true
+        }
+        if (!cancelled) pointer('pointermove', p, 1)
+        touch('touchmove', p, false)
+      }
+      const last = points[points.length - 1]
+      if (!cancelled) pointer('pointerup', last, 0)
+      touch('touchend', last, true)
+    },
+    { points, cancelAt, stepMs },
+  )
+}
+
+/**
  * 親指で大きく払った時の弧の道筋: a から b へ steps 回に分けた点（a を含む）。横は同じ割合で進み、縦は進んだ割合の2乗で逸れる
  * （払い始めは水平で、終わりほど上（下）へ逸れる）
  */
