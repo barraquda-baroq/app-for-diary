@@ -102,7 +102,7 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
   it('S のマンスリーで左へ 60px 以上なぞると次の月、右へなぞると前の月（置き換える）', async () => {
     const { router } = await renderAt('/month/2026-11', { width: 'S' })
     const body = screen.getByTestId('calendar-body')
-    expect(body.classList.contains('is-swipe')).toBe(true)
+    expect(screen.getByTestId('calendar').classList.contains('is-swipe')).toBe(true)
     drag(body, [300, 400], [200, 420])
     expect(router.state.location.pathname).toBe('/month/2026-12')
     expect(router.state.historyAction).toBe('REPLACE')
@@ -153,7 +153,7 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
 
   it('ウィークリーも S・M ではなぞると前後の週へ（置き換える。22. の段階2の終わりの確かめ。左へなぞる＝次の週）', async () => {
     const week = await renderAt('/week/2026-11-08', { width: 'S' })
-    expect(screen.getByTestId('calendar-body').classList.contains('is-swipe')).toBe(true)
+    expect(screen.getByTestId('calendar').classList.contains('is-swipe')).toBe(true)
     drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
     expect(week.router.state.location.pathname).toBe('/week/2026-11-15')
     expect(week.router.state.historyAction).toBe('REPLACE')
@@ -206,9 +206,88 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
     expect(router.state.location.pathname).toBe('/week/2026-11-15')
   })
 
+  it('操作の列の上から払っても前後へ（なぞりを聞くのはカレンダーの区切りの全部。22. の段階2の終わりの確かめ）', async () => {
+    const { router } = await renderAt('/month/2026-11', { width: 'S' })
+    drag(screen.getByTestId('calendar-toolbar'), [370, 120], [40, 110])
+    expect(router.state.location.pathname).toBe('/month/2026-12')
+    // ［年｜月｜週｜日］の上から払い始めても、モードは替わらず期間が移る
+    drag(screen.getByTestId('cal-mode-day'), [120, 180], [380, 175])
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    expect(router.state.historyAction).toBe('REPLACE')
+  })
+
+  it('初めに少し縦へ動いてブラウザに取られた（pointercancel）指も、横に払い続けて離せば移る（touch の出来事で追う）。端末が取った指（touchcancel）・縦のスクロールは移らない', async () => {
+    const { router } = await renderAt('/week/2026-11-08', { width: 'S' })
+    const body = screen.getByTestId('calendar-body')
+    /** touch の出来事（jsdom には Touch が無いので、座標の入った物を持たせる） */
+    const touch = (type: string, x: number, y: number, down: boolean) => {
+      const ev = new Event(type, { bubbles: true })
+      const list = [{ clientX: x, clientY: y }]
+      Object.defineProperty(ev, 'touches', { value: down ? list : [] })
+      Object.defineProperty(ev, 'changedTouches', { value: list })
+      document.dispatchEvent(ev)
+    }
+    const gesture = (moves: [number, number][], end: 'touchend' | 'touchcancel') =>
+      act(() => {
+        const pe = (type: string, x: number, y: number) =>
+          new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y })
+        fireEvent(body, pe('pointerdown', 360, 500))
+        document.dispatchEvent(pe('pointermove', 350, 488))
+        document.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerType: 'touch', pointerId: 7 }))
+        for (const [x, y] of moves) touch('touchmove', x, y, true)
+        const [x, y] = moves[moves.length - 1]
+        touch(end, x, y, false)
+      })
+    gesture(
+      [
+        [300, 485],
+        [180, 472],
+        [60, 460],
+      ],
+      'touchend',
+    )
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+    expect(router.state.historyAction).toBe('REPLACE')
+    // iPhone の画面の端からの「戻る」の身振りなど、端末が指を取った時
+    gesture(
+      [
+        [300, 485],
+        [60, 460],
+      ],
+      'touchcancel',
+    )
+    // 縦のスクロール（払い始めが縦）
+    gesture(
+      [
+        [345, 450],
+        [330, 200],
+      ],
+      'touchend',
+    )
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+  })
+
+  it('なぞって移った直後（300ms）にカレンダーの中へ来た click は打ち消す（払った指で［年｜月｜週｜日］を押さない）。その後の click は効く', async () => {
+    const { router } = await renderAt('/week/2026-11-08', { width: 'S' })
+    const now = vi.spyOn(performance, 'now').mockReturnValue(10_000)
+    try {
+      drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
+      expect(router.state.location.pathname).toBe('/week/2026-11-15')
+      now.mockReturnValue(10_200)
+      act(() => screen.getByTestId('cal-mode-day').click())
+      expect(router.state.location.pathname).toBe('/week/2026-11-15')
+      now.mockReturnValue(10_400)
+      act(() => screen.getByTestId('cal-mode-day').click())
+      // 見ている日（11/10）を7日送った 11/17
+      expect(router.state.location.pathname).toBe('/day/2026-11-17')
+    } finally {
+      now.mockRestore()
+    }
+  })
+
   it('L ではスワイプしない（FRAME-075）', async () => {
     const wide = await renderAt('/month/2026-11', { width: 'L' })
-    expect(screen.getByTestId('calendar-body').classList.contains('is-swipe')).toBe(false)
+    expect(screen.getByTestId('calendar').classList.contains('is-swipe')).toBe(false)
     drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
     expect(wide.router.state.location.pathname).toBe('/month/2026-11')
   })

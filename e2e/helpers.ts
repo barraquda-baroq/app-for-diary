@@ -408,6 +408,27 @@ export async function touchSwipe(
   else await syntheticTouch(page, points, 0, stepMs)
 }
 
+/**
+ * 指で決めた道筋をなぞる（大きく払う・親指の弧。docs/SPEC.md の 3.7）。points の初めの点で押し、残りの点へ stepMs ごとに動かして、
+ * 最後の点で離す。画面の端の点（x が 0〜数 px）も送れる。Chromium は CDP の本物のタッチ、WebKit は合成した PointerEvent
+ * （押した所の要素に送る。画面の端の点なら、その所にある要素）
+ */
+export async function touchPath(page: Page, points: Point[], { stepMs = 12, via }: { stepMs?: number; via?: TouchVia } = {}) {
+  if (touchVia(page, via) === 'cdp') await cdpTouch(page, points, 0, stepMs)
+  else await syntheticTouch(page, points, 0, stepMs)
+}
+
+/**
+ * 親指で大きく払った時の弧の道筋: a から b へ steps 回に分けた点（a を含む）。横は同じ割合で進み、縦は進んだ割合の2乗で逸れる
+ * （払い始めは水平で、終わりほど上（下）へ逸れる）
+ */
+export function thumbArc(a: Point, b: Point, steps: number): Point[] {
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const t = i / steps
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t * t }
+  })
+}
+
 // ---------- 段階2: 期間を移った時にページをめくる（docs/SPEC.md の 3.7・4.9。src/features/calendar/common/PageTurn.tsx） ----------
 
 /**

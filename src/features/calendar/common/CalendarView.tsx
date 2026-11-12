@@ -4,7 +4,8 @@
 // （イヤーの 870px・ウィークリーの列の 120px は CSS の幅の区分とは別に、領域の幅で決める。D53）。
 // 高さ: L はカレンダーの領域の中だけでスクロール（ページはスクロールしない）。S・M のイヤー・マンスリーは中身の高さ、
 // ウィークリー・デイリーは 100dvh − ヘッダー − 切り替えの列 に固定（操作の列を含む。is-fixed。src/features/top/top.css。D15）。
-// S・M の指で左右になぞると前後の期間へ（どのモードでも。useSwipe）。モードはそのままで期間が替わると、ページをめくる（PageTurn。
+// S・M の指で左右になぞると前後の期間へ（どのモードでも。useSwipe）。なぞりを聞くのは、この区切りの全部（操作の列とモードの画面）と、
+// 左右の画面の端までの余白（frame.css の .cal.is-swipe）。モードはそのままで期間が替わると、ページをめくる（PageTurn。
 // モードの画面を包まず、.cal-body の横に置く）
 import { useMemo, useRef, type ComponentType } from 'react'
 import { useCalendarUi } from '../../../store/uiStore'
@@ -39,16 +40,22 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
   const { openRegister } = useItemSheets()
   const offMode = useCalendarUi((s) => s.offMode)
   const setOffMode = useCalendarUi((s) => s.setOffMode)
+  const root = useRef<HTMLDivElement>(null)
   const body = useRef<HTMLDivElement>(null)
   const size = useElementSize(body)
   const area = useMemo(() => ({ width: size.width, height: size.height }), [size.width, size.height])
   const swipe = swipeEnabled(mode, width)
-  useSwipe(body, swipe, nav.shift)
+  useSwipe(root, swipe, nav.shift)
 
   const View = VIEWS[mode]
   const fixed = width !== 'L' && FIXED.includes(mode)
   return (
-    <div className={`cal${fixed ? ' is-fixed' : ''}`} data-mode={mode} data-testid={testIds.calendar}>
+    <div
+      ref={root}
+      className={`cal${fixed ? ' is-fixed' : ''}${swipe ? ' is-swipe' : ''}`}
+      data-mode={mode}
+      data-testid={testIds.calendar}
+    >
       <CalendarToolbar
         mode={mode}
         viewed={viewed}
@@ -61,7 +68,7 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
         // デイリーではその日、ほかは今日が開始日（3.7・12.2）。区分は仕事（D50）
         onAdd={() => openRegister({ start: mode === 'day' ? viewed : today, kind: 'work' })}
       />
-      <div ref={body} className={`cal-body${swipe ? ' is-swipe' : ''}`} data-testid={testIds.calendarBody}>
+      <div ref={body} className="cal-body" data-testid={testIds.calendarBody}>
         <View mode={mode} viewed={viewed} today={today} width={width} area={area} />
       </div>
       <PageTurn mode={mode} from={from} to={to} body={body} />
