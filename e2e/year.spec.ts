@@ -178,9 +178,9 @@ test.describe('イヤー（PC）', { tag: ['@pc'] }, () => {
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('ArrowDown')
     await expect(cell(page, '2026-12-11')).toBeFocused()
-    // フォーカスの枠はマスの外側（内側の 2px は今日の枠）
+    // フォーカスの枠はマスの外側に 2px 離して（マスにぴったり付いた内側の 2px は今日の枠。4.8・4.12）
     expect(await style(cell(page, '2026-12-11'), 'outline-style')).toBe('solid')
-    expect(await style(cell(page, '2026-12-11'), 'outline-offset')).toBe('0px')
+    expect(await style(cell(page, '2026-12-11'), 'outline-offset')).toBe('2px')
     await page.keyboard.press('Enter')
     await at(page, '/month/2026-12')
     await page.getByTestId(testIds.calMode('day')).click()

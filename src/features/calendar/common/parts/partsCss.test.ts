@@ -122,10 +122,10 @@ describe('休み・祝日名（7.2・7.4・4.7）', () => {
 })
 
 describe('件名・時刻・印（4.3・4.5・7.7・7.9）', () => {
-  it('件名のハイライトは inline の要素の下 6割の帯で、折り返したら各行に（FRAME-135）', () => {
+  it('件名のハイライトは inline の要素の字の高さいっぱいの帯で、折り返したら各行に（FRAME-135・段階2の見本の ■4 の答え B）', () => {
     const m = common('.kind-marker')
     expect(m.get('display')).toBe('inline')
-    expect(m.get('background')).toBe('linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%)')
+    expect(m.get('background')).toBe('linear-gradient(var(--kind-marker, transparent), var(--kind-marker, transparent))')
     expect(m.get('box-decoration-break')).toBe('clone')
     expect(m.get('-webkit-box-decoration-break')).toBe('clone')
   })
