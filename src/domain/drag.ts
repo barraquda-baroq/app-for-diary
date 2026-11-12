@@ -2,6 +2,8 @@
 // 落とすと何が変わるか、動かした後のお知らせの文。ドラッグの部品（src/features/calendar/week/dnd）はここだけを見て決める
 // （落とせる日の印・落とした時の actions.moveItemDates・お知らせ）。画面は表示用に直した記録（useData()。6.12）を渡す。
 // 日付は 'YYYY-MM-DD' の文字のまま比べる。時刻は変えない（日だけ。D27）。完了した予定も動かせる（開発）。
+// 掴めるかは掴んだ週（掴む所がその週に見えているか）で決め、落とす日はどの週の日でもよい（掴んだまま画面の左右の端に留まると前後の
+// 週へ移り、その週の日に落とせる。22. の段階2の終わりの確かめ）
 import { eachDate, hmToMinutes, isYmd } from './dates'
 import { toastText } from './itemText'
 import { itemProblems, periodOf } from './items'
@@ -10,7 +12,7 @@ import type { Item, ItemKind } from './types'
 /** 掴む所: 1日の予定のカード・複数日の予定の始点のカード・終点の●（S の4本目からの「● 件名」の行も終点と同じ。D41） */
 export type Handle = 'card' | 'start' | 'end'
 
-/** 見ている週（日曜〜土曜。両端を含む） */
+/** 週（日曜〜土曜。両端を含む）。掴んだ週・見ている週 */
 export interface WeekCtx {
   from: string
   to: string
@@ -59,14 +61,15 @@ function fitTimes(item: Item, start: string | null, due: string | null): DatePat
 }
 
 /**
- * 日 D（target.date）・区分の段（target.kind）に落とした時（7.11 の表・13.6）:
+ * 週 week で掴んだ物を、日 D（target.date）・区分の段（target.kind）に落とした時（7.11 の表・13.6）。D はどの週の日でもよい
+ * （掴んだ週の外も。22. の段階2の終わりの確かめ）:
  * - 1日の予定（calendar 生まれ）のカード: start = D（due があれば due = D も。null なら null のまま）（CALENDAR-168）
  * - 1日の予定（list 生まれ・〆）のカード: due = D（start があれば start = D も）（CALENDAR-169・ITEMS-270）
  * - 複数日の始点のカード: D ≤ 締め切り日 なら start = D だけ（D = 締め切り日なら1日の予定になる。CALENDAR-170）
  * - 複数日の終点の●: D ≥ 開始日 なら due = D だけ（CALENDAR-171）
  * 元の日（カード・始点は開始日、終点は締め切り日）に落とした時は 'same'（何もしない。並べ替えもしない。D25）。
- * 落とせない時は null: 掴めない（canGrab）・違う区分の段・週の外・開始日 > 締め切り日・1日の予定で終了 < 開始（例 11/10 23:00〜
- * 11/11 01:00 の始点を 11/11 へ）（CALENDAR-165・175・177）。1日の予定で終了 = 開始になる時は clearEnd（D25）
+ * 落とせない時は null: 掴んだ週で掴めない（canGrab）・違う区分の段・日付でない・開始日 > 締め切り日・1日の予定で終了 < 開始
+ * （例 11/10 23:00〜11/11 01:00 の始点を 11/11 へ）（CALENDAR-165・175・177）。1日の予定で終了 = 開始になる時は clearEnd（D25）
  */
 export function dropPatch(
   item: Item,
@@ -76,7 +79,7 @@ export function dropPatch(
 ): DatePatch | 'same' | null {
   if (!canGrab(item, handle, week).ok) return null
   const D = target.date
-  if (target.kind !== item.kind || !isYmd(D) || !inWeek(D, week)) return null
+  if (target.kind !== item.kind || !isYmd(D)) return null
   const p = periodOf(item)!
   if (handle === 'card') {
     if (D === p.from) return 'same'
@@ -95,13 +98,14 @@ export function dropPatch(
 }
 
 /**
- * 掴んだ時に、その週の落とせる日をすべて（日付の順。元の日は 'same'。D25: 落とせる日すべてに印を付ける）。区分は掴んだ物と同じ段だけ
- * （CALENDAR-184 の「ドラッグで動かせる日」）
+ * 掴んでいる間に印を付ける日: 見ている週 shown の落とせる日をすべて（日付の順。元の日は 'same'。D25: 落とせる日すべてに印を付ける）。
+ * 区分は掴んだ物と同じ段だけ（CALENDAR-184 の「ドラッグで動かせる日」）。week は掴んだ週（掴んだまま前後の週へ移った時は、shown が
+ * 今見ている週。省くと掴んだ週）
  */
-export function dropDays(item: Item, handle: Handle, week: WeekCtx): Map<string, DatePatch | 'same'> {
+export function dropDays(item: Item, handle: Handle, week: WeekCtx, shown: WeekCtx = week): Map<string, DatePatch | 'same'> {
   const out = new Map<string, DatePatch | 'same'>()
-  if (!isYmd(week.from) || !isYmd(week.to)) return out
-  for (const date of eachDate(week.from, week.to)) {
+  if (!isYmd(shown.from) || !isYmd(shown.to)) return out
+  for (const date of eachDate(shown.from, shown.to)) {
     const r = dropPatch(item, handle, { date, kind: item.kind }, week)
     if (r !== null) out.set(date, r)
   }

@@ -2,10 +2,12 @@
 // - 掴む所: 1日のカードは 'card'、始点のカードは 'start'、終点の●と S の「● 件名」の行は 'end'。受けた表示と＞は掴めない
 //   （CALENDAR-176）。カードの useItemDrag の ref と grabProps は入れ物（data-testid の付いた要素）に付ける（D19）
 // - 落とせる所: L・M はその段のその日の列（.wk-cell）、S は日のかたまりのその半分の全体（.wk-half。余白も含む。G8）。様子は data-drop
-// - WeekDnd の中から useWeekScroller() でウィークリーのスクロールする要素が取れる（自動のスクロールを絞る。G4）
+// - WeekDnd の中から useWeekScroller() でウィークリーのスクロールする要素が取れる（端の自動のスクロール・左右の端を測る。G4）。
+//   週は WeekDnd の renderWeek で描かせる（掴んだまま別の週へ移った間は、掴んだ週も frozen で描かせる。7.11）
 // ここでは week/dnd を、呼ばれ方を記録する物に差し替えて確かめる（ドラッグの中身は dnd/dnd.test.tsx・e2e/week-drag.spec.ts）
 import { screen } from '@testing-library/react'
 import { useEffect, type ReactNode } from 'react'
+import type { WeekCtx } from './dnd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkItem, mkTask } from '../../../domain/testData'
 import type { Item, ItemKind } from '../../../domain/types'
@@ -24,12 +26,12 @@ const seen = vi.hoisted(() => ({
 }))
 
 vi.mock('./dnd', () => ({
-  WeekDnd: function WeekDnd({ children }: { children: ReactNode }) {
+  WeekDnd: function WeekDnd({ week, renderWeek }: { week: WeekCtx; renderWeek: (week: WeekCtx, frozen: boolean) => ReactNode }) {
     const ref = useWeekScroller()
     useEffect(() => {
       seen.scroller = ref.current
     })
-    return children
+    return renderWeek(week, false)
   },
   useItemDrag: ({ item, handle }: { item: Item; handle: string }) => ({
     ref: (el: Element | null) => {

@@ -93,7 +93,7 @@ interface DayCellProps {
 
 /** その段のその日の列（落とせる所。レーン → 1日のカード → 「＋」） */
 function DayCell({ day, kind, week, columnPx, actions }: DayCellProps) {
-  const drop = useDayDrop({ date: day.date, kind: kind.kind, week })
+  const drop = useDayDrop({ date: day.date, kind: kind.kind })
   const slots = kind.slots[day.date] ?? []
   const singles = kind.singles[day.date] ?? []
   return (

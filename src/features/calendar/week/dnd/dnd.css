@@ -69,3 +69,105 @@
 :root.dnd-refused * {
   cursor: not-allowed !important;
 }
+
+/* ===== 週の入れ物（WeekDnd。7.11） =====
+   今の週を .wk-slot に描く。掴んだまま左右の端に留まって別の週へ移った間は、掴んだ週の入れ物を見えないまま同じ所に重ねて残し
+   （is-frozen。dnd-kit が浮かせている元のカードを外さないため。落とす所は止めてある）、今の週は次の入れ物に描く。浮いたカードだけは
+   見せる（最上層に持ち上げてあるが、見えない設定は親から受け継ぐので戻す） */
+.wk-stage {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.wk-slot {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.wk-slot.is-frozen {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+:root .wk-slot.is-frozen [data-dnd-dragging] {
+  visibility: visible;
+}
+
+/* ===== 左右の端の目印の帯（掴んだまま左右の端の帯に留まっている間。7.11） =====
+   帯は、見えている週の端の内側（S 28px、L・M は 40px か日の列の 1/4 の狭い方。edges.ts）と、その外の画面の端（L の右はカレンダーの
+   領域の右の端）までの余白。週の外の余白にも掛かるので、ページの上に固定して描く（WeekDnd が body に出す。画面の座標。ヘッダーと
+   切り替えの列（z-index 15・20）の下には入らない高さなので、その下の重なりの順）。帯に入って 0.15秒たってから出す。地は --surface、
+   週の側の辺に 1px の --accent。留まった時間で下から --accent の淡い地が満ちる（0.6秒。続けて移る時は 0.9秒。transform だけ）。
+   視差効果を減らす設定では満ちる動きを出さない（帯と字は出て、週はその時間で移る）。‹ ›と縦に1字ずつ並べた「前の週へ」「次の週へ」は、
+   浮いたカードのすぐ上（上に場所が無い時はすぐ下）に置く（指とカードで隠れないように。指を動かすとついてくる。位置は edgeDriver.ts が決める） */
+.wk-cue {
+  position: fixed;
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--surface);
+  color: var(--text);
+  animation: wk-cue-in var(--dur-hover) ease-out;
+}
+
+.wk-cue.is-prev {
+  border-radius: 0 6px 6px 0;
+  box-shadow: inset -1px 0 0 var(--accent);
+}
+
+.wk-cue.is-next {
+  border-radius: 6px 0 0 6px;
+  box-shadow: inset 1px 0 0 var(--accent);
+}
+
+.wk-cue > .wk-cue-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.2;
+  transform: scaleY(0);
+  transform-origin: bottom;
+  animation: wk-cue-fill var(--cue-ms, 600ms) linear forwards;
+}
+
+.wk-cue-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.wk-cue-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+@keyframes wk-cue-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes wk-cue-fill {
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wk-cue > .wk-cue-fill {
+    display: none;
+  }
+}
