@@ -142,14 +142,16 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
     (theme) => {
       expect(ANSWERED_BRIGHT).toEqual(['lemon-d', 'mint-d'])
       expect(checkTheme(theme, themes[theme], { bright: ANSWERED_BRIGHT })).toEqual([])
-      // 例外を使わないと、ホワイトの菜の花・濃とミント・濃の、区分の地との明るさの差だけを割る（ダーク・ディープダークは例外なしで通る）
+      // 例外を使わないと、ホワイトの菜の花・濃とミント・濃の、区分の地との明るさの差と左の一辺の 1.6:1 だけを割る（ダーク・ディープダークは
+      // 例外なしで通る）
       const plain = checkTheme(theme, themes[theme])
       if (theme === 'white') {
         expect(plain.length).toBeGreaterThan(0)
         expect(
-          plain.every((p) => /明るさの差/.test(p) && /--label-(lemon|mint)-d /.test(p)),
+          plain.every((p) => /明るさの差|左の一辺/.test(p) && /--label-(lemon|mint)-d /.test(p)),
           plain.join('\n'),
         ).toBe(true)
+        for (const k of ANSWERED_BRIGHT) expect(plain.join('\n')).toMatch(new RegExp(`--label-${k} の左の一辺`))
       } else expect(plain).toEqual([])
     },
   )
@@ -281,6 +283,21 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
     expect(checkTheme('deep-dark', withTokens(themes['deep-dark'], { '--work-soft': '#151619' })).join('\n')).toMatch(
       /--work-soft と --private-soft が違う色/,
     )
+    // ラベルの左の一辺（4px）は、面の上でホワイト 1.6:1・ダーク 2.5:1 以上（区分の地との明るさの差 0.1 は満たす灰色で割る。
+    // #d0d0d0 は白い面の上で 1.54:1、#484848 は黒い面の上で 1.9:1 ほど）。ディープダークは見ない
+    const edgeWhite = checkTheme('white', withTokens(w, { '--label-rose-l': '#d0d0d0' }), { bright: ANSWERED_BRIGHT })
+    expect(edgeWhite.join('\n')).toMatch(/ホワイト: --label-rose-l の左の一辺（4px）が面の上で 1\.54:1（1\.6:1 未満）/)
+    expect(edgeWhite.join('\n')).not.toMatch(/--label-rose-l の明るさの差/)
+    expect(checkTheme('dark', withTokens(themes.dark, { '--label-rose-d': '#484848' })).join('\n')).toMatch(
+      /ダーク: --label-rose-d の左の一辺（4px）が面の上で .*（2\.5:1 未満）/,
+    )
+    // ●の中の✓（--on-label）は、3つの外観とも24色のどの上でも 3:1 以上（7.9）
+    expect(checkTheme('white', withTokens(w, { '--on-label': '#808080' })).join('\n')).toMatch(
+      /ホワイト: --on-label \/ --label-coral-d が .*:1（3:1 未満・ラベルの✓）/,
+    )
+    expect(checkTheme('deep-dark', withTokens(themes['deep-dark'], { '--on-label': '#9a9a9a' })).join('\n')).toMatch(
+      /ディープダーク: --on-label \/ --label-.* が .*:1（3:1 未満・ラベルの✓）/,
+    )
   })
 
   it('ラベルのキーと既定の呼び名は、アプリ（src/domain/labels.ts）と同じ', () => {
@@ -352,8 +369,9 @@ describe('案（e2e/samples/variants.json）', () => {
   })
 
   // どの案も、案を当てた外観で、src/styles.test.ts の決まり（字 4.5:1・大きな数字と済んだ物 3:1・ラベルと地の明るさの差 0.1・
-  // ラベルなしの線と24色の ΔE 0.06・差し色はグレー・今日の印・ディープダークの決まり）を満たす。案G（Q13）だけは、ホワイトの蛍光の黄・緑
-  // （BRIGHT_WHITE）を、明るさの差 0.1 の代わりに白い地と ΔE 0.15 以上で見る
+  // ラベルなしの線と24色の ΔE 0.06・ラベルの左の一辺（ホワイト 1.6:1・ダーク 2.5:1）・✓ の 3:1・差し色はグレー・今日の印・ディープダークの
+  // 決まり）を満たす。案G（Q13）だけは、ホワイトの蛍光の黄・緑（BRIGHT_WHITE）を、明るさの差 0.1 と一辺の 1.6:1 の代わりに白い地と
+  // ΔE 0.15 以上で見る
   const cases = Object.keys(options).flatMap((id) => THEMES.map((t) => [id, t]))
   it.each(cases)('%s（%s）は決まりを満たす', (id, theme) => {
     const scale = options[id].question === 3 ? bandScaleOf(id, theme) : undefined
@@ -1273,7 +1291,7 @@ describe('Q13: ラベルの24色（蛍光色からくすみまで。labels-g。Q
     }
   })
 
-  it('ホワイトの例外は、白い地より明るい蛍光の黄・緑（菜の花・濃・ミント・濃）だけ。白い地の10色のどれとも ΔE 0.15 以上', () => {
+  it('ホワイトの例外は、白い地と明るさの近い蛍光の黄・緑（菜の花・濃・ミント・濃）だけ。白い地の10色のどれとも ΔE 0.15 以上', () => {
     expect(BRIGHT_WHITE).toEqual({ 'labels-g': ['lemon-d', 'mint-d'] })
     expect(BRIGHT_WHITE_MIN_DE).toBe(0.15)
     expect(BRIGHT_WHITE_GROUNDS).toEqual([
@@ -1295,7 +1313,7 @@ describe('Q13: ラベルの24色（蛍光色からくすみまで。labels-g。Q
       expect(fails, k).toBe(bright.includes(k))
       if (bright.includes(k)) {
         expect(k in FLUORESCENT, k).toBe(true)
-        // 白い地（L 0.93〜1）に近い明るさ（ふつうの淡より明るい）
+        // 白い地（L 0.946〜1）に近い明るさ（ふつうの淡より明るい。菜の花・濃は地の間、ミント・濃はどの地より暗い）
         expect(lightness(c), k).toBeGreaterThan(Math.max(...row('l').map((x) => lightness(hex('white', x)))))
         for (const g of whiteGrounds) expect(deltaE(g, c), `${k} ${g}`).toBeGreaterThanOrEqual(0.15)
       }
@@ -1307,11 +1325,11 @@ describe('Q13: ラベルの24色（蛍光色からくすみまで。labels-g。Q
 
   it('checkTheme の例外は、ホワイトの、名指ししたキーだけ（ダーク・ほかのキー・ほかの決まりは緩めない）', () => {
     const white = withTokens(themes.white, options[ID].tokens.white)
-    // 例外なしでは、菜の花・濃とミント・濃の明るさの差だけを割る
+    // 例外なしでは、菜の花・濃とミント・濃の明るさの差と左の一辺の 1.6:1 だけを割る
     const plain = checkTheme('white', white)
     expect(plain.length).toBeGreaterThan(0)
     expect(
-      plain.every((p) => /明るさの差/.test(p) && /--label-(lemon|mint)-d /.test(p)),
+      plain.every((p) => /明るさの差|左の一辺/.test(p) && /--label-(lemon|mint)-d /.test(p)),
       plain.join('\n'),
     ).toBe(true)
     expect(checkTheme('white', white, { bright })).toEqual([])
