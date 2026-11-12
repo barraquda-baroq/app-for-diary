@@ -278,6 +278,17 @@
   height: 16px;
 }
 
+/* キーボードで色にフォーカスした時（Tab・矢印。:focus-visible）は、フォーカスの枠（丸から 4px）と、色の並びの下の呼び名の1行
+   （4px あけて 12px の字の 1.5 倍）まで見える所へ送る。上の行は下の行（すき間 5px と丸 28px）も越える（S は 3px と 24px）。
+   指・マウスで押した時は送らない（押した時に並びが動くと、離した時の下の物が変わって押した物が効かない。12.3 のメモと同じ） */
+.it-swatch:focus-visible {
+  scroll-margin: 4px 0 calc(4px + 18px);
+}
+
+.it-swatch:nth-child(-n + 12):focus-visible {
+  scroll-margin-bottom: calc(5px + 28px + 4px + 18px);
+}
+
 /* 選んでいる色・「なし」: 地の色の細いすき間と --accent の輪（色に頼らずに分かるよう、色には✓も。4.12） */
 .it-swatch[aria-pressed='true'],
 .it-label-none[aria-pressed='true'] {
@@ -678,6 +689,10 @@
     box-shadow:
       0 0 0 1.5px var(--kind-sheet, var(--surface)),
       0 0 0 3px var(--accent);
+  }
+
+  .it-swatch:nth-child(-n + 12):focus-visible {
+    scroll-margin-bottom: calc(3px + 24px + 4px + 18px);
   }
 
   /* 2つの日付の欄が 360px の幅でも「11月15日（日）」を切らずに入るよう、日付の欄のアイコンを出さず、［×］の分も詰める */

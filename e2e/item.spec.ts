@@ -291,6 +291,9 @@ test.describe('登録の画面（スマホ）', { tag: ['@s'] }, () => {
     const last = await page.getByTestId('item-label-peony-l').boundingBox()
     expect(first?.width).toBe(24)
     expect(last?.y).toBe(first?.y)
+    const none = (await page.getByTestId('item-label-none').boundingBox())!
+    expect(none.y + none.height, '「なし」は色の並びの上の行').toBeLessThanOrEqual(first!.y)
+    expect(none.width).toBeGreaterThanOrEqual(34)
     await noHorizontalScroll(page)
     await page.goBack()
     await expect(sheet).toHaveCount(0)
@@ -327,6 +330,69 @@ test.describe('登録の画面の長さ（スマホ）', { tag: ['@s'] }, () => 
       0, 0,
     ])
     await noHorizontalScroll(page)
+  })
+
+  for (const where of ['登録', '詳細'] as const) {
+    test(`${where}の画面: Tab で「なし」から色の丸へ移ると、フォーカスの枠（丸から 4px）と色の並びの下の呼び名の1行まで見える所へ送る（12.2・4.6）`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+      if (where === '登録') await page.getByTestId('cal-add').click()
+      else await openDetailByHistory(page, DEMO_IDS.mail)
+      const sheet = sheetOf(page)
+      await settled(sheet)
+      const body = sheet.locator('.modal-body')
+      const name = page.getByTestId('item-label-name')
+      // 「なし」は色の並びの上の別の行（S。D35）
+      const none = (await page.getByTestId('item-label-none').boundingBox())!
+      expect(none.y + none.height).toBeLessThanOrEqual((await page.getByTestId('item-label-rose-l').boundingBox())!.y)
+      await page.getByTestId('item-label-none').focus()
+      // 上の行（淡い12色）を順に。呼び名の1行は2つの行の下にある
+      for (const key of ['rose-l', 'coral-l', 'apricot-l', 'lemon-l', 'lime-l', 'mint-l', 'teal-l', 'sky-l']) {
+        await page.keyboard.press('Tab')
+        const swatch = page.getByTestId(`item-label-${key}`)
+        await expect(swatch).toBeFocused()
+        const area = (await body.boundingBox())!
+        const b = (await swatch.boundingBox())!
+        expect(b.y + b.height + 4, `${key} の枠の下`).toBeLessThanOrEqual(area.y + area.height + 0.5)
+        const line = (await name.boundingBox())!
+        expect(line.y + line.height, `${key} の時の呼び名の1行`).toBeLessThanOrEqual(area.y + area.height + 0.5)
+      }
+      // フォーカスした色の付けた呼び名（sky-l「社内」）が見えている
+      await expect(name).toHaveText('社内')
+    })
+  }
+
+  test('指・マウスで上の行の色を押した時は、呼び名の1行が隠れていてもシートの中を送らない（押した物がそのまま効く。12.2）', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+    await page.getByTestId('cal-add').click()
+    const sheet = sheetOf(page)
+    await settled(sheet)
+    const body = sheet.locator('.modal-body')
+    for (const [key, how] of [
+      ['coral-l', 'tap'],
+      ['rose-l', 'click'],
+    ] as const) {
+      // 上の行の丸は全部見え、その下（下の行・呼び名の1行）は見える所の下に隠れるように送っておく
+      const top = await body.evaluate((e, k) => {
+        const s = e.querySelector(`[data-testid="item-label-${k}"]`)!.getBoundingClientRect()
+        e.scrollTop += s.bottom + 6 - e.getBoundingClientRect().bottom
+        return e.scrollTop
+      }, key)
+      const swatch = page.getByTestId(`item-label-${key}`)
+      const area = (await body.boundingBox())!
+      const b = (await swatch.boundingBox())!
+      expect(b.y + b.height).toBeLessThanOrEqual(area.y + area.height)
+      expect((await page.getByTestId('item-label-name').boundingBox())!.y).toBeGreaterThan(area.y + area.height)
+      if (how === 'tap') await swatch.tap()
+      else await swatch.click()
+      await expect(sheet).toHaveAttribute('data-label', key)
+      expect(await body.evaluate((e) => e.scrollTop), how).toBe(top)
+    }
   })
 
   for (const c of [
