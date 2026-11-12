@@ -7,6 +7,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
+  centerOf,
   collectDiagnosticsOnFailure,
   holdTurns,
   longPressDrag,
@@ -441,6 +442,33 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     expect(await countByTitle(page, 'かいぎ')).toBe(1)
   })
 
+  test('すばやく足す: 日本語の変換を決める前に［足す］の上でマウスを押し、［足す］の外（入力欄の上）で離すと、足さずに入力欄へ戻る（変換は決まったまま・開いたまま。12.1）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await cell(page, 'work', '2026-11-12').hover()
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await recordCompositionEnds(input)
+    await imeCompose(page, 'かいぎ')
+    await page.getByTestId('quick-add-button').hover()
+    await page.mouse.down()
+    await input.hover()
+    await page.mouse.up()
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('かいぎ')
+    expect(await compositionEnds(page)).toEqual([{ value: 'かいぎ', added: false }])
+    await page.waitForTimeout(500)
+    expect(await itemByTitle(page, 'かいぎ')).toBeNull()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    await expect(input).toBeFocused()
+    // 決めた後の Enter で足せる
+    await page.keyboard.press('Enter')
+    await expect.poll(() => countByTitle(page, 'かいぎ')).toBe(1)
+    await expect(input).toHaveValue('')
+  })
+
   test('すばやく足すの書きかけは、閉じても読み込み直しても残り、同じ日・同じ段で開き直すと戻る（ITEMS-159）', async ({
     page,
   }) => {
@@ -858,6 +886,40 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(input).toHaveValue('')
     await expect(input).toBeFocused()
     expect(await countByTitle(page, 'かいぎ')).toBe(1)
+  })
+
+  test('すばやく足す（指）: 変換中に［足す］を押した後、キーボードが閉じて画面が動き、指の下に別のカードが来ても、そのカードを開かず、［足す］の分を1回だけ足して開いたまま（12.1・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    const ime = await imeCompose(page, 'かいぎ')
+    const at = await centerOf(page.getByTestId('quick-add-button'))
+    await ime.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] })
+    await page.waitForTimeout(80)
+    // 押した時に入力欄から外したので、キーボードが閉じて画面が下へ動いた（指は同じ所のまま）
+    const under = await page.evaluate(({ x, y }) => {
+      const root = document.getElementById('root') as HTMLElement
+      root.style.transform = 'translateY(45px)'
+      return document.elementFromPoint(x, y)?.closest('[data-testid^="week-card-"]')?.getAttribute('data-testid') ?? null
+    }, at)
+    // 指の下にほかの予定のカードが来ている（このテストが確かめる形）
+    expect(under).toMatch(/^week-card-/)
+    await ime.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect.poll(() => countByTitle(page, 'かいぎ')).toBe(1)
+    await page.waitForTimeout(500)
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    expect(await countByTitle(page, 'かいぎ')).toBe(1)
+    // 画面を戻すと、続けて打って足せる
+    await page.evaluate(() => ((document.getElementById('root') as HTMLElement).style.transform = ''))
+    await input.fill('資料')
+    await input.press('Enter')
+    await expect.poll(() => itemByTitle(page, '資料')).toMatchObject({ start: '2026-11-10', kind: 'private' })
   })
 
   test('すばやく足す（指）: 字を打ったまま、外から指でなぞって週をスクロールしても、足さず閉じない（キーボードを出したまま見て、続けて打てる。12.1）', async ({

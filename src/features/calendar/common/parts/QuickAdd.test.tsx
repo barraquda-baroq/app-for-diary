@@ -351,6 +351,24 @@ describe('［足す］（入力欄の右の端の✓。Enter と同じ。22. の
     expect(items()).toHaveLength(1)
     expect(localStorage.getItem(quickDraftKey('2026-11-10', 'work'))).toBe('書きかけ')
   })
+
+  it('Tab で移った［足す］の Enter・Space は、空・空白だけの時と決まりに合わない件名（201字）の時は何もしない（フォーカスも［足す］に残る）', async () => {
+    const user = userEvent.setup()
+    const { input, onClose } = await open()
+    await user.tab()
+    expect(document.activeElement).toBe(button())
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(document.activeElement).toBe(button())
+    expect(items()).toHaveLength(0)
+    expect(onClose).not.toHaveBeenCalled()
+    typeText(input, 'あ'.repeat(201))
+    await user.keyboard('{Enter}')
+    expect(document.activeElement).toBe(button())
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('あ'.repeat(201))
+    expect(onClose).not.toHaveBeenCalled()
+  })
 })
 
 describe('入力欄の外を押すと、字があれば足してから閉じる（22. の段階2の終わりの確かめ）', () => {
@@ -735,6 +753,7 @@ describe('日本語の変換を決める前に外れた時も、見えている�
     typeText(input, 'かいぎ')
     pressAdd()
     fireEvent.compositionEnd(input)
+    advance(0)
     expect(items().map((i) => i.title)).toEqual(['かいぎ'])
     expect(input.value).toBe('')
     typeText(input, 'next')
@@ -746,7 +765,7 @@ describe('日本語の変換を決める前に外れた時も、見えている�
 })
 
 /**
- * ［足す］を押す（指・マウスの順: pointerdown → mousedown → pointerup → click）。between は押してから離すまでにすること
+ * ［足す］を押す（マウスの順: pointerdown → mousedown → pointerup → click）。between は押してから離すまでにすること
  * （キーボードが変換を決める・時間がたつ）
  */
 function pressAdd(between?: () => void) {
@@ -758,8 +777,18 @@ function pressAdd(between?: () => void) {
   fireEvent.click(button())
 }
 
+/**
+ * 指で［足す］を押して離す（pointerdown → pointerup。指は押した物に捕まえられるので、離した出来事は［足す］に来る）。clientX は
+ * 離した所の横の位置（jsdom の［足す］の大きさは 0、左の端は 0）。続く mousedown・click は呼んだ側で送る
+ */
+function touchAdd(between?: () => void, clientX = 0) {
+  fireEvent.pointerDown(button(), { button: 0, pointerType: 'touch', pointerId: 7 })
+  between?.()
+  fireEvent.pointerUp(button(), { button: 0, pointerType: 'touch', pointerId: 7, clientX })
+}
+
 describe('変換を決める前に［足す］を押した時は、変換を決めてから足す（開発。22. の段階2の終わりの確かめ）', () => {
-  it('押した時（pointerdown）に入力欄から外して変換を決めてもらい、変換の終わり（compositionend）の後に、決まった字を1回だけ足して空に戻す。押し終えるとフォーカスは入力欄（開いたまま）', async () => {
+  it('押した時（pointerdown）に入力欄から外して変換を決めてもらい、変換の終わり（compositionend）の後、離した時（pointerup）に、決まった字を1回だけ足して空に戻す。フォーカスは入力欄（開いたまま）', async () => {
     const { input, onClose } = await open({ date: '2026-11-12', kind: 'private' })
     fakeTimers()
     pageFocused(true)
@@ -793,7 +822,7 @@ describe('変換を決める前に［足す］を押した時は、変換を決�
     expect(items().map((i) => i.title)).toEqual(['会議', '資料'])
   })
 
-  it('押し終えた（click）時にまだ変換が終わっていなければ、フォーカスは先に戻し、変換の終わりを待ってから足して空に戻す（それまでは空にしない）', async () => {
+  it('離した時にまだ変換が終わっていなければ、フォーカスは先に戻し、変換の終わりの後に、ブラウザが決まった字を書いてから足して空に戻す（それまでは空にしない。WebKit は compositionend の後に書く）', async () => {
     const { input, onClose } = await open()
     fakeTimers()
     fireEvent.compositionStart(input)
@@ -802,8 +831,15 @@ describe('変換を決める前に［足す］を押した時は、変換を決�
     expect(document.activeElement).toBe(input)
     expect(items()).toHaveLength(0)
     expect(input.value).toBe('かいぎ')
-    typeText(input, '会議')
+    // 待っている間の Enter は、押した［足す］の分と重ねない
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(items()).toHaveLength(0)
+    // 変換の終わりが来てから、ブラウザが決まった字を書く
     fireEvent.compositionEnd(input, { data: '会議' })
+    expect(input.value).toBe('かいぎ')
+    typeText(input, '会議')
+    expect(items()).toHaveLength(0)
+    advance(0)
     expect(items().map((i) => i.title)).toEqual(['会議'])
     expect(input.value).toBe('')
     expect(document.activeElement).toBe(input)
@@ -811,6 +847,7 @@ describe('変換を決める前に［足す］を押した時は、変換を決�
     fireEvent.compositionEnd(input)
     advance(COMMIT_WAIT_MS * 2)
     expect(items()).toHaveLength(1)
+    expect(input.value).toBe('')
     expect(onClose).not.toHaveBeenCalled()
   })
 
@@ -831,7 +868,7 @@ describe('変換を決める前に［足す］を押した時は、変換を決�
     fireEvent.compositionEnd(input)
     expect(items()).toHaveLength(1)
 
-    // 長く押していた（待ち終えてから離した）: 離して click が来た時に足す
+    // 長く押していた（待ち終えてから離した）: 離した時に足す
     fireEvent.compositionStart(input)
     typeText(input, 'しりょう')
     pressAdd(() => {
@@ -855,8 +892,121 @@ describe('変換を決める前に［足す］を押した時は、変換を決�
     expect(items()).toHaveLength(0)
     expect(input.value).toBe('かいぎ')
     fireEvent.compositionEnd(input, { data: 'かいぎ' })
+    advance(0)
     expect(items().map((i) => i.title)).toEqual(['かいぎ'])
     expect(input.value).toBe('')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('指で離した後の mousedown・click が、画面が動いて指の下に来た別の物に来ても、その物の操作にしない。［足す］の分は離した時に1回だけ足す（開いたまま・フォーカスは入力欄・お知らせ無し）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    const other = screen.getByTestId('outside')
+    const otherClick = vi.fn()
+    other.addEventListener('click', otherClick)
+    touchAdd(() => fireEvent.compositionEnd(input, { data: 'かいぎ' }))
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    // 指の下の別の物（キーボードが閉じて画面が動いた）。フォーカスも動かない
+    expect(fireEvent.mouseDown(other)).toBe(false)
+    fireEvent.mouseUp(other)
+    expect(fireEvent.click(other)).toBe(false)
+    expect(otherClick).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(input)
+    advance(CLICK_WAIT_MS + BLUR_SETTLE_MS + COMMIT_WAIT_MS)
+    expect(items()).toHaveLength(1)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(toasts()).toHaveLength(0)
+    // その後の押した物は、ふつうに押せる（外を押すと足す物が無いので閉じる）
+    fireEvent.pointerDown(other, { button: 0 })
+    fireEvent.pointerUp(other, { button: 0 })
+    fireEvent.click(other)
+    expect(otherClick).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
+  })
+
+  it('指で離した後に click が来なくても（画面が動いて押したことにならなかった）、離した時に足して、開いたまま（キーボードを閉じた時と同じにしない）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    pageFocused(true)
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    touchAdd()
+    expect(document.activeElement).toBe(input)
+    advance(COMMIT_WAIT_MS)
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    advance(CLICK_WAIT_MS + BLUR_SETTLE_MS)
+    expect(items()).toHaveLength(1)
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(toasts()).toHaveLength(0)
+  })
+
+  it('マウスを［足す］の外で離した時と、指を横へなぞって［足す］の横の幅の外で離した時は、足さずに入力欄へ戻す（変換は決まったまま・開いたまま）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    pageFocused(true)
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    // マウス: ［足す］で押して、入力欄の上で離す（click は2つの共通の親に来る）
+    fireEvent.pointerDown(button(), { button: 0 })
+    fireEvent.compositionEnd(input, { data: 'かいぎ' })
+    fireEvent.mouseDown(button())
+    fireEvent.pointerUp(input, { button: 0 })
+    fireEvent.mouseUp(input)
+    fireEvent.click(input.parentElement as HTMLElement)
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('かいぎ')
+    expect(document.activeElement).toBe(input)
+    advance(CLICK_WAIT_MS + BLUR_SETTLE_MS + COMMIT_WAIT_MS)
+    expect(items()).toHaveLength(0)
+    expect(onClose).not.toHaveBeenCalled()
+
+    // 指: ［足す］で押して、横へなぞって離す（click は来ない）
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎの')
+    touchAdd(undefined, 200)
+    expect(document.activeElement).toBe(input)
+    advance(CLICK_WAIT_MS + BLUR_SETTLE_MS + COMMIT_WAIT_MS)
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('かいぎの')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(toasts()).toHaveLength(0)
+    // 決めた後の Enter で足せる
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(items().map((i) => i.title)).toEqual(['かいぎの'])
+  })
+
+  it('離して入力欄へ戻した後、変換の終わりを待っている間にキーボードの✓で外れた時は、押した［足す］の分を足して閉じる（開いたまま、フォーカスの無い入力欄を残さない）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    pressAdd()
+    expect(document.activeElement).toBe(input)
+    keyboardDone(input)
+    advance(BLUR_SETTLE_MS)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('blur')
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    advance(COMMIT_WAIT_MS * 2)
+    expect(items()).toHaveLength(1)
+  })
+
+  it('外した時にブラウザが変換中の字を捨てても（入力欄が空になった）、押した時に見えていた字を足す（打った字を黙って消さない）', async () => {
+    const { input, onClose } = await open()
+    fakeTimers()
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    pressAdd(() => typeText(input, ''))
+    advance(COMMIT_WAIT_MS)
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
     expect(onClose).not.toHaveBeenCalled()
   })
 
@@ -874,7 +1024,7 @@ describe('変換を決める前に［足す］を押した時は、変換を決�
     expect(items().map((i) => i.title)).toEqual(['電話'])
   })
 
-  it('変換中に［足す］を押したまま click にならなかった（なぞった・長押し）時は、外れたままなので、キーボードを閉じた時と同じく足して閉じる', async () => {
+  it('変換中に［足す］を押した指でスクロールした（pointercancel。ブラウザが指を受け取った）時は、外れたままなので、キーボードを閉じた時と同じく足して閉じる', async () => {
     const { input, onClose } = await open()
     fakeTimers()
     pageFocused(true)
