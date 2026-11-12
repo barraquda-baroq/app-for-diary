@@ -38,7 +38,7 @@ import {
 import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
 import type { Item, ItemKind } from '../../../../domain/types'
 import { vibrate15 } from '../../../../ui/motion'
-import { scrollIntoViewWithin } from '../../../../ui/scrollWithin'
+import { scrollIntoViewWithin, toastInset } from '../../../../ui/scrollWithin'
 import { useWeekScroller } from '../weekScroller'
 import { applyDrop, settle, SETTLE_BACK } from './drop'
 import { activationOf, pointerKind } from './gesture'
@@ -208,8 +208,9 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
             .find((x) => x?.isConnected)
           // 出す所は、収める動き（1.03倍から）を掛ける前の大きさで測る。週・段の中だけを動かし、ページは動かさない（G4）。落とした時に
           // 見える所へ出すのはここだけ（目立つ側は applyDrop の flashInPlace で動かない。●を動かした時に、目立つ始点のカード・受けた
-          // 表示の方へ送って●を画面の外へ出さないように。7.11）
-          scrollIntoViewWithin(el)
+          // 表示の方へ送って●を画面の外へ出さないように。7.11）。画面の下の「〜へ移しました［元に戻す］」（applyDrop が出した物）の
+          // 下には出さず、その上まで（6秒のお知らせに隠れて、目立たせても見えないことが無いように）
+          if (el) scrollIntoViewWithin(el, { bottomInset: toastInset(el) })
           settle(el)
         })
       }

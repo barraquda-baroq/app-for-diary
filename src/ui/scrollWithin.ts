@@ -11,12 +11,19 @@
 // - overflow が hidden・visible の向きは動かさない（字を切るための hidden の箱をずらさない）
 // - 位置の決まった（position: fixed）箱より外は動かしても要素が動かないので、そこで止める（下からのシート・小窓）
 // - 要素の scroll-margin と箱の scroll-padding は scrollIntoView と同じく見込む
+// - bottomInset を渡すと、画面の下の端からその高さは見える所に数えない（下に重なるお知らせ。toastInset）。箱の中で送れる所までなので、
+//   箱の終わりの近くの物はお知らせの下に残ることがある（docs/SPEC.md の 4.9）
 import { scrollBehavior } from './motion'
 
 export interface ScrollWithinOptions {
   /** なめらかに動かすか（既定は src/ui/motion.ts の scrollBehavior。視差効果を減らす設定ではすぐに） */
   behavior?: ScrollBehavior
+  /** 画面の下の端からこの高さ（px）は、上に重なる物（お知らせ）があるので見える所に数えない（既定 0） */
+  bottomInset?: number
 }
+
+/** お知らせとその上に出す物の間 */
+const TOAST_GAP = 8
 
 /** スクロールできる向きの overflow */
 const SCROLLS = new Set(['auto', 'scroll', 'overlay'])
@@ -85,6 +92,8 @@ export function scrollIntoViewWithin(el: Element | null | undefined, opts: Scrol
   let left = r.left - px(m.scrollMarginLeft)
   let right = r.right + px(m.scrollMarginRight)
   const screen = viewport()
+  /** 縦に見える所の下の端（画面の下の端から bottomInset を除く。測れない時・除くと残らない時は 0 = 画面で狭めない） */
+  const screenBottom = Math.max(screen.height - (opts.bottomInset ?? 0), 0)
   for (let p = el.parentElement; p && !isPage(p); p = p.parentElement) {
     const cs = getComputedStyle(p)
     const canY = SCROLLS.has(cs.overflowY) && p.scrollHeight > p.clientHeight
@@ -99,7 +108,7 @@ export function scrollIntoViewWithin(el: Element | null | undefined, opts: Scrol
         const [lo, hi] = onScreen(
           boxTop + px(cs.scrollPaddingTop),
           boxTop + p.clientHeight - px(cs.scrollPaddingBottom),
-          screen.height,
+          screenBottom,
         )
         dy = clamp(roundOut(nearestDelta(top, bottom, lo, hi)), -p.scrollTop, p.scrollHeight - p.clientHeight - p.scrollTop)
       }
@@ -121,4 +130,21 @@ export function scrollIntoViewWithin(el: Element | null | undefined, opts: Scrol
     }
     if (cs.position === 'fixed') break
   }
+}
+
+/**
+ * 画面の下に出ているお知らせ（src/ui/Layout.tsx の .toasts。3.9）が el と横に重なる時の、お知らせの上の端から画面の下の端までの
+ * 高さに、すき間 8px を足した物（scrollIntoViewWithin の bottomInset。出ていない・重ならない・上に出している時は 0）。ドラッグで
+ * 落とした時の「〜へ移しました［元に戻す］」は 6秒出るので、移した物をその下に出すと、目立たせる 1.2秒の間も見えない（7.11）
+ */
+export function toastInset(el: Element): number {
+  const toasts = document.querySelector('.toasts')
+  if (!toasts || toasts.childElementCount === 0) return 0
+  const t = toasts.getBoundingClientRect()
+  const r = el.getBoundingClientRect()
+  const { height } = viewport()
+  // 小さな画面を開いている間は上に出す（その時は下を空けない）
+  if (!(height > 0) || t.height === 0 || t.top < height / 2 || t.top >= height) return 0
+  if (r.right <= t.left || r.left >= t.right) return 0
+  return height - t.top + TOAST_GAP
 }

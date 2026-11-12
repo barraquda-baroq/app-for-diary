@@ -1,7 +1,7 @@
 // 要素を、それを入れたスクロールする所の中だけで見える所まで出す（scrollIntoViewWithin。ページは動かさない。WP11s の G4・7.11・
 // CALENDAR-181）。jsdom は大きさを測らないので、箱の位置・大きさ・スクロールの量を決めて確かめる
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nearestDelta, scrollIntoViewWithin } from './scrollWithin'
+import { nearestDelta, scrollIntoViewWithin, toastInset } from './scrollWithin'
 
 /** 箱の位置と大きさ（rect は [left, top, width, height]。client・scroll は [幅, 高さ]。無ければ rect と同じ） */
 interface Geom {
@@ -335,5 +335,53 @@ describe('scrollIntoViewWithin: ウィークリーの形（段の中・7日を�
     geom(card, { rect: [600, 10, 100, 40] })
     scrollIntoViewWithin(card)
     expect(rootTo).toHaveBeenCalledWith({ left: 300, top: 0, behavior: 'smooth' })
+  })
+})
+
+describe('画面の下のお知らせの上に出す（bottomInset・toastInset。落とした時の「〜へ移しました［元に戻す］」。7.11・3.9）', () => {
+  /** 画面の下の真ん中のお知らせ（src/ui/Layout.tsx の .toasts。中に1つ） */
+  function toasts(rect: [number, number, number, number]) {
+    const box = div(document.body)
+    box.className = 'toasts'
+    div(box).className = 'toast'
+    geom(box, { rect })
+    return box
+  }
+
+  it('bottomInset: 画面の下の端からその高さは見える所に数えず、その上の端まで送る。送れる所の終わりまでにとどめる', () => {
+    // S の週（画面 412×839）の下の方に落としたカード（画面の下の端にぴったり）。お知らせは 772〜823
+    const week = div(document.body, { overflowY: 'auto' })
+    const weekTo = geom(week, { rect: [16, 214, 380, 630], scroll: [380, 2000], at: { top: 800 } })
+    const card = div(week)
+    geom(card, { rect: [20, 795, 170, 44] })
+    scrollIntoViewWithin(card)
+    expect(weekTo).not.toHaveBeenCalled()
+    scrollIntoViewWithin(card, { bottomInset: 839 - 772 + 8 })
+    // 見える所の下の端は 839 − 75 = 764: 839 − 764 = 75px 送る
+    expect(weekTo).toHaveBeenLastCalledWith({ left: 0, top: 875, behavior: 'smooth' })
+    // 週の終わりの近く（あと 30px しか送れない）では、送れる所まで
+    const endTo = geom(week, { rect: [16, 214, 380, 630], scroll: [380, 1460], at: { top: 800 } })
+    scrollIntoViewWithin(card, { bottomInset: 75 })
+    expect(endTo).toHaveBeenLastCalledWith({ left: 0, top: 830, behavior: 'smooth' })
+  })
+
+  it('toastInset: 出ているお知らせと横に重なる時だけ、お知らせの上の端から画面の下の端まで + 8px', () => {
+    const card = div(document.body)
+    geom(card, { rect: [20, 795, 170, 44] })
+    expect(toastInset(card)).toBe(0)
+    // 画面の下の真ん中（412px の画面で幅 388px）の、772〜823 のお知らせ
+    const box = toasts([12, 772, 388, 51])
+    expect(toastInset(card)).toBe(839 - 772 + 8)
+    // 横に重ならない物（L の左の端の列など）は空けない
+    const left = div(document.body)
+    geom(left, { rect: [0, 795, 10, 44] })
+    expect(toastInset(left)).toBe(0)
+    // 小さな画面を開いている間は上に出している（下を空けない）
+    geom(box, { rect: [12, 12, 388, 51] })
+    expect(toastInset(card)).toBe(0)
+    // 中が空（お知らせが消えた）
+    geom(box, { rect: [12, 772, 388, 51] })
+    box.replaceChildren()
+    expect(toastInset(card)).toBe(0)
   })
 })

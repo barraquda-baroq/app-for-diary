@@ -590,6 +590,38 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
 
+  test('画面の下の方へ落としたカードは、6秒出る「〜へ移しました［元に戻す］」の下に隠さず、その上まで週を送って見せる（7.11・3.9）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const view = page.getByTestId('view-week')
+    // 11/12 の仕事の半分の上の端を画面の下の端から 110px に置く（落とす所は見えていて、移ったカードは画面の下の方か外に入る）
+    await view.evaluate((v) => {
+      const half = v.querySelector('.wk-half[data-tier="work"][data-date="2026-11-12"]') as HTMLElement
+      v.scrollTop += Math.round(half.getBoundingClientRect().top - (window.innerHeight - 110))
+    })
+    await recordPageScroll(page)
+    const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
+    await lifted(page)
+    const to = halfS(page, 'work', '2026-11-12')
+    const p = await visiblePoint(to)
+    // 画面の下の 60px（自動のスクロール）に入らない所
+    await drag.moveTo({ x: p.x, y: Math.min(p.y, (await page.evaluate(() => window.innerHeight)) - 80) })
+    await overDropDay(to)
+    await drag.drop()
+    const note = toast(page, '11/12（木）へ移しました')
+    await expect(note).toBeVisible()
+    await scrollSettled(view)
+    const moved = to.getByTestId(`week-card-${I.meeting}`)
+    await expect(moved).toBeInViewport({ ratio: 1 })
+    const m = (await moved.boundingBox())!
+    const t = (await page.locator('.toasts').boundingBox())!
+    expect(m.y + m.height, '移ったカードの下の端はお知らせの上').toBeLessThanOrEqual(t.y + 0.5)
+    await expect(note).toBeVisible()
+    expect(await pageScrolls(page)).toEqual([])
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  })
+
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     test(`終点の●を落とした後は、●を画面の中に出したままにする（目立つ受けた表示へは送らない。7.11・4.9）（${reducedMotion}）`, async ({
       page,
