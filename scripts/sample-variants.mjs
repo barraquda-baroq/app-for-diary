@@ -6,6 +6,8 @@
 //                                               → 作者が選んだ案の値を、src/styles.css に書く形で出す（段階2の終わり。WP14）
 //   node scripts/sample-variants.mjs --emit spec --pick …
 //                                               → 同じ値を、仕様書の 4.5・4.6 の表の行の形で出す
+//   node scripts/sample-variants.mjs --emit names --pick labels-b
+//                                               → 選んだ案の既定の呼び名を、src/domain/labels.ts の LABEL_DEFAULT_NAMES の行の形で出す
 // 案（見本のページの A・B・C）:
 //   hue30           Q2 B  ラベルの12の色合いを 30° おき（15°・45°…345°）。明るさと彩度は 4.6 の決まりのまま（sRGB に入らなければ彩度を下げる）
 //   depth-lighter   Q3 A  区分の地とハイライト（--work/private-soft・area・sheet・marker）を、面（--surface）からの OKLab の差 × 0.7
@@ -15,9 +17,15 @@
 //   accent-lighter  Q6 A  グレーの差し色（--primary・--primary-hover・--today-bg・--today-ring・--selection・--accent-soft）を
 //                         面に近づける向きに OKLCH の L を 0.06（彩度 0）
 //   accent-deeper   Q6 C  面から離す向きに 0.06
+//   labels-a        Q9 A  ラベルの24色の作り直し（■1・■2 の答え: パステルの縛りを外す）。呼び名は今のまま、色ごとの明るさの段（LABEL_SETS）
+//   labels-b        Q9 B  同じく、24色それぞれに和色の名前（桜・紅・朱・琥珀…）。淡と濃の行で色合いと明るさを互い違いに（LABEL_SETS）
 // 「今」（B・Q4 A・Q5 A）は今の src/styles.css のまま。どの案も、src/styles.test.ts と同じ決まり（字 4.5:1、大きな数字・済んだ物 3:1、
 // ラベルと地の明るさの差 0.1、ラベルなしの線と24色の ΔE 0.06 など）で確かめ、通らない案は書き出さずに止める（checkTheme）。
-// アプリの中には入らない（見本は e2e/samples/samples.spec.ts が page.addStyleTag で差し込んで撮る）
+// アプリの中には入らない（見本は e2e/samples/samples.spec.ts が page.addStyleTag で差し込んで撮る）。
+// 作者の答え（2026-11-12。ANSWERS）: Q3 A・Q4 B・Q5 B・Q6 B（今）を選び、その値は src/styles.css に入れた。答えた問い（Q2〜Q6）の案は、
+// 見本で見比べてもらった時の値（答える前の値 ASKED_TOKENS を今の src/styles.css に重ねた物）から作ったまま残す（見本の控え）。
+// その切り抜きは、答える前の値（e2e/samples/variants.json の asked。askedCss）を敷いてから撮る（「今」の絵が、見比べてもらった時の
+// 「今」になる）。まだ答えの無い Q9 の案は、今の src/styles.css（答えを入れた値）の上で確かめ、そのまま撮る
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,13 +33,17 @@ import {
   chromaOf,
   contrast,
   deltaE,
+  fromLinear,
   hexToOklab,
   hexToOklch,
+  hexToRgb,
   inGamut,
   lightness,
   oklabToRgb,
   oklchToHex,
   rgbToHex,
+  rgbToOklab,
+  toLinear,
 } from './lib/color.mjs'
 
 const repoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -91,6 +103,138 @@ export const LABEL_RULES = {
 export const HUES_NOW = [10, 40, 68, 98, 128, 160, 192, 225, 258, 288, 318, 350]
 /** 30° おきの案（15°・45°…345°） */
 export const HUES_30 = HUES_NOW.map((_, i) => 15 + 30 * i)
+
+/** 今の既定の呼び名（4.6。桜・淡 … 牡丹・濃） */
+const NAMES_NOW = Object.fromEntries(LABEL_KEYS.map((k, i) => [k, `${LABEL_NAMES[i % 12]}・${k.endsWith('-l') ? '淡' : '濃'}`]))
+
+/**
+ * Q9（■1・■2 の答え「色の間が近すぎる。同じ色温度の中での違いがほとんど無い」「青の仲間と左のピンクの仲間が特に近い。
+ * パステルの縛りを一度外して」）: ラベルの24色を作り直した2つの案。データはキーだけを持つので、キーと並び（上の行に淡、下の行に濃を
+ * 色合いの順に）はそのまま（D5・4.6）。4.6 の「行ごとに1つの L・C」はやめ、外観ごと・色ごとに OKLCH の [L, C, h] を決めた
+ * （どれも sRGB に入り、彩度を下げずにそのまま16進にする。labelSet が確かめる）。どちらも:
+ * - 24色のどの2色も OKLab の差（ΔE）0.08 ほど以上（今はホワイト 0.031・ダーク 0.026。桜・淡と牡丹・淡）。青の仲間（青磁・空・瑠璃・藤）と
+ *   ピンクの仲間（桜・珊瑚・牡丹）も同じ
+ * - 色ごとに明るさと彩度を変える（同じ行・同じ色温度の中でも明るさが違う）。淡は同じ色合いの濃より明るさ 0.1 以上明るい
+ * - 色覚の違い（1型・2型。Machado 2009 の重さ 1）で見ても、今より離れる（今はダークで ΔE 0.002 の組がある）
+ * - ラベルの決まり（地との明るさの差 0.1・ラベルなしの線と ΔE 0.06。Q3 のどの答えでも）・✓（--on-label）が 3:1 以上
+ * - ディープダークは今と同じく、ほぼグレー（彩度 0.03 以下）。ダークの色合いと明るさの並びを写し、位置とアイコンで見分ける（D20・4.3）
+ * labels-a（案A）: 12の色合いの並びと既定の呼び名（桜・淡 … 牡丹・濃）は今のまま。黄が明るく、青・紫が深い、色ごとの明るさの段に
+ *   する。彩度の上限はダーク 0.14・ホワイト 0.15（ギラつかない。Novel Studio の領域の色と同じくらい）
+ * labels-b（案B）: 24色に別々の和色の名前を付ける（下の names）。淡と濃の行で色合いを少しずらし、明るさも行の中で互い違いにして
+ *   （淡い桜の隣に深い珊瑚、など）、行の中の違いを大きくする。彩度の上限はダーク・ホワイトとも 0.155
+ */
+export const LABEL_SETS = {
+  'labels-a': {
+    names: NAMES_NOW,
+    oklch: {
+      'rose-l': { white: [0.805, 0.08, 349], dark: [0.895, 0.065, 347], 'deep-dark': [0.536, 0.028, 2] },
+      'coral-l': { white: [0.776, 0.122, 33], dark: [0.827, 0.095, 29], 'deep-dark': [0.561, 0.024, 36] },
+      'apricot-l': { white: [0.753, 0.085, 73], dark: [0.873, 0.106, 76], 'deep-dark': [0.583, 0.03, 72] },
+      'lemon-l': { white: [0.808, 0.134, 97], dark: [0.952, 0.081, 98], 'deep-dark': [0.606, 0.018, 95] },
+      'lime-l': { white: [0.737, 0.109, 126], dark: [0.856, 0.105, 129], 'deep-dark': [0.569, 0.019, 122] },
+      'mint-l': { white: [0.786, 0.101, 165], dark: [0.918, 0.085, 166], 'deep-dark': [0.597, 0.028, 165] },
+      'teal-l': { white: [0.717, 0.114, 193], dark: [0.823, 0.097, 193], 'deep-dark': [0.565, 0.026, 193] },
+      'sky-l': { white: [0.79, 0.095, 225], dark: [0.889, 0.064, 234], 'deep-dark': [0.587, 0.023, 232] },
+      'blue-l': { white: [0.722, 0.112, 253], dark: [0.807, 0.099, 253], 'deep-dark': [0.554, 0.028, 249] },
+      'wisteria-l': { white: [0.661, 0.119, 281], dark: [0.733, 0.115, 275], 'deep-dark': [0.527, 0.019, 278] },
+      'violet-l': { white: [0.73, 0.108, 311], dark: [0.81, 0.103, 308], 'deep-dark': [0.55, 0.03, 310] },
+      'peony-l': { white: [0.659, 0.141, 335], dark: [0.741, 0.13, 336], 'deep-dark': [0.578, 0.024, 339] },
+      'rose-d': { white: [0.533, 0.147, 9], dark: [0.611, 0.136, 14], 'deep-dark': [0.435, 0.027, 8] },
+      'coral-d': { white: [0.591, 0.133, 34], dark: [0.696, 0.134, 29], 'deep-dark': [0.457, 0.029, 37] },
+      'apricot-d': { white: [0.593, 0.122, 75], dark: [0.715, 0.126, 70], 'deep-dark': [0.48, 0.026, 63] },
+      'lemon-d': { white: [0.673, 0.114, 93], dark: [0.792, 0.106, 93], 'deep-dark': [0.506, 0.025, 96] },
+      'lime-d': { white: [0.605, 0.124, 120], dark: [0.704, 0.121, 116], 'deep-dark': [0.465, 0.026, 125] },
+      'mint-d': { white: [0.646, 0.119, 160], dark: [0.731, 0.115, 160], 'deep-dark': [0.486, 0.025, 162] },
+      'teal-d': { white: [0.582, 0.096, 190], dark: [0.66, 0.103, 191], 'deep-dark': [0.463, 0.028, 190] },
+      'sky-d': { white: [0.602, 0.128, 238], dark: [0.68, 0.137, 234], 'deep-dark': [0.445, 0.029, 231] },
+      'blue-d': { white: [0.525, 0.138, 251], dark: [0.6, 0.14, 251], 'deep-dark': [0.404, 0.027, 251] },
+      'wisteria-d': { white: [0.525, 0.126, 287], dark: [0.606, 0.125, 290], 'deep-dark': [0.426, 0.028, 282] },
+      'violet-d': { white: [0.594, 0.129, 308], dark: [0.681, 0.13, 308], 'deep-dark': [0.45, 0.023, 309] },
+      'peony-d': { white: [0.538, 0.147, 337], dark: [0.614, 0.139, 334], 'deep-dark': [0.412, 0.03, 337] },
+    },
+  },
+  'labels-b': {
+    names: {
+      'rose-l': '桜',
+      'coral-l': '珊瑚',
+      'apricot-l': '杏',
+      'lemon-l': '菜の花',
+      'lime-l': '若葉',
+      'mint-l': '若竹',
+      'teal-l': '青磁',
+      'sky-l': '空',
+      'blue-l': '勿忘草',
+      'wisteria-l': '藤',
+      'violet-l': '菖蒲',
+      'peony-l': '撫子',
+      'rose-d': '紅',
+      'coral-d': '朱',
+      'apricot-d': '琥珀',
+      'lemon-d': '山吹',
+      'lime-d': '萌黄',
+      'mint-d': '常磐',
+      'teal-d': '浅葱',
+      'sky-d': '露草',
+      'blue-d': '瑠璃',
+      'wisteria-d': '桔梗',
+      'violet-d': '菫',
+      'peony-d': '牡丹',
+    },
+    /** 呼び名の読み（見本のページで添える） */
+    readings: {
+      'rose-l': 'さくら',
+      'coral-l': 'さんご',
+      'apricot-l': 'あんず',
+      'lemon-l': 'なのはな',
+      'lime-l': 'わかば',
+      'mint-l': 'わかたけ',
+      'teal-l': 'せいじ',
+      'sky-l': 'そら',
+      'blue-l': 'わすれなぐさ',
+      'wisteria-l': 'ふじ',
+      'violet-l': 'あやめ',
+      'peony-l': 'なでしこ',
+      'rose-d': 'くれない',
+      'coral-d': 'しゅ',
+      'apricot-d': 'こはく',
+      'lemon-d': 'やまぶき',
+      'lime-d': 'もえぎ',
+      'mint-d': 'ときわ',
+      'teal-d': 'あさぎ',
+      'sky-d': 'つゆくさ',
+      'blue-d': 'るり',
+      'wisteria-d': 'ききょう',
+      'violet-d': 'すみれ',
+      'peony-d': 'ぼたん',
+    },
+    oklch: {
+      'rose-l': { white: [0.78, 0.075, 11], dark: [0.895, 0.057, 4], 'deep-dark': [0.588, 0.03, 4] },
+      'coral-l': { white: [0.694, 0.134, 30], dark: [0.789, 0.116, 33], 'deep-dark': [0.541, 0.026, 42] },
+      'apricot-l': { white: [0.733, 0.087, 71], dark: [0.861, 0.1, 68], 'deep-dark': [0.571, 0.024, 59] },
+      'lemon-l': { white: [0.771, 0.151, 96], dark: [0.925, 0.12, 105], 'deep-dark': [0.6, 0.028, 105] },
+      'lime-l': { white: [0.726, 0.139, 129], dark: [0.835, 0.13, 120], 'deep-dark': [0.559, 0.03, 120] },
+      'mint-l': { white: [0.667, 0.138, 163], dark: [0.774, 0.12, 160], 'deep-dark': [0.537, 0.026, 160] },
+      'teal-l': { white: [0.75, 0.081, 175], dark: [0.88, 0.09, 173], 'deep-dark': [0.58, 0.028, 176] },
+      'sky-l': { white: [0.703, 0.118, 223], dark: [0.809, 0.1, 215], 'deep-dark': [0.555, 0.026, 221] },
+      'blue-l': { white: [0.764, 0.07, 261], dark: [0.88, 0.058, 258], 'deep-dark': [0.583, 0.026, 264] },
+      'wisteria-l': { white: [0.692, 0.113, 289], dark: [0.796, 0.1, 292], 'deep-dark': [0.55, 0.03, 286] },
+      'violet-l': { white: [0.642, 0.141, 321], dark: [0.719, 0.13, 321], 'deep-dark': [0.524, 0.026, 321] },
+      'peony-l': { white: [0.714, 0.135, 349], dark: [0.824, 0.126, 344], 'deep-dark': [0.558, 0.026, 347] },
+      'rose-d': { white: [0.533, 0.155, 19], dark: [0.601, 0.147, 25], 'deep-dark': [0.408, 0.028, 22] },
+      'coral-d': { white: [0.592, 0.155, 47], dark: [0.688, 0.146, 44], 'deep-dark': [0.448, 0.03, 44] },
+      'apricot-d': { white: [0.53, 0.101, 70], dark: [0.61, 0.11, 70], 'deep-dark': [0.426, 0.03, 76] },
+      'lemon-d': { white: [0.647, 0.134, 79], dark: [0.744, 0.136, 82], 'deep-dark': [0.485, 0.028, 82] },
+      'lime-d': { white: [0.622, 0.155, 127], dark: [0.718, 0.155, 127], 'deep-dark': [0.46, 0.026, 127] },
+      'mint-d': { white: [0.534, 0.129, 156], dark: [0.609, 0.13, 156], 'deep-dark': [0.423, 0.026, 156] },
+      'teal-d': { white: [0.62, 0.094, 200], dark: [0.702, 0.104, 203], 'deep-dark': [0.456, 0.026, 203] },
+      'sky-d': { white: [0.557, 0.116, 235], dark: [0.624, 0.123, 232], 'deep-dark': [0.426, 0.03, 229] },
+      'blue-d': { white: [0.52, 0.155, 267], dark: [0.584, 0.15, 270], 'deep-dark': [0.402, 0.03, 276] },
+      'wisteria-d': { white: [0.591, 0.155, 290], dark: [0.677, 0.146, 281], 'deep-dark': [0.447, 0.028, 287] },
+      'violet-d': { white: [0.533, 0.155, 321], dark: [0.602, 0.15, 323], 'deep-dark': [0.421, 0.028, 326] },
+      'peony-d': { white: [0.596, 0.155, 353], dark: [0.664, 0.146, 353], 'deep-dark': [0.459, 0.03, 347] },
+    },
+  },
+}
 
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
 
@@ -245,17 +389,31 @@ const GRAY_TOKENS = [
   '--cover-border',
 ]
 const KIND_GROUNDS = ['--work-soft', '--private-soft', '--work-area', '--private-area', '--work-sheet', '--private-sheet']
-/** 区分の地の、面からの OKLab の差の幅（FRAME-180: 領域 0.03〜0.04、詳細 0.04〜0.06。ホワイトとダーク） */
-export const GROUND_BANDS = { area: [0.03, 0.04], sheet: [0.04, 0.06] }
+/**
+ * 区分の地の、面からの OKLab の差の幅（FRAME-180。ホワイトとダーク）。作者の答え Q3 A（淡い。面からの差 × 0.7）で、答える前の
+ * 領域 0.03〜0.04・詳細 0.04〜0.06（ASKED_GROUND_BANDS）を 0.7 倍にした
+ */
+export const GROUND_BANDS = { area: [0.021, 0.028], sheet: [0.028, 0.042] }
+/** 答える前（見本で見比べてもらった時）の区分の地の幅（Q2〜Q6 の案はこの幅で確かめた） */
+export const ASKED_GROUND_BANDS = { area: [0.03, 0.04], sheet: [0.04, 0.06] }
+/**
+ * マンスリーの件数（L・M。少し淡い --work-count・--private-count）の色と、件数を置く地（9.2・4.5）。字の大きさに関わらず 4.5:1 以上
+ * （太字の大きな字の 3:1 には頼らない。「99+」のマスは 19px より小さくなる）
+ */
+export const COUNT_PAIRS = ['--work-count', '--private-count'].flatMap((fg) =>
+  ['--surface', '--surface-2', '--off-fill'].map((bg) => [fg, bg]),
+)
 
 const fmt = (n, d = 2) => n.toFixed(d)
 
 /**
  * その外観の変数が、src/styles.test.ts の決まりを満たすかを確かめる。戻り値は満たさない所の文（空なら通った）。
  * opts.bandScale: 区分の地の差の幅（FRAME-180）を何倍で見るか（地の濃さの案は × 0.7・× 1.4）。外観ごとに、倍率か
- * { トークン: 倍率 }（決まりを割るので倍率を戻したトークンがある時）
+ * { トークン: 倍率 }（決まりを割るので倍率を戻したトークンがある時）。
+ * opts.bands: 区分の地の差の幅（省くと今の幅 GROUND_BANDS。答える前の値を確かめる時は ASKED_GROUND_BANDS）
  */
 export function checkTheme(theme, vars, opts = {}) {
+  const bands = opts.bands ?? GROUND_BANDS
   const out = []
   const name = THEME_NAMES[theme]
   const hex = (n) => {
@@ -283,6 +441,7 @@ export function checkTheme(theme, vars, opts = {}) {
   for (const [fg, bg] of PAIRS_45) ratio(fg, bg, 4.5)
   for (const [fg, bg] of STAGE2_PAIRS) ratio(fg, bg, 4.5, '・段階2')
   for (const bg of ['--bg', '--surface']) ratio('--numeral', bg, 3, '・大きな数字')
+  for (const [fg, bg] of COUNT_PAIRS) ratio(fg, bg, 4.5, '・マンスリーの件数')
   for (const bg of ['--surface', '--done-bg', ...KIND_GROUNDS]) ratio('--done-text', bg, 3, '・済んだ物')
   for (const t of GRAY_TOKENS) {
     const c = chromaOf(hex(t))
@@ -334,7 +493,7 @@ export function checkTheme(theme, vars, opts = {}) {
     // 区分の地の、面からの差（FRAME-180）。案の倍率の分だけ幅を広げ・狭め、丸めの誤差を 0.002 まで見る
     const scale = opts.bandScale?.[theme] ?? 1
     for (const kind of ['work', 'private']) {
-      for (const [part, [lo, hi]] of Object.entries(GROUND_BANDS)) {
+      for (const [part, [lo, hi]] of Object.entries(bands)) {
         const k = typeof scale === 'number' ? scale : (scale[`--${kind}-${part}`] ?? 1)
         const d = deltaE(hex(`--${kind}-${part}`), hex('--surface'))
         if (d < lo * k - 0.002 || d > hi * k + 0.002)
@@ -364,6 +523,74 @@ export function labelPalette(hues) {
     })
   }
   return out
+}
+
+/** 色覚の違いの見え方（Machado・Oliveira・Fernandes 2009 の重さ 1。直線化した sRGB に掛ける） */
+const CVD_MATRICES = {
+  protan: [
+    [0.152286, 1.052583, -0.204868],
+    [0.114503, 0.786281, 0.099216],
+    [-0.003882, -0.048116, 1.051998],
+  ],
+  deutan: [
+    [0.367322, 0.860646, -0.227968],
+    [0.280085, 0.672501, 0.047413],
+    [-0.01182, 0.04294, 0.968881],
+  ],
+}
+
+/** 色覚の違い（protan = 1型・deutan = 2型）で見た色の OKLab */
+export function cvdOklab(hex, type) {
+  const lin = hexToRgb(hex).map(toLinear)
+  const rgb = CVD_MATRICES[type].map((r) => Math.min(1, Math.max(0, r[0] * lin[0] + r[1] * lin[1] + r[2] * lin[2])))
+  return rgbToOklab(rgb.map(fromLinear))
+}
+
+/** 24色のうち、いちばん近い2色（dist: 2つの '#rrggbb' の差。省くと OKLab の ΔE）。戻り値: { d, a, b }（a・b はキー） */
+export function closestPair(colors, dist = deltaE) {
+  let best = { d: Infinity, a: null, b: null }
+  for (let i = 0; i < LABEL_KEYS.length; i++)
+    for (let j = i + 1; j < LABEL_KEYS.length; j++) {
+      const [a, b] = [LABEL_KEYS[i], LABEL_KEYS[j]]
+      const d = dist(colors[a], colors[b])
+      if (d < best.d) best = { d, a, b }
+    }
+  return best
+}
+
+/** 色覚の違いで見た2色の差（OKLab の ΔE） */
+export const cvdDeltaE = (type) => (x, y) => {
+  const p = cvdOklab(x, type)
+  const q = cvdOklab(y, type)
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
+}
+
+/**
+ * Q9: ラベルの24色の作り直し（LABEL_SETS の id）。OKLCH の [L, C, h] をそのまま16進にする（sRGB に入らない値は置かない）。
+ * notes に、外観ごとのいちばん近い2色と、色覚の違い（1型・2型）で見たいちばん近い2色を、今の値と並べて書く
+ */
+function labelSet(id, themes) {
+  const set = LABEL_SETS[id]
+  const tokens = {}
+  const notes = []
+  for (const theme of THEMES) {
+    tokens[theme] = {}
+    for (const key of LABEL_KEYS) {
+      const p = oklchToHex(set.oklch[key][theme])
+      if (p.clipped) throw new Error(`${id} の${THEME_NAMES[theme]}の ${key} が sRGB に入りません（${set.oklch[key][theme]}）`)
+      tokens[theme][`--label-${key}`] = p.hex
+    }
+    const mine = Object.fromEntries(LABEL_KEYS.map((k) => [k, tokens[theme][`--label-${k}`]]))
+    const now = Object.fromEntries(LABEL_KEYS.map((k) => [k, hexOf(themes[theme], `--label-${k}`)]))
+    const pair = (p) => `${set.names[p.a]}と${set.names[p.b]}`
+    const near = closestPair(mine)
+    const cvd = ['protan', 'deutan'].map((type) => [closestPair(mine, cvdDeltaE(type)), closestPair(now, cvdDeltaE(type))])
+    notes.push(
+      `${THEME_NAMES[theme]}: いちばん近い2色は ${pair(near)}（ΔE ${fmt(near.d, 3)}。今は ${fmt(closestPair(now).d, 3)}）。` +
+        `色覚の違いで見たいちばん近い2色は 1型 ${fmt(cvd[0][0].d, 3)}・2型 ${fmt(cvd[1][0].d, 3)}（今は ${fmt(cvd[0][1].d, 3)}・${fmt(cvd[1][1].d, 3)}）`,
+    )
+  }
+  return { tokens, notes, names: set.names, ...(set.readings ? { readings: set.readings } : {}) }
 }
 
 /** Q2 B: 12の色合いを 30° おきに */
@@ -406,7 +633,7 @@ export function scaledFrom(surface, color, k) {
  * 決まり（字 4.5:1・ラベルとの明るさの差 0.1 など）を割るトークンは、割らない所まで倍率を 1 に近づける（actual に実際の倍率）。
  * ディープダークは区分の色分けが無いので、カードの地（--work-soft・--private-soft。同じ色）だけを変える
  */
-function depth(themes, k) {
+function depth(themes, k, bands) {
   const tokens = {}
   const notes = []
   const actual = {}
@@ -426,7 +653,10 @@ function depth(themes, k) {
       for (let t = 0; t <= 50 && !chosen; t++) {
         const cand = scaledFrom(surface, hexOf(vars, n), k + ((1 - k) * t) / 50)
         const trial = { ...tokens[theme], [n]: cand.hex, ...(twin ? { [twin]: cand.hex } : {}) }
-        const problems = checkTheme(theme, withTokens(vars, trial), { bandScale: { [theme]: { ...actual[theme], [n]: cand.k } } })
+        const problems = checkTheme(theme, withTokens(vars, trial), {
+          bands,
+          bandScale: { [theme]: { ...actual[theme], [n]: cand.k } },
+        })
         if (!problems.some((p) => p.includes(n) || (twin && p.includes(twin)))) chosen = cand
       }
       if (!chosen) throw new Error(`${THEME_NAMES[theme]}の ${n} は今の値でも決まりを満たしません`)
@@ -455,7 +685,7 @@ export const ACCENT_STEP = 0.06
  * 彩度は 0（色味の無いグレー）。面との明るさの差が 0.06 より小さい地（ダークの --accent-soft など）は、面を越えないよう差の半分まで。
  * 決まり（--on-primary 4.5:1・輪 3:1 など）を割る時は、割らない所まで動きを小さくする。var(--x) のトークンは指す先に付いていく
  */
-function accent(themes, dir) {
+function accent(themes, dir, bands) {
   const tokens = {}
   const notes = []
   for (const theme of THEMES) {
@@ -473,7 +703,9 @@ function accent(themes, dir) {
       for (let t = 0; t <= 60 && !chosen; t++) {
         const step = full * (1 - t / 60)
         const cand = oklchToHex([L + away * dir * step, 0, 0]).hex
-        const relevant = checkTheme(theme, withTokens(vars, { ...tokens[theme], [n]: cand })).filter((p) => mentions(p, n, vars))
+        const relevant = checkTheme(theme, withTokens(vars, { ...tokens[theme], [n]: cand }), { bands }).filter((p) =>
+          mentions(p, n, vars),
+        )
         if (relevant.length === 0) chosen = { hex: cand, step }
       }
       if (!chosen) throw new Error(`${THEME_NAMES[theme]}の ${n} は今の値でも決まりを満たしません`)
@@ -515,7 +747,7 @@ export const WEEKEND_MIN_DE = 0.1
  *   反対の側は平日の字（--text）の側なので、区分の数字からいちばん小さい差（0.10）にとどめ、平日の字からできるだけ離す
  *   （ダークと同じ差まで離すと、ホワイトの土曜の色が平日の字と ΔE 0.07 ほどになり、平日の日付と見分けにくい）
  */
-function weekendMatched(themes) {
+function weekendMatched(themes, bands) {
   const tokens = { white: {}, 'deep-dark': {} }
   const notes = []
   const dark = themes.dark
@@ -534,7 +766,8 @@ function weekendMatched(themes) {
       const kindL = lightness(kindHex)
       const toward = surfaceL > kindL ? 1 : -1
       const passes = (hex) =>
-        checkTheme(theme, withTokens(vars, { ...tokens[theme], [tok]: hex })).filter((p) => p.includes(`${tok} `)).length === 0
+        checkTheme(theme, withTokens(vars, { ...tokens[theme], [tok]: hex }), { bands }).filter((p) => p.includes(`${tok} `))
+          .length === 0
       /** 区分の数字から side の向きへ明るさを動かし、ΔE が de になる色（無ければ null） */
       const atDE = (side, de) => {
         let lo = 0
@@ -619,6 +852,75 @@ export const QUESTIONS = {
       { letter: 'C', id: 'accent-deeper', label: '濃い' },
     ],
   },
+  // ■1・■2 の答えから作り直した24色（Q2 の hue30 と同じトークンを書き換えるので、Q2 と Q9 はどちらか1つを選ぶ）
+  9: {
+    title: 'ラベルの24色（作り直し）',
+    appearances: THEMES,
+    options: [
+      { letter: 'A', id: 'labels-a', label: '呼び名は今のまま、色ごとに明るさの違う24色' },
+      { letter: 'B', id: 'labels-b', label: '24色それぞれに和色の名前、淡と濃を互い違いにした24色' },
+    ],
+  },
+}
+
+// ---------- 作者の答え（2026-11-12。docs/STAGE2-LOOKS.md の「作者の答え」・仕様書 22.） ----------
+
+/**
+ * 答えた問いと選んだ案（now は「今」のまま）。Q2（30°おき）は、■1・■2 の答え（「色の間が近すぎる」「パステルの縛りを外して」）で
+ * どちらも選ばず、24色を作り直して Q9 で聞き直している（Q9 は答えを待つので、ここに無い）。
+ * 選んだ案の値は src/styles.css に入れた（node scripts/sample-variants.mjs --emit css --pick depth-lighter,highlight-full,weekend-matched）
+ */
+export const ANSWERS = { 2: 'labels', 3: 'depth-lighter', 4: 'highlight-full', 5: 'weekend-matched', 6: 'now' }
+
+/**
+ * 答える前（見本で見比べてもらった時。2026-11-11）の src/styles.css の値のうち、答えで替えた物（Q3 A・Q5 B）。
+ * Q2〜Q6 の案は、この値を今の src/styles.css に重ねた物から作る（見本の控えが答えの前と同じになる）
+ */
+export const ASKED_TOKENS = {
+  white: {
+    '--work-soft': '#e4edf8',
+    '--work-area': '#f1f5fb',
+    '--work-sheet': '#ecf2fa',
+    '--work-marker': '#d3e3f7',
+    '--private-soft': '#fae5ed',
+    '--private-area': '#fcf1f5',
+    '--private-sheet': '#fbedf3',
+    '--private-marker': '#f6d3e1',
+    '--sat': '#3f69a3',
+    '--sun': '#ac4257',
+  },
+  dark: {
+    '--work-soft': '#1d2938',
+    '--work-area': '#1a212b',
+    '--work-sheet': '#1c2532',
+    '--work-marker': '#2a3d55',
+    '--private-soft': '#33202a',
+    '--private-area': '#261c22',
+    '--private-sheet': '#2c1f26',
+    '--private-marker': '#4a2a3a',
+  },
+  'deep-dark': {
+    '--work-soft': '#141518',
+    '--private-soft': '#141518',
+    '--sat': '#808b9b',
+    '--sun': '#a08589',
+  },
+}
+/** 答える前の件名のハイライトの形（Q4 A。字の下 6割） */
+export const HIGHLIGHT_ASKED = 'linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%)'
+
+/**
+ * 答えた問い（Q2〜Q6）の切り抜きを撮る時に、先に差し込む CSS（答える前の値 ASKED_TOKENS と、答える前の件名のハイライトの形）。
+ * 今の src/styles.css は選んだ案の値なので、そのまま撮ると「今」の絵が選んだ案と同じになる。これを敷いてから案の CSS を重ねると、
+ * 見本で見比べてもらった時と同じ絵になる（e2e/samples/samples.spec.ts。案の CSS は後から差し込むので、同じトークンは案が勝つ）
+ */
+export function askedCss() {
+  return `${tokensCss(ASKED_TOKENS)}.kind-marker {\n  background: ${HIGHLIGHT_ASKED} !important;\n}\n`
+}
+
+/** 答える前の外観の変数（readThemes の戻り値に ASKED_TOKENS を重ねた物） */
+export function askedThemes(themes) {
+  return Object.fromEntries(THEMES.map((t) => [t, withTokens(themes[t], ASKED_TOKENS[t])]))
 }
 
 /** 案のトークンを、見本に差し込む CSS にする（外観ごとに :root[data-theme=…]） */
@@ -635,22 +937,29 @@ export function tokensCss(tokens) {
 
 /**
  * すべての案を作り、確かめる。css = src/styles.css の中身。戻り値は e2e/samples/variants.json の中身。
+ * 答えた問い（Q2〜Q6）の案は答える前の値（askedThemes）から、まだ答えの無い問い（Q9）の案は今の値から作る。
  * 案が決まりを満たさない時は投げる（書き出さない）
  */
 export function buildVariants(css) {
   const themes = readThemes(css)
+  const asked = askedThemes(themes)
   for (const theme of THEMES) {
     const problems = checkTheme(theme, themes[theme])
     if (problems.length) throw new Error(`今の src/styles.css が決まりを満たしていません:\n${problems.join('\n')}`)
+    const before = checkTheme(theme, asked[theme], { bands: ASKED_GROUND_BANDS })
+    if (before.length) throw new Error(`答える前の値（ASKED_TOKENS）が決まりを満たしていません:\n${before.join('\n')}`)
   }
+  const B = ASKED_GROUND_BANDS
   const made = {
     hue30: { question: 2, letter: 'B', ...hue30() },
-    'depth-lighter': { question: 3, letter: 'A', ...depth(themes, 0.7) },
-    'depth-deeper': { question: 3, letter: 'C', ...depth(themes, 1.4) },
+    'depth-lighter': { question: 3, letter: 'A', ...depth(asked, 0.7, B) },
+    'depth-deeper': { question: 3, letter: 'C', ...depth(asked, 1.4, B) },
     'highlight-full': { question: 4, letter: 'B', tokens: {}, notes: [] },
-    'weekend-matched': { question: 5, letter: 'B', ...weekendMatched(themes) },
-    'accent-lighter': { question: 6, letter: 'A', ...accent(themes, -1) },
-    'accent-deeper': { question: 6, letter: 'C', ...accent(themes, 1) },
+    'weekend-matched': { question: 5, letter: 'B', ...weekendMatched(asked, B) },
+    'accent-lighter': { question: 6, letter: 'A', ...accent(asked, -1, B) },
+    'accent-deeper': { question: 6, letter: 'C', ...accent(asked, 1, B) },
+    'labels-a': { question: 9, letter: 'A', ...labelSet('labels-a', themes) },
+    'labels-b': { question: 9, letter: 'B', ...labelSet('labels-b', themes) },
   }
   const options = {}
   for (const [id, m] of Object.entries(made)) {
@@ -659,9 +968,11 @@ export function buildVariants(css) {
     const tokens = Object.fromEntries(THEMES.filter((t) => m.tokens[t]).map((t) => [t, m.tokens[t]]))
     let css = tokensCss(tokens)
     if (id === 'highlight-full') css = `.kind-marker {\n  background: ${HIGHLIGHT_FULL} !important;\n}\n`
+    const answered = m.question in ANSWERS
     for (const theme of THEMES) {
       const bandScale = m.actual ? { [theme]: m.actual[theme] } : undefined
-      const problems = checkTheme(theme, withTokens(themes[theme], tokens[theme]), { bandScale })
+      const base = answered ? asked[theme] : themes[theme]
+      const problems = checkTheme(theme, withTokens(base, tokens[theme]), { bandScale, bands: answered ? B : GROUND_BANDS })
       if (problems.length) throw new Error(`案 ${id} が決まりを満たしていません:\n${problems.join('\n')}`)
     }
     options[id] = {
@@ -672,6 +983,9 @@ export function buildVariants(css) {
       tokens,
       css,
       notes: m.notes,
+      // ラベルの24色の案は、既定の呼び名（とその読み）も持つ（見本のページ・--emit spec・--emit names が使う）
+      ...(m.names ? { names: m.names } : {}),
+      ...(m.readings ? { readings: m.readings } : {}),
     }
   }
   return {
@@ -680,6 +994,12 @@ export function buildVariants(css) {
     themes: THEMES,
     questions: QUESTIONS,
     options,
+    // 答えた問いの切り抜きの下に敷く、答える前の値（askedCss）
+    asked: {
+      questions: Object.keys(ANSWERS).map(Number),
+      tokens: ASKED_TOKENS,
+      css: askedCss(),
+    },
   }
 }
 
@@ -736,7 +1056,7 @@ export function pickTokens(variants, pick) {
 }
 
 /**
- * 選んだ案をまとめて今の src/styles.css に重ね、外観ごとに決まり（checkTheme）を確かめる。戻り値は満たさない所の文（空なら通った）。
+ * 選んだ案をまとめて今の src/styles.css（答えを入れた値）に重ね、外観ごとに決まり（checkTheme）を確かめる。戻り値は満たさない所の文（空なら通った）。
  * 案は1つずつ確かめてあるが、問いをまたいだ組み合わせ（地を濃くして差し色も淡くする、など）は、ここで初めて確かめる。
  * 区分の地の差の幅（FRAME-180）は、地の濃さの案で動かしたトークンだけ、実際に動かした倍率で見る
  */
@@ -777,10 +1097,30 @@ export function emitCss(variants, pick) {
   return `${lines.join('\n')}\n`
 }
 
+/**
+ * 選んだ案の既定の呼び名（{ キー: 呼び名 }）。呼び名を持つ案（Q9 の labels-a・labels-b）を選んでいなければ今の呼び名（4.6）。
+ * 呼び名を持つ案を2つ選んだ時は、ラベルの色を2つの案が書き換えるので pickTokens が止める
+ */
+export function pickNames(variants, pick) {
+  pickTokens(variants, pick)
+  const ids = String(pick ?? '')
+    .split(',')
+    .map((s) => s.trim().split('@')[0])
+    .filter((id) => id && variants.options[id]?.names)
+  return ids.length ? { ...variants.options[ids[0]].names } : { ...NAMES_NOW }
+}
+
+/** 選んだ案の既定の呼び名を、src/domain/labels.ts の LABEL_DEFAULT_NAMES の中の行の形にする */
+export function emitNames(variants, pick) {
+  const names = pickNames(variants, pick)
+  return `${LABEL_KEYS.map((k) => `  '${k}': '${names[k]}',`).join('\n')}\n`
+}
+
 /** 選んだ案を仕様書の表の行（4.6 のラベルの表・4.5 のトークンの表）の形にする。今の値のままの所は src/styles.css の値 */
 export function emitSpec(variants, pick, css) {
   const tokens = pickTokens(variants, pick)
   const themes = readThemes(css)
+  const names = pickNames(variants, pick)
   const value = (t, k) => tokens[t][k] ?? themes[t].get(k)
   const changed = new Set(THEMES.flatMap((t) => Object.keys(tokens[t])))
   const lines = []
@@ -789,8 +1129,7 @@ export function emitSpec(variants, pick, css) {
     lines.push('| 番号 | キー | 既定の呼び名 | ホワイト | ダーク | ディープダーク |', '|---|---|---|---|---|---|')
     LABEL_KEYS.forEach((k, i) => {
       if (!changed.has(`--label-${k}`)) return
-      const nameJa = `${LABEL_NAMES[i % 12]}・${k.endsWith('-l') ? '淡' : '濃'}`
-      lines.push(`| ${i + 1} | \`${k}\` | ${nameJa} | ${THEMES.map((t) => `\`${value(t, `--label-${k}`)}\``).join(' | ')} |`)
+      lines.push(`| ${i + 1} | \`${k}\` | ${names[k]} | ${THEMES.map((t) => `\`${value(t, `--label-${k}`)}\``).join(' | ')} |`)
     })
   }
   const tokenRows = [...changed].filter((k) => !k.startsWith('--label-'))
@@ -819,7 +1158,8 @@ function main() {
     if (problems.length) throw new Error(`選んだ案を合わせると決まりを満たしません:\n${problems.join('\n')}`)
     if (emit === 'css') process.stdout.write(emitCss(variants, pick))
     else if (emit === 'spec') process.stdout.write(emitSpec(variants, pick, css))
-    else throw new Error(`--emit は css か spec です（${emit}）`)
+    else if (emit === 'names') process.stdout.write(emitNames(variants, pick))
+    else throw new Error(`--emit は css・spec・names のどれかです（${emit}）`)
     return
   }
   const json = variantsJson(css)

@@ -53,7 +53,7 @@ test.describe('登録の画面（PC）', { tag: ['@pc'] }, () => {
   test('［＋ 登録］で真ん中の小さな画面（幅 520px・角丸 14px）を開き、件名にフォーカス。プライベート・ラベルを選ぶとその場で地と上の辺の帯が替わる', async ({
     page,
   }) => {
-    await openCalendar(page, '/month/2026-11', { prefs: { detailsOpen: true } })
+    await openCalendar(page, '/month/2026-11')
     await page.getByTestId('cal-add').click()
     const sheet = sheetOf(page)
     await expect(sheet).toBeVisible()
@@ -106,7 +106,7 @@ test.describe('登録の画面（PC）', { tag: ['@pc'] }, () => {
 })
 
 test.describe('詳細の画面（PC）', { tag: ['@pc'] }, () => {
-  test('予定の中身（件名は書き換えられる欄・区分の地・ラベルの帯と呼び名・詳しく・下の行）を出し、［×］で閉じる', async ({
+  test('予定の中身（件名は書き換えられる欄・区分の地・ラベルの帯と呼び名・どの欄も・下の行）を出し、［×］で閉じる', async ({
     page,
   }) => {
     await openCalendar(page, '/week/2026-11-08', { data: demoData() })
@@ -117,9 +117,11 @@ test.describe('詳細の画面（PC）', { tag: ['@pc'] }, () => {
     await expect(sheet).toHaveAttribute('data-kind', 'work')
     await expect(sheet).toHaveAttribute('data-label', 'sky-l')
     expect(await background(sheet)).toBe(await tokenColor(page, '--work-sheet'))
-    // ラベルが入っているので「詳しく」は開いて出し、付けた呼び名を出す（D11・ITEMS-021）
-    await expect(page.getByTestId('item-details')).toHaveAttribute('aria-expanded', 'true')
-    await expect(sheet.locator('.it-label-name')).toHaveText('社内')
+    // 畳む所は無く、どの欄も出ている。付けた呼び名は色の並びの下の1行に出す（22. の 7.・8.・10.・ITEMS-021）
+    await expect(page.getByTestId('item-details')).toHaveCount(0)
+    for (const id of ['item-requester', 'item-memo-view', 'item-lock', 'item-listed', 'item-label-none'])
+      await expect(page.getByTestId(id)).toBeVisible()
+    await expect(page.getByTestId('item-label-name')).toHaveText('社内')
     await expect(page.getByTestId('item-requester')).toHaveValue('総務')
     await expect(page.getByTestId('item-start')).toHaveText('11月9日（月）')
     await expect(page.getByTestId('item-start-time')).toHaveValue('10:00')
@@ -131,33 +133,116 @@ test.describe('詳細の画面（PC）', { tag: ['@pc'] }, () => {
     await expect(sheet).toHaveCount(0)
   })
 
-  test('「詳しく」を閉じた詳細でも、Tab は画面の中を回る（畳んだ欄を飛ばし、最後の「詳しく」の次は［×］へ）', async ({
+  test('詳細の Tab の順は画面の並び（件名 → 区分 → 依頼者 → 日付 → 時刻 → メモ → ロック・Task List → ラベル）で、最後の色の次は［×］へ', async ({
     page,
   }) => {
     await openCalendar(page, '/week/2026-11-08', { data: demoData() })
-    // メールの返信: 詳しくの中が空で Claude の行も無い（下の行に押せる物が無い）
+    // メールの返信: 依頼者・メモ・ラベルが空で、時刻も無く、Claude の行も無い（下の行に押せる物が無い）
     await openDetailByHistory(page, DEMO_IDS.mail)
-    const details = page.getByTestId('item-details')
-    await expect(details).toHaveAttribute('aria-expanded', 'false')
-    await details.focus()
+    await page.getByTestId('item-title').focus()
+    expect(await tabOrder(page, 12)).toEqual([
+      'item-kind-work',
+      'item-kind-private',
+      'item-requester',
+      'item-start',
+      'item-due',
+      'item-start-time',
+      // 終了の欄は開始時刻が空の間は押せない（飛ばす）
+      'item-memo',
+      'item-lock',
+      'item-listed',
+      'item-label-none',
+      'item-label-rose-l',
+      'item-label-coral-l',
+    ])
+    await page.getByTestId('item-label-peony-d').focus()
     await page.keyboard.press('Tab')
     await expect(page.getByTestId('modal-close')).toBeFocused()
     await page.keyboard.press('Shift+Tab')
-    await expect(details).toBeFocused()
-    // 開いて閉じた後も同じ（畳む動きが終わってから畳んだ欄を外す）
-    await details.click()
-    await details.click()
-    const memo = page.getByTestId('item-memo')
-    await expect.poll(() => memo.evaluate((e) => (e as HTMLElement).offsetParent === null)).toBe(true)
-    await details.focus()
-    await page.keyboard.press('Tab')
-    await expect(page.getByTestId('modal-close')).toBeFocused()
+    await expect(page.getByTestId('item-label-peony-d')).toBeFocused()
+  })
+
+  test('ラベルの呼び名は色の並びの下の1行。呼び名の無い色・ある色に乗せても選んでも、画面の高さは変わらない（4.6・22. の 7.）', async ({
+    page,
+  }) => {
+    await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+    await page.getByTestId('cal-add').click()
+    const sheet = sheetOf(page)
+    await settled(sheet)
+    const name = page.getByTestId('item-label-name')
+    const caption = sheet.getByText('ラベルの色', { exact: true })
+    const lastRow = (await page.getByTestId('item-label-peony-d').boundingBox())!
+    const firstSwatch = (await page.getByTestId('item-label-rose-l').boundingBox())!
+    const line = (await name.boundingBox())!
+    // 色の並び（下の行）の下で、左の端は色の並びにそろう。欄の名前「ラベルの色」は色の並びの上
+    expect(line.y).toBeGreaterThanOrEqual(lastRow.y + lastRow.height)
+    expect(Math.abs(line.x - firstSwatch.x)).toBeLessThanOrEqual(1)
+    expect((await caption.boundingBox())!.y).toBeLessThan(firstSwatch.y)
+    // 呼び名が無くても1行の高さ（12px の字の 1.5 倍）を空けておく
+    expect(line.height).toBeGreaterThanOrEqual(17.5)
+    await expect(name).toHaveText('')
+    const height = async () => (await sheet.boundingBox())!.height
+    const h0 = await height()
+    // 呼び名を付けた色（sky-l「社内」）に乗せると出て、外すと消える。呼び名の無い色（rose-l）は出さない
+    await page.getByTestId('item-label-sky-l').hover()
+    await expect(name).toHaveText('社内')
+    expect(await height()).toBe(h0)
+    await page.getByTestId('item-label-rose-l').hover()
+    await expect(name).toHaveText('')
+    await page.getByTestId('item-label-blue-d').click()
+    await page.mouse.move(0, 0)
+    await expect(name).toHaveText('お客さま')
+    expect(await height()).toBe(h0)
   })
 })
 
+test.describe('詳細のメモを打った後に押した物（どの端末も）', { tag: ['@pc', '@m', '@s'] }, () => {
+  // メモが空の予定の詳細は、メモを4行の入力欄で出す。打った後にほかの物を押すと、入力欄は1行の文章に戻って下の物が上へ（L は
+  // 真ん中に置いた画面ごと縮んで上の物も下へ。M は下から出したシートの上の端が下がって［×］も）ずれる。押し終わるまで戻さないので、
+  // 押した物は押した時の並びのまま押される（12.3。12.1 のすばやく足すと同じ）
+  for (const target of ['item-lock', 'item-listed', 'item-label-sky-l', 'modal-close'] as const) {
+    test(`メモを打ってから ${target} を押すと、押した物がそのまま効く（メモも保存する）`, async ({ page, hasTouch }) => {
+      if ((page.viewportSize()?.width ?? 0) < 600) await page.setViewportSize({ width: 390, height: 844 })
+      await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+      await openDetailByHistory(page, DEMO_IDS.mail)
+      const sheet = sheetOf(page)
+      await settled(sheet)
+      await page.getByTestId('item-memo').fill('あとで')
+      // ロック・Task List は切り替えの行（字と丸）を押す
+      const press =
+        target === 'item-lock' || target === 'item-listed'
+          ? page.locator('label', { has: page.getByTestId(target) })
+          : page.getByTestId(target)
+      await press.scrollIntoViewIfNeeded()
+      if (hasTouch) await press.tap()
+      else await press.click()
+      if (target === 'modal-close') await expect(sheet).toHaveCount(0)
+      else if (target === 'item-label-sky-l') await expect(sheet).toHaveAttribute('data-label', 'sky-l')
+      else await expect(page.getByTestId(target)).toBeChecked()
+      // 押し終わった後は、メモを文章に戻す（閉じた時は出ていない）
+      if (target !== 'modal-close') await expect(page.getByTestId('item-memo-view')).toBeVisible()
+      await expect.poll(async () => (await rawItem(page, DEMO_IDS.mail))?.memo).toBe('あとで')
+      const raw = await rawItem(page, DEMO_IDS.mail)
+      if (target === 'item-lock') expect(raw?.locked).toBe(true)
+      if (target === 'item-listed') expect(raw?.listed).toBe(true)
+      if (target === 'item-label-sky-l') expect(raw?.label).toBe('sky-l')
+    })
+  }
+})
+
+/** 今フォーカスのある所から Tab を n 回押し、移った先の data-testid を順に返す */
+async function tabOrder(page: Page, n: number): Promise<(string | null)[]> {
+  const out: (string | null)[] = []
+  for (let i = 0; i < n; i++) {
+    await page.keyboard.press('Tab')
+    out.push(await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null))
+  }
+  return out
+}
+
 test.describe('登録の画面（スマホ）', { tag: ['@s'] }, () => {
   test('下からのシート（最大 92dvh・上の角丸 16px）。件名の欄は 16px、横にはみ出さず、「戻る」で閉じる', async ({ page }) => {
-    await openCalendar(page, '/month/2026-11', { prefs: { detailsOpen: true } })
+    await openCalendar(page, '/month/2026-11')
     await page.getByTestId('cal-add').click()
     const sheet = sheetOf(page)
     await expect(sheet).toBeVisible()
@@ -184,6 +269,85 @@ test.describe('登録の画面（スマホ）', { tag: ['@s'] }, () => {
     await page.goBack()
     await expect(sheet).toHaveCount(0)
   })
+})
+
+test.describe('登録の画面の長さ（スマホ）', { tag: ['@s'] }, () => {
+  test('どの欄もいつも出すので S の登録の画面は縦に長く、シートの中だけがスクロールして、いちばん下のラベルの色まで届く（12.2・22. の 10.）', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
+    await page.getByTestId('cal-add').click()
+    const sheet = sheetOf(page)
+    await settled(sheet)
+    const body = sheet.locator('.modal-body')
+    // 件名にフォーカスし、シートの中はいちばん上から
+    await expect(page.getByTestId('item-title')).toBeFocused()
+    const m = await body.evaluate((e) => ({ scroll: e.scrollHeight, client: e.clientHeight, top: e.scrollTop }))
+    expect(m.scroll, '中身はシートの見えている所より高い').toBeGreaterThan(m.client)
+    expect(m.top).toBe(0)
+    // いちばん下まで送ると、最後の色の丸と呼び名の1行が、下のボタンの列の上に全部見える
+    await body.evaluate((e) => (e.scrollTop = e.scrollHeight))
+    const area = (await body.boundingBox())!
+    for (const id of ['item-label-none', 'item-label-peony-d', 'item-label-name']) {
+      const b = (await page.getByTestId(id).boundingBox())!
+      expect(b.y, id).toBeGreaterThanOrEqual(area.y - 0.5)
+      expect(b.y + b.height, id).toBeLessThanOrEqual(area.y + area.height + 0.5)
+    }
+    await page.getByTestId('item-label-peony-d').click()
+    await expect(sheet).toHaveAttribute('data-label', 'peony-d')
+    // ページそのものは動かない（シートの中だけ）
+    expect(await page.evaluate(() => [window.scrollY, document.documentElement.scrollHeight - window.innerHeight])).toEqual([
+      0, 0,
+    ])
+    await noHorizontalScroll(page)
+  })
+
+  for (const c of [
+    // 欄をシートの見えている所のいちばん下に置く。390×844 では下の欄が短く、時刻の欄は下の 3分の1 までしか下がらないので、
+    // 画面が低い時（Android のキーボードが出た時など）で見る。依頼者は上から3つ目の欄なので、もっと低い時に下の方に来る
+    { name: '時刻', field: 'item-start-time', list: 'item-time-list-start', height: 640 },
+    { name: '依頼者', field: 'item-requester', list: 'item-requester-list', height: 380 },
+  ]) {
+    test(`下の方の${c.name}の欄を押しても、シートの中の並びは動かず欄は隠れない。一覧は欄に重ならず画面の中に開く（12.2）`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: c.height })
+      await openCalendar(page, '/month/2026-11', { data: demoData() })
+      await page.getByTestId('cal-add').click()
+      const sheet = sheetOf(page)
+      await settled(sheet)
+      const body = sheet.locator('.modal-body')
+      const field = page.getByTestId(c.field)
+      // 欄の下の端を、シートの見えている所の下の端の 4px 上へ（届かなければ、いちばん上のまま）
+      await body.evaluate((e, id) => {
+        const f = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect()
+        e.scrollTop = Math.max(0, e.scrollTop + f.bottom - e.getBoundingClientRect().bottom + 4)
+      }, c.field)
+      const top = await body.evaluate((e) => e.scrollTop)
+      const area = (await body.boundingBox())!
+      const before = (await field.boundingBox())!
+      expect(before.y + before.height, '欄はシートの下の方').toBeGreaterThan(area.y + area.height * 0.6)
+      await field.click()
+      const list = page.getByTestId(c.list)
+      await expect(list).toBeVisible()
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      // シートの中は動かず、欄は見えている所の中のまま、フォーカスも欄に
+      expect(await body.evaluate((e) => e.scrollTop)).toBe(top)
+      expect(await field.boundingBox()).toEqual(before)
+      await expect(field).toBeFocused()
+      // 一覧は画面の中で、欄に重ならない（下に入らなければ欄の上に開く）
+      const pop = (await list.boundingBox())!
+      const vh = await page.evaluate(() => window.innerHeight)
+      expect(pop.y).toBeGreaterThanOrEqual(0)
+      expect(pop.y + pop.height).toBeLessThanOrEqual(vh)
+      const overlaps = pop.y < before.y + before.height && before.y < pop.y + pop.height
+      expect(overlaps, '一覧が欄に重なる').toBe(false)
+      await page.keyboard.press('Escape')
+      await expect(list).toHaveCount(0)
+      await expect(sheet).toBeVisible()
+    })
+  }
 })
 
 test.describe('登録の画面（iPhone）', { tag: ['@ios'] }, () => {
@@ -337,7 +501,6 @@ test.describe('登録と詳細の動き（PC）', { tag: ['@pc'] }, () => {
   test('ロック中の予定も、詳細で日付を直せる（ITEMS-224・250・CALENDAR-148・183）', async ({ page }) => {
     await openCalendar(page, '/week/2026-11-08', {
       data: itemsOf(mk({ id: 'k1', title: '面談', start: '2026-11-12' })),
-      prefs: { detailsOpen: true },
     })
     await page.getByTestId('week-card-k1').locator('.wk-open').click()
     await page.locator('label', { has: page.getByTestId('item-lock') }).click()
@@ -472,7 +635,7 @@ test.describe('登録と詳細の動き（スマホ）', { tag: ['@s'] }, () => 
   test('キーボードが出て見えている範囲が縮むと、シートを --kb で持ち上げ、打っている欄をキーボードの上 16px まで送る（FRAME-086・ITEMS-191）', async ({
     page,
   }) => {
-    await openCalendar(page, '/month/2026-11', { prefs: { detailsOpen: true } })
+    await openCalendar(page, '/month/2026-11')
     await page.getByTestId('cal-add').click()
     await settled(sheetOf(page))
     await page.getByTestId('item-memo').focus()

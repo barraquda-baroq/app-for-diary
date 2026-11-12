@@ -63,25 +63,26 @@ export const testIds = {
   quickAddInput: 'quick-add-input',
   aiTag: (id: ID) => `ai-tag-${id}`,
 
-  // ----- 登録・詳細・複製の画面（12.） -----
+  // ----- 登録・詳細・複製の画面（12.。欄は画面の並びの順） -----
   itemSheet: 'item-sheet',
   itemTitle: 'item-title',
   itemKind: (kind: ItemKind) => `item-kind-${kind}`,
+  itemRequester: 'item-requester',
   itemStart: 'item-start',
   itemDue: 'item-due',
   itemDueClear: 'item-due-clear',
+  itemDateError: 'item-date-error',
+  itemStatusLine: 'item-status-line',
   itemStartTime: 'item-start-time',
   itemEndTime: 'item-end-time',
   itemTimeHint: 'item-time-hint',
-  itemDateError: 'item-date-error',
-  itemDetails: 'item-details',
-  /** ラベルの色（なしは 'none'） */
-  itemLabel: (key: LabelKey | 'none') => `item-label-${key}`,
-  itemRequester: 'item-requester',
+  itemMemo: 'item-memo',
   itemLock: 'item-lock',
   itemListed: 'item-listed',
-  itemMemo: 'item-memo',
-  itemStatusLine: 'item-status-line',
+  /** ラベルの色（なしは 'none'） */
+  itemLabel: (key: LabelKey | 'none') => `item-label-${key}`,
+  /** 色の並びの下の、選んでいる（乗せている）色の付けた呼び名の1行（4.6） */
+  itemLabelName: 'item-label-name',
   itemFooter: 'item-footer',
   itemRegister: 'item-register',
   itemCancel: 'item-cancel',

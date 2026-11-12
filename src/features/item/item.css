@@ -1,6 +1,6 @@
 /* 登録・詳細の画面（src/features/item/*。docs/SPEC.md の 3.8・4.3・4.6・4.7・4.11・12.2・12.3）。クラスは .it- で始める。
    色は src/styles.css の変数だけを使う（部品で色を足さない）。小さな画面・下からのシート（.modal）・入力欄（.input・.textarea）・
-   切り替え（.switch・.segmented）・ボタン（.btn・.icon-btn）・畳む（.fold）・点線の丸（DotCheckIcon）は src/styles.css の物をそのまま使い、
+   切り替え（.switch・.segmented）・ボタン（.btn・.icon-btn）・点線の丸（DotCheckIcon）は src/styles.css の物をそのまま使い、
    ここでは足りない所だけを書く。
    注意の字は --text-muted で出し、--overdue・--danger は区分の色の地の上に置かない（削除は「…」のメニューの中。4.5・ITEMS-221） */
 
@@ -44,7 +44,8 @@
   display: inline-flex;
 }
 
-/* ===== 欄の並び（件名 → 区分 → 日付 → 時刻 → 詳しく。12.2） ===== */
+/* ===== 欄の並び（件名 → 区分 → 依頼者 → 日付 → 時刻 → メモ → ロック・Task List にも出す → ラベルの色。どれもいつも出す。12.2） =====
+   S・M のシートで欄が入り切らない時は、小さな画面の中（.modal-body）がスクロールする */
 .it-form {
   display: flex;
   flex-direction: column;
@@ -100,7 +101,7 @@
   height: 14px;
 }
 
-/* ===== 日付・時刻の2つの欄（「開始日」〜「締め切り日」・「開始」〜「終了」。12.2 の 3・4） =====
+/* ===== 日付・時刻の2つの欄（「開始日」〜「締め切り日」・「開始」〜「終了」。12.2 の 4・5） =====
    1行目に欄の名前、2行目に欄と「〜」、3行目に右の欄の下の添え書き。左右の欄は同じ幅 */
 .it-pair {
   display: grid;
@@ -224,80 +225,31 @@
   color: var(--text-faint);
 }
 
-/* ===== 詳しく（開閉。端末ごとに覚える。12.2 の 5・4.9） ===== */
-.it-details {
-  display: flex;
-  flex-direction: column;
-  padding-top: 4px;
-  border-top: 1px solid var(--rule);
-}
-
-.it-details-toggle {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: var(--tap);
-  margin-left: -4px;
-  padding: 0 10px 0 2px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.it-details-toggle:hover {
-  color: var(--text);
-}
-
-.it-details-toggle .icon {
-  width: 16px;
-  height: 16px;
-  transition: rotate var(--dur-fold) ease;
-}
-
-.it-details-toggle[aria-expanded='true'] .icon {
-  rotate: 90deg;
-}
-
-/* 畳む中身は .fold の中で切れるので、入力欄のフォーカスの輪（外へ 3px）の分だけ左右に余白を取って外へ戻し、上下の余白は中に置く
-   （.fold の子に上下の余白があると、畳んだ時もその分の高さが残る） */
-.it-details-clip {
-  margin: 0 -4px;
-  padding: 0 4px;
-}
-
-.it-details-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 6px 0 4px;
-}
-
-/* ===== ラベルの色を選ぶ所（4.6・D35）: 左に「なし」、丸 28px を 12×2（S は丸 24px で「なし」を別の行に） ===== */
-.it-label-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-/* 選んでいる（乗せている）色の、付けた呼び名 */
-.it-label-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 400;
-  color: var(--text);
-}
-
+/* ===== ラベルの色を選ぶ所（4.6・D35）: 左に「なし」、丸 28px を 12×2（S は丸 24px で「なし」を別の行に）、色の並びの下に呼び名の1行 ===== */
 .it-labels {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+/* 色の並びと、その下の呼び名の1行（呼び名の左の端を色の並びにそろえる） */
+.it-swatch-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* 選んでいる（乗せている）色の、付けた呼び名。呼び名が無い時も1行の高さを空けておく（乗せた・選んだ時に画面の高さが変わらない） */
+.it-label-name {
+  display: block;
+  min-height: 1.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
 }
 
 .it-swatches {

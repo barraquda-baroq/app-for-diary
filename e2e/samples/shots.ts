@@ -62,7 +62,7 @@ const openDetail = (id: string) => async (page: Page) => {
 
 /**
  * 登録の画面を開き、プライベート・ラベル rose-l にして、件名を入れて1語を選ぶ（選んだ文字の地 --selection が見える）。
- * 「詳しく」は開いておく（表示の設定の detailsOpen。samples.spec.ts が開く前に置く）
+ * どの欄もいつも出ている（「詳しく」の畳む所は無い。docs/SPEC.md の 12.2）
  */
 async function openRegister(page: Page): Promise<void> {
   await page.getByTestId(testIds.calAdd).click()

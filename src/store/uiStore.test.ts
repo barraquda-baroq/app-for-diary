@@ -8,7 +8,6 @@ describe('表示の設定の読み直し（migratePrefs）', () => {
       appearance: 'system',
       launchAnimation: true,
       lastMode: 'month',
-      detailsOpen: false,
       routineAddCycle: 'daily',
       collapsed: {
         routine: false,
@@ -29,14 +28,12 @@ describe('表示の設定の読み直し（migratePrefs）', () => {
       appearance: 'deep-dark',
       launchAnimation: false,
       lastMode: 'week',
-      detailsOpen: true,
       routineAddCycle: 'quarterly',
       collapsed: { task: true, routineGroups: { weekly: true }, routineDone: { yearly: false }, favoriteDone: false },
     })
     expect(prefs.appearance).toBe('deep-dark')
     expect(prefs.launchAnimation).toBe(false)
     expect(prefs.lastMode).toBe('week')
-    expect(prefs.detailsOpen).toBe(true)
     expect(prefs.routineAddCycle).toBe('quarterly')
     expect(prefs.collapsed.task).toBe(true)
     expect(prefs.collapsed.routine).toBe(false)
@@ -60,7 +57,6 @@ describe('表示の設定の読み直し（migratePrefs）', () => {
         appearance: 'sepia',
         launchAnimation: 'off',
         lastMode: 'quarter',
-        detailsOpen: 1,
         routineAddCycle: 'hourly',
         collapsed: { routine: 'yes', routineGroups: [true], routineDone: null },
         extra: 1,
@@ -111,6 +107,19 @@ describe('起動時の読み込みと保存', () => {
     const again = await import('./uiStore')
     expect(again.usePrefs.getState().appearance).toBe('deep-dark')
     expect(again.usePrefs.getState().collapsed.favorite).toBe(true)
+  })
+
+  it('使わなくなった「詳しく」の開閉（detailsOpen）は読まず、次に保存した時に消える（直さずに捨てる。6.13）', async () => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ v: 1, lastMode: 'week', detailsOpen: true }))
+    expect(migratePrefs({ v: 1, lastMode: 'week', detailsOpen: true })).not.toHaveProperty('detailsOpen')
+    vi.resetModules()
+    const { usePrefs } = await import('./uiStore')
+    expect(usePrefs.getState().lastMode).toBe('week')
+    expect(usePrefs.getState()).not.toHaveProperty('detailsOpen')
+    usePrefs.getState().setPrefs({ lastMode: 'day' })
+    const stored = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Record<string, unknown>
+    expect(stored).toMatchObject({ v: PREFS_VERSION, lastMode: 'day' })
+    expect(stored).not.toHaveProperty('detailsOpen')
   })
 
   it('保存内容が壊れていても既定値で起動する', async () => {
