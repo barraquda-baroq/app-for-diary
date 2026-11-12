@@ -236,6 +236,57 @@ describe('カレンダーには影を付けない（ドラッグ中の --shadow-
   })
 })
 
+/**
+ * 差し色（--accent・--primary とその仲間）を使ってよい所（docs/SPEC.md の 4.4-7・FRAME-160）: フォーカスの枠、今日の印、選んでいる所
+ * （押した状態・選んだ値・↑↓で移った所・チェックした休み）、落とせる所、目立たせる枠、今の時刻の線。ほかに本文で決めた所: イヤーの
+ * 小さな月の今月の名前（8.3）、休みを付ける状態のマスの点線の枠と帯（9.5）
+ */
+const ACCENT_OK =
+  /:focus-visible|\[aria-pressed='true'\]|\[data-drop=|\.(?:is-(?:today|on|current|active|selected|this-month)|today-mark|flash|dy-now|mo-banner)(?![\w-])|\.mo-month\.is-off /
+
+/** 差し色のトークンを使う宣言か（--on-accent・--on-primary は差し色の上の字の色なので除く） */
+const usesAccent = (value: string) => /var\(--(?:accent|primary)(?:-[\w-]+)?\)/.test(value)
+
+/** 差し色を決まった所の外で使う規則（[規則のセレクタ, 宣言]） */
+export function accentOutside(source: string): string[] {
+  return flatRules(source).flatMap((r) => {
+    const decls = declarationsOf(r.body).filter(([, value]) => usesAccent(value))
+    if (!decls.length) return []
+    const bad = r.selector.split(',').filter((s) => !ACCENT_OK.test(s.trim()))
+    return bad.length ? decls.map(([name, value]) => `${bad.map((s) => s.trim()).join(', ')} { ${name}: ${value} }`) : []
+  })
+}
+
+describe('差し色は決まった所だけ（FRAME-160・4.4-7）', () => {
+  it('道具: 決まった所の外の差し色を見つける', () => {
+    expect(
+      accentOutside(`
+        .a:focus-visible { outline: 2px solid var(--accent); }
+        .wk-cell[data-drop='hover'] { outline: 2px solid var(--accent); }
+        .it-option.is-current { background: var(--accent-soft); }
+        .wk-off-box { color: var(--on-accent); }
+        .wk-card { background: var(--accent-soft); }
+        .x.is-today, .y { color: var(--accent); }
+      `),
+    ).toEqual(['.wk-card { background: var(--accent-soft) }', '.y { color: var(--accent) }'])
+  })
+
+  const SCREEN_CSS = ALL_CSS.filter(([name]) => name.startsWith('features/calendar/') || name.startsWith('features/item/'))
+
+  it('カレンダー・登録と詳細の画面の CSS を読めている', () => {
+    expect(SCREEN_CSS.map(([name]) => name)).toEqual(
+      expect.arrayContaining(['features/calendar/week/week.css', 'features/item/item.css']),
+    )
+  })
+
+  it.each(SCREEN_CSS)(
+    '%s: 差し色はフォーカスの枠・今日・選んでいる所・落とせる所・目立たせる枠・今の時刻の線と、本文で決めた所だけ',
+    (_name, source) => {
+      expect(accentOutside(source)).toEqual([])
+    },
+  )
+})
+
 describe('視差効果を減らす設定の知らせの印（FRAME-235）', () => {
   it('ロックの印の色 .lock-accent は、カード・行の CSS の色の指定より必ず強い（600ms だけ --accent）', () => {
     const common = ALL_CSS.find(([name]) => name === 'styles.css')?.[1] ?? ''
