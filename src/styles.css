@@ -5,8 +5,9 @@
    ===== デザイントークン =====
    外観は3種類。<html data-theme> で切り替える（「端末の設定に合わせる」は white か dark が入る。最初の描画の前は
    src/launch/launch.js の boot()、起動後は src/ui/Layout.tsx の PrefsEffect が入れる。docs/SPEC.md の 4.2）。
-   - white（ホワイト）: 白い地。ダークで決めたパステルの色合いを保ったまま、白い地で見えるよう濃くした物
-   - dark（ダーク）: 黒い地。色の基準。カードや領域の地は暗く沈め、明るいパステルは細い所（左の一辺・帯・●・線）だけに使う
+   - white（ホワイト）: 白い地。区分の色（パステルの地と字）は、ダークで決めた色合いを保ったまま、白い地で見えるよう直した物。
+     ラベルの24色はダークと同じ値（作者の答え。docs/SPEC.md の 4.6）
+   - dark（ダーク）: 黒い地。色の基準。カードや領域の地は暗く沈め、ラベルの色（蛍光色からくすみ色まで）は細い所（左の一辺・帯・●・線）だけに使う
    - deep-dark（ディープダーク）: さらに暗く、区分の色分けをすべて無くす（区分は位置とかばん／家のアイコンで見分ける）
    差し色（--accent・--primary・--today-*・--switch-on・--selection）とログインの画面の地（--cover）は、3つの外観ともグレーの濃淡
    （作者の指摘。色を持つのは区分・ラベル・土日祝・エラーと注意だけ。起動アニメーションとアプリのアイコンの青は別の物で、ここでは使わない）。
@@ -162,31 +163,31 @@
   --brand-filter: none;
   --qr-bg: #ffffff;
   --qr-fg: #000000;
-  /* ラベルの24色（4.6） */
-  --label-rose-l: #e499a4;
-  --label-coral-l: #e39e86;
-  --label-apricot-l: #d7a672;
-  --label-lemon-l: #c0b26e;
-  --label-lime-l: #a0bc7e;
-  --label-mint-l: #7cc39d;
-  --label-teal-l: #65c3c0;
-  --label-sky-l: #6dbddc;
-  --label-blue-l: #8db3ea;
-  --label-wisteria-l: #aea8e8;
-  --label-violet-l: #c99fd6;
-  --label-peony-l: #dd9ab9;
-  --label-rose-d: #c26576;
-  --label-coral-d: #c26b4c;
-  --label-apricot-d: #b57727;
-  --label-lemon-d: #9a861b;
-  --label-lime-d: #71943f;
-  --label-mint-d: #339c6d;
-  --label-teal-d: #039a97;
-  --label-sky-d: #0994ba;
-  --label-blue-d: #5787ce;
-  --label-wisteria-d: #8379ca;
-  --label-violet-d: #a46eb5;
-  --label-peony-d: #bb6690;
+  /* ラベルの24色（4.6。案G。ダークと同じ値。菜の花・濃とミント・濃は白い地と明るさの近い蛍光色で、明るさでなく色の差で見分ける） */
+  --label-rose-l: #d8c8c7;
+  --label-coral-l: #c97b54;
+  --label-apricot-l: #cea88b;
+  --label-lemon-l: #e6c46e;
+  --label-lime-l: #9edb8d;
+  --label-mint-l: #73996e;
+  --label-teal-l: #73c1aa;
+  --label-sky-l: #87d7eb;
+  --label-blue-l: #979fa8;
+  --label-wisteria-l: #8e79b8;
+  --label-violet-l: #c9a7d0;
+  --label-peony-l: #dd79d0;
+  --label-rose-d: #d14361;
+  --label-coral-d: #ff0205;
+  --label-apricot-d: #ff7903;
+  --label-lemon-d: #feff01;
+  --label-lime-d: #77b945;
+  --label-mint-d: #02ff85;
+  --label-teal-d: #2d8f99;
+  --label-sky-d: #06acfe;
+  --label-blue-d: #4483eb;
+  --label-wisteria-d: #8858e1;
+  --label-violet-d: #a002ff;
+  --label-peony-d: #ff01be;
   /* NS から持ってくる色（4.5 の表に無い物。NS のホワイトの値） */
   --segmented-on: var(--surface);
   --switch-knob: #ffffff;
@@ -270,31 +271,31 @@
   --brand-filter: brightness(0.95);
   --qr-bg: #ffffff;
   --qr-fg: #000000;
-  /* ラベルの24色（4.6） */
-  --label-rose-l: #febdc6;
-  --label-coral-l: #fdc1ac;
-  --label-apricot-l: #f2c89c;
-  --label-lemon-l: #ded299;
-  --label-lime-l: #c3dba6;
-  --label-mint-l: #a6e1c0;
-  --label-teal-l: #96e1de;
-  --label-sky-l: #9bdcf6;
-  --label-blue-l: #b5d3ff;
-  --label-wisteria-l: #cecaff;
-  --label-violet-l: #e6c2f1;
-  --label-peony-l: #f8bdd8;
-  --label-rose-d: #ea909e;
-  --label-coral-d: #e99578;
-  --label-apricot-d: #dca05d;
-  --label-lemon-d: #c0af58;
-  --label-lime-d: #9abb6e;
-  --label-mint-d: #6ac396;
-  --label-teal-d: #44c4c0;
-  --label-sky-d: #54bce2;
-  --label-blue-d: #82b0f3;
-  --label-wisteria-d: #aaa3f0;
-  --label-violet-d: #cb98db;
-  --label-peony-d: #e391b8;
+  /* ラベルの24色（4.6。案G。ホワイトと同じ値） */
+  --label-rose-l: #d8c8c7;
+  --label-coral-l: #c97b54;
+  --label-apricot-l: #cea88b;
+  --label-lemon-l: #e6c46e;
+  --label-lime-l: #9edb8d;
+  --label-mint-l: #73996e;
+  --label-teal-l: #73c1aa;
+  --label-sky-l: #87d7eb;
+  --label-blue-l: #979fa8;
+  --label-wisteria-l: #8e79b8;
+  --label-violet-l: #c9a7d0;
+  --label-peony-l: #dd79d0;
+  --label-rose-d: #d14361;
+  --label-coral-d: #ff0205;
+  --label-apricot-d: #ff7903;
+  --label-lemon-d: #feff01;
+  --label-lime-d: #77b945;
+  --label-mint-d: #02ff85;
+  --label-teal-d: #2d8f99;
+  --label-sky-d: #06acfe;
+  --label-blue-d: #4483eb;
+  --label-wisteria-d: #8858e1;
+  --label-violet-d: #a002ff;
+  --label-peony-d: #ff01be;
   /* NS から持ってくる色（NS のダークの値） */
   --segmented-on: #383b43;
   --switch-knob: #d6d4ce;
@@ -378,31 +379,31 @@
   --brand-filter: grayscale(0.85) brightness(0.6);
   --qr-bg: #ffffff;
   --qr-fg: #000000;
-  /* ラベルの24色（4.6） */
-  --label-rose-l: #816f71;
-  --label-coral-l: #81706b;
-  --label-apricot-l: #7d7267;
-  --label-lemon-l: #787566;
-  --label-lime-l: #717769;
-  --label-mint-l: #6a7970;
-  --label-teal-l: #667978;
-  --label-sky-l: #67777e;
-  --label-blue-l: #6d7582;
-  --label-wisteria-l: #737381;
-  --label-violet-l: #7a717d;
-  --label-peony-l: #7f6f76;
-  --label-rose-d: #5e4e50;
-  --label-coral-d: #5e4f49;
-  --label-apricot-d: #5b5046;
-  --label-lemon-d: #565345;
-  --label-lime-d: #4f5548;
-  --label-mint-d: #48564e;
-  --label-teal-d: #455756;
-  --label-sky-d: #46555c;
-  --label-blue-d: #4b535f;
-  --label-wisteria-d: #52515e;
-  --label-violet-d: #584f5b;
-  --label-peony-d: #5c4e54;
+  /* ラベルの24色（4.6。ほぼグレーの濃淡。4.2） */
+  --label-rose-l: #937c7c;
+  --label-coral-l: #827265;
+  --label-apricot-l: #726b60;
+  --label-lemon-l: #878271;
+  --label-lime-l: #767d6b;
+  --label-mint-l: #5c726c;
+  --label-teal-l: #657d7b;
+  --label-sky-l: #76848b;
+  --label-blue-l: #667381;
+  --label-wisteria-l: #6b6671;
+  --label-violet-l: #837888;
+  --label-peony-l: #7c6e77;
+  --label-rose-d: #5c494c;
+  --label-coral-d: #63554e;
+  --label-apricot-d: #534a3b;
+  --label-lemon-d: #686250;
+  --label-lime-d: #515545;
+  --label-mint-d: #3e5045;
+  --label-teal-d: #4e5e5b;
+  --label-sky-d: #536570;
+  --label-blue-d: #4b5256;
+  --label-wisteria-d: #4c495a;
+  --label-violet-d: #645b67;
+  --label-peony-d: #5d515f;
   /* NS から持ってくる色（NS のディープダークの値） */
   --segmented-on: #26282c;
   --switch-knob: #9a9893;
