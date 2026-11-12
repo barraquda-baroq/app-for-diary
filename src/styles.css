@@ -379,7 +379,7 @@
   --brand-filter: grayscale(0.85) brightness(0.6);
   --qr-bg: #ffffff;
   --qr-fg: #000000;
-  /* ラベルの24色（4.6。ほぼグレーの濃淡。D20） */
+  /* ラベルの24色（4.6。ほぼグレーの濃淡。4.2） */
   --label-rose-l: #937c7c;
   --label-coral-l: #827265;
   --label-apricot-l: #726b60;
