@@ -765,6 +765,32 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(page.locator('.toast', { hasText: '『手紙を出す』を足しました' })).toBeVisible()
   })
 
+  test('すばやく足すを開いたまま、前に足した予定の［元に戻す］を指で押すと、ゴミ箱へ移して閉じる。戻した字を足し直さない（指を離した時に効く［元に戻す］。3.9・12.1）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const input = page.getByTestId('quick-add-input')
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    await input.fill('花を買う')
+    await page.locator('.wk-vtags').tap()
+    const note = page.locator('.toast', { hasText: '『花を買う』を足しました' })
+    await expect(note).toBeVisible()
+    const added = await itemByTitle(page, '花を買う')
+    expect(added).not.toBeNull()
+    // 同じ日・同じ段を開き直す（空）。そのまま［元に戻す］を指で押す（入力欄の外を押した。押し終わってから閉じる）
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    await expect(input).toHaveValue('')
+    await note.getByRole('button', { name: '元に戻す' }).tap()
+    await expect.poll(() => itemByTitle(page, '花を買う')).toBeNull()
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    // 戻した字は書きかけに戻り、足し直さない（新しい「足しました」も出ない）
+    await page.waitForTimeout(500)
+    expect(await itemByTitle(page, '花を買う')).toBeNull()
+    await expect(page.locator('.toast', { hasText: '『花を買う』を足しました' })).toHaveCount(0)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    await expect(input).toHaveValue('花を買う')
+  })
+
   test('すばやく足す（指）: 字を打ったまま、外から指でなぞって週をスクロールしても、足さず閉じない（キーボードを出したまま見て、続けて打てる。12.1）', async ({
     page,
   }) => {

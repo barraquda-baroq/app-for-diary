@@ -1213,6 +1213,119 @@ test.describe('タブレット（M・指）', { tag: ['@m'] }, () => {
   })
 })
 
+// ---------- 落とした後の「〜へ移しました［元に戻す］」を指で押す（S・M。3.9・7.11。22. の段階2の終わりの確かめ） ----------
+
+/**
+ * ブラウザが作った click と、ページに届いた指の touchend（どちらも押した物の class。ページが自分で送った click は数えない）を
+ * 控え始める。clicksOf・touchEndsOf で読む
+ */
+async function recordClicks(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __clicks: string[]; __touchEnds: string[] }
+    w.__clicks = []
+    w.__touchEnds = []
+    const name = (e: Event) => (e.target as Element).className.toString()
+    window.addEventListener('click', (e) => e.isTrusted && w.__clicks.push(name(e)), true)
+    window.addEventListener('touchend', (e) => w.__touchEnds.push(name(e)), { capture: true, passive: true })
+  })
+}
+const clicksOf = (page: Page) => page.evaluate(() => (window as unknown as { __clicks: string[] }).__clicks)
+const touchEndsOf = (page: Page) => page.evaluate(() => (window as unknown as { __touchEnds: string[] }).__touchEnds)
+
+/**
+ * ブラウザが指の押し方を click にしない形を、テストの側で作る（指の touchend を止める。touch・pointer の出来事はページに届く）。
+ * 作者の iPhone（ホーム画面のアプリ）で起きたことを写した物ではない。その時に iPhone が click を作らなかった見込みの形で、そうだった
+ * 時も直し（src/ui/fingerTap.ts）で効くことを確かめる（Chromium では、直しの前の版でも、ふつうの指なら1回目で戻る）。
+ * ブラウザが作った click は clicksOf で読む
+ */
+async function withholdClicks(page: Page) {
+  await recordClicks(page)
+  await page.evaluate(() => window.addEventListener('touchend', (e) => e.preventDefault(), { capture: true, passive: false }))
+}
+
+// 作者の iPhone で起きたことは、Chromium では起きない（直しの前の版でも、ふつうの指なら1回目で戻る）。ここの確かめは、ブラウザが
+// click を作らない見込みの形をテストの側で作り（withholdClicks）、直しの働きを確かめる物で、不具合そのものを起こして見せる物ではない
+test.describe('落とした後の［元に戻す］（指。S・M）', { tag: ['@s', '@m'] }, () => {
+  /** S は日のかたまりの半分、M（7日を横）は段の列 */
+  const dropDay = (page: Page, kind: Kind, date: string) =>
+    page.viewportSize()!.width < 600 ? halfS(page, kind, date) : cellL(page, kind, date)
+
+  /** 長押しで打ち合わせ（11/10）を掴んで date へ落とし、「〜へ移しました」が出るまで */
+  async function dropMeeting(page: Page, date: string, label: string) {
+    const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
+    await lifted(page)
+    const to = dropDay(page, 'work', date)
+    await drag.moveTo(await visiblePoint(to))
+    await overDropDay(to)
+    await drag.drop()
+    const note = toast(page, label)
+    await expect(note).toBeVisible()
+    expect((await itemOf(page, I.meeting))?.start).toBe(date)
+    return note
+  }
+
+  test('ブラウザが指の押し方を click にしない時も、［元に戻す］を指で1回押すと元の日へ戻る（作者の iPhone で効かなかった見込みの形）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const note = await dropMeeting(page, '2026-11-09', '11/9（月）へ移しました')
+    await withholdClicks(page)
+    await note.getByRole('button', { name: '元に戻す' }).tap()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(note).toHaveCount(0)
+    await expect(dropDay(page, 'work', '2026-11-10').getByTestId(`week-card-${I.meeting}`)).toBeVisible()
+    expect(await clicksOf(page)).toEqual([])
+  })
+
+  test('［元に戻す］を指で押すと1回だけ戻り、ブラウザに click を作らせない（消えたお知らせの下の物は押されない）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const history = await page.evaluate(() => window.history.length)
+    const note = await dropMeeting(page, '2026-11-09', '11/9（月）へ移しました')
+    await recordClicks(page)
+    await note.getByRole('button', { name: '元に戻す' }).tap()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(note).toHaveCount(0)
+    // ブラウザは click を作らず、お知らせの下にある週の物（カード・「＋」・日付の見出し）は押されない: 詳細もすばやく足すも開かず、
+    // 行き先も履歴も変わらない
+    await page.waitForTimeout(400)
+    expect(await clicksOf(page)).toEqual([])
+    await expect(sheet(page)).toHaveCount(0)
+    await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
+    await expect(page.locator('.toast')).toHaveCount(0)
+    await expect(page).toHaveURL(weekUrl('2026-11-08'))
+    expect(await page.evaluate(() => window.history.length)).toBe(history)
+  })
+
+  test('掴んだまま右の端で次の週へ移って落とした後も、ブラウザが click にしない指の押し方で［元に戻す］が効く', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const grab = await grabPoint(card(page, I.meeting))
+    const drag = await startLongPress(page, grab)
+    await lifted(page)
+    const park = await weekPoint(page, 0.3, grab.y)
+    const inner = await page.evaluate(() => window.innerWidth)
+    await drag.moveTo({ x: inner - 2, y: grab.y })
+    await leaveOnWeek(page, drag, '2026-11-15', park)
+    const to = dropDay(page, 'work', '2026-11-16')
+    await drag.moveTo(await visiblePoint(to))
+    await overDropDay(to)
+    await drag.drop()
+    const note = toast(page, '11/16（月）へ移しました')
+    await expect(note).toBeVisible()
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-16')
+    await withholdClicks(page)
+    await note.getByRole('button', { name: '元に戻す' }).tap()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(note).toHaveCount(0)
+    // 見ている週はそのまま（カードはこの週から消える。7.11）
+    await onWeek(page, '2026-11-15')
+    await expect(card(page, I.meeting)).toHaveCount(0)
+  })
+})
+
 test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
   test('長押しで1日のカードと終点の●を動かせる', async ({ page }) => {
     await openWeek(page)
@@ -1282,5 +1395,37 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
     await expect(toast(page, '11/15（日）へ移しました')).toBeVisible()
     expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-15')
     await onWeek(page, '2026-11-15')
+  })
+
+  test('長押しで動かした後、画面の下の［元に戻す］を指で1回押すと元の日へ戻る。指を離した時に効き、ブラウザの click は作らない（作者の iPhone のホーム画面のアプリで効かなかった）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)), { via: 'synthetic' })
+    await lifted(page)
+    const to = halfS(page, 'work', '2026-11-09')
+    await drag.moveTo(await visiblePoint(to))
+    await overDropDay(to)
+    await drag.drop()
+    const note = toast(page, '11/9（月）へ移しました')
+    await expect(note).toBeVisible()
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-09')
+    // ふつうの指で押す（click を作らない形はテストの側で作らない）。Playwright の WebKit の tap は、touchstart・touchend をページに
+    // 送り、どちらも止められなかった時だけ mousemove・mousedown・mouseup（click）を作る（Playwright の WebKit の
+    // WebPage::fakeTouchTap）。直しでは、［元に戻す］が touchend を止めて自分で click を送るので、ブラウザの click は来ない。
+    // touchend がボタンに届いたことと、ブラウザの click が無いことで、直しの通り道（src/ui/fingerTap.ts）を通ったと分かる（WebKit
+    // の tap が指の出来事を送らなかった時は、ここで落ちる）。ブラウザが click にしない形を作っても、WebKit では同じ通り道になる
+    // （止めた touchend の後は click を作らない）ので、それは S・M の確かめ（Chromium）だけにする。CI の WebKit（Linux）は
+    // iPhone の UIKit ではないので、通っても iPhone で効くことの証しにはならない
+    await recordClicks(page)
+    await note.getByRole('button', { name: '元に戻す' }).tap()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(note).toHaveCount(0)
+    expect(await touchEndsOf(page)).toContain('toast-action')
+    await page.waitForTimeout(400)
+    expect(await clicksOf(page)).toEqual([])
+    await expect(halfS(page, 'work', '2026-11-10').getByTestId(`week-card-${I.meeting}`)).toBeVisible()
+    await expect(sheet(page)).toHaveCount(0)
+    await expect(page.locator('.toast')).toHaveCount(0)
   })
 })
