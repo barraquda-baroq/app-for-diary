@@ -242,6 +242,8 @@ interface SmallOk {
   sel: string
   w: number
   h: number
+  /** M（画面の幅 600px から）の最小（S と違う時。無ければ w・h） */
+  wide?: { w: number; h: number }
 }
 
 /**
@@ -275,7 +277,7 @@ const SMALL_OK: readonly SmallOk[] = [
   // ラベルの「なし」: 高さ 28px（WP9。確かめ Q7）
   { sel: '.it-label-none', w: 34, h: 28 },
   // ラベルの色: S は 24px の丸、M は 28px（WP9。D35・確かめ Q7）
-  { sel: '.it-swatch', w: 24, h: 24 },
+  { sel: '.it-swatch', w: 24, h: 24, wide: { w: 28, h: 28 } },
   // イヤーの小さな月のマス: 22px 四方以上（docs/SPEC.md の 8.3・CALENDAR-221）
   { sel: '.yr-cell.is-mini', w: 22, h: 22 },
   // ----- 以下は D08 の一覧に無く、34px に届かない所（担当へ知らせた。直したら消す） -----
@@ -336,7 +338,9 @@ async function smallTargets(page: Page, root: string): Promise<string[]> {
       }
       const minOf = (el: Element) => {
         const rule = ok.find((o) => el.matches(o.sel))
-        return rule ? { w: rule.w, h: rule.h, note: `例外 ${rule.sel} は ${rule.w}×${rule.h}` } : { w: 34, h: 34, note: '34×34' }
+        if (!rule) return { w: 34, h: 34, note: '34×34' }
+        const { w, h } = (innerWidth >= 600 && rule.wide) || rule
+        return { w, h, note: `例外 ${rule.sel} は ${w}×${h}` }
       }
       const small = (el: Element, m: { w: number; h: number }) => {
         const min = minOf(el)
@@ -433,6 +437,16 @@ async function aiTagSizes(page: Page) {
   expect(await tapSizes(page, { modes: [MODES[2], MODES[3]], sheets: false })).toEqual([])
 }
 
+/**
+ * ラベルの「なし」の押せる所が、字が細い書体でも SMALL_OK の 34×28 のまま（幅は字の幅で決まるので min-width: var(--tap)。4.11）。
+ * 字を 5px にして左右の余白も詰め、字の幅だけでは 34px に届かないようにして、登録・詳細の小さな画面で測る
+ */
+async function narrowNoneSizes(page: Page) {
+  await openCalendar(page, '/month/2026-11', { data: demoData() })
+  await page.addStyleTag({ content: '.it-label-none { font-size: 5px; padding: 0 2px; }' })
+  expect(await tapSizes(page, { modes: [] })).toEqual([])
+}
+
 test.describe('横にスクロールしない・押せる所の大きさ（S）', { tag: ['@s'] }, () => {
   for (const width of [360, 390, 412] as const) {
     test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない${width === 360 ? '（削除の確かめも）' : ''}（FRAME-026・CALENDAR-226）`, async ({
@@ -454,6 +468,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
     page,
   }) => {
     await aiTagSizes(page)
+  })
+
+  test('字が細い書体でも、ラベルの「なし」（別の行）の押せる所は 34px の幅のまま（登録・詳細の小さな画面。4.11）', async ({
+    page,
+  }) => {
+    await narrowNoneSizes(page)
   })
 })
 
@@ -488,6 +508,12 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
     page,
   }) => {
     await aiTagSizes(page)
+  })
+
+  test('字が細い書体でも、ラベルの「なし」（色の並びの左）の押せる所は 34px の幅のまま（登録・詳細の小さな画面。4.11）', async ({
+    page,
+  }) => {
+    await narrowNoneSizes(page)
   })
 })
 
