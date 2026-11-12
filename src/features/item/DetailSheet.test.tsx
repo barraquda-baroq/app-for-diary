@@ -614,6 +614,17 @@ describe('日付と時刻の決まり（12.4・6.3・6.4）', () => {
     expect(end.disabled).toBe(true)
   })
 
+  it('開始を打って Tab を押すと、フォーカスが移る前に決めて保存し、終了の欄を押せるようにする（12.2・12.3 の Tab の順）', async () => {
+    const { user } = await open([mkItem({ id: 't', startTime: null })])
+    const start = byId(testIds.itemStartTime) as HTMLInputElement
+    const end = byId(testIds.itemEndTime) as HTMLInputElement
+    expect(end.disabled).toBe(true)
+    // jsdom では Tab で次の欄へ移らない（Modal の Tab の囲い）。Tab を押した時に決めていることを見る
+    await user.type(start, '930{Tab}')
+    expect(stored('t').startTime).toBe('09:30')
+    expect(end.disabled).toBe(false)
+  })
+
   it('時刻の欄を押すと 5分刻みの一覧。開始は 0:00〜23:55、終了は 0:05〜24:00（0:00 なし）。選ぶとすぐ保存する', async () => {
     const { user } = await open([mkItem({ id: 'l', startTime: '09:00' })])
     await user.click(byId(testIds.itemStartTime))

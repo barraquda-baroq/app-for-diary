@@ -377,6 +377,27 @@ describe('登録する（12.2・12.4・ITEMS-187・194）', () => {
     expect(end.disabled).toBe(true)
   })
 
+  it('開始を打って Tab を押すと、フォーカスが移る前に決めて終了の欄を押せるようにする（Tab は終了へ移る。12.2 の Tab の順）', async () => {
+    const { user } = await open()
+    const start = byId(testIds.itemStartTime) as HTMLInputElement
+    const end = byId(testIds.itemEndTime) as HTMLInputElement
+    expect(end.disabled).toBe(true)
+    // jsdom は配置を持たないので、Tab で次の欄へは移らない（Modal の Tab の囲いが同じ欄に留める）。Tab を押した時に、離れる前に
+    // 決めて終了を押せるようにしていることを見る（離れた時に決めると、ブラウザは押せないままの終了を飛ばす）
+    await user.type(start, '1000{Tab}')
+    expect(start.value).toBe('10:00')
+    expect(end.disabled).toBe(false)
+  })
+
+  it('読めない字を打って Tab で離れても、元に戻して理由を出したまま（Tab で決めた後の離れる時に理由を消さない）', async () => {
+    const { user } = await open()
+    const start = byId(testIds.itemStartTime) as HTMLInputElement
+    await user.type(start, '25:00{Tab}')
+    act(() => start.blur())
+    expect(start.value).toBe('')
+    expect(screen.getByRole('alert').textContent).toContain('読めない時刻')
+  })
+
   it('時刻の一覧の Esc は一覧だけを閉じる（登録の画面は閉じない）', async () => {
     const { user, onClose } = await open()
     await user.click(byId(testIds.itemStartTime))

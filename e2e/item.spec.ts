@@ -230,6 +230,32 @@ test.describe('詳細のメモを打った後に押した物（どの端末も�
   }
 })
 
+test.describe('開始の時刻を打って Tab（どの端末も）', { tag: ['@pc', '@m', '@s'] }, () => {
+  // 終了の欄は開始時刻が空の間は押せない（12.2）。開始を打って Tab を押した時は、離れる前に開始を決めて終了を押せるようにし、
+  // Tab は画面の並びどおり終了へ移る（文書の順・画面の順・Tab の順は同じ。12.2）。決める前に移すと、ブラウザは押せないままの
+  // 終了を飛ばしてメモへ移していた
+  for (const where of ['登録', '詳細'] as const) {
+    test(`${where}の画面で開始を打って Tab を押すと、終了の欄へ移る（Shift+Tab で開始へ戻る）`, async ({ page }) => {
+      await openCalendar(page, '/week/2026-11-08', { data: demoData() })
+      // 詳細はメールの返信（時刻が無い）
+      if (where === '登録') await page.getByTestId('cal-add').click()
+      else await openDetailByHistory(page, DEMO_IDS.mail)
+      await settled(sheetOf(page))
+      const start = page.getByTestId('item-start-time')
+      const end = page.getByTestId('item-end-time')
+      await expect(end).toBeDisabled()
+      await start.focus()
+      await page.keyboard.type('1000')
+      await page.keyboard.press('Tab')
+      await expect(end).toBeFocused()
+      await expect(start).toHaveValue('10:00')
+      await page.keyboard.press('Shift+Tab')
+      await expect(start).toBeFocused()
+      if (where === '詳細') await expect.poll(async () => (await rawItem(page, DEMO_IDS.mail))?.startTime).toBe('10:00')
+    })
+  }
+})
+
 /** 今フォーカスのある所から Tab を n 回押し、移った先の data-testid を順に返す */
 async function tabOrder(page: Page, n: number): Promise<(string | null)[]> {
   const out: (string | null)[] = []

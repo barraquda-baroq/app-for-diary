@@ -5,8 +5,10 @@
 // 開始時刻が空の間は終了の欄を押せない（ITEMS-229）。翌日にした時の「翌日 02:00 まで」（hint）、list 生まれでカレンダーに出ていない時に
 // 押せなくする所（disabledNote）は包む画面が決める。
 // 打った字は、欄を離れた時・Enter で決める。Ctrl+Enter・⌘+Enter（登録）の時も先に決めてから包む所へ渡す（登録の前に打った時刻を入れる）。
+// Tab で離れる時は、フォーカスが移る前に決める（開始を打って Tab を押すと、押せるようになった終了へ移る。12.2 の Tab の順）。
 // 欄を離れずに閉じた時（Esc・「戻る」）と、画面を閉じる・裏に回る時も、読める字なら決める（詳細の画面で打ちかけの時刻を失わない）
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { displayHm } from '../../../domain/dates'
 import { parseTime, timeListAnchor, timeOptions } from '../../../domain/itemInput'
 import { markDraftClean, markDraftDirty } from '../../../store/draftRegistry'
@@ -124,8 +126,22 @@ function TimeInput({ which, value, startTime, disabled, labelledBy, onCommit, on
     if (disabled) return
     setOpen(true)
   }
+  /** Tab を押した時に決めた（続く onBlur で決め直さない。また打つと外す） */
+  const committedOnTab = useRef(false)
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Tab: ブラウザが次の行き先を選ぶ前に、打った字を決めて描き終える。欄を離れた時（onBlur）に決めると、開始時刻が空の間は
+    // 押せない終了の欄がまだ押せないので、開始を打って Tab を押すと終了を飛ばしてメモへ移っていた（12.2 の Tab の順）。
+    // 続く onBlur では決め直さない（決め直すと、戻した空の字を読めたと見て、読めない字の理由を消してしまう）
+    if (e.key === 'Tab' && !composing(e)) {
+      flushSync(() => {
+        setOpen(false)
+        setActive(-1)
+        commitText()
+      })
+      committedOnTab.current = true
+      return
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       if (!open) {
@@ -172,6 +188,7 @@ function TimeInput({ which, value, startTime, disabled, labelledBy, onCommit, on
         autoComplete="off"
         enterKeyHint="done"
         onChange={(e) => {
+          committedOnTab.current = false
           setText(e.target.value)
           setActive(-1)
         }}
@@ -179,7 +196,8 @@ function TimeInput({ which, value, startTime, disabled, labelledBy, onCommit, on
         onBlur={() => {
           setOpen(false)
           setActive(-1)
-          commitText()
+          if (committedOnTab.current) committedOnTab.current = false
+          else commitText()
         }}
         onKeyDown={onKeyDown}
         data-testid={TEST_ID[which]}
