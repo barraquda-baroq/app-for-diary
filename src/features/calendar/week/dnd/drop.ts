@@ -8,8 +8,9 @@
 // - 動かさなかった時（元の日・落とせない所・取り消し）: dnd-kit の落とす時の動きで、浮いた物が元の場所へ戻る（SETTLE_BACK）
 // 視差効果を減らす設定ではどちらも動かさない（dnd-kit も自分で止める。目立たせる枠は motion.ts のとおり出る。CALENDAR-265・FRAME-238）
 // 移った先のカードは、並びの決まり（7.5）で指を離した所より下（段・日のかたまりの見えていない所）に入ることがあるので、目立たせる
-// 間に見える所まで出す（WeekDnd が src/ui/scrollWithin.ts の scrollIntoViewWithin で。CALENDAR-181）。動かすのは週・段の中の
-// スクロールだけで、ページは動かさない（WP11s の G4）
+// 間に見える所まで出す（WeekDnd が src/ui/scrollWithin.ts の scrollIntoViewWithin で。CALENDAR-181。●を動かした時は●を）。動かす
+// のは週・段の中のスクロールだけで、ページは動かさない（WP11s の G4）。目立たせる枠は flashInPlace で置き、目立つ側は動かさない
+// （出すのは WeekDnd の1か所だけ）
 import { dropPatch, dropToast } from '../../../../domain/drag'
 import { actions } from '../../../../store/actions'
 import { attempt, notify, useCalendarUi } from '../../../../store/uiStore'
@@ -33,7 +34,9 @@ export function applyDrop(data: DragData, target: DropData, week: WeekCtx): bool
   if (patch === null || patch === 'same') return false
   const prev = attempt(() => actions.moveItemDates(item.id, patch))
   if (prev === undefined) return false
-  useCalendarUi.getState().flashTarget(flashKey.item(item.id))
+  // 目立たせるだけ（見える所へ出すのは WeekDnd が、動かした物（カード・始点のカード・●）を。目立つのはその予定のカード・始点の
+  // カード・受けた表示で、●を動かした時は●と違う物なので、そちらへ送ると●が画面の外へ外れる）
+  useCalendarUi.getState().flashInPlace(flashKey.item(item.id))
   notify(dropToast(item, handle, patch), {
     label: UNDO_LABEL,
     run: () => {

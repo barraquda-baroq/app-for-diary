@@ -274,12 +274,14 @@ export async function attemptAsync<R>(fn: () => Promise<R>): Promise<R | undefin
 /**
  * 目立たせる所（4.9 の 1.2秒の枠）。キーは 'item:{id}'（登録・ドラッグで移った予定のカード）・'day-area:{区分}'（デイリーの区分の
  * 区切り）・'day-events:{区分}'（タイムスケジュールのその区分の予定）。keys の全部を一緒に目立たせる（マンスリーの数字から来た時の
- * 区切りと予定。7.12）。key は keys の最初の物。seq は同じ所をもう一度目立たせる時にも変わる連番（NS の reveal.ts の作り）
+ * 区切りと予定。7.12）。key は keys の最初の物。seq は同じ所をもう一度目立たせる時にも変わる連番（NS の reveal.ts の作り）。
+ * scroll は、目立たせられる側が自分を見える所まで出してよいか（useFlashTarget の scroll。flashInPlace の時は false）
  */
 export interface FlashTarget {
   key: string
   keys: readonly string[]
   seq: number
+  scroll: boolean
 }
 
 export interface CalendarUi {
@@ -299,8 +301,14 @@ export interface CalendarUi {
 export interface CalendarUiState extends CalendarUi {
   setViewed: (date: string | null) => void
   setOffMode: (on: boolean) => void
-  /** 目立たせる（キーを1つ以上） */
+  /** 目立たせる（キーを1つ以上）。目立たせられる側は、見えていなければ見える所まで出す（useFlashTarget の scroll を付けた物） */
   flashTarget: (...keys: string[]) => void
+  /**
+   * 目立たせるだけで、目立たせられる側は動かさない（見える所へ出すのは呼んだ側）。ドラッグで落とした時に使う: 出すのは WeekDnd が、
+   * 動かした物（カード・始点のカード・●）を。目立つのはその予定の始点のカード・受けた表示でもあるので、そちらへ送ると、落とした●が
+   * 画面の外へ外れる（7.11・4.9）
+   */
+  flashInPlace: (...keys: string[]) => void
   /** 目立たせ終えた（開き直した時にもう一度目立たせないよう、その seq の物だけ消す。新しく目立たせた物は残す） */
   clearFlash: (seq: number) => void
   /** 押した・打った（at は省くと今） */
@@ -320,7 +328,11 @@ export const useCalendarUi = create<CalendarUiState>((set, get) => ({
   setOffMode: (offMode) => set({ offMode }),
   flashTarget: (...keys) => {
     if (keys.length === 0) return
-    set({ flash: { key: keys[0], keys, seq: ++flashSeq } })
+    set({ flash: { key: keys[0], keys, seq: ++flashSeq, scroll: true } })
+  },
+  flashInPlace: (...keys) => {
+    if (keys.length === 0) return
+    set({ flash: { key: keys[0], keys, seq: ++flashSeq, scroll: false } })
   },
   clearFlash: (seq) => {
     if (get().flash?.seq === seq) set({ flash: null })

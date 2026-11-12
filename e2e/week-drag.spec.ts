@@ -146,6 +146,45 @@ async function recordPageScroll(page: Page) {
 }
 const pageScrolls = (page: Page) => page.evaluate(() => (window as unknown as { __pageScrolls: number[] }).__pageScrolls)
 
+/** なめらかなスクロールが終わるまで待つ（続けて2回、同じ位置） */
+async function scrollSettled(scroller: Locator) {
+  let last = Number.NaN
+  await expect
+    .poll(async () => {
+      const top = await scroller.evaluate((e) => e.scrollTop)
+      const still = top === last
+      last = top
+      return still
+    })
+    .toBe(true)
+}
+
+/**
+ * S の週（view）を送って、その日のその半分の上の端を、上に固定した段の名札の行の下の端から below px の所に置く（負なら名札の行の
+ * 下に隠れる）
+ */
+async function putHalfBelowTags(view: Locator, kind: Kind, date: string, below: number) {
+  await view.evaluate(
+    (v, { kind, date, below }) => {
+      const half = v.querySelector(`.wk-half[data-tier="${kind}"][data-date="${date}"]`) as HTMLElement
+      const tags = (v.querySelector('.wk-vtags') as HTMLElement).getBoundingClientRect().bottom
+      v.scrollTop += Math.round(half.getBoundingClientRect().top - tags - below)
+    },
+    { kind, date, below },
+  )
+}
+
+/**
+ * S の週の中で、その data-testid の本物の要素が縦に見えているか: top は名札の行の下の端から要素の上の端まで（負なら名札の行の下に
+ * 隠れている）、bottom は要素の下の端から見える所の下の端（週の下の端か画面の下の端の上の方）まで（負なら外れている）
+ */
+const inWeek = (view: Locator, testId: string) =>
+  view.evaluate((v, testId) => {
+    const r = (v.querySelector(`[data-testid="${testId}"]:not([data-dnd-placeholder])`) as HTMLElement).getBoundingClientRect()
+    const tags = (v.querySelector('.wk-vtags') as HTMLElement).getBoundingClientRect().bottom
+    return { top: r.top - tags, bottom: Math.min(v.getBoundingClientRect().bottom, window.innerHeight) - r.bottom }
+  }, testId)
+
 /** 動かした予定（夜 23:00〜次の日 01:00。始点を次の日へ落とすと、1日の予定で終了 < 開始になる。CALENDAR-175 の例） */
 function withLateWork(): DemoData {
   const data = demoData()
@@ -522,6 +561,75 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     expect(await pageScrolls(page)).toEqual([])
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
+
+  test('名札の行の下に隠れた所へ落とした始点のカードは、名札の行のすぐ下まで週を戻して見せる（隠れず、24px 余分に下げもしない。10.4・7.11）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const view = page.getByTestId('view-week')
+    // 11/11 の仕事の半分の上の 20px を名札の行の下に隠す（始点のカードは、落とすとその半分のいちばん上に入る）
+    await putHalfBelowTags(view, 'work', '2026-11-11', -20)
+    await recordPageScroll(page)
+    const from = startCard(page, I.tripPrep)
+    await expect(from).toBeInViewport({ ratio: 1 })
+    const drag = await startLongPress(page, await visiblePoint(from))
+    await lifted(page)
+    const to = halfS(page, 'work', '2026-11-11')
+    await drag.moveTo(await visiblePoint(to))
+    await overDropDay(to)
+    await drag.drop()
+    await expect(toast(page, '開始日を 11/11（水）にしました')).toBeVisible()
+    await expect(to.getByTestId(`week-start-${I.tripPrep}`)).toBeVisible()
+    // 見える所へ出すのは WeekDnd（移った先の要素を scrollIntoViewWithin で）だけ。名札の行の分は .wk-v の scroll-padding-top の
+    // 1か所で見込む（送る量は切れない向きへ整数に丸めるので、1px 足らず下がることはある）
+    await scrollSettled(view)
+    const { top } = await inWeek(view, `week-start-${I.tripPrep}`)
+    expect(top).toBeGreaterThanOrEqual(-1)
+    expect(top).toBeLessThanOrEqual(2)
+    expect(await pageScrolls(page)).toEqual([])
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  })
+
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`終点の●を落とした後は、●を画面の中に出したままにする（目立つ受けた表示へは送らない。7.11・4.9）（${reducedMotion}）`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion })
+      await openWeek(page)
+      const view = page.getByTestId('view-week')
+      // 11/10 の仕事の半分を名札の行のすぐ下へ。研修（11/5〜11/10）の●はその半分の上の所に見え、目立たせる受けた表示（日曜の
+      // いちばん上）は見えていない
+      await putHalfBelowTags(view, 'work', '2026-11-10', 0)
+      const received = page.getByTestId(`week-received-${I.training}`)
+      await expect(received).not.toBeInViewport()
+      await recordPageScroll(page)
+      const top = await view.evaluate((e) => e.scrollTop)
+      // （左の端のレールの●は、押せる所が週の左の端から 4px はみ出すので、縦だけを見る）
+      const dotId = `week-end-${I.training}`
+      const before = await inWeek(view, dotId)
+      expect(Math.min(before.top, before.bottom)).toBeGreaterThanOrEqual(0)
+      const drag = await startLongPress(page, await visiblePoint(endDot(page, I.training)))
+      await lifted(page)
+      const to = halfS(page, 'work', '2026-11-11')
+      await drag.moveTo(await visiblePoint(to))
+      await overDropDay(to)
+      await drag.drop()
+      await expect(toast(page, '締め切り日を 11/11（水）にしました')).toBeVisible()
+      expect((await itemOf(page, I.training))?.due).toBe('2026-11-11')
+      // 目立つのは受けた表示（その予定の物）。でも週は●の所のまま（受けた表示へ送ると、●が画面の下へ外れる）
+      await expect(received).toHaveClass(/\bflash\b/)
+      await scrollSettled(view)
+      await expect(to.getByTestId(dotId)).toHaveCount(1)
+      const after = await inWeek(view, dotId)
+      expect(after.top).toBeGreaterThanOrEqual(-1)
+      expect(after.bottom).toBeGreaterThanOrEqual(-1)
+      // 移った先の●は落とした時から見えているので、週は動かさない（block: nearest。視差効果を減らす設定でも同じ所で終わる）
+      expect(await view.evaluate((e) => e.scrollTop)).toBe(top)
+      await expect(received).not.toBeInViewport()
+      expect(await pageScrolls(page)).toEqual([])
+      expect(await page.evaluate(() => window.scrollY)).toBe(0)
+    })
+  }
 
   test('すばやく足すを開いたまま長押しで動かしても、週がずれない（入力欄のフォーカスを外す）。離した後に閉じる', async ({
     page,

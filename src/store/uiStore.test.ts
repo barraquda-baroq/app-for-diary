@@ -259,5 +259,19 @@ describe('カレンダーの画面の状態（useCalendarUi）', () => {
     const before = ui().flash
     ui().flashTarget()
     expect(ui().flash).toBe(before)
+    ui().flashInPlace()
+    expect(ui().flash).toBe(before)
+  })
+
+  it('目立たせるだけ（flashInPlace。ドラッグで落とした時）: 目立たせられる側は動かさない（scroll: false）。ふつうは true', async () => {
+    const { initialCalendarUi, useCalendarUi } = await import('./uiStore')
+    useCalendarUi.setState(initialCalendarUi())
+    const ui = () => useCalendarUi.getState()
+    ui().flashTarget('item:a')
+    const first = ui().flash!
+    expect(first).toMatchObject({ key: 'item:a', keys: ['item:a'], scroll: true })
+    ui().flashInPlace('item:a')
+    expect(ui().flash).toMatchObject({ key: 'item:a', keys: ['item:a'], scroll: false })
+    expect(ui().flash!.seq).toBeGreaterThan(first.seq)
   })
 })

@@ -206,7 +206,9 @@ export function WeekDnd({ week, children }: { week: WeekCtx; children: ReactNode
           const el = ids
             .map((id) => (id === undefined ? undefined : manager.registry.draggables.get(id)?.element))
             .find((x) => x?.isConnected)
-          // 出す所は、収める動き（1.03倍から）を掛ける前の大きさで測る。週・段の中だけを動かし、ページは動かさない（G4）
+          // 出す所は、収める動き（1.03倍から）を掛ける前の大きさで測る。週・段の中だけを動かし、ページは動かさない（G4）。落とした時に
+          // 見える所へ出すのはここだけ（目立つ側は applyDrop の flashInPlace で動かない。●を動かした時に、目立つ始点のカード・受けた
+          // 表示の方へ送って●を画面の外へ出さないように。7.11）
           scrollIntoViewWithin(el)
           settle(el)
         })

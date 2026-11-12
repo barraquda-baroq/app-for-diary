@@ -2,6 +2,9 @@
 // useCalendarUi.getState().flashTarget(flashKey.item(id)) などでキーを置き（NS の reveal.ts の作り）、目立たせられる側（カード・行・
 // 区切り・予定の枠）はこのフックの ref を要素に付ける。キーが合うと、その要素に src/ui/motion.ts の flash()（2px の --accent の枠を
 // 1.2秒。最後の 400ms で薄くなる。視差効果を減らす設定では薄くならずに 1.2秒）を掛ける。
+// - 見える所へ出す（scroll）のは flashTarget で置いた時だけ。ドラッグで落とした時は flashInPlace で置き、目立たせるだけにする
+//   （出すのは WeekDnd が、動かした物を。目立つ物が動かした物と違う時（●を動かして、始点のカード・受けた表示が目立つ）に、
+//   二つの送りがぶつからないように）
 // - キー: 'item:{id}'（登録・ドラッグで移った予定）、'day-area:{区分}'（デイリーの区切り）、'day-events:{区分}'（タイムスケジュールの
 //   その区分の予定。マンスリーの数字から来た時は区切りと一緒に。11.2）。1つの要素に、いくつかのキーを渡せる
 // - 枠は outline で出す（.flash）。目立たせる要素に outline・animation の CSS を付けない（隠れる）。
@@ -57,10 +60,16 @@ function matchedSeq(f: FlashTarget | null, joined: string): number {
   return joined.split('\n').some((k) => flashMatches(f, k)) ? f.seq : 0
 }
 
+/** 目立たせる所で、動かさずに目立たせるだけの時（uiStore の flashInPlace。ドラッグで落とした時）か */
+function matchedInPlace(f: FlashTarget | null, joined: string): boolean {
+  return matchedSeq(f, joined) !== 0 && !f?.scroll
+}
+
 export interface FlashOptions {
   /**
    * 目立たせる時に、要素を見える所まで動かす（カレンダーの中のスクロールだけを動かし、ページは動かさない。src/ui/scrollWithin.ts。
-   * 視差効果を減らす設定ではすぐに。デイリーの行・予定の枠、ウィークリーのカード・受けた表示）
+   * 視差効果を減らす設定ではすぐに。デイリーの行・予定の枠、ウィークリーのカード・受けた表示）。目立たせる側が flashInPlace で
+   * キーを置いた時（ドラッグで落とした時。出すのは WeekDnd）は動かさない
    */
   scroll?: boolean
 }
@@ -75,9 +84,11 @@ export function useFlashTarget<T extends Element = HTMLElement>(
 ): (el: T | null) => void {
   const joined = keys == null ? '' : typeof keys === 'string' ? keys : keys.join('\n')
   const seq = useCalendarUi((s) => matchedSeq(s.flash, joined))
+  const inPlace = useCalendarUi((s) => matchedInPlace(s.flash, joined))
+  const scroll = Boolean(opts.scroll) && !inPlace
   // 描いた時の値（要素が付いた時・seq が替わった時に読む）
-  const latest = useRef({ seq, scroll: Boolean(opts.scroll) })
-  latest.current = { seq, scroll: Boolean(opts.scroll) }
+  const latest = useRef({ seq, scroll })
+  latest.current = { seq, scroll }
   const node = useRef<T | null>(null)
   /** 目立たせ終えた seq（同じ seq で2回目立たせない） */
   const done = useRef(0)

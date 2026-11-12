@@ -39,14 +39,14 @@ import './week.css'
 
 /**
  * 目立たせる時に見える所まで出す（useFlashTarget の scroll。block・inline: nearest と同じで、ページは動かさずに週・段の中だけ。
- * src/ui/scrollWithin.ts）
+ * src/ui/scrollWithin.ts）。ドラッグで落とした時は目立たせるだけ（uiStore の flashInPlace。出すのは WeekDnd が、動かした物を）
  */
 const FLASH_SCROLL = { scroll: true } as const
 
 /**
- * 掴む所と目立たせる所を1つの要素に付ける ref（目立たせるのは登録・ドラッグで移った予定。4.9）。目立たせる時は、段・日のかたまりの
- * スクロールの中で見える所まで出す（もう見えている時は動かさない。視差効果を減らす設定ではすぐに。ページは動かさない。デイリー・
- * 落とした時と同じ。開発）
+ * 掴む所と目立たせる所を1つの要素に付ける ref（目立たせるのは登録・ドラッグで移った予定。4.9）。登録した時は、段・日のかたまりの
+ * スクロールの中で見える所まで出す（もう見えている時は動かさない。視差効果を減らす設定ではすぐに。ページは動かさない。デイリーと
+ * 同じ。開発）。落とした時に出すのは WeekDnd（●を動かした時は●を出し、ここは目立たせるだけ）
  */
 function useItemRef(item: Item, handle: DragHandle, week: WeekCtx, flash: boolean) {
   const drag = useItemDrag({ item, handle, week })

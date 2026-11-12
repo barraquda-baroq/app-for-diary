@@ -334,7 +334,8 @@ describe('落とした時（applyDrop。7.11・3.9・FRAME-231）', () => {
     })
     expect(moved).toBe(true)
     expect(getData().items.one.start).toBe('2026-11-12')
-    expect(useCalendarUi.getState().flash?.keys).toEqual(['item:one'])
+    // 目立たせるだけ（目立つ側は動かさない。見える所へ出すのは WeekDnd が、動かした物を）
+    expect(useCalendarUi.getState().flash).toMatchObject({ keys: ['item:one'], scroll: false })
     const [toast] = useToasts.getState().toasts
     expect(toast).toMatchObject({ kind: 'info', message: '11/12（木）へ移しました', action: { label: '元に戻す' } })
     await act(async () => toast.action!.run())

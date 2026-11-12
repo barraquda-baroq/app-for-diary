@@ -196,6 +196,27 @@ describe('見える所まで動かす（scroll）', () => {
     }
   })
 
+  it('目立たせる側が flashInPlace で置いた時（ドラッグで落とした時）は、scroll を渡していても動かさない（目立たせはする）', async () => {
+    await renderView<BoxProps>(Box, { keys: flashKey.item('a'), scroll: true })
+    vi.mocked(scrollIntoViewWithin).mockClear()
+    act(() => useCalendarUi.getState().flashInPlace(flashKey.item('a')))
+    expect(flashed()).toBe(true)
+    expect(scrollIntoViewWithin).not.toHaveBeenCalled()
+    // 次に flashTarget で置いた時は、また動かす
+    await wait(FLASH_MS)
+    target(flashKey.item('a'))
+    expect(scrollIntoViewWithin).toHaveBeenCalledWith(box(), { behavior: 'smooth' })
+  })
+
+  it('目立たせる所が出る前に flashInPlace で置いた時も、出た時に動かさない', async () => {
+    const { setProps } = await renderView<BoxProps>(Box, { keys: flashKey.item('a'), scroll: true, show: false })
+    vi.mocked(scrollIntoViewWithin).mockClear()
+    act(() => useCalendarUi.getState().flashInPlace(flashKey.item('a')))
+    setProps({ keys: flashKey.item('a'), scroll: true, show: true })
+    expect(flashed()).toBe(true)
+    expect(scrollIntoViewWithin).not.toHaveBeenCalled()
+  })
+
   it('scroll を渡さなければ動かさない', async () => {
     await renderView<BoxProps>(Box, { keys: flashKey.item('a') })
     vi.mocked(scrollIntoViewWithin).mockClear()

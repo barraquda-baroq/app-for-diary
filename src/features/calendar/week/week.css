@@ -1016,8 +1016,6 @@
   height: 32px;
   padding: 0 8px 0 4px;
   column-gap: 8px;
-  /* 見出しへ移った時に、かたまりの上の線（2px）の下に出す（上に固定した名札の行の分は .wk-v の scroll-padding-top） */
-  scroll-margin-top: 2px;
 }
 
 .wk-head.is-block .wk-holiday-slot {

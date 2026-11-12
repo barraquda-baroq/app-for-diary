@@ -362,7 +362,7 @@ describe('予定を押すと詳細（12.3・ITEMS-079・195）', () => {
   })
 })
 
-describe('登録した予定（item:{id}）を目立たせて、週の中で見える所まで動かす（4.9・12.2。デイリー・落とした時と同じ。開発）', () => {
+describe('登録した予定（item:{id}）を目立たせて、週の中で見える所まで動かす（4.9・12.2。デイリーと同じ。落とした時は WeekDnd が出す。開発）', () => {
   /**
    * jsdom は大きさを測らないので、el を「画面の上の端から縦に 300px 見えて、中身が 1000px のスクロールする所」にし、card をその所の
    * 上の端から 500px（見えていない所）に置く。el.scrollTo を返す
@@ -409,6 +409,21 @@ describe('登録した予定（item:{id}）を目立たせて、週の中で見�
     expect(el.classList.contains('flash')).toBe(true)
     expect(scrollTo).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['始点のカード', testIds.weekStart('multi'), 'multi'],
+    ['受けた表示', testIds.weekReceived('recv'), 'recv'],
+  ] as const)(
+    'ドラッグで落とした時（flashInPlace）は、%s を目立たせるだけで動かさない（出すのは WeekDnd が、動かした●を。7.11）',
+    async (_, testId, id) => {
+      await renderWeek()
+      const el = screen.getByTestId(testId)
+      const scrollTo = layout(el.closest('.wk-tier-body') as HTMLElement, el)
+      act(() => useCalendarUi.getState().flashInPlace(`item:${id}`))
+      expect(el.classList.contains('flash')).toBe(true)
+      expect(scrollTo).not.toHaveBeenCalled()
+    },
+  )
 
   it('視差効果を減らす設定では、すぐに動かす', async () => {
     const props = viewProps({ mode: 'week', viewed: '2026-11-10', area: { width: 994, height: 760 } })
