@@ -7,6 +7,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
+  centerOf,
   collectDiagnosticsOnFailure,
   holdTurns,
   longPressDrag,
@@ -63,6 +64,38 @@ const cell = (page: Page, kind: 'work' | 'private', date: string) =>
 /** 表示用のデータの、その件名の予定（無ければ null） */
 const itemByTitle = (page: Page, title: string) =>
   page.evaluate((t) => Object.values(window.__ds.getData().items).find((it) => it.title === t) ?? null, title)
+
+/** 表示用のデータの、その件名の予定の数 */
+const countByTitle = (page: Page, title: string) =>
+  page.evaluate((t) => Object.values(window.__ds.getData().items).filter((it) => it.title === t).length, title)
+
+/**
+ * Chromium の CDP の IME で、フォーカスのある入力欄に変換中の字を置く（本物のキーボードの変換と同じく compositionstart・input が
+ * 来る）。続けて変換・決める（Input.insertText）ための CDP を返す
+ */
+async function imeCompose(page: Page, text: string) {
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length })
+  return cdp
+}
+
+type CompositionEnd = { value: string; added: boolean }
+
+/** 入力欄の変換の終わり（compositionend）を控える（その時の入力欄の字と、その件名の予定がもう足されていたか） */
+async function recordCompositionEnds(input: Locator) {
+  await input.evaluate((e) => {
+    const w = window as Window & { compositionEnds?: CompositionEnd[] }
+    w.compositionEnds = []
+    e.addEventListener('compositionend', () => {
+      const value = (e as HTMLInputElement).value
+      const added = Object.values(window.__ds.getData().items).some((it) => it.title === value)
+      w.compositionEnds?.push({ value, added })
+    })
+  })
+}
+
+const compositionEnds = (page: Page) =>
+  page.evaluate(() => (window as Window & { compositionEnds?: CompositionEnd[] }).compositionEnds ?? [])
 
 /** 保存の途中の変更を書いてから読み込み直す */
 async function reloadWeek(page: Page) {
@@ -372,6 +405,68 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     await page.getByTestId('quick-add-input').press('Escape')
     await expect(page.getByTestId('quick-add-input')).toHaveCount(0)
     expect(await itemByTitle(page, '資料を送る')).toBeNull()
+  })
+
+  test('すばやく足す: 日本語の変換を決める前に［足す］を押すと、変換を決めてから（変換の終わりの後に）1回だけ足し、空に戻って入力欄にフォーカスが戻る。変換中の Enter では足さない（Chromium の IME。12.1・D42・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await cell(page, 'work', '2026-11-12').hover()
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await recordCompositionEnds(input)
+    const ime = await imeCompose(page, 'かいぎ')
+    await expect(input).toHaveValue('かいぎ')
+    await page.getByTestId('quick-add-button').click()
+    // 押した時に変換が決まり（その時はまだ足しておらず、空にもしていない）、その後に足して空に戻す。変換中のまま空にしない
+    await expect.poll(() => countByTitle(page, 'かいぎ')).toBe(1)
+    expect(await compositionEnds(page)).toEqual([{ value: 'かいぎ', added: false }])
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    const it = await itemByTitle(page, 'かいぎ')
+    expect(it).toMatchObject({ start: '2026-11-12', kind: 'work', origin: 'calendar', listed: false })
+    await expect(cell(page, 'work', '2026-11-12').getByTestId(`week-card-${it?.id}`)).toBeVisible()
+
+    // 続けて変換して打てる。変換中の Enter（変換を決める Enter）では足さない。決めてからの Enter で足す
+    await ime.send('Input.imeSetComposition', { text: 'しりょう', selectionStart: 4, selectionEnd: 4 })
+    await page.keyboard.press('Enter')
+    await ime.send('Input.insertText', { text: '資料' })
+    await expect(input).toHaveValue('資料')
+    expect(await itemByTitle(page, '資料')).toBeNull()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => itemByTitle(page, '資料')).toMatchObject({ start: '2026-11-12', kind: 'work' })
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    expect(await countByTitle(page, 'かいぎ')).toBe(1)
+  })
+
+  test('すばやく足す: 日本語の変換を決める前に［足す］の上でマウスを押し、［足す］の外（入力欄の上）で離すと、足さずに入力欄へ戻る（変換は決まったまま・開いたまま。12.1）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await cell(page, 'work', '2026-11-12').hover()
+    await page.getByTestId('week-add-2026-11-12-work').click()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await recordCompositionEnds(input)
+    await imeCompose(page, 'かいぎ')
+    await page.getByTestId('quick-add-button').hover()
+    await page.mouse.down()
+    await input.hover()
+    await page.mouse.up()
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('かいぎ')
+    expect(await compositionEnds(page)).toEqual([{ value: 'かいぎ', added: false }])
+    await page.waitForTimeout(500)
+    expect(await itemByTitle(page, 'かいぎ')).toBeNull()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    await expect(input).toBeFocused()
+    // 決めた後の Enter で足せる
+    await page.keyboard.press('Enter')
+    await expect.poll(() => countByTitle(page, 'かいぎ')).toBe(1)
+    await expect(input).toHaveValue('')
   })
 
   test('すばやく足すの書きかけは、閉じても読み込み直しても残り、同じ日・同じ段で開き直すと戻る（ITEMS-159）', async ({
@@ -791,6 +886,68 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(input).toHaveValue('花を買う')
   })
 
+  test('すばやく足す（指）: 日本語の変換を決める前に［足す］を押すと、変換を決めてから1回だけ足し、空に戻って入力欄にフォーカスが戻る（Chromium の IME。12.1・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await recordCompositionEnds(input)
+    const ime = await imeCompose(page, 'かいぎ')
+    await page.getByTestId('quick-add-button').tap()
+    await expect.poll(() => countByTitle(page, 'かいぎ')).toBe(1)
+    expect(await compositionEnds(page)).toEqual([{ value: 'かいぎ', added: false }])
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    const it = await itemByTitle(page, 'かいぎ')
+    expect(it).toMatchObject({ start: '2026-11-10', kind: 'private', origin: 'calendar' })
+    await expect(col(page, '2026-11-10').locator('[data-tier="private"]').getByTestId(`week-card-${it?.id}`)).toBeVisible()
+    // 続けて変換して、決めてから［足す］で足せる（変換していない時は、押しても入力欄から外さない）
+    await ime.send('Input.imeSetComposition', { text: 'つぎ', selectionStart: 2, selectionEnd: 2 })
+    await ime.send('Input.insertText', { text: '次の予定' })
+    await expect(input).toHaveValue('次の予定')
+    await page.getByTestId('quick-add-button').tap()
+    await expect.poll(() => itemByTitle(page, '次の予定')).toMatchObject({ start: '2026-11-10', kind: 'private' })
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    expect(await countByTitle(page, 'かいぎ')).toBe(1)
+  })
+
+  test('すばやく足す（指）: 変換中に［足す］を押した後、キーボードが閉じて画面が動き、指の下に別のカードが来ても、そのカードを開かず、［足す］の分を1回だけ足して開いたまま（12.1・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    const ime = await imeCompose(page, 'かいぎ')
+    const at = await centerOf(page.getByTestId('quick-add-button'))
+    await ime.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] })
+    await page.waitForTimeout(80)
+    // 押した時に入力欄から外したので、キーボードが閉じて画面が下へ動いた（指は同じ所のまま）
+    const under = await page.evaluate(({ x, y }) => {
+      const root = document.getElementById('root') as HTMLElement
+      root.style.transform = 'translateY(45px)'
+      return document.elementFromPoint(x, y)?.closest('[data-testid^="week-card-"]')?.getAttribute('data-testid') ?? null
+    }, at)
+    // 指の下にほかの予定のカードが来ている（このテストが確かめる形）
+    expect(under).toMatch(/^week-card-/)
+    await ime.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect.poll(() => countByTitle(page, 'かいぎ')).toBe(1)
+    await page.waitForTimeout(500)
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    expect(await countByTitle(page, 'かいぎ')).toBe(1)
+    // 画面を戻すと、続けて打って足せる
+    await page.evaluate(() => ((document.getElementById('root') as HTMLElement).style.transform = ''))
+    await input.fill('資料')
+    await input.press('Enter')
+    await expect.poll(() => itemByTitle(page, '資料')).toMatchObject({ start: '2026-11-10', kind: 'private' })
+  })
+
   test('すばやく足す（指）: 字を打ったまま、外から指でなぞって週をスクロールしても、足さず閉じない（キーボードを出したまま見て、続けて打てる。12.1）', async ({
     page,
   }) => {
@@ -884,5 +1041,36 @@ test.describe('すばやく足す（iPhone）', { tag: ['@ios'] }, () => {
     const it = await itemByTitle(page, '花を買う')
     expect(it).toMatchObject({ start: '2026-11-10', kind: 'private', origin: 'calendar' })
     await expect(col(page, '2026-11-10').locator('[data-tier="private"]').getByTestId(`week-card-${it?.id}`)).toBeVisible()
+  })
+
+  test('変換を決める前に［足す］を押すと、入力欄から一度外して（キーボードが変換を終える）から足し、空に戻って入力欄にフォーカスが戻る（変換候補を残さない。12.1・22. の段階2の終わりの確かめ）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId('week-add-2026-11-10-private').tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await input.fill('かいぎ')
+    // 変換中にする（Playwright からは WebKit の本物の変換を起こせないので、変換の始まりだけを送る。変換の終わりは来ない形。
+    // iPhone は外れた後に変換の終わりを送らないことがある）
+    await input.evaluate((e) => {
+      const w = window as Window & { quickBlurs?: number }
+      w.quickBlurs = 0
+      e.addEventListener('blur', () => (w.quickBlurs = (w.quickBlurs ?? 0) + 1))
+      e.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+    })
+    await page.getByTestId('quick-add-button').tap()
+    await expect.poll(() => countByTitle(page, 'かいぎ')).toBe(1)
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    // 押した分で一度だけ外した（変換していない時の［足す］は外さない。上のテスト）
+    expect(await page.evaluate(() => (window as Window & { quickBlurs?: number }).quickBlurs)).toBe(1)
+    expect(await itemByTitle(page, 'かいぎ')).toMatchObject({ start: '2026-11-10', kind: 'private', origin: 'calendar' })
+    // 続けて打って、Enter で足せる
+    await input.fill('資料')
+    await input.press('Enter')
+    await expect.poll(() => itemByTitle(page, '資料')).toMatchObject({ start: '2026-11-10', kind: 'private' })
+    await expect(input).toHaveValue('')
+    expect(await countByTitle(page, 'かいぎ')).toBe(1)
   })
 })
