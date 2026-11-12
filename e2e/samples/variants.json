@@ -187,6 +187,26 @@
           "label": "淡は明るくはっきりした色、濃は深くくすんだ色"
         }
       ]
+    },
+    "13": {
+      "title": "ラベルの24色（蛍光色からくすみまで）",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "options": [
+        {
+          "letter": "E",
+          "id": "labels-e",
+          "label": "前回の案E（濃は原色に近いはっきりした色、淡はくすんだ色）"
+        },
+        {
+          "letter": "G",
+          "id": "labels-g",
+          "label": "黄・ピンク・青・緑・オレンジ・赤・紫を蛍光色に、そこからくすみ色まで段を付けた24色"
+        }
+      ]
     }
   },
   "options": {
@@ -1341,6 +1361,129 @@
       "notes": [
         "ホワイト: いちばん近い2色は ミント・濃と空・濃（ΔE 0.081。今は 0.031）。色覚の違いで見たいちばん近い2色は 1型 0.029・2型 0.028（今は 0.018・0.003）",
         "ダーク: いちばん近い2色は ミント・濃と空・濃（ΔE 0.081。今は 0.026）。色覚の違いで見たいちばん近い2色は 1型 0.029・2型 0.028（今は 0.015・0.002）",
+        "ディープダーク: いちばん近い2色は 瑠璃・濃と藤・濃（ΔE 0.031。今は 0.007）。色覚の違いで見たいちばん近い2色は 1型 0.013・2型 0.015（今は 0.003・0.001）"
+      ],
+      "names": {
+        "rose-l": "桜・淡",
+        "coral-l": "珊瑚・淡",
+        "apricot-l": "杏・淡",
+        "lemon-l": "菜の花・淡",
+        "lime-l": "若葉・淡",
+        "mint-l": "ミント・淡",
+        "teal-l": "青磁・淡",
+        "sky-l": "空・淡",
+        "blue-l": "瑠璃・淡",
+        "wisteria-l": "藤・淡",
+        "violet-l": "菫・淡",
+        "peony-l": "牡丹・淡",
+        "rose-d": "桜・濃",
+        "coral-d": "珊瑚・濃",
+        "apricot-d": "杏・濃",
+        "lemon-d": "菜の花・濃",
+        "lime-d": "若葉・濃",
+        "mint-d": "ミント・濃",
+        "teal-d": "青磁・濃",
+        "sky-d": "空・濃",
+        "blue-d": "瑠璃・濃",
+        "wisteria-d": "藤・濃",
+        "violet-d": "菫・濃",
+        "peony-d": "牡丹・濃"
+      }
+    },
+    "labels-g": {
+      "question": 13,
+      "letter": "G",
+      "label": "黄・ピンク・青・緑・オレンジ・赤・紫を蛍光色に、そこからくすみ色まで段を付けた24色",
+      "appearances": [
+        "white",
+        "dark",
+        "deep-dark"
+      ],
+      "tokens": {
+        "white": {
+          "--label-rose-l": "#d8c8c7",
+          "--label-coral-l": "#c97b54",
+          "--label-apricot-l": "#cea88b",
+          "--label-lemon-l": "#e6c46e",
+          "--label-lime-l": "#9edb8d",
+          "--label-mint-l": "#73996e",
+          "--label-teal-l": "#73c1aa",
+          "--label-sky-l": "#87d7eb",
+          "--label-blue-l": "#979fa8",
+          "--label-wisteria-l": "#8e79b8",
+          "--label-violet-l": "#c9a7d0",
+          "--label-peony-l": "#dd79d0",
+          "--label-rose-d": "#d14361",
+          "--label-coral-d": "#ff0205",
+          "--label-apricot-d": "#ff7903",
+          "--label-lemon-d": "#feff01",
+          "--label-lime-d": "#77b945",
+          "--label-mint-d": "#02ff85",
+          "--label-teal-d": "#2d8f99",
+          "--label-sky-d": "#06acfe",
+          "--label-blue-d": "#4483eb",
+          "--label-wisteria-d": "#8858e1",
+          "--label-violet-d": "#a002ff",
+          "--label-peony-d": "#ff01be"
+        },
+        "dark": {
+          "--label-rose-l": "#d8c8c7",
+          "--label-coral-l": "#c97b54",
+          "--label-apricot-l": "#cea88b",
+          "--label-lemon-l": "#e6c46e",
+          "--label-lime-l": "#9edb8d",
+          "--label-mint-l": "#73996e",
+          "--label-teal-l": "#73c1aa",
+          "--label-sky-l": "#87d7eb",
+          "--label-blue-l": "#979fa8",
+          "--label-wisteria-l": "#8e79b8",
+          "--label-violet-l": "#c9a7d0",
+          "--label-peony-l": "#dd79d0",
+          "--label-rose-d": "#d14361",
+          "--label-coral-d": "#ff0205",
+          "--label-apricot-d": "#ff7903",
+          "--label-lemon-d": "#feff01",
+          "--label-lime-d": "#77b945",
+          "--label-mint-d": "#02ff85",
+          "--label-teal-d": "#2d8f99",
+          "--label-sky-d": "#06acfe",
+          "--label-blue-d": "#4483eb",
+          "--label-wisteria-d": "#8858e1",
+          "--label-violet-d": "#a002ff",
+          "--label-peony-d": "#ff01be"
+        },
+        "deep-dark": {
+          "--label-rose-l": "#937c7c",
+          "--label-coral-l": "#827265",
+          "--label-apricot-l": "#726b60",
+          "--label-lemon-l": "#878271",
+          "--label-lime-l": "#767d6b",
+          "--label-mint-l": "#5c726c",
+          "--label-teal-l": "#657d7b",
+          "--label-sky-l": "#76848b",
+          "--label-blue-l": "#667381",
+          "--label-wisteria-l": "#6b6671",
+          "--label-violet-l": "#837888",
+          "--label-peony-l": "#7c6e77",
+          "--label-rose-d": "#5c494c",
+          "--label-coral-d": "#63554e",
+          "--label-apricot-d": "#534a3b",
+          "--label-lemon-d": "#686250",
+          "--label-lime-d": "#515545",
+          "--label-mint-d": "#3e5045",
+          "--label-teal-d": "#4e5e5b",
+          "--label-sky-d": "#536570",
+          "--label-blue-d": "#4b5256",
+          "--label-wisteria-d": "#4c495a",
+          "--label-violet-d": "#645b67",
+          "--label-peony-d": "#5d515f"
+        }
+      },
+      "css": ":root[data-theme='white'] {\n  --label-rose-l: #d8c8c7;\n  --label-coral-l: #c97b54;\n  --label-apricot-l: #cea88b;\n  --label-lemon-l: #e6c46e;\n  --label-lime-l: #9edb8d;\n  --label-mint-l: #73996e;\n  --label-teal-l: #73c1aa;\n  --label-sky-l: #87d7eb;\n  --label-blue-l: #979fa8;\n  --label-wisteria-l: #8e79b8;\n  --label-violet-l: #c9a7d0;\n  --label-peony-l: #dd79d0;\n  --label-rose-d: #d14361;\n  --label-coral-d: #ff0205;\n  --label-apricot-d: #ff7903;\n  --label-lemon-d: #feff01;\n  --label-lime-d: #77b945;\n  --label-mint-d: #02ff85;\n  --label-teal-d: #2d8f99;\n  --label-sky-d: #06acfe;\n  --label-blue-d: #4483eb;\n  --label-wisteria-d: #8858e1;\n  --label-violet-d: #a002ff;\n  --label-peony-d: #ff01be;\n}\n:root[data-theme='dark'] {\n  --label-rose-l: #d8c8c7;\n  --label-coral-l: #c97b54;\n  --label-apricot-l: #cea88b;\n  --label-lemon-l: #e6c46e;\n  --label-lime-l: #9edb8d;\n  --label-mint-l: #73996e;\n  --label-teal-l: #73c1aa;\n  --label-sky-l: #87d7eb;\n  --label-blue-l: #979fa8;\n  --label-wisteria-l: #8e79b8;\n  --label-violet-l: #c9a7d0;\n  --label-peony-l: #dd79d0;\n  --label-rose-d: #d14361;\n  --label-coral-d: #ff0205;\n  --label-apricot-d: #ff7903;\n  --label-lemon-d: #feff01;\n  --label-lime-d: #77b945;\n  --label-mint-d: #02ff85;\n  --label-teal-d: #2d8f99;\n  --label-sky-d: #06acfe;\n  --label-blue-d: #4483eb;\n  --label-wisteria-d: #8858e1;\n  --label-violet-d: #a002ff;\n  --label-peony-d: #ff01be;\n}\n:root[data-theme='deep-dark'] {\n  --label-rose-l: #937c7c;\n  --label-coral-l: #827265;\n  --label-apricot-l: #726b60;\n  --label-lemon-l: #878271;\n  --label-lime-l: #767d6b;\n  --label-mint-l: #5c726c;\n  --label-teal-l: #657d7b;\n  --label-sky-l: #76848b;\n  --label-blue-l: #667381;\n  --label-wisteria-l: #6b6671;\n  --label-violet-l: #837888;\n  --label-peony-l: #7c6e77;\n  --label-rose-d: #5c494c;\n  --label-coral-d: #63554e;\n  --label-apricot-d: #534a3b;\n  --label-lemon-d: #686250;\n  --label-lime-d: #515545;\n  --label-mint-d: #3e5045;\n  --label-teal-d: #4e5e5b;\n  --label-sky-d: #536570;\n  --label-blue-d: #4b5256;\n  --label-wisteria-d: #4c495a;\n  --label-violet-d: #645b67;\n  --label-peony-d: #5d515f;\n}\n",
+      "notes": [
+        "ホワイト: いちばん近い2色は 杏・淡と瑠璃・淡（ΔE 0.096。今は 0.031）。色覚の違いで見たいちばん近い2色は 1型 0.046・2型 0.039（今は 0.018・0.003）",
+        "ホワイト: 白い地より明るい蛍光色（菜の花・濃 0.207・ミント・濃 0.239）は、区分の地との明るさの差 0.1 の代わりに、白い地のどれとも ΔE 0.15 以上（数はいちばん近い地との差）",
+        "ダーク: いちばん近い2色は 杏・淡と瑠璃・淡（ΔE 0.096。今は 0.026）。色覚の違いで見たいちばん近い2色は 1型 0.046・2型 0.039（今は 0.015・0.002）",
         "ディープダーク: いちばん近い2色は 瑠璃・濃と藤・濃（ΔE 0.031。今は 0.007）。色覚の違いで見たいちばん近い2色は 1型 0.013・2型 0.015（今は 0.003・0.001）"
       ],
       "names": {
