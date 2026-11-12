@@ -76,7 +76,7 @@ async function closeSheet(page: Page) {
 }
 
 /**
- * 4つのモードと、登録・詳細（詳しくを開いた所）の小さな画面で、横にはみ出さない。confirm なら詳細の［削除］の確かめの小さな画面も
+ * 4つのモードと、登録・詳細（どの欄もいつも出ている）の小さな画面で、横にはみ出さない。confirm なら詳細の［削除］の確かめの小さな画面も
  * （開いて、［やめる］で戻る）
  */
 async function sweep(page: Page, width: number, height: number, { confirm = false } = {}) {
@@ -85,7 +85,7 @@ async function sweep(page: Page, width: number, height: number, { confirm = fals
     await go(page, mode, path)
     await noSideScroll(page, `${width}px ${mode}`)
   }
-  // 登録の小さな画面（詳しくを開いた所。ラベルの色の並び・依頼者・メモ）
+  // 登録の小さな画面（どの欄もいつも出ている。依頼者・メモ・ロック・ラベルの色の並び）
   await page.getByTestId(testIds.calAdd).click()
   let sheet = await sheetReady(page)
   await noSideScroll(page, `${width}px 登録`, sheet)
@@ -131,7 +131,6 @@ test.describe('横にスクロールしない・ページがスクロールし�
     }
     await openCalendar(page, '/week/2026-11-08', {
       data: { ...base, items: { ...base.items, [marks.id]: marks } },
-      prefs: { detailsOpen: true },
     })
     await sweep(page, 960, 900)
     // 960px（列 79px）: 始点のカードの件名は2行（WP7。checkpoint の約束の3）
@@ -289,8 +288,6 @@ const SMALL_OK: readonly SmallOk[] = [
   { sel: '.wk-day', w: 34, h: 14 },
   // イヤーの小さな月の名前（押すとその月）: 高さ 32.75px ほど（WP12。year.css の .yr-mini-name）
   { sel: '.yr-mini-name', w: 34, h: 31 },
-  // 登録・詳細の「詳しく」: 高さ 33px（WP9。item.css の .it-details-toggle）
-  { sel: '.it-details-toggle', w: 34, h: 32 },
 ]
 
 /**
@@ -394,14 +391,23 @@ async function tapSizes(
     }
   }
   if (!sheets) return found
+  /** 小さな画面の中をいちばん上・いちばん下にして測る（S・M のシートは欄が入り切らず、下の欄は中のスクロールで届く。12.2） */
+  const noteSheet = async (label: string) => {
+    const body = page.getByTestId(testIds.itemSheet).locator('.modal-body')
+    await note(label, '[data-testid="item-sheet"]')
+    if (await body.evaluate((e) => e.scrollHeight > e.clientHeight + 1)) {
+      await body.evaluate((e) => (e.scrollTop = e.scrollHeight))
+      await note(`${label}（下まで送った所）`, '[data-testid="item-sheet"]')
+    }
+  }
   await page.getByTestId(testIds.calAdd).click()
   await sheetReady(page)
-  await note('登録', '[data-testid="item-sheet"]')
+  await noteSheet('登録')
   await closeSheet(page)
   await go(page, 'week', '/week/2026-11-08')
   await page.getByTestId(testIds.weekStart(I.materials)).locator('.wk-open').click()
   await sheetReady(page)
-  await note('詳細', '[data-testid="item-sheet"]')
+  await noteSheet('詳細')
   await closeSheet(page)
   return found
 }
@@ -411,7 +417,7 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
     test(`${width}px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない${width === 360 ? '（削除の確かめも）' : ''}（FRAME-026・CALENDAR-226）`, async ({
       page,
     }) => {
-      await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
+      await openCalendar(page, '/month/2026-11', { data: demoData() })
       await sweep(page, width, 844, { confirm: width === 360 })
     })
   }
@@ -419,7 +425,7 @@ test.describe('横にスクロールしない・押せる所の大きさ（S）'
   test('指で押せる所は 34px 以上（D08 の例外は SMALL_OK の大きさ以上）。4つのモードと登録・詳細の小さな画面（FRAME-244・CALENDAR-145）', async ({
     page,
   }) => {
-    await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
     expect(await tapSizes(page)).toEqual([])
   })
 })
@@ -428,7 +434,7 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
   test('600・768px: 4つのモードと登録・詳細の小さな画面で横にはみ出さない（600px は S と M の境。FRAME-026・計画の R5）', async ({
     page,
   }) => {
-    await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
     await sweep(page, 600, 1024)
     await sweep(page, 768, 1024)
   })
@@ -436,7 +442,7 @@ test.describe('横にスクロールしない・押せる所の大きさ（M）'
   test('指で押せる所は 34px 以上（D08 の例外は SMALL_OK の大きさ以上）。4つのモードと登録・詳細の小さな画面（FRAME-244）', async ({
     page,
   }) => {
-    await openCalendar(page, '/month/2026-11', { data: demoData(), prefs: { detailsOpen: true } })
+    await openCalendar(page, '/month/2026-11', { data: demoData() })
     expect(await tapSizes(page)).toEqual([])
   })
 })

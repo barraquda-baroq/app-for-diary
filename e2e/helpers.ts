@@ -233,7 +233,7 @@ export interface OpenCalendarOptions {
   now?: string | Date | false
   /** 外観（white・dark・deep-dark・system） */
   appearance?: 'system' | 'white' | 'dark' | 'deep-dark'
-  /** 端末ごとの表示の設定（lastMode・detailsOpen など。src/store/uiStore.ts の Prefs） */
+  /** 端末ごとの表示の設定（lastMode・collapsed など。src/store/uiStore.ts の Prefs） */
   prefs?: Partial<Prefs>
   /** 開いた後に置くデータ */
   data?: Partial<AppData>

@@ -40,7 +40,7 @@ export interface RenderOptions extends TestMedia {
   data?: Partial<AppData>
   /** 今の時刻（既定は setupCalendarTests の時刻 = 2026年11月10日（火）9:00） */
   now?: Date | number
-  /** 端末ごとの表示の設定（lastMode・detailsOpen など） */
+  /** 端末ごとの表示の設定（lastMode・collapsed など） */
   prefs?: Partial<Prefs>
 }
 

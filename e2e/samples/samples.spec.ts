@@ -62,10 +62,10 @@ async function notBuiltYet(page: Page): Promise<boolean> {
   return (await page.getByText(/段階2で(作ります|出します)/).count()) > 0
 }
 
-/** 見本の状態で開く（作り物のデータ・決めた時刻・外観・「詳しく」を開いた設定）。まだ撮れない物は飛ばす */
+/** 見本の状態で開く（作り物のデータ・決めた時刻・外観。登録・詳細の画面はどの欄もいつも出ている）。まだ撮れない物は飛ばす */
 async function openShot(page: Page, shot: Shot, appearance: Appearance): Promise<void> {
   try {
-    await openCalendar(page, shot.hash, { appearance, prefs: { detailsOpen: true }, data: demoData() })
+    await openCalendar(page, shot.hash, { appearance, data: demoData() })
   } catch (e) {
     test.skip(await notBuiltYet(page), `${shot.hash} はまだ開けません（画面の枠ができてから撮る）`)
     throw e

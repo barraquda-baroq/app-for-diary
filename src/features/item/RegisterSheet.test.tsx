@@ -1,6 +1,6 @@
-// 予定の登録の画面（docs/SPEC.md の 12.2・3.8・4.3・4.6）: 題・欄の並び・件名にフォーカス・初めの値、区分とラベルを選び替えると
-// 地と帯の印（data-kind・data-label）がその場で替わる、「詳しく」の開閉を端末ごとに覚える、件名が空の間は［登録］を押せない、
-// ラベルの呼び名の出し方、ディープダークの題の左のアイコン
+// 予定の登録の画面（docs/SPEC.md の 12.2・3.8・4.3・4.6）: 題・欄の並び（畳む所は無く、どの欄もいつも出す）・件名にフォーカス・
+// 初めの値、区分とラベルを選び替えると地と帯の印（data-kind・data-label）がその場で替わる、件名が空の間は［登録］を押せない、
+// ラベルの呼び名の出し方（色の並びの下の1行）、ディープダークの題の左のアイコン
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,7 @@ import { LABEL_DEFAULT_NAMES, LABEL_KEYS } from '../../domain/labels'
 import { mkItem, T0, DAY } from '../../domain/testData'
 import type { LabelName } from '../../domain/types'
 import { useApp } from '../../store/appStore'
-import { PREFS_KEY, useCalendarUi, usePrefs, useToasts } from '../../store/uiStore'
+import { useCalendarUi, useToasts } from '../../store/uiStore'
 import { renderView, setupCalendarTests } from '../../test/renderCalendar'
 import { testIds } from '../calendar/common/testIds'
 import type { RegisterInit } from '../calendar/common/types'
@@ -34,28 +34,52 @@ const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) 
 const labelName = (id: string, name: string): LabelName => ({ id, name, updatedAt: 1, by: 'user', ai: null, via: null })
 
 describe('題・欄の並び・初めの値（12.2）', () => {
-  it('題は「予定を登録」。欄は 件名 → 区分 → 日付 → 時刻 → 詳しく（ラベル → 依頼者 → ロック → Task List → メモ）の順', async () => {
+  it('題は「予定を登録」。欄は 件名 → 区分 → 依頼者 → 開始日・締め切り日 → 開始・終了 → メモ → ロック・Task List → ラベルの色 の順（22. の作者の気になった所の 2.）', async () => {
     await open()
     expect(within(sheet()).getByRole('heading').textContent).toBe('予定を登録')
     const order = [
       testIds.itemTitle,
       testIds.itemKind('work'),
       testIds.itemKind('private'),
+      testIds.itemRequester,
       testIds.itemStart,
       testIds.itemDue,
       testIds.itemStartTime,
       testIds.itemEndTime,
-      testIds.itemDetails,
-      testIds.itemLabel('none'),
-      testIds.itemLabel('rose-l'),
-      testIds.itemRequester,
+      testIds.itemMemo,
       testIds.itemLock,
       testIds.itemListed,
-      testIds.itemMemo,
+      testIds.itemLabel('none'),
+      testIds.itemLabel('rose-l'),
+      testIds.itemLabel('peony-d'),
+      testIds.itemLabelName,
       testIds.itemCancel,
       testIds.itemRegister,
     ].map(byId)
     for (let i = 1; i < order.length; i++) expect(before(order[i - 1], order[i]), order[i].dataset.testid).toBe(true)
+    // 欄の名前も同じ順（文書の順 = 画面の順 = Tab の順）
+    expect([...sheet().querySelectorAll('.it-field-label, .it-cap')].map((e) => e.textContent)).toEqual([
+      '件名',
+      '区分',
+      '依頼者',
+      '開始日',
+      '締め切り日',
+      '開始',
+      '終了',
+      'メモ',
+      'ラベルの色',
+    ])
+    // ロックと Task List にも出すは同じ1行（.it-switches）
+    expect(byId(testIds.itemLock).closest('.it-switches')).toBe(byId(testIds.itemListed).closest('.it-switches'))
+  })
+
+  it('「詳しく」の畳む所は無く、開いた時からどの欄も出ている（22. の段階2の見本の確かめの 10.）', async () => {
+    await open()
+    expect(screen.queryByTestId('item-details')).toBeNull()
+    expect(screen.queryByRole('button', { name: /詳しく/ })).toBeNull()
+    expect(sheet().querySelector('.fold, [aria-expanded][aria-controls]')).toBeNull()
+    for (const id of [testIds.itemRequester, testIds.itemMemo, testIds.itemLock, testIds.itemListed, testIds.itemLabel('none')])
+      expect(byId(id).closest('[hidden]'), id).toBeNull()
   })
 
   it('件名は1行の入力欄（textarea。改行しない）で、開くとここにフォーカスする。初めは空', async () => {
@@ -136,7 +160,7 @@ describe('区分・ラベルを選び替えると、その場で地と帯の印�
   })
 
   it('ラベル（上の辺の帯 .label-band と data-label）。「なし」で帯を外す', async () => {
-    const { user } = await open(undefined, { prefs: { detailsOpen: true } })
+    const { user } = await open()
     await user.click(byId(testIds.itemLabel('rose-l')))
     expect(sheet().getAttribute('data-label')).toBe('rose-l')
     expect(sheet().classList.contains('label-band')).toBe(true)
@@ -162,28 +186,42 @@ describe('区分・ラベルを選び替えると、その場で地と帯の印�
 
 describe('ラベルの色を選ぶ所（4.6・D35・ITEMS-021〜023）', () => {
   it('左に「なし」、24色を上の行に淡・下の行に濃の順で並べる。色は data-label から引く', async () => {
-    await open(undefined, { prefs: { detailsOpen: true } })
+    await open()
     const swatches = [...sheet().querySelectorAll('.it-swatch')]
     expect(swatches.map((s) => s.getAttribute('data-label'))).toEqual([...LABEL_KEYS])
     expect(before(byId(testIds.itemLabel('none')), swatches[0])).toBe(true)
   })
 
   it('呼び名を付けていない色は、既定の呼び名を title と読み上げにだけ使い、画面の字には出さない', async () => {
-    const { user } = await open(undefined, { prefs: { detailsOpen: true } })
+    const { user } = await open()
     const rose = byId(testIds.itemLabel('rose-l'))
     expect(rose.getAttribute('title')).toBe(LABEL_DEFAULT_NAMES['rose-l'])
     expect(rose.getAttribute('aria-label')).toBe('桜・淡')
     await user.click(rose)
-    expect(sheet().querySelector('.it-label-name')?.textContent).toBe('')
+    expect(byId(testIds.itemLabelName).textContent).toBe('')
     expect(screen.queryByText('桜・淡')).toBeNull()
   })
 
-  it('付けた呼び名は、選んでいる色（乗せた色）の物を欄の名前の横に出し、ほかの端末で変わってもすぐ出る（ITEMS-021・026）', async () => {
+  it('呼び名の1行は、欄の名前「ラベルの色」の横ではなく、色の並び（12×2）の下に置き、読み上げない（4.6・22. の 7.）', async () => {
+    await open()
+    const line = byId(testIds.itemLabelName)
+    const group = screen.getByRole('group', { name: 'ラベルの色' })
+    const caption = document.getElementById(group.getAttribute('aria-labelledby') ?? '')!
+    expect(caption.textContent).toBe('ラベルの色')
+    expect(caption.contains(line)).toBe(false)
+    // 色の並びのすぐ下（同じ列の中で、色の並びの後）
+    const swatches = group.querySelector('.it-swatches')!
+    expect(line.parentElement).toBe(swatches.parentElement)
+    expect(line.previousElementSibling).toBe(swatches)
+    expect(before(byId(testIds.itemLabel('peony-d')), line)).toBe(true)
+    expect(line.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('付けた呼び名は、選んでいる色（乗せた色）の物を色の並びの下に出し、ほかの端末で変わってもすぐ出る（ITEMS-021・026）', async () => {
     const { user } = await open(undefined, {
-      prefs: { detailsOpen: true },
       data: { labelNames: { 'sky-l': labelName('sky-l', '社内') } },
     })
-    const name = () => sheet().querySelector('.it-label-name')?.textContent
+    const name = () => byId(testIds.itemLabelName).textContent
     const sky = byId(testIds.itemLabel('sky-l'))
     expect(sky.getAttribute('aria-label')).toBe('社内')
     await user.hover(sky)
@@ -197,35 +235,6 @@ describe('ラベルの色を選ぶ所（4.6・D35・ITEMS-021〜023）', () => {
       useApp.setState({ data: { ...s.data, labelNames: { 'sky-l': labelName('sky-l', '本社') } } })
     })
     expect(name()).toBe('本社')
-  })
-})
-
-describe('「詳しく」の開閉は端末ごとに覚える（6.13・ITEMS-178・FRAME-262）', () => {
-  it('初めは閉じていて、開くと detailsOpen に書き、もう一度開いた登録の画面も開いている', async () => {
-    const { user, unmount } = await open()
-    const toggle = byId(testIds.itemDetails)
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(document.getElementById(toggle.getAttribute('aria-controls') ?? '')?.classList.contains('is-closed')).toBe(true)
-    await user.click(toggle)
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(usePrefs.getState().detailsOpen).toBe(true)
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}').detailsOpen).toBe(true)
-    unmount()
-    await open()
-    expect(byId(testIds.itemDetails).getAttribute('aria-expanded')).toBe('true')
-  })
-
-  it('畳んだ中身は、畳む動き（180ms）が終わってから表示なし（hidden）にし、開く時はすぐ出す（Tab が見えない欄へ行かないように）', async () => {
-    const { user } = await open()
-    const toggle = byId(testIds.itemDetails)
-    const content = () => document.getElementById(toggle.getAttribute('aria-controls') ?? '')?.firstElementChild as HTMLElement
-    expect(content().hidden).toBe(true)
-    await user.click(toggle)
-    expect(content().hidden).toBe(false)
-    await user.click(toggle)
-    // 畳む動きの間は残す（高さが縮む動きを見せる）
-    expect(content().hidden).toBe(false)
-    await waitFor(() => expect(content().hidden).toBe(true))
   })
 })
 
@@ -257,7 +266,7 @@ const items = () => Object.values(useApp.getState().data.items)
 
 describe('登録する（12.2・12.4・ITEMS-187・194）', () => {
   it('［登録］で 12.4 の決まりを当ててから足し、閉じて、新しいカードを目立たせる（お知らせは出さない）', async () => {
-    const { user, onClose } = await open({ start: '2026-11-12' }, { prefs: { detailsOpen: true } })
+    const { user, onClose } = await open({ start: '2026-11-12' })
     await user.type(byId(testIds.itemTitle), '  打ち合わせ  ')
     await user.click(byId(testIds.itemKind('private')))
     await user.click(byId(testIds.itemLabel('sky-l')))
@@ -379,7 +388,6 @@ describe('登録する（12.2・12.4・ITEMS-187・194）', () => {
 
   it('依頼者の候補（直近 365日・回数の多い順）から選べる', async () => {
     const { user } = await open(undefined, {
-      prefs: { detailsOpen: true },
       data: {
         items: {
           a: mkItem({ id: 'a', requester: '総務', createdAt: T0 - DAY }),
@@ -428,9 +436,12 @@ describe('書きかけのまま閉じる時の確かめ（12.2・ITEMS-186・AMB
     },
   )
 
-  it('メモだけに字がある時も確かめる。件名・メモが空なら確かめずに閉じる', async () => {
-    const { user, onClose, unmount } = await open(undefined, { prefs: { detailsOpen: true } })
-    await user.type(byId(testIds.itemMemo), 'あとで')
+  it.each([
+    ['メモ', testIds.itemMemo],
+    ['依頼者', testIds.itemRequester],
+  ])('%sだけに字がある時も確かめる。件名・依頼者・メモが空なら確かめずに閉じる', async (_name, field) => {
+    const { user, onClose, unmount } = await open()
+    await user.type(byId(field), 'あとで')
     await user.click(byId(testIds.itemCancel))
     expect(discardDialog()).not.toBeNull()
     expect(onClose).not.toHaveBeenCalled()
