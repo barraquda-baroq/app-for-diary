@@ -494,7 +494,8 @@ test.describe('7日を縦（S）', () => {
       await openWeek(page)
       const view = page.getByTestId('view-week')
       // 下まで送ってから、上の方のカードを上へ出す（scrollIntoView の nearest。src/ui/scrollWithin.ts も同じく .wk-v の
-      // scroll-padding-top を見込む）
+      // scroll-padding-top を見込む）。名札の行のすぐ下に出す: 隠れず、24px 余分に下げもしない（名札の行の分を見込むのは
+      // .wk-v の scroll-padding-top の1か所だけ。カードの scroll-margin と重ねると 48px 下がる）
       for (const id of [`week-start-${I.materials}`, `week-card-${I.weekly}`, `week-card-${I.dinner}`]) {
         const hidden = await view.evaluate((v, id) => {
           v.scrollTop = v.scrollHeight
@@ -504,6 +505,7 @@ test.describe('7日を縦（S）', () => {
           return tags - target.getBoundingClientRect().top
         }, id)
         expect(hidden, id).toBeLessThanOrEqual(0.5)
+        expect(hidden, id).toBeGreaterThanOrEqual(-1)
       }
     },
   )
@@ -589,10 +591,22 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(card).toHaveClass(/\bflash\b/)
     // 名札の行（24px）に掛からない（件名が読める。スクロールの位置は端末の画素に丸めるので 1px まで）
     const tags = view.locator('.wk-vtags')
-    await expect
-      .poll(async () => (await box(card)).y - ((await box(tags)).y + (await box(tags)).height))
-      .toBeGreaterThanOrEqual(-1)
+    const gap = async () => (await box(card)).y - ((await box(tags)).y + (await box(tags)).height)
+    await expect.poll(gap).toBeGreaterThanOrEqual(-1)
     await expect(card).toBeInViewport({ ratio: 1 })
+    // なめらかなスクロールが終わった所（続けて2回同じ位置）で、名札の行のすぐ下（24px 余分に下げない。送る量は切れないように
+    // 整数へ丸めるので、1px 足らず下がることはある。src/ui/scrollWithin.ts）
+    let last = Number.NaN
+    await expect
+      .poll(async () => {
+        const top = await view.evaluate((e) => e.scrollTop)
+        const still = top === last
+        last = top
+        return still
+      })
+      .toBe(true)
+    expect(await gap()).toBeGreaterThanOrEqual(-1)
+    expect(await gap()).toBeLessThanOrEqual(2)
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
 
