@@ -1,4 +1,4 @@
-// スワイプで前後の期間へ移るかの決まり（docs/SPEC.md の 3.7: 60px 以上・水平から 30° 以内。左＝次・右＝前。週はしない。
+// スワイプで前後の期間へ移るかの決まり（docs/SPEC.md の 3.7: 60px 以上・水平から 30° 以内。左＝次・右＝前。S・M のどのモードでも。
 // 長押ししてから動かす指はドラッグの掴み方なので、なぞったとみなさない）
 import { describe, expect, it } from 'vitest'
 import { isHold, SWIPE_HOLD_MS, SWIPE_MAX_DEG, SWIPE_MIN_PX, SWIPE_SLOP_PX, swipeDirection, swipeEnabled } from './swipe'
@@ -59,16 +59,17 @@ describe('isHold（長押ししてから動かした指はなぞったとみな�
   })
 })
 
-describe('swipeEnabled（S・M のイヤー・マンスリー・デイリーだけ）', () => {
+describe('swipeEnabled（S・M のどのモードでも。ウィークリーも 22. の段階2の終わりの確かめの答えでなぞる。L はしない）', () => {
   it.each([
     ['year', 'S', true],
     ['month', 'S', true],
     ['day', 'S', true],
-    ['week', 'S', false],
+    ['week', 'S', true],
     ['month', 'M', true],
-    ['week', 'M', false],
+    ['week', 'M', true],
     ['month', 'L', false],
     ['day', 'L', false],
+    ['week', 'L', false],
   ] as const)('%s・%s → %s', (mode, width, on) => {
     expect(swipeEnabled(mode, width)).toBe(on)
   })

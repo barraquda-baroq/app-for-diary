@@ -216,7 +216,35 @@ describe('等幅の字は 600 より太くしない（FRAME-196・CALENDAR-262�
   })
 })
 
-describe('カレンダーには影を付けない（ドラッグ中の --shadow-lift だけ。FRAME-153・CALENDAR-260）', () => {
+/**
+ * 影（--shadow-lift）を付けてよい所（4.4-3 の「カレンダーには影を付けない」の例外。FRAME-153）と、その理由:
+ * - ドラッグ中に浮いたカード・●（dnd-kit が付ける data-dnd-dragging・styles.css の .lift。7.11・4.9）
+ * - 期間を移った時にめくれているページ（.cal-turn-page.is-out・is-in の ::before。持ち上がったページだと分かるように。めくる間の
+ *   420ms だけ。3.7・4.9。22. の段階2の終わりの確かめ）
+ */
+const LIFT_OK = /\[data-dnd-dragging\]|^\.cal-turn-page\.is-(?:out|in)::before$/
+
+describe('カレンダーには影を付けない（ドラッグ中とめくれているページの --shadow-lift だけ。FRAME-153・CALENDAR-260）', () => {
+  it('--shadow-lift を使うのは、ドラッグ中の物と、めくれているページだけ', () => {
+    const found: string[] = []
+    for (const [name, source] of CALENDAR_CSS) {
+      for (const r of flatRules(source)) {
+        const lift = declarationsOf(r.body).filter(([, value]) => value.includes('var(--shadow-lift)'))
+        if (!lift.length) continue
+        const bad = r.selector.split(',').filter((sel) => !LIFT_OK.test(sel.trim()))
+        if (bad.length) found.push(`${name}: ${bad.map((sel) => sel.trim()).join(', ')}`)
+      }
+    }
+    expect(found).toEqual([])
+    // めくれているページの影は、ここにある（例外が使われている）
+    const frame = CALENDAR_CSS.find(([name]) => name === 'features/calendar/common/frame.css')?.[1] ?? ''
+    expect(
+      flatRules(frame).some(
+        (r) => /\.cal-turn-page\.is-out::before/.test(r.selector) && /box-shadow:\s*var\(--shadow-lift\)/.test(r.body),
+      ),
+    ).toBe(true)
+  })
+
   it('カレンダーの画面の CSS の影（box-shadow・text-shadow・drop-shadow）', () => {
     const found: string[] = []
     for (const [name, source] of CALENDAR_CSS) {

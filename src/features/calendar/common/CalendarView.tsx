@@ -4,7 +4,8 @@
 // （イヤーの 870px・ウィークリーの列の 120px は CSS の幅の区分とは別に、領域の幅で決める。D53）。
 // 高さ: L はカレンダーの領域の中だけでスクロール（ページはスクロールしない）。S・M のイヤー・マンスリーは中身の高さ、
 // ウィークリー・デイリーは 100dvh − ヘッダー − 切り替えの列 に固定（操作の列を含む。is-fixed。src/features/top/top.css。D15）。
-// S・M の指で左右になぞると前後の期間へ（イヤー・マンスリー・デイリーだけ。useSwipe）
+// S・M の指で左右になぞると前後の期間へ（どのモードでも。useSwipe）。モードはそのままで期間が替わると、ページをめくる（PageTurn。
+// モードの画面を包まず、.cal-body の横に置く）
 import { useMemo, useRef, type ComponentType } from 'react'
 import { useCalendarUi } from '../../../store/uiStore'
 import { useElementSize } from '../../../ui/hooks'
@@ -13,6 +14,7 @@ import { MonthView } from '../month/MonthView'
 import { WeekView } from '../week/WeekView'
 import { YearView } from '../year/YearView'
 import { CalendarToolbar } from './CalendarToolbar'
+import { PageTurn } from './PageTurn'
 import { useItemSheets } from './sheets'
 import { swipeEnabled } from './swipe'
 import { testIds } from './testIds'
@@ -32,7 +34,7 @@ const VIEWS: Record<CalendarMode, ComponentType<ViewProps>> = {
 const FIXED: readonly CalendarMode[] = ['week', 'day']
 
 export function CalendarView({ width, headingId }: { width: WidthClass; headingId?: string }) {
-  const { mode, viewed, today } = useCalendarRoute()
+  const { mode, viewed, from, today } = useCalendarRoute()
   const nav = useCalendarNav()
   const { openRegister } = useItemSheets()
   const offMode = useCalendarUi((s) => s.offMode)
@@ -62,6 +64,7 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
       <div ref={body} className={`cal-body${swipe ? ' is-swipe' : ''}`} data-testid={testIds.calendarBody}>
         <View mode={mode} viewed={viewed} today={today} width={width} area={area} />
       </div>
+      <PageTurn mode={mode} from={from} body={body} />
     </div>
   )
 }

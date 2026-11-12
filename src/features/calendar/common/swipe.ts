@@ -1,6 +1,7 @@
-// スワイプ（左右になぞる）で前後の期間へ移るかの決まり（docs/SPEC.md の 3.7・9.4。FRAME-073）。
-// S・M の指の操作で、イヤー・マンスリー・デイリーでは、左右に 60px 以上、水平から 30° 以内でなぞると前後の期間へ
-// （左へなぞる＝次、右へなぞる＝前）。ウィークリーはスワイプしない（カードの操作とぶつかる）。L・マウスでもしない。
+// スワイプ（左右になぞる）で前後の期間へ移るかの決まり（docs/SPEC.md の 3.7・9.4・10.。FRAME-073）。
+// S・M の指の操作で、イヤー・マンスリー・ウィークリー・デイリーのどれでも、左右に 60px 以上、水平から 30° 以内でなぞると前後の期間へ
+// （左へなぞる＝次、右へなぞる＝前）。ウィークリーも作者の答えでなぞると前後の週へ移る（22. の段階2の終わりの確かめ。カードは
+// 長押ししてから動かすと掴み、すぐ横へ払うとなぞる）。L・マウスではしない。
 // React・ストアを読まない（純粋な関数。src/features/calendar/purity.test.ts）。指の出来事を拾うのは useSwipe.ts
 import type { CalendarMode, WidthClass } from './types'
 
@@ -34,7 +35,10 @@ export function isHold(heldMs: number): boolean {
   return heldMs >= SWIPE_HOLD_MS
 }
 
-/** そのモード・幅の区分でスワイプするか（S・M のイヤー・マンスリー・デイリーだけ。FRAME-073〜075） */
-export function swipeEnabled(mode: CalendarMode, width: WidthClass): boolean {
-  return width !== 'L' && mode !== 'week'
+/**
+ * そのモード・幅の区分でスワイプするか（S・M のどのモードでも。FRAME-073・075。ウィークリーも、22. の段階2の終わりの確かめの答えで
+ * なぞると前後の週へ）。L はしない（マウスの端末。右の列があり、狭い窓ではウィークリーが横にスクロールする）
+ */
+export function swipeEnabled(_mode: CalendarMode, width: WidthClass): boolean {
+  return width !== 'L'
 }

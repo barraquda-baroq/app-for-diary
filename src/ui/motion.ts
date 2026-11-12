@@ -19,6 +19,11 @@ export const FLASH_MS = 1200
 export const SHAKE_MS = 240
 /** 視差効果を減らす設定で、揺らす代わりにロックの印を --accent にする時間 */
 export const LOCK_ACCENT_MS = 600
+/**
+ * 期間を移った時にページをめくる時間（src/styles.css の --dur-turn と同じ。src/features/calendar/common/PageTurn.tsx）。
+ * めくる動きの終わり（animationend）が来ない時（裏のタブなど）も、これより少し後に片付ける
+ */
+export const TURN_MS = 420
 
 /** 要素ごと・クラスごとの「外す」タイマー */
 const timers = new WeakMap<Element, Map<string, number>>()

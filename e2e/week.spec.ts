@@ -2,11 +2,21 @@
 // ラベルの一辺・1日のカードのそろい・段の中のスクロール・「＋」の出方・狭い領域の横のスクロール、7日を縦（S）の日のかたまり・
 // レール・4本目のレーンからの「● 件名」の行、予定を押すと詳細。動き: 「＋」→ すばやく足す（Enter で続けて足す・Esc・書きかけ）、
 // 休みのチェック、完了の丸（お知らせと［元に戻す］）、日付の見出し → デイリー、幅を替えると並べ直す、列が狭い時の始点のカードの件名、
-// 指でなぞっても週は移らない。データは作り物の e2e/fixtures/demoData.ts
+// 指で横になぞると前後の週へ（ページをめくる。長押ししてから動かすとドラッグ）。データは作り物の e2e/fixtures/demoData.ts
 // （今日は 2026年11月10日（火）9:00。いつもの週 11/8〜11/14、混んだ週 11/22〜11/28。休みは 11/11・11/14・11/23）
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, sheetReady, touchSwipe } from './helpers'
+import {
+  collectDiagnosticsOnFailure,
+  longPressDrag,
+  noHorizontalScroll,
+  openCalendar,
+  recordTurns,
+  sheetReady,
+  touchSwipe,
+  turnDone,
+  turnsOf,
+} from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -532,15 +542,27 @@ test.describe('7日を縦（S）', () => {
 })
 
 test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
-  test('指でなぞっても週は移らない（［‹］［›］だけ。3.7・ITEMS-100・CALENDAR-200）。指で押すと詳細・すばやく足す・完了・休み', async ({
+  test('指で左へなぞると次の週、右へなぞると前の週（ページをめくり、めくり終えると押せる。カードの上からでも。長押ししてから動かすとドラッグで、週は移らない。3.7・CALENDAR-200。22. の段階2の終わりの確かめ）。指で押すと詳細・すばやく足す・完了・休み', async ({
     page,
   }) => {
     await openWeek(page)
+    await recordTurns(page)
     const view = page.getByTestId('view-week')
+    const hash = () => page.evaluate(() => window.location.hash)
     await touchSwipe(page, page.getByTestId(`week-card-${I.dinner}`), -160, 4)
-    await touchSwipe(page, page.getByTestId(`week-card-${I.dinner}`), 160, 0)
-    await page.waitForTimeout(200)
-    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/week/2026-11-08')
+    await expect.poll(hash).toBe('#/week/2026-11-15')
+    await expect.poll(() => turnsOf(page)).toEqual(['next'])
+    await turnDone(page)
+    await touchSwipe(page, page.getByTestId('calendar-body'), 160, 0)
+    await expect.poll(hash).toBe('#/week/2026-11-08')
+    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
+    // 長押ししてから横へ動かす（カードを掴む。別の区分の半分へは落とせない）と、週は移らない
+    const dinner = page.getByTestId(`week-card-${I.dinner}`)
+    const at = await box(dinner)
+    await longPressDrag(page, dinner, { x: at.x - 120, y: at.y + 10 })
+    await page.waitForTimeout(300)
+    expect(await hash()).toBe('#/week/2026-11-08')
+    expect(await turnsOf(page)).toEqual(['next', 'prev'])
     await expect(view).toHaveClass(/wk-v/)
 
     // 予定を押すと詳細（ITEMS-079）
