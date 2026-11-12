@@ -356,6 +356,21 @@ describe('登録する（12.2・12.4・ITEMS-187・194）', () => {
     expect(byId(testIds.itemDue).textContent).toBe('11月6日（金）')
   })
 
+  it('締め切り日が空の時の小窓は、今日でなく開始日から始める（開いてすぐ Enter でも開始日を前に引き戻さない。12.2・6.3）', async () => {
+    const { user } = await open({ start: '2026-11-12' })
+    await user.click(byId(testIds.itemDue))
+    const focused = byId(DATE_PICKER_TEST_ID).querySelector<HTMLElement>('.it-mm-day[tabindex="0"]')!
+    expect(focused.dataset.date).toBe('2026-11-12')
+    expect(document.activeElement).toBe(focused)
+    await user.keyboard('{Enter}')
+    expect(byId(testIds.itemStart).textContent).toBe('11月12日（木）')
+    expect(byId(testIds.itemDue).textContent).toBe('11月12日（木）')
+    // 次の月へ移ると、その月に無い開始日の代わりに 1日から（今日もその月に無い）
+    await user.click(byId(testIds.itemDue))
+    await user.click(within(byId(DATE_PICKER_TEST_ID)).getByRole('button', { name: '次の月' }))
+    expect(byId(DATE_PICKER_TEST_ID).querySelector<HTMLElement>('.it-mm-day[tabindex="0"]')!.dataset.date).toBe('2026-12-01')
+  })
+
   it('S の日付は下からのシートで選ぶ（D38）', async () => {
     const { user } = await open({ start: '2026-11-10' }, { width: 'S' })
     await user.click(byId(testIds.itemDue))

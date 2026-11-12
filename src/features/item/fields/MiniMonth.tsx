@@ -18,6 +18,8 @@ export const DATE_PICKER_TEST_ID = 'item-date-picker'
 export interface MiniMonthProps {
   /** 選んでいる日（無ければ null） */
   value: string | null
+  /** もう一方の欄の日付（選んでいる日が無い時は、この日から始める。無ければ null） */
+  other?: string | null
   /** 初めに出す月（'YYYY-MM'） */
   month: string
   /** 今日 */
@@ -29,16 +31,21 @@ export interface MiniMonthProps {
 
 const monthTitle = (ym: string) => `${Number(ym.slice(0, 4))}年${Number(ym.slice(5, 7))}月`
 
-/** その月の中の、初めにフォーカスする日（選んでいる日・今日・1日の順に、その月にある物） */
-function startFocus(ym: string, value: string | null, today: string): string {
-  if (value?.startsWith(ym)) return value
+/**
+ * その月の中の、初めにフォーカスする日（選んでいる日・もう一方の欄の日付・今日・1日の順に、その月にある物）。選んでいる日が無い時は
+ * もう一方の欄の日付から始める（開始日が 11/12 で締め切り日の小窓を開いてすぐ Enter を押した時に、今日の 11/10 を選んで開始日を
+ * 前に引き戻さないように。6.3）
+ */
+function startFocus(ym: string, value: string | null, other: string | null, today: string): string {
+  const from = value ?? other
+  if (from?.startsWith(ym)) return from
   if (today.startsWith(ym)) return today
   return `${ym}-01`
 }
 
-export function MiniMonth({ value, month: initialMonth, today, onPick, label }: MiniMonthProps) {
+export function MiniMonth({ value, other = null, month: initialMonth, today, onPick, label }: MiniMonthProps) {
   const [month, setMonth] = useState(initialMonth)
-  const [focus, setFocus] = useState(() => startFocus(initialMonth, value, today))
+  const [focus, setFocus] = useState(() => startFocus(initialMonth, value, other, today))
   const grid = useRef<HTMLDivElement>(null)
   /** キーで日を移した時だけ、その日のボタンへフォーカスを移す */
   const moved = useRef(false)
@@ -52,7 +59,7 @@ export function MiniMonth({ value, month: initialMonth, today, onPick, label }: 
 
   const showMonth = (ym: string) => {
     setMonth(ym)
-    setFocus(startFocus(ym, value, today))
+    setFocus(startFocus(ym, value, other, today))
   }
   const moveTo = (date: string) => {
     moved.current = true
@@ -157,7 +164,7 @@ export interface DatePickerProps {
   /** 押した日付の欄（L・M の小窓はこの下に開く） */
   anchor: HTMLElement | null
   value: string | null
-  /** もう一方の欄の日付（値が無い時は、その月を初めに出す） */
+  /** もう一方の欄の日付（値が無い時は、その月のその日から始める） */
   other: string | null
   onPick: (date: string) => void
   onClose: () => void
@@ -172,7 +179,7 @@ export function DatePicker({ caption, anchor, value, other, onPick, onClose }: D
     onClose()
     onPick(date)
   }
-  const body = <MiniMonth value={value} month={month} today={today} onPick={pick} label={caption} />
+  const body = <MiniMonth value={value} other={other} month={month} today={today} onPick={pick} label={caption} />
   if (width === 'S') {
     return (
       <Modal
