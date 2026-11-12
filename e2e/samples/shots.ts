@@ -186,6 +186,9 @@ export const SHOTS: readonly Shot[] = [
     ready: (p) => p.getByTestId(testIds.weekHead(week)),
     prepare: async (page) => {
       await openRegister(page)
+      // 呼び名の1行に字が出るよう、呼び名の付いた色（peony-l「家族」。DEMO_LABEL_NAMES）にする（rose-l は呼び名が無く、行が空く）。
+      // L は Q6 の切り抜きと同じ絵のまま rose-l
+      await page.getByTestId(testIds.itemLabel('peony-l')).click()
       await scrollToBottom(page.getByTestId(testIds.itemLabelName))
     },
   },
