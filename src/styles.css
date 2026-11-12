@@ -131,7 +131,7 @@
   --sun: #773241;
   --off-fill: #ebebee;
   --off-text: #5c6068;
-  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。9.2） */
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。件数を置く地の上で 4.5:1 以上。4.5・9.2） */
   --work-soft: #ecf2fa;
   --work-area: #f5f8fc;
   --work-sheet: #f2f6fc;
@@ -144,7 +144,7 @@
   --private-sheet: #fcf2f7;
   --private-marker: #f9e0ea;
   --private-text: #a23d5e;
-  --private-count: #b64f6f;
+  --private-count: #ac4666;
   --private-line: #b97f93;
   --on-label: #17181b;
   /* 完了・注意 */
@@ -239,7 +239,7 @@
   --sun: #c79199;
   --off-fill: #272a30;
   --off-text: #a8aab0;
-  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。9.2） */
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。件数を置く地の上で 4.5:1 以上。4.5・9.2） */
   --work-soft: #1b242f;
   --work-area: #191e26;
   --work-sheet: #1b212b;
@@ -347,7 +347,7 @@
   --sun: #98888a;
   --off-fill: #1c1e22;
   --off-text: #8a8984;
-  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。9.2） */
+  /* 区分の土台の色（仕事＝青・プライベート＝ピンク。4.3）。*-count は L・M のマンスリーの件数（*-text を面の側へ少し淡く。件数を置く地の上で 4.5:1 以上。4.5・9.2） */
   --work-soft: #121316;
   --work-area: var(--surface);
   --work-sheet: var(--surface);

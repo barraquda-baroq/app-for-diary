@@ -149,8 +149,8 @@
    その右に寄せる（どのマスでも「/」が縦にそろう。L・M の数字のボタンは、それぞれの半分の中で押せる所を 34px 四方を目安に取る）。
    半分の幅は中身で広げない（minmax(0, 1fr)。広がると「/」が真ん中からずれる）。
    太さは、等幅の書体で読み込んでいるいちばん太い 600（4.7。端末が太らせた字にしない）。飾りの「0」と「/」も 600 にして、数字の形をそろえる。
-   色: L・M は少し淡い --work-count・--private-count（19px 以上・太さ 600 の大きな字なので、地の上で 3:1 以上。4.5）。19px より小さく
-   なることのある「99+」のマスと S は、--work-text・--private-text（4.5:1 以上） */
+   色: L・M は少し淡い --work-count・--private-count（件数を置く地の上で 4.5:1 以上なので、字の大きさに関わらず使う。「99+」のマスも。
+   4.5）。S は大きさと色を替えず --work-text・--private-text */
 .mo-counts {
   --mo-half-sep: 0.45em;
   --mo-work: var(--work-count);
@@ -164,14 +164,13 @@
   white-space: nowrap;
 }
 
-.mo-counts.is-wide,
 .mo-month.is-compact .mo-counts {
   --mo-work: var(--work-text);
   --mo-private: var(--private-text);
 }
 
-/* L・M: 半分の幅が「12」と「/」までの間（2 × 0.61 + 0.45 ≒ 1.7em）より 4px ほど広い大きさ（幅 960px のウインドウで 20px ほど、
-   768px のタブレットで 27px ほど、1400px で 28px） */
+/* L・M: 半分の幅が「12」と「/」までの間（2 × 0.61 + 0.45 ≒ 1.7em）より 4px ほど広い大きさ（L のいちばん狭い 900px のウインドウで
+   下限の 19px、960px で 21px ほど、768px のタブレットで 27px ほど、1400px で 28px） */
 .mo-count,
 .mo-sep {
   font-size: clamp(19px, calc((100cqi - 8px) / 3.4), 28px);
@@ -235,8 +234,32 @@ button.mo-count {
   -webkit-tap-highlight-color: transparent;
 }
 
-button.mo-count:focus-visible {
-  outline-offset: -2px;
+/* フォーカスの輪（4.8・4.12）: ボタンの内側に 2px（ほかの所の輪と同じ色・太さ）。ボタンは「/」のある真ん中まで届くので、輪は
+   ::after に引き、「/」の側だけ 0.2em 手前で止める（輪が「/」に掛からないように。押せる所の大きさは変えない） */
+button.mo-count {
+  position: relative;
+}
+
+button.mo-count:focus {
+  outline: none;
+}
+
+button.mo-count:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: max(0px, calc(var(--radius-sm) - 4px));
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  pointer-events: none;
+}
+
+button.mo-count.is-work:focus-visible::after {
+  right: calc(4px + 0.2em);
+}
+
+button.mo-count.is-private:focus-visible::after {
+  left: calc(4px + 0.2em);
 }
 
 /* S: 「4/3」（等幅 14px・太さ 600・空白なし。マスの幅が狭い時は 11px まで小さく）。数字はボタンにしない（マスのどこを押してもデイリーへ） */

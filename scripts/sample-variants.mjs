@@ -23,8 +23,9 @@
 // ラベルと地の明るさの差 0.1、ラベルなしの線と24色の ΔE 0.06 など）で確かめ、通らない案は書き出さずに止める（checkTheme）。
 // アプリの中には入らない（見本は e2e/samples/samples.spec.ts が page.addStyleTag で差し込んで撮る）。
 // 作者の答え（2026-11-12。ANSWERS）: Q3 A・Q4 B・Q5 B・Q6 B（今）を選び、その値は src/styles.css に入れた。答えた問い（Q2〜Q6）の案は、
-// 見本で見比べてもらった時の値（答える前の値 ASKED_TOKENS を今の src/styles.css に重ねた物）から作ったまま残す（見本の控え。
-// e2e/samples/variants.json は答えの前と同じ中身）。まだ答えの無い Q9 の案は、今の src/styles.css（答えを入れた値）の上で確かめる
+// 見本で見比べてもらった時の値（答える前の値 ASKED_TOKENS を今の src/styles.css に重ねた物）から作ったまま残す（見本の控え）。
+// その切り抜きは、答える前の値（e2e/samples/variants.json の asked。askedCss）を敷いてから撮る（「今」の絵が、見比べてもらった時の
+// 「今」になる）。まだ答えの無い Q9 の案は、今の src/styles.css（答えを入れた値）の上で確かめ、そのまま撮る
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -395,7 +396,10 @@ const KIND_GROUNDS = ['--work-soft', '--private-soft', '--work-area', '--private
 export const GROUND_BANDS = { area: [0.021, 0.028], sheet: [0.028, 0.042] }
 /** 答える前（見本で見比べてもらった時）の区分の地の幅（Q2〜Q6 の案はこの幅で確かめた） */
 export const ASKED_GROUND_BANDS = { area: [0.03, 0.04], sheet: [0.04, 0.06] }
-/** マンスリーの件数（L・M。19px 以上・太さ 600 の大きな字）の色と、件数を置く地（9.2・4.5。WCAG の大きな字は 3:1 以上） */
+/**
+ * マンスリーの件数（L・M。少し淡い --work-count・--private-count）の色と、件数を置く地（9.2・4.5）。字の大きさに関わらず 4.5:1 以上
+ * （太字の大きな字の 3:1 には頼らない。「99+」のマスは 19px より小さくなる）
+ */
 export const COUNT_PAIRS = ['--work-count', '--private-count'].flatMap((fg) =>
   ['--surface', '--surface-2', '--off-fill'].map((bg) => [fg, bg]),
 )
@@ -437,7 +441,7 @@ export function checkTheme(theme, vars, opts = {}) {
   for (const [fg, bg] of PAIRS_45) ratio(fg, bg, 4.5)
   for (const [fg, bg] of STAGE2_PAIRS) ratio(fg, bg, 4.5, '・段階2')
   for (const bg of ['--bg', '--surface']) ratio('--numeral', bg, 3, '・大きな数字')
-  for (const [fg, bg] of COUNT_PAIRS) ratio(fg, bg, 3, '・マンスリーの件数（大きな字）')
+  for (const [fg, bg] of COUNT_PAIRS) ratio(fg, bg, 4.5, '・マンスリーの件数')
   for (const bg of ['--surface', '--done-bg', ...KIND_GROUNDS]) ratio('--done-text', bg, 3, '・済んだ物')
   for (const t of GRAY_TOKENS) {
     const c = chromaOf(hex(t))
@@ -905,6 +909,15 @@ export const ASKED_TOKENS = {
 /** 答える前の件名のハイライトの形（Q4 A。字の下 6割） */
 export const HIGHLIGHT_ASKED = 'linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%)'
 
+/**
+ * 答えた問い（Q2〜Q6）の切り抜きを撮る時に、先に差し込む CSS（答える前の値 ASKED_TOKENS と、答える前の件名のハイライトの形）。
+ * 今の src/styles.css は選んだ案の値なので、そのまま撮ると「今」の絵が選んだ案と同じになる。これを敷いてから案の CSS を重ねると、
+ * 見本で見比べてもらった時と同じ絵になる（e2e/samples/samples.spec.ts。案の CSS は後から差し込むので、同じトークンは案が勝つ）
+ */
+export function askedCss() {
+  return `${tokensCss(ASKED_TOKENS)}.kind-marker {\n  background: ${HIGHLIGHT_ASKED} !important;\n}\n`
+}
+
 /** 答える前の外観の変数（readThemes の戻り値に ASKED_TOKENS を重ねた物） */
 export function askedThemes(themes) {
   return Object.fromEntries(THEMES.map((t) => [t, withTokens(themes[t], ASKED_TOKENS[t])]))
@@ -981,6 +994,12 @@ export function buildVariants(css) {
     themes: THEMES,
     questions: QUESTIONS,
     options,
+    // 答えた問いの切り抜きの下に敷く、答える前の値（askedCss）
+    asked: {
+      questions: Object.keys(ANSWERS).map(Number),
+      tokens: ASKED_TOKENS,
+      css: askedCss(),
+    },
   }
 }
 

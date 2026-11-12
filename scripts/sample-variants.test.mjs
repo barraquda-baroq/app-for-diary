@@ -39,6 +39,7 @@ import {
   SAMPLE_SELECTORS,
   THEMES,
   WEEKEND_MIN_DE,
+  askedCss,
   askedThemes,
   buildVariants,
   checkPick,
@@ -153,6 +154,25 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
     expect(checkPick(variants, pick, css)).toEqual([])
   })
 
+  it('答えた問いの切り抜きの下に敷く CSS（variants.json の asked）は、答える前の値と答える前の件名のハイライトの形（下 6割）', () => {
+    expect(variants.asked.questions).toEqual(Object.keys(ANSWERS).map(Number))
+    expect(variants.asked.questions).toEqual([2, 3, 4, 5, 6])
+    // Q9 はまだ答えが無いので、今の値のまま撮る
+    expect(variants.asked.questions).not.toContain(9)
+    expect(variants.asked.tokens).toEqual(ASKED_TOKENS)
+    expect(variants.asked.css).toBe(askedCss())
+    expect(variants.asked.css).toContain(`.kind-marker {\n  background: ${HIGHLIGHT_ASKED} !important;\n}`)
+    for (const t of THEMES) {
+      for (const [k, v] of Object.entries(ASKED_TOKENS[t])) {
+        expect(variants.asked.css, `${t} ${k}`).toContain(`  ${k}: ${v};`)
+        // 敷く値は今の値と違う（敷かないと、「今」の絵が選んだ案と同じになる）
+        expect(themes[t].get(k), `${t} ${k}`).not.toBe(v)
+      }
+    }
+    // 案の CSS は同じ形のセレクタで、後から差し込むので、敷いた値より案が勝つ
+    expect(options['depth-lighter'].css.split('{')[0]).toBe(variants.asked.css.split('{')[0])
+  })
+
   it('区分の地の面からの差の幅（FRAME-180）は、答える前の幅の 0.7 倍（Q3 A の「面からの差 × 0.7」）', () => {
     for (const part of ['area', 'sheet'])
       GROUND_BANDS[part].forEach((v, i) => expect(v, part).toBeCloseTo(ASKED_GROUND_BANDS[part][i] * 0.7, 6))
@@ -174,10 +194,10 @@ describe('今の値（src/styles.css）と 4.6 の決まり', () => {
       /--work-area は var\(--surface\)/,
     )
     expect(checkTheme('white', withTokens(w, { '--done-text': '#c8c8c8' })).join('\n')).toMatch(/--done-text \/ --surface/)
-    // マンスリーの件数（大きな字）は、件数を置く3つの地の上で 3:1 以上
+    // マンスリーの件数は、件数を置く3つの地の上で 4.5:1 以上（太字の大きな字の 3:1 には頼らない。#b64f6f は休みの地の上で 4.07:1）
     expect(COUNT_PAIRS).toHaveLength(6)
-    expect(checkTheme('white', withTokens(w, { '--private-count': '#e0a0b4' })).join('\n')).toMatch(
-      /--private-count \/ --off-fill が .*（3:1 未満・マンスリーの件数/,
+    expect(checkTheme('white', withTokens(w, { '--private-count': '#b64f6f' })).join('\n')).toMatch(
+      /--private-count \/ --off-fill が 4\.07:1（4\.5:1 未満・マンスリーの件数）/,
     )
     // 詳細の地が領域の地より淡い（逆さま）時は、そのとおりに書く
     expect(checkTheme('white', withTokens(w, { '--work-area': '#ecf2fa' })).join('\n')).toMatch(

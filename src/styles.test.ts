@@ -64,7 +64,7 @@ const SPEC_TOKENS: Record<string, readonly [string, string, string]> = {
   '--off-fill': ['#ebebee', '#272a30', '#1c1e22'],
   '--off-text': ['#5c6068', '#a8aab0', '#8a8984'],
   // 区分の地とハイライト（■3 の答え A: 面からの差 × 0.7 の淡い地）。--*-count は L・M のマンスリーの件数（作者の気になった所:
-  // 大きく太く、もう少し淡く。--*-text を面の側へ OKLCH の L 0.06）
+  // 大きく太く、もう少し淡く。--*-text を面の側へ OKLCH の L 0.06。件数を置く地の上で 4.5:1 を割る時はその手前まで）
   '--work-soft': ['#ecf2fa', '#1b242f', '#121316'],
   '--work-area': ['#f5f8fc', '#191e26', 'var(--surface)'],
   '--work-sheet': ['#f2f6fc', '#1b212b', 'var(--surface)'],
@@ -77,7 +77,7 @@ const SPEC_TOKENS: Record<string, readonly [string, string, string]> = {
   '--private-sheet': ['#fcf2f7', '#261d23', 'var(--surface)'],
   '--private-marker': ['#f9e0ea', '#3a2530', 'transparent'],
   '--private-text': ['#a23d5e', '#f1a8c3', '#aeaca6'],
-  '--private-count': ['#b64f6f', '#dd95b0', '#9b9994'],
+  '--private-count': ['#ac4666', '#dd95b0', '#9b9994'],
   '--private-line': ['#b97f93', '#c48aa1', '#6d727b'],
   '--on-label': ['#17181b', '#17181b', '#e6e5e1'],
   '--done-bg': ['#ededeb', '#222326', '#0b0c0d'],
@@ -224,6 +224,25 @@ function oklab(hex: string): [number, number, number] {
     1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
     0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
   ]
+}
+/** OKLab → 16 進の色（sRGB の外に出た分は 0〜1 に丸める） */
+function oklabToHex([L, a, b]: readonly [number, number, number]): string {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3
+  const rgb = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ]
+  const encode = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055)
+  return `#${rgb
+    .map((c) =>
+      Math.round(Math.min(1, Math.max(0, encode(c))) * 255)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`
 }
 /** OKLab の色の差 */
 function deltaE(a: string, b: string): number {
@@ -542,10 +561,23 @@ describe('区分の色とラベルの色の見分け（docs/SPEC.md の 4.3・4.
     },
   )
 
-  it('ダーク: 土日の色は区分の数字の色と OKLab で 0.10 ほど離れている（取り違えないように）', () => {
-    expect(deltaE(color('dark', '--sat'), color('dark', '--work-text'))).toBeGreaterThanOrEqual(0.1)
-    expect(deltaE(color('dark', '--sun'), color('dark', '--private-text'))).toBeGreaterThanOrEqual(0.1)
-  })
+  // 土日の色と区分の数字（4.5）: カード・S の件数・「99+」でない所の区分の字（--*-text）とは OKLab で 0.10 以上（ダークの関係に
+  // 合わせて、ホワイトとディープダークも作り直した。■5 の答え B）。L・M のマンスリーの件数の少し淡い色（--*-count）は、ダーク・
+  // ディープダークで 0.046〜0.063 まで近づく。件数（下の真ん中・19〜28px・太さ 600）と日付（左上・13px・400）は置き場所と大きさで
+  // 見分けるので、件数の色とは 0.04 より近づけない、を決まりにする
+  it.each(THEMES)(
+    '%s: 土日の色は、区分の数字の色と OKLab で 0.10 以上、L・M の件数の色と 0.04 以上離れている（取り違えないように）',
+    (theme) => {
+      for (const [weekend, kind] of [
+        ['--sat', 'work'],
+        ['--sun', 'private'],
+      ] as const) {
+        const de = (name: string) => deltaE(color(theme, weekend), color(theme, name))
+        expect(de(`--${kind}-text`), `${theme}: ${weekend} / --${kind}-text`).toBeGreaterThanOrEqual(0.1)
+        expect(de(`--${kind}-count`), `${theme}: ${weekend} / --${kind}-count`).toBeGreaterThanOrEqual(0.04)
+      }
+    },
+  )
 })
 
 describe('段階2のカレンダーの字と地（docs/SPEC.md の 4.5・FRAME-167・CALENDAR-056・143）', () => {
@@ -591,27 +623,39 @@ describe('段階2のカレンダーの字と地（docs/SPEC.md の 4.5・FRAME-1
     },
   )
 
-  // L・M のマンスリーの件数（9.2）は 19px 以上・太さ 600 の大きな字（WCAG: 太字の 14pt = 18.66px 以上）なので、少し淡い
-  // --work-count・--private-count は件数を置く地（面・乗せた時の --surface-2・休みの日の --off-fill。今日のマス・休みを付ける状態も
-  // この地のまま。前後の月の日には件数を出さない）の上で 3:1 以上。19px より小さくなることのある「99+」のマスと S は --*-text（4.5:1）
+  // L・M のマンスリーの件数（9.2）の少し淡い --work-count・--private-count は、--*-text を件数を置く地（面・PC で乗せた時の
+  // --surface-2・休みの日の --off-fill。今日のマス・休みを付ける状態もこの地のまま。前後の月の日には件数を出さない）の側へ、
+  // OKLCH の明るさだけ 0.06 動かした色。どの地の上でも 4.5:1 以上にする（太字の大きな字の 3:1 には頼らない。太さ 600 を太字と
+  // 見ない確かめの道具もあり、「99+」のマスは 19px より小さくなる）。0.06 で 4.5:1 を割る時は、0.005 刻みで割らない所まで
+  // （ホワイトのプライベートは 0.03）
+  const COUNT_GROUNDS = ['--surface', '--surface-2', '--off-fill'] as const
+  const COUNT_STEP = 0.06
   it.each(THEMES)(
-    '%s: マンスリーの件数の色は、件数を置く3つの地の上で 3:1 以上、--*-text より地の側へ明るさ 0.06 だけ淡い（同じ色合い）',
+    '%s: マンスリーの件数の色は、件数を置く3つの地の上で 4.5:1 以上、--*-text より地の側へ明るさ 0.06（4.5:1 を割る時はその手前まで）だけ淡い（同じ色合い）',
     (theme) => {
       for (const kind of ['work', 'private']) {
         const pale = color(theme, `--${kind}-count`)
         const text = color(theme, `--${kind}-text`)
-        for (const ground of ['--surface', '--surface-2', '--off-fill']) {
+        for (const ground of COUNT_GROUNDS) {
           const r = contrast(pale, color(theme, ground))
-          expect(r, `${theme}: --${kind}-count / ${ground}`).toBeGreaterThanOrEqual(3)
+          expect(r, `${theme}: --${kind}-count / ${ground}`).toBeGreaterThanOrEqual(4.5)
           // 淡くした分だけ比が下がる（--*-text より地に近い）
           expect(r, `${theme}: --${kind}-count / ${ground}`).toBeLessThan(contrast(text, color(theme, ground)))
         }
         const surfaceL = oklab(color(theme, '--surface'))[0]
         const [textL, ta, tb] = oklab(text)
         const [paleL, pa, pb] = oklab(pale)
-        // 地の側へ明るさ 0.06（丸めの誤差 0.005 まで）
+        const step = Math.abs(paleL - textL)
+        // 地の側へ、0.06 まで（丸めの誤差 0.005 まで）
         expect(Math.sign(paleL - textL), `${theme} ${kind}`).toBe(Math.sign(surfaceL - textL))
-        expect(Math.abs(paleL - textL), `${theme} ${kind}`).toBeCloseTo(0.06, 2)
+        expect(step, `${theme} ${kind}`).toBeLessThanOrEqual(COUNT_STEP + 0.005)
+        if (step < COUNT_STEP - 0.005) {
+          // 0.06 より手前で止めたのは、もう 0.005 動かすと 4.5:1 を割るから
+          // OKLab の a・b をそのままにして明るさだけ動かす（OKLCH の色合いと彩度をそのままにするのと同じ）
+          const further = oklabToHex([textL + Math.sign(surfaceL - textL) * (step + 0.005), ta, tb])
+          const worst = Math.min(...COUNT_GROUNDS.map((g) => contrast(further, color(theme, g))))
+          expect(worst, `${theme} ${kind}: ${step.toFixed(3)} で止めた理由`).toBeLessThan(4.5)
+        }
         // 色合いと彩度はそのまま（彩度のあるホワイト・ダークは色相の差 2° まで、彩度の差 0.005 まで）
         const chroma = (a: number, b: number) => Math.hypot(a, b)
         expect(Math.abs(chroma(pa, pb) - chroma(ta, tb)), `${theme} ${kind} の彩度`).toBeLessThan(0.005)
@@ -623,6 +667,23 @@ describe('段階2のカレンダーの字と地（docs/SPEC.md の 4.5・FRAME-1
       }
     },
   )
+
+  it('マンスリーの件数の色の淡くした明るさ: ホワイトのプライベートだけ 0.03（4.5:1 の手前）、ほかは 0.06', () => {
+    const steps = THEMES.flatMap((theme) =>
+      ['work', 'private'].map(
+        (kind) =>
+          `${theme} ${kind} ${Math.abs(oklab(color(theme, `--${kind}-count`))[0] - oklab(color(theme, `--${kind}-text`))[0]).toFixed(2)}`,
+      ),
+    )
+    expect(steps).toEqual([
+      'white work 0.06',
+      'white private 0.03',
+      'dark work 0.06',
+      'dark private 0.06',
+      'deep-dark work 0.06',
+      'deep-dark private 0.06',
+    ])
+  })
 
   it('報告だけ（確かめ A7）: 隣の月の日の淡い数字（--numeral）を休みの地（--off-fill）に置いた時の比', () => {
     const report = THEMES.map((theme) => {

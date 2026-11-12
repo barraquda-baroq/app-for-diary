@@ -105,8 +105,46 @@ async function countFontLM(page: Page, date: string): Promise<number> {
   expect(work.weight).toBe('600')
   expect(await fontOf(count(page, date, 'private'))).toEqual(work)
   expect(await fontOf(cell(page, date).locator('.mo-sep'))).toEqual(work)
-  expect(await page.evaluate((px) => document.fonts.check(`600 ${px}px "Roboto Mono"`), work.size)).toBe(true)
+  // 太さ 600 の字の形を読み込んである（document.fonts.check は近い太さの字でも true を返すので、読み込んだ字の一覧で確かめる）
+  const loaded = await page.evaluate(() =>
+    [...document.fonts].some((f) => f.family.includes('Roboto Mono') && f.weight === '600' && f.status === 'loaded'),
+  )
+  expect(loaded, 'Roboto Mono の太さ 600').toBe(true)
   return work.size
+}
+
+/**
+ * 数字のボタンのフォーカスの輪（4.8・4.12）: ボタンの内側の 2px の --accent の輪（::after）で、数字を囲み、真ん中の「/」の側は
+ * 0.2em 手前で止まる（輪が「/」に掛からない）
+ */
+async function countRing(page: Page, date: string, kind: 'work' | 'private') {
+  const ring = await count(page, date, kind).evaluate((e) => {
+    const cs = getComputedStyle(e, '::after')
+    const b = e.getBoundingClientRect()
+    const r = document.createRange()
+    r.selectNodeContents(e)
+    const digits = r.getBoundingClientRect()
+    // 輪の外の端（::after の箱の外へ outline の幅だけ）
+    const width = parseFloat(cs.outlineWidth)
+    const left = b.left + parseFloat(cs.left) - width
+    const right = b.right - parseFloat(cs.right) + width
+    return {
+      look: `${cs.outlineStyle} ${width}px`,
+      color: cs.outlineColor,
+      left,
+      right,
+      digits: { left: digits.left, right: digits.right },
+      fontSize: parseFloat(getComputedStyle(e).fontSize),
+    }
+  })
+  expect(ring.look).toBe('solid 2px')
+  expect(ring.color).toBe(await token(page, '--accent'))
+  expect(ring.left).toBeLessThanOrEqual(ring.digits.left)
+  expect(ring.right).toBeGreaterThanOrEqual(ring.digits.right)
+  const box = (await cell(page, date).boundingBox())!
+  const middle = box.x + box.width / 2
+  const gap = kind === 'work' ? middle - ring.right : ring.left - middle
+  expect(gap, `${date} ${kind} の輪と真ん中の「/」の間`).toBeGreaterThanOrEqual(0.2 * ring.fontSize - 0.5)
 }
 
 /** 100件を超える日（11/18 は仕事 100・11/19 は両方 100・11/20 はプライベート 100。「99+」と出す。7.6） */
@@ -272,8 +310,10 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     expect(await hitOf(page, '2026-11-10').evaluate((e) => getComputedStyle(e).outlineStyle)).toBe('solid')
     await page.keyboard.press('Tab')
     await expect(count(page, '2026-11-10', 'work')).toBeFocused()
+    await countRing(page, '2026-11-10', 'work')
     await page.keyboard.press('Tab')
     await expect(count(page, '2026-11-10', 'private')).toBeFocused()
+    await countRing(page, '2026-11-10', 'private')
     await page.keyboard.press('Tab')
     expect(await month.evaluate((m) => m.contains(document.activeElement))).toBe(false)
     await page.keyboard.press('Shift+Tab')
@@ -393,25 +433,53 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
   })
 })
 
+/** 「12 / 10」がマスに収まり、「/」はマスの真ん中、数字のボタンは 34px 四方以上、色は少し淡い --*-count（9.2・D27） */
+async function narrowCounts(page: Page, date: string) {
+  await countsFit(page, date)
+  for (const kind of ['work', 'private'] as const) await tapSize(count(page, date, kind), `数字 ${kind}`)
+  const box = (await cell(page, date).boundingBox())!
+  const sep = (await cell(page, date).locator('.mo-sep').boundingBox())!
+  expect(Math.abs(sep.x + sep.width / 2 - (box.x + box.width / 2))).toBeLessThan(1)
+  expect(await colorOf(count(page, date, 'work'))).toBe(await token(page, '--work-count'))
+  expect(await colorOf(count(page, date, 'private'))).toBe(await token(page, '--private-count'))
+}
+
+test.describe('マンスリー（PC・L のいちばん狭い 900px のウインドウ）', { tag: ['@pc'] }, () => {
+  test.use({ viewport: { width: 900, height: 800 } })
+
+  test('件数は下限の 19px・太さ 600 で、「12 / 10」がマスに収まり、「/」はマスの真ん中、数字のボタンは 34px 四方以上（9.2・D27）', async ({
+    page,
+  }) => {
+    await openCalendar(page, MONTH, { data: demoData() })
+    await expect(page.getByTestId('calendar-month')).not.toHaveClass(/is-compact/)
+    await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('12/10')
+    // マスの幅で決まる大きさ（(100cqi − 8px) ÷ 3.4）は 19px より小さいので、下限の 19px（どのマスも）
+    expect(await countFontLM(page, '2026-11-19')).toBe(19)
+    const sizes = await page
+      .getByTestId('calendar-month')
+      .locator('.mo-count')
+      .evaluateAll((es) => [...new Set(es.map((e) => getComputedStyle(e).fontSize))])
+    expect(sizes).toEqual(['19px'])
+    await narrowCounts(page, '2026-11-19')
+    await noHorizontalScroll(page)
+  })
+})
+
 test.describe('マンスリー（PC・幅 960px のウインドウ）', { tag: ['@pc'] }, () => {
   test.use({ viewport: { width: 960, height: 800 } })
 
-  test('L のいちばん狭いマスでも、件数は太さ 600 の 19px 以上で「12 / 10」がマスに収まり、「/」はマスの真ん中、数字のボタンは 34px 四方以上。「99+」のマスは字を小さくして --*-text（9.2・D27）', async ({
+  test('件数は太さ 600 の 19px より大きく 28px より小さい字で「12 / 10」がマスに収まり、「/」はマスの真ん中、数字のボタンは 34px 四方以上。「99+」のマスは字を小さくし、色はほかのマスと同じ --*-count（9.2・D27）', async ({
     page,
   }) => {
     await openCalendar(page, MONTH, { data: demoData() })
     await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('12/10')
     const size = await countFontLM(page, '2026-11-19')
-    // 28px より小さく（マスの幅で決まる）、太字の大きな字（18.66px 以上）のまま
+    // マスの幅で決まる大きさ（下限の 19px より大きく、28px より小さい）
+    expect(size).toBeGreaterThan(19)
     expect(size).toBeLessThan(28)
-    await countsFit(page, '2026-11-19')
-    for (const kind of ['work', 'private'] as const) await tapSize(count(page, '2026-11-19', kind), `数字 ${kind}`)
-    const box = (await cell(page, '2026-11-19').boundingBox())!
-    const sep = (await cell(page, '2026-11-19').locator('.mo-sep').boundingBox())!
-    expect(Math.abs(sep.x + sep.width / 2 - (box.x + box.width / 2))).toBeLessThan(1)
-    expect(await colorOf(count(page, '2026-11-19', 'work'))).toBe(await token(page, '--work-count'))
+    await narrowCounts(page, '2026-11-19')
 
-    // 「99+」のマス: 19px より小さくなる（太字の大きな字にならない）ので、4.5:1 の --work-text・--private-text。飾りの「0」は --numeral
+    // 「99+」のマス: 19px より小さくなるが、--*-count はどの地の上でも 4.5:1 以上なので、色はほかのマスと同じ。飾りの「0」は --numeral
     await openCalendar(page, MONTH, { data: { items: crowded() } })
     await expect(cell(page, '2026-11-19').locator('.mo-counts')).toHaveText('99+/99+')
     for (const date of ['2026-11-18', '2026-11-19', '2026-11-20']) await countsFit(page, date)
@@ -419,8 +487,8 @@ test.describe('マンスリー（PC・幅 960px のウインドウ）', { tag: [
     expect(wide.size).toBeLessThan(19)
     expect(wide.size).toBeGreaterThanOrEqual(14)
     expect(wide.weight).toBe('600')
-    expect(await colorOf(count(page, '2026-11-19', 'work'))).toBe(await token(page, '--work-text'))
-    expect(await colorOf(count(page, '2026-11-19', 'private'))).toBe(await token(page, '--private-text'))
+    expect(await colorOf(count(page, '2026-11-19', 'work'))).toBe(await token(page, '--work-count'))
+    expect(await colorOf(count(page, '2026-11-19', 'private'))).toBe(await token(page, '--private-count'))
     expect(await colorOf(count(page, '2026-11-18', 'private'))).toBe(await token(page, '--numeral'))
     await noHorizontalScroll(page)
   })

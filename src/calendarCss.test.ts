@@ -318,3 +318,27 @@ describe('数字は桁をそろえる（FRAME-149・CALENDAR-261）', () => {
     expect(off).toEqual([])
   })
 })
+
+describe('マンスリーの件数の字（9.2・4.7。作者の気になった所の 1.）', () => {
+  const month = ALL_CSS.find(([name]) => name === 'features/calendar/month/month.css')?.[1] ?? ''
+  const rules = flatRules(month)
+  /** そのセレクタ（, で並べた中の1つと同じ物）の規則の宣言 */
+  const declOf = (selector: string) =>
+    rules.filter((r) => r.selector.split(',').some((s) => s.trim() === selector)).flatMap((r) => declarationsOf(r.body))
+  const valueOf = (selector: string, name: string) => declOf(selector).find(([n]) => n === name)?.[1]
+
+  it('L・M は 19px から 28px（下限の 19px は L のいちばん狭い 900px のウインドウで使う）・太さ 600、「99+」のマスは 14px まで', () => {
+    expect(valueOf('.mo-count', 'font-size')).toMatch(/^clamp\(19px, .+, 28px\)$/)
+    expect(valueOf('.mo-sep', 'font-size')).toBe(valueOf('.mo-count', 'font-size'))
+    expect(valueOf('.mo-count', 'font-weight')).toBe('600')
+    expect(valueOf('.mo-sep', 'font-weight')).toBe('600')
+    expect(valueOf('.mo-counts.is-wide .mo-count', 'font-size')).toMatch(/^clamp\(14px, .+, 28px\)$/)
+  })
+
+  it('色は L・M（「99+」のマスも）が --work-count・--private-count、--*-text に戻すのは S だけ', () => {
+    expect(valueOf('.mo-counts', '--mo-work')).toBe('var(--work-count)')
+    expect(valueOf('.mo-counts', '--mo-private')).toBe('var(--private-count)')
+    const back = rules.filter((r) => declarationsOf(r.body).some(([n, v]) => n === '--mo-work' && v === 'var(--work-text)'))
+    expect(back.map((r) => r.selector)).toEqual(['.mo-month.is-compact .mo-counts'])
+  })
+})

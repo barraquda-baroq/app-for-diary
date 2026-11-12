@@ -42,6 +42,8 @@ interface Variants {
     }
   >
   options: Record<string, { css: string; appearances: Appearance[]; tokens: Partial<Record<Appearance, Record<string, string>>> }>
+  /** 答えた問いの切り抜きの下に敷く、答える前の値（見比べてもらった時の「今」。scripts/sample-variants.mjs の askedCss） */
+  asked: { questions: number[]; tokens: Partial<Record<Appearance, Record<string, string>>>; css: string }
 }
 const variants = JSON.parse(readFileSync('e2e/samples/variants.json', 'utf8')) as Variants
 
@@ -151,8 +153,17 @@ test.describe('案の CSS が効く', () => {
         await tag.evaluate((e) => (e as Element).remove())
         expect(await read(names), id).toEqual(before)
       }
-      // 件名のハイライトの形（Q4 B）: 字の高さいっぱい（下 6割の 40% の境が無い）。作者の答え（2026-11-12）で B に決まり、今の値も
-      // この形になったので、案の CSS を差し込んでも形は変わらない
+      // 答えた問いの下に敷く答える前の値（asked）: その外観の変数が答える前の値になり、外すと今の値に戻る
+      const askedTokens = variants.asked.tokens[appearance] ?? {}
+      const askedNames = Object.keys(askedTokens)
+      const current = await read(askedNames)
+      expect(current).not.toEqual(Object.values(askedTokens))
+      const askedTag = await page.addStyleTag({ content: variants.asked.css })
+      expect(await read(askedNames)).toEqual(Object.values(askedTokens))
+      await askedTag.evaluate((e) => (e as Element).remove())
+      expect(await read(askedNames)).toEqual(current)
+      // 件名のハイライトの形（Q4）: 今の値は B（字の高さいっぱい。下 6割の 40% の境が無い。作者の答え 2026-11-12）。答える前の値を
+      // 敷くと A（字の下 6割）になり、その上に B の案を重ねると字の高さいっぱいに戻る
       const marker = () =>
         page.evaluate(() => {
           const host = document.createElement('div')
@@ -167,9 +178,14 @@ test.describe('案の CSS が効く', () => {
           return bg
         })
       expect(await marker()).not.toContain('40%')
+      const base = await page.addStyleTag({ content: variants.asked.css })
+      expect(await marker()).toContain('40%')
       const tag = await page.addStyleTag({ content: variants.options['highlight-full'].css })
       expect(await marker()).not.toContain('40%')
       await tag.evaluate((e) => (e as Element).remove())
+      expect(await marker()).toContain('40%')
+      await base.evaluate((e) => (e as Element).remove())
+      expect(await marker()).not.toContain('40%')
     })
   }
 })
@@ -200,7 +216,8 @@ for (const size of ['L', 'S'] as const) {
       }
     }
 
-    // 問いごとの切り抜き: 同じ状態のまま、案の CSS を差し替えて A・B・C を撮る（今の値の案は差し込まない）
+    // 問いごとの切り抜き: 同じ状態のまま、案の CSS を差し替えて A・B・C を撮る（今の値の案は差し込まない）。答えた問い（■2〜■6）は、
+    // 先に答える前の値（variants.asked）を敷き、見比べてもらった時と同じ絵にする（敷かないと、「今」が選んだ案と同じ絵になる）
     for (const crop of CROPS.filter((c) => c.shot.size === size)) {
       const q = variants.questions[String(crop.question)]
       for (const appearance of [...q.appearances, ...(q.reference ?? [])]) {
@@ -227,6 +244,7 @@ async function shootOption(
 ): Promise<void> {
   const css = option.id === 'now' ? null : variants.options[option.id]?.css
   if (option.id !== 'now' && !css) throw new Error(`案 ${option.id} が e2e/samples/variants.json にありません`)
+  const base = variants.asked.questions.includes(crop.question) ? await page.addStyleTag({ content: variants.asked.css }) : null
   const tag = css ? await page.addStyleTag({ content: css }) : null
   await settle(page)
   const name = cropName(crop, option.letter, appearance)
@@ -244,4 +262,5 @@ async function shootOption(
     reference,
   })
   await tag?.evaluate((e) => (e as Element).remove())
+  await base?.evaluate((e) => (e as Element).remove())
 }

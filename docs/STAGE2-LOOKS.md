@@ -17,7 +17,7 @@ npm run samples                    # 撮る（E2E_SAMPLES=1 playwright test --pr
 - 絵は e2e/artifacts/samples/（リポジトリに入れない）に JPEG で書く。PC は 1400×900、スマホは 390×844（どちらも倍率 2）。
 - e2e/artifacts/samples/index.html は手元で開く物。page.html は、作者だけが見られる（非公開の）見本のページとして、絵と一緒に送る物（中身は同じ）。
 - 案の色は、アプリには入れずに、撮る時だけ CSS を差し込んで作る（e2e/samples/variants.json。どの案も、字の読みやすさの決まり（4.5）を満たすことを scripts/sample-variants.test.mjs で確かめてある）。
-- 答えた問い（■2〜■6）の案は、答えた後も、見比べてもらった時の値（答える前の値。scripts/sample-variants.mjs の ASKED_TOKENS）から作ったまま残す。選んだ案の値は src/styles.css に入れた（下の「作者の答え」）。
+- 答えた問い（■2〜■6）の案は、答えた後も、見比べてもらった時の値（答える前の値。scripts/sample-variants.mjs の ASKED_TOKENS）から作ったまま残す。選んだ案の値は src/styles.css に入れた（下の「作者の答え」）ので、答えた問いの切り抜きは、先に答える前の値（e2e/samples/variants.json の asked。件名の帯の形も答える前の「字の下 6割」）を差し込んでから撮る。こうすると、見本のページを作り直しても、問いの A・B・C は見比べてもらった時と同じ絵になる（「今」の絵が選んだ案と同じ絵にならない）。画面の一覧の絵は今の値のまま。
 
 ## 答え方
 

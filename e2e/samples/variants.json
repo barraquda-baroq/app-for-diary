@@ -710,5 +710,45 @@
         "peony-d": "ぼたん"
       }
     }
+  },
+  "asked": {
+    "questions": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "tokens": {
+      "white": {
+        "--work-soft": "#e4edf8",
+        "--work-area": "#f1f5fb",
+        "--work-sheet": "#ecf2fa",
+        "--work-marker": "#d3e3f7",
+        "--private-soft": "#fae5ed",
+        "--private-area": "#fcf1f5",
+        "--private-sheet": "#fbedf3",
+        "--private-marker": "#f6d3e1",
+        "--sat": "#3f69a3",
+        "--sun": "#ac4257"
+      },
+      "dark": {
+        "--work-soft": "#1d2938",
+        "--work-area": "#1a212b",
+        "--work-sheet": "#1c2532",
+        "--work-marker": "#2a3d55",
+        "--private-soft": "#33202a",
+        "--private-area": "#261c22",
+        "--private-sheet": "#2c1f26",
+        "--private-marker": "#4a2a3a"
+      },
+      "deep-dark": {
+        "--work-soft": "#141518",
+        "--private-soft": "#141518",
+        "--sat": "#808b9b",
+        "--sun": "#a08589"
+      }
+    },
+    "css": ":root[data-theme='white'] {\n  --work-soft: #e4edf8;\n  --work-area: #f1f5fb;\n  --work-sheet: #ecf2fa;\n  --work-marker: #d3e3f7;\n  --private-soft: #fae5ed;\n  --private-area: #fcf1f5;\n  --private-sheet: #fbedf3;\n  --private-marker: #f6d3e1;\n  --sat: #3f69a3;\n  --sun: #ac4257;\n}\n:root[data-theme='dark'] {\n  --work-soft: #1d2938;\n  --work-area: #1a212b;\n  --work-sheet: #1c2532;\n  --work-marker: #2a3d55;\n  --private-soft: #33202a;\n  --private-area: #261c22;\n  --private-sheet: #2c1f26;\n  --private-marker: #4a2a3a;\n}\n:root[data-theme='deep-dark'] {\n  --work-soft: #141518;\n  --private-soft: #141518;\n  --sat: #808b9b;\n  --sun: #a08589;\n}\n.kind-marker {\n  background: linear-gradient(transparent 40%, var(--kind-marker, transparent) 40%) !important;\n}\n"
   }
 }
