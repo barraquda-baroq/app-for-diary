@@ -549,6 +549,32 @@ test.describe('7日を縦（S）の動き', { tag: ['@s'] }, () => {
     await expect(col(page, '2026-11-10')).toHaveClass(/cp-offday/)
   })
 
+  test('週を下までスクロールしてから［＋］で登録すると、上の方の日（今日）の新しいカードを、上に固定した段の名札の行の下まで戻して見せる（ページは動かさない。4.9・開発）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const view = page.getByTestId('view-week')
+    await view.evaluate((e) => e.scrollTo(0, e.scrollHeight))
+    await expect.poll(() => view.evaluate((e) => e.scrollTop)).toBeGreaterThan(400)
+    await page.getByTestId('cal-add').tap()
+    await sheetReady(page)
+    // 開始日は今日（11/10）・区分は仕事
+    await page.getByTestId('item-title').fill('見積書の送付')
+    await page.getByTestId('item-register').tap()
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    const added = await itemByTitle(page, '見積書の送付')
+    expect(added).toMatchObject({ start: '2026-11-10', kind: 'work' })
+    const card = page.getByTestId(`week-card-${added?.id}`)
+    await expect(card).toHaveClass(/\bflash\b/)
+    // 名札の行（24px）に掛からない（件名が読める。スクロールの位置は端末の画素に丸めるので 1px まで）
+    const tags = view.locator('.wk-vtags')
+    await expect
+      .poll(async () => (await box(card)).y - ((await box(tags)).y + (await box(tags)).height))
+      .toBeGreaterThanOrEqual(-1)
+    await expect(card).toBeInViewport({ ratio: 1 })
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  })
+
   test('すばやく足すを開いたまま下のかたまりの予定を押すと、押した予定の詳細が開く（入力欄が閉じて並びが上へずれても、別の予定にならない）', async ({
     page,
   }) => {

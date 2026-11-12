@@ -33,12 +33,19 @@ const scrolls = (v: string) => v === 'auto' || v === 'scroll'
  * 要素を、ウィークリーの中のスクロール（L・M は段の中と横、S は週の全体）で見える所まで出す（scrollIntoView の block・inline: nearest と
  * 同じ。もう見えている時は動かさない。視差効果を減らす設定ではすぐに）。ウィークリーの外（ページ）はスクロールしない: S で週の下の端が
  * 画面の下の端より少し下にある時に、ページまで数 px 動かさない（WP11s の G4）。落とした先のカード（week/dnd/WeekDnd.tsx）と、
- * 登録した・移ったカードを目立たせる時（WeekCard の useFlashTarget）に使う
+ * 登録した・移ったカードを目立たせる時（WeekCard の useFlashTarget）に使う。
+ * 要素の scroll-margin は scrollIntoView と同じく見える所の外に取る（S のカードは上に固定した段の名札の行 24px の下に出す。week.css）
  */
 export function revealInWeek(el: Element | null | undefined): void {
   const root = el?.closest(`[${WEEK_SCROLLER_ATTR}]`)
   if (!el || !root) return
-  let { top, bottom, left, right } = el.getBoundingClientRect()
+  const r = el.getBoundingClientRect()
+  const m = getComputedStyle(el)
+  const px = (v: string) => parseFloat(v) || 0
+  let top = r.top - px(m.scrollMarginTop)
+  let bottom = r.bottom + px(m.scrollMarginBottom)
+  let left = r.left - px(m.scrollMarginLeft)
+  let right = r.right + px(m.scrollMarginRight)
   for (let a = el.parentElement; a; a = a === root ? null : a.parentElement) {
     const cs = getComputedStyle(a)
     const canY = scrolls(cs.overflowY) && a.scrollHeight > a.clientHeight

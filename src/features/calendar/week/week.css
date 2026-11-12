@@ -994,6 +994,11 @@
   padding-left: 8px;
 }
 
+/* 登録した・落とした先のカードを見える所まで出す時（week/weekScroller.ts の revealInWeek）に、上に固定した名札の行（24px）の下に出す */
+.wk-v :is(.wk-card, .wk-recv, .wk-end, .wk-over) {
+  scroll-margin-top: 24px;
+}
+
 /* 日のかたまり（上に 2px の --rule-strong。休みの日はかたまりの地を --off-fill（.cp-offday）） */
 .wk-block {
   border-top: 2px solid var(--rule-strong);

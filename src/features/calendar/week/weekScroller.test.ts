@@ -67,6 +67,26 @@ describe('revealInWeek', () => {
     expect(tierScroll).toHaveBeenLastCalledWith({ top: 480, behavior: 'smooth' })
   })
 
+  it('要素の scroll-margin は見える所の外に取る（S の上に固定した段の名札の行 24px の下に出す。scrollIntoView と同じ）', () => {
+    const { tier, card } = week()
+    const tierScroll = box(tier, { x: 0, y: 100, w: 400, h: 300 }, { height: 900, top: 200 })
+    card.style.scrollMarginTop = '24px'
+    // 上に隠れたカード: 上の端を、見える所の上の端から 24px 下に合わせる
+    box(card, { x: 10, y: 60, w: 100, h: 40 })
+    revealInWeek(card)
+    expect(tierScroll).toHaveBeenLastCalledWith({ top: 200 - 40 - 24, behavior: 'smooth' })
+    // 上の端の 24px の中（名札の行の下）に掛かっているカードも、見えていないので動かす
+    tierScroll.mockClear()
+    box(card, { x: 10, y: 110, w: 100, h: 40 })
+    revealInWeek(card)
+    expect(tierScroll).toHaveBeenLastCalledWith({ top: 200 - 14, behavior: 'smooth' })
+    // 下の端の方は今までどおり（scroll-margin-bottom は 0）
+    tierScroll.mockClear()
+    box(card, { x: 10, y: 380, w: 100, h: 40 })
+    revealInWeek(card)
+    expect(tierScroll).toHaveBeenLastCalledWith({ top: 200 + 20, behavior: 'smooth' })
+  })
+
   it('もう見えている時・スクロールできない時は動かさない。動かせる所までにとどめる', () => {
     const { root, tier, card } = week()
     const tierScroll = box(tier, { x: 0, y: 100, w: 400, h: 300 }, { height: 900 })
