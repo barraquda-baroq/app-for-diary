@@ -3,8 +3,9 @@
 // 掴んでいる間、dnd-kit は元の場所に同じ data-testid の写し（data-dnd-placeholder。見えない）を置くので、本物のカードは
 // :not([data-dnd-placeholder]) で探す（WP11s の G6）。データは作り物の e2e/fixtures/demoData.ts（今日は 2026年11月10日（火）9:00。
 // いつもの週 11/8〜11/14。休みは 11/11・11/14）。
-// 掴んだまま左右の端の帯に 0.6秒留まると前後の週へ移る（7.11）。移った間は、掴んだ週を見えないまま残す（.wk-slot.is-frozen）ので、
-// 今の週は .wk-slot:not(.is-frozen) の中で探す（liveWeek）
+// 掴んだまま左右の端の帯（週の端の内側と、その外の画面の端までの余白）に 0.6秒留まると前後の週へ移る（7.11）。移った間は、掴んだ週を
+// 見えないまま残す（.wk-slot.is-frozen）ので、今の週は .wk-slot:not(.is-frozen) の中で探す（liveWeek）。帯に留まったままだと 0.9秒
+// ごとに次の週へ移るので、移ったらすぐ帯から出て（leaveOnWeek）、ほかの確かめはその後にする（重い時に週が進みすぎないように）
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
@@ -16,6 +17,7 @@ import {
   startLongPress,
   startMouseDrag,
   touchSwipe,
+  type DragSession,
 } from './helpers'
 
 collectDiagnosticsOnFailure()
@@ -70,10 +72,31 @@ async function onWeek(page: Page, sunday: string) {
   await expect(liveWeek(page).getByTestId(`week-col-${sunday}`)).toHaveCount(1)
 }
 
-/** 今の週の左（side = -1）・右（1）の端の帯の中の点（端から inset px。縦は y） */
+/** 今の週の左（side = -1）・右（1）の端の帯の、週の内側の点（端から inset px。縦は y） */
 async function bandPoint(page: Page, side: -1 | 1, y: number, inset = 10): Promise<Point> {
   const b = (await liveWeek(page).boundingBox())!
   return { x: side < 0 ? b.x + inset : b.x + b.width - inset, y }
+}
+
+/** 今の週の、横の at（0〜1）の所の点（縦は y。帯から出る先） */
+async function weekPoint(page: Page, at: number, y: number): Promise<Point> {
+  const b = (await liveWeek(page).boundingBox())!
+  return { x: b.x + b.width * at, y }
+}
+
+/**
+ * 帯に留まって、見ている週がその週になったら、すぐ帯から出て park へ動かす（行き先をコマごとに調べ、一度で動かす。帯に留まったままだと
+ * 0.9秒ごとに次の週へ移るので、重い時に確かめている間に週が進みすぎないように）
+ */
+async function leaveOnWeek(page: Page, drag: DragSession, sunday: string, park: Point) {
+  await reachWeek(page, sunday)
+  await drag.moveTo(park, { steps: 1, stepMs: 0 })
+  await onWeek(page, sunday)
+}
+
+/** 見ている週の行き先がその週になるまで待つ（コマごとに調べる。帯に留まっている間に通り過ぎる週も見逃さない） */
+async function reachWeek(page: Page, sunday: string) {
+  await page.waitForFunction((s) => location.hash.endsWith(`/week/${s}`), sunday, { polling: 'raf', timeout: 10_000 })
 }
 
 /** 表示用のデータの予定 */
@@ -501,23 +524,28 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     const history = await page.evaluate(() => window.history.length)
     const drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
     const y = (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y
+    const park = await weekPoint(page, 0.5, y)
     await drag.moveTo(await bandPoint(page, 1, y))
-    // 帯に入ると目印の帯（L・M は 40px）。0.6秒たつまでは移らない
+    // 帯に入ると目印の帯（0.15秒たってから）。0.6秒たつまでは移らない
     await expect(edgeCue(page)).toBeVisible()
+    expect(page.url()).toMatch(weekUrl('2026-11-08'))
     await expect(edgeCue(page)).toHaveAttribute('data-side', 'next')
     await expect(edgeCue(page)).toContainText('次の週へ')
-    expect((await edgeCue(page).boundingBox())!.width).toBeCloseTo(40, 0)
-    expect(page.url()).toMatch(weekUrl('2026-11-08'))
-    await onWeek(page, '2026-11-15')
-    // 次の週でも浮いたまま。落とせる日の印は次の週の仕事の7日
+    // 帯は、週の内側の 35px（40px と日の列（142px）の 1/4 の狭い方）と、カレンダーの領域の右の端までの余白
+    const cue = (await edgeCue(page).boundingBox())!
+    const weekRight = await liveWeek(page).evaluate((e) => e.getBoundingClientRect().right)
+    const calRight = await page.locator('.cal').evaluate((e) => e.getBoundingClientRect().right)
+    expect(cue.x).toBeCloseTo(weekRight - 35, 0)
+    expect(cue.x + cue.width).toBeCloseTo(calRight, 0)
+    await leaveOnWeek(page, drag, '2026-11-15', park)
+    // 次の週でも浮いたまま。落とせる日の印は次の週の仕事の7日。帯から出たので目印は消え、もう移らない
     await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
+    await expect(edgeCue(page)).toHaveCount(0)
     await expect
       .poll(() => markedDates(page, 'work'))
       .toEqual(['2026-11-15', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21'])
-    // 帯から出て 11/18 へ（帯から出ると目印は消え、もう移らない）
     const target = cellL(page, 'work', '2026-11-18')
     await drag.moveTo(await visiblePoint(target))
-    await expect(edgeCue(page)).toHaveCount(0)
     await overDropDay(target)
     await drag.drop()
     const moved = toast(page, '11/18（水）へ移しました')
@@ -530,20 +558,23 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     await expect(page.locator('.wk-slot')).toHaveCount(1)
     await expect(page.locator('[data-dnd-placeholder], [data-dnd-dragging]')).toHaveCount(0)
     expect(await page.evaluate(() => window.history.length)).toBe(history)
-    // ［元に戻す］で元の日へ（週をまたいでも）
+    // ［元に戻す］で元の日へ（週をまたいでも）。見ている週はそのまま（カードはこの週から消える）
     await moved.getByRole('button', { name: '元に戻す' }).click()
     expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
     await expect(card(page, I.meeting)).toHaveCount(0)
+    await onWeek(page, '2026-11-15')
   })
 
-  test('始点のカードを次の週の日へ（期間が縮む。締め切り日まで）。終点の●を前の週の日へは落とせない（開始日より前）', async ({
+  test('始点のカードを次の週の日へ（期間が縮む。締め切り日まで）。終点の●を前の週の日へは落とせない（開始日より前）。画面の左の端（週の外の余白）でも前の週へ', async ({
     page,
   }) => {
     await openWeek(page)
     // 出張の準備（11/12〜11/17）の始点を次の週の 11/16 へ
     const drag = await startMouseDrag(page, await grabPoint(startCard(page, I.tripPrep)))
-    await drag.moveTo(await bandPoint(page, 1, (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y))
-    await onWeek(page, '2026-11-15')
+    const y = (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y
+    const park = await weekPoint(page, 0.5, y)
+    await drag.moveTo(await bandPoint(page, 1, y))
+    await leaveOnWeek(page, drag, '2026-11-15', park)
     // 次の週で落とせるのは締め切り日（11/17）まで
     await expect.poll(() => markedDates(page, 'work')).toEqual(['2026-11-15', '2026-11-16', '2026-11-17'])
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-16')))
@@ -553,12 +584,15 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     expect(await itemOf(page, I.tripPrep)).toMatchObject({ start: '2026-11-16', due: '2026-11-17' })
     await expect(cellL(page, 'work', '2026-11-16').getByTestId(`week-start-${I.tripPrep}`)).toBeVisible()
 
-    // 前の週へ戻って、資料づくり（11/9〜11/12）の終点の●を前の週へ: 開始日（11/9）より前なので、前の週には落とせる日が無い
+    // 前の週へ戻って、資料づくり（11/9〜11/12）の終点の●を前の週へ: 開始日（11/9）より前なので、前の週には落とせる日が無い。
+    // 画面の左の端（週の左の端より左の余白。カレンダーの領域の外）に留まっても前の週へ移る
     await page.getByTestId('cal-prev').click()
     await onWeek(page, '2026-11-08')
     const back = await startMouseDrag(page, await grabPoint(endDot(page, I.materials)))
-    await back.moveTo(await bandPoint(page, -1, (await visiblePoint(cellL(page, 'work', '2026-11-09'))).y))
-    await onWeek(page, '2026-11-01')
+    const y2 = (await visiblePoint(cellL(page, 'work', '2026-11-09'))).y
+    await back.moveTo({ x: 5, y: y2 })
+    await expect(edgeCue(page)).toHaveAttribute('data-side', 'prev')
+    await leaveOnWeek(page, back, '2026-11-01', await weekPoint(page, 0.5, y2))
     await expect.poll(() => markedDates(page, 'work')).toEqual([])
     await back.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-05')))
     await back.drop()
@@ -577,8 +611,9 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     await drag.moveTo(await bandPoint(page, -1, (await visiblePoint(cellL(page, 'work', '2026-11-09'))).y))
     await expect(edgeCue(page)).toHaveAttribute('data-side', 'prev')
     await expect(edgeCue(page)).toContainText('前の週へ')
-    await onWeek(page, '2026-11-01')
-    await onWeek(page, '2026-10-25')
+    // 留まったまま 0.6秒で前の週、さらに 0.9秒でもう1週前（コマごとに調べて、通り過ぎる週も見逃さない）
+    await reachWeek(page, '2026-11-01')
+    await reachWeek(page, '2026-10-25')
     await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
     await page.keyboard.press('Escape')
     await onWeek(page, '2026-11-08')
@@ -596,7 +631,7 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     await expect(page).toHaveURL(/#\/month\/2026-11$/)
   })
 
-  test('帯に入って 0.6秒たたずに出ると移らない。次の週で落とせない所（右の列のリスト）で離すと掴んだ週へ戻る', async ({
+  test('帯に入って 0.6秒たたずに出ると移らない。右の列（カレンダーの領域の外）は帯にしない。次の週で落とせない所（右の列のリスト）で離すと掴んだ週へ戻る', async ({
     page,
   }) => {
     await openWeek(page)
@@ -604,15 +639,20 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     const y = (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y
     await drag.moveTo(await bandPoint(page, 1, y))
     await expect(edgeCue(page)).toBeVisible()
-    await page.waitForTimeout(250)
     await drag.moveTo(await visiblePoint(cellL(page, 'work', '2026-11-12')))
     await expect(edgeCue(page)).toHaveCount(0)
     await page.waitForTimeout(700)
     expect(page.url()).toMatch(weekUrl('2026-11-08'))
-    // もう一度入って次の週へ。右の列のリストの上で離す
-    await drag.moveTo(await bandPoint(page, 1, y))
-    await onWeek(page, '2026-11-15')
-    await drag.moveTo(await visiblePoint(page.getByText('Routine List')))
+    // 右の列の上（週と同じ高さ）に留まっても移らない
+    const calRight = await page.locator('.cal').evaluate((e) => e.getBoundingClientRect().right)
+    await drag.moveTo({ x: calRight + 60, y })
+    await page.waitForTimeout(900)
+    await expect(edgeCue(page)).toHaveCount(0)
+    expect(page.url()).toMatch(weekUrl('2026-11-08'))
+    // 週の右の端とカレンダーの領域の右の端の間の余白は帯。入って次の週へ移ったら、すぐ右の列のリストの上へ出て離す
+    const weekRight = await liveWeek(page).evaluate((e) => e.getBoundingClientRect().right)
+    await drag.moveTo({ x: (weekRight + calRight) / 2, y })
+    await leaveOnWeek(page, drag, '2026-11-15', await visiblePoint(page.getByText('Routine List')))
     await expect(page.locator('[data-drop="hover"]')).toHaveCount(0)
     await drag.drop()
     await onWeek(page, '2026-11-08')
@@ -627,23 +667,34 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await openWeek(page)
     const drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
-    await drag.moveTo(await bandPoint(page, 1, (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y))
+    const y = (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y
+    const park = await weekPoint(page, 0.5, y)
+    await drag.moveTo(await bandPoint(page, 1, y))
     await expect(edgeCue(page)).toBeVisible()
     expect(
       await edgeCue(page)
         .locator('.wk-cue-fill')
         .evaluate((e) => getComputedStyle(e).display),
     ).toBe('none')
-    await onWeek(page, '2026-11-15')
+    await reachWeek(page, '2026-11-15')
     // 指を止めたままでも、上にある日は移った週の土曜（見えないまま残した掴んだ週の日のままにしない。そのまま離すとその日へ落ちる）。
-    // 留まり続けると 0.9秒ごとに次の週へ移るので、どの週でも見えている週の土曜
-    const live = '.wk-slot:not(.is-frozen) [data-tier="work"] .wk-cell'
-    await expect(page.locator(`${live}[data-drop="hover"]`)).toHaveCount(1)
-    expect(await page.locator(`.wk-slot.is-frozen [data-drop="hover"]`).count()).toBe(0)
-    const saturday = await page.locator(`${live}[data-drop="hover"]`).getAttribute('data-date')
-    expect(new Date(`${saturday}T00:00:00`).getDay()).toBe(6)
-    // 帯から出て、その土曜の列へ落とす
-    const sat = cellL(page, 'work', saturday!)
+    // 一度に読み、すぐ帯から出る（留まり続けると 0.9秒ごとに次の週へ移る）
+    // （行き先が替わってから、今の週がその週に描き替わるまで少しあるので、それも同じ時に確かめる）
+    const hovered = await page.waitForFunction(
+      (sunday) => {
+        if (!document.querySelector(`.wk-slot:not(.is-frozen) [data-testid="week-col-${sunday}"]`)) return null
+        const live = document.querySelectorAll('.wk-slot:not(.is-frozen) [data-tier="work"] .wk-cell[data-drop="hover"]')
+        const frozen = document.querySelectorAll('.wk-slot.is-frozen [data-drop="hover"]')
+        return live.length === 1 && frozen.length === 0 ? live[0].getAttribute('data-date') : null
+      },
+      '2026-11-15',
+      { polling: 'raf', timeout: 5000 },
+    )
+    const saturday = (await hovered.jsonValue()) as string
+    await drag.moveTo(park, { steps: 1 })
+    expect(saturday).toBe('2026-11-21')
+    // その土曜の列へ落とす
+    const sat = cellL(page, 'work', saturday)
     await drag.moveTo(await visiblePoint(sat))
     await overDropDay(sat)
     const url = page.url()
@@ -871,7 +922,7 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await expect(input).toHaveCount(0)
   })
 
-  test('長押しで掴んだまま右の端の帯（28px）に留まると次の週へ。帯から出て下の端で週の中を送り、11/17 に落とす（ページは動かない）', async ({
+  test('長押しで掴んだまま画面の右の端（週の外の余白）に留まると次の週へ。帯から出て下の端で週の中を送り、11/17 に落とす（ページは動かない）', async ({
     page,
   }) => {
     await openWeek(page)
@@ -879,23 +930,26 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     const grab = await grabPoint(card(page, I.meeting))
     const drag = await startLongPress(page, grab)
     await lifted(page)
-    await drag.moveTo(await bandPoint(page, 1, grab.y, 8))
-    await expect(edgeCue(page)).toHaveAttribute('data-side', 'next')
-    expect((await edgeCue(page).boundingBox())!.width).toBeCloseTo(28, 0)
-    await onWeek(page, '2026-11-15')
-    await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
-    // 帯から出て、画面の下の端（60px の中の浅い所。ゆっくり送る）で週の中を送る（11/17 のかたまりの上の方が見えるまで）
     const box = (await liveWeek(page).boundingBox())!
-    const inner = await page.evaluate(() => window.innerHeight)
+    const inner = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }))
     const x = box.x + box.width / 4
-    await drag.moveTo({ x, y: grab.y })
-    await drag.moveTo({ x, y: inner - 45 }, { steps: 4 })
+    // 指を画面の右の端まで寄せる（週の右の端より右の余白。作者に「画面の右の端で止めて」と頼む所）
+    await drag.moveTo({ x: inner.w - 3, y: grab.y })
+    await expect(edgeCue(page)).toHaveAttribute('data-side', 'next')
+    // 目印の帯は、週の内側の 28px から画面の右の端まで
+    const cue = (await edgeCue(page).boundingBox())!
+    expect(cue.x).toBeCloseTo(box.x + box.width - 28, 0)
+    expect(cue.x + cue.width).toBeCloseTo(inner.w, 0)
+    await leaveOnWeek(page, drag, '2026-11-15', { x, y: grab.y })
+    await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
+    // 画面の下の端（60px の中の浅い所。ゆっくり送る）で週の中を送る（11/17 のかたまりの上の方が見えるまで）
+    await drag.moveTo({ x, y: inner.h - 45 }, { steps: 4 })
     const to = halfS(page, 'work', '2026-11-17')
     await expect
-      .poll(async () => (await to.boundingBox())?.y ?? inner, { timeout: 10_000, intervals: [50] })
-      .toBeLessThan(inner - 320)
+      .poll(async () => (await to.boundingBox())?.y ?? inner.h, { timeout: 10_000, intervals: [50] })
+      .toBeLessThan(inner.h - 320)
     // 下の端から出て（送るのを止めて）から、11/17 の上へ
-    await drag.moveTo({ x, y: inner / 2 })
+    await drag.moveTo({ x, y: inner.h / 2 })
     await scrollSettled(liveWeek(page))
     await drag.moveTo(await visiblePoint(to))
     await overDropDay(to)
@@ -906,6 +960,56 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await expect(to.getByTestId(`week-card-${I.meeting}`)).toBeVisible()
     expect(await pageScrolls(page)).toEqual([])
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  })
+
+  test('画面の左の端に留まると前の週へ。前の週はいちばん下（土曜）まで送って出すので、11/7（土）へそのまま落とせる', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const grab = await grabPoint(card(page, I.meeting))
+    const drag = await startLongPress(page, grab)
+    await lifted(page)
+    const box = (await liveWeek(page).boundingBox())!
+    await drag.moveTo({ x: 3, y: grab.y })
+    await expect(edgeCue(page)).toHaveAttribute('data-side', 'prev')
+    await leaveOnWeek(page, drag, '2026-11-01', { x: box.x + box.width / 4, y: grab.y })
+    const week = liveWeek(page)
+    expect(await week.evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop)).toBeLessThanOrEqual(1)
+    const to = halfS(page, 'work', '2026-11-07')
+    await expect(to).toBeInViewport()
+    await drag.moveTo(await visiblePoint(to))
+    await overDropDay(to)
+    await drag.drop()
+    await expect(toast(page, '11/7（土）へ移しました')).toBeVisible()
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-07')
+    await onWeek(page, '2026-11-01')
+  })
+
+  test('終点の●（左の帯の中のレール）を真下へ動かして下の端に入ると、週の中を送る（左右の帯の上でも上下の端のスクロールが先）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const week = liveWeek(page)
+    const dot = await grabPoint(endDot(page, I.materials))
+    const box = (await week.boundingBox())!
+    expect(dot.x - box.x, '●のレールは左の帯（28px）の中').toBeLessThan(28)
+    const drag = await startLongPress(page, dot)
+    await lifted(page)
+    const before = await week.evaluate((e) => e.scrollTop)
+    const inner = await page.evaluate(() => window.innerHeight)
+    await drag.moveTo({ x: dot.x, y: inner - 15 }, { steps: 8 })
+    await expect.poll(() => week.evaluate((e) => e.scrollTop), { timeout: 5000 }).toBeGreaterThan(before + 100)
+    // 掴んだ時から左の帯の中にいたので、週は移らない
+    expect(page.url()).toMatch(weekUrl('2026-11-08'))
+    await expect(edgeCue(page)).toHaveCount(0)
+    await drag.moveTo({ x: dot.x + 60, y: inner / 2 })
+    await scrollSettled(week)
+    const to = halfS(page, 'work', '2026-11-13')
+    await drag.moveTo(await visiblePoint(to))
+    await overDropDay(to)
+    await drag.drop()
+    await expect(toast(page, '締め切り日を 11/13（金）にしました')).toBeVisible()
+    expect(await itemOf(page, I.materials)).toMatchObject({ start: '2026-11-09', due: '2026-11-13' })
   })
 
   test('ページを送って週の上の端がヘッダーの下に隠れていても、見えている週の上の端（切り替えの列のすぐ下）で週の中を上へ送る（作者の iPhone の「週が動かない」）', async ({
@@ -965,13 +1069,23 @@ test.describe('タブレット（M・指）', { tag: ['@m'] }, () => {
     await expect(cellL(page, 'work', '2026-11-12').getByTestId(`week-card-${I.meeting}`)).toBeVisible()
   })
 
-  test('7日を横でも、左右の端の帯（40px）で前後の週へ。終点の●を次の週の日へ（締め切り日が延びる）', async ({ page }) => {
+  test('7日を横でも、画面の右の端（週の外の余白）に留まると次の週へ。終点の●を次の週の日へ（締め切り日が延びる）', async ({
+    page,
+  }) => {
     await openWeek(page)
     const drag = await startLongPress(page, await grabPoint(endDot(page, I.materials)))
     await lifted(page)
-    await drag.moveTo(await bandPoint(page, 1, (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y))
+    const y = (await visiblePoint(cellL(page, 'work', '2026-11-13'))).y
+    const park = await weekPoint(page, 0.5, y)
+    const inner = await page.evaluate(() => window.innerWidth)
+    await drag.moveTo({ x: inner - 3, y })
     await expect(edgeCue(page)).toHaveAttribute('data-side', 'next')
-    await onWeek(page, '2026-11-15')
+    // 目印の帯は、週の内側の 25px（40px と日の列（100px）の 1/4 の狭い方）から画面の右の端まで
+    const cue = (await edgeCue(page).boundingBox())!
+    const weekRight = await liveWeek(page).evaluate((e) => e.getBoundingClientRect().right)
+    expect(cue.x).toBeCloseTo(weekRight - 25, 0)
+    expect(cue.x + cue.width).toBeCloseTo(inner, 0)
+    await leaveOnWeek(page, drag, '2026-11-15', park)
     const to = cellL(page, 'work', '2026-11-17')
     await drag.moveTo(await visiblePoint(to))
     await overDropDay(to)
@@ -1030,13 +1144,18 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
     expect((await itemOf(page, I.gym))?.start).toBe('2026-11-12')
   })
 
-  test('長押しで掴んだまま右の端に留まると次の週へ移り、その週の日へ落とせる', async ({ page }) => {
+  test('長押しで掴んだまま画面の右の端に留まると次の週へ移り、その週の日へ落とせる', async ({ page }) => {
     await openWeek(page)
     const grab = await grabPoint(card(page, I.meeting))
     const drag = await startLongPress(page, grab, { via: 'synthetic' })
     await lifted(page)
-    await drag.moveTo(await bandPoint(page, 1, grab.y, 8))
-    await expect(page).toHaveURL(weekUrl('2026-11-15'), { timeout: 10_000 })
+    const park = await weekPoint(page, 0.25, grab.y)
+    const inner = await page.evaluate(() => window.innerWidth)
+    await drag.moveTo({ x: inner - 2, y: grab.y })
+    // 移ったらすぐ帯から出る（CI の WebKit は重いので、帯に留まったまま確かめると 0.9秒で次の週へ進むことがある）
+    await reachWeek(page, '2026-11-15')
+    await drag.moveTo(park, { steps: 1, stepMs: 0 })
+    await onWeek(page, '2026-11-15')
     await expect(card(page, I.meeting)).toHaveAttribute('data-dnd-dragging', 'true')
     const to = halfS(page, 'work', '2026-11-15')
     await drag.moveTo(await visiblePoint(to))

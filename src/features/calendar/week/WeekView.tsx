@@ -31,7 +31,7 @@ export function WeekView({ viewed, today, width, area }: ViewProps) {
   )
   return (
     <WeekScrollerContext.Provider value={scroller}>
-      <WeekDnd week={week} viewed={viewed} layout={width === 'S' ? 'S' : 'wide'} renderWeek={renderWeek} />
+      <WeekDnd week={week} viewed={viewed} width={width} renderWeek={renderWeek} />
     </WeekScrollerContext.Provider>
   )
 }

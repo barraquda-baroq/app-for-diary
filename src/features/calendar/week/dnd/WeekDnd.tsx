@@ -9,8 +9,10 @@
 //   （すばやく足す）からはフォーカスを外す（指で動かし始めた時に、週がその欄の所へ飛ばないように）
 // - 浮いた見た目は dnd.css（1.03倍・--shadow-lift・0.95・120ms。G1）。読み上げの案内（英語）は出さない（Accessibility を外す。G2）
 // - 画面の端（edges.ts・edgeDriver.ts。dnd-kit の自動のスクロールは使わない）: 上下の端の 60px では週の中（S は週、L・M は段の中）
-//   だけを自動でスクロールする（ページは動かさない。G3・G4・CALENDAR-167・ITEMS-099）。左右の端の帯に 0.6秒留まると前・次の週へ
-//   移る（［‹］［›］と同じ移り方。置き換える。ページをめくる動きは付けない）。留まっている間は目印の帯を出す（22. の段階2の終わりの確かめ）
+//   だけを自動でスクロールする（ページは動かさない。G3・G4・CALENDAR-167・ITEMS-099）。左右の端の帯（週の端の内側と、その外の画面の
+//   端までの余白。L の右はカレンダーの領域まで）に 0.6秒留まると前・次の週へ移る（［‹］［›］と同じ移り方。置き換える。ページをめくる
+//   動きは付けない）。留まっている間は目印の帯を出す（ページの上に固定して描く。週の外の余白にも掛かるので。22. の段階2の終わりの確かめ）。
+//   S で前の週へ移った時は、その週をいちばん下（土曜）まで送って出す（移った週のいちばん近い日が見えるように）
 // - 掴んだまま別の週へ移った間も、掴んだ物（dnd-kit が浮かせている元のカード）を外さないように、掴んだ週を見えないまま残す
 //   （WeekSlot の is-frozen。落とす所は止める）。今の週は別の入れ物に描く。落とすと今の週に残り、落とさずにやめると（Esc・落とせない
 //   所で離す・指を取られた）掴んだ週へ戻って、浮いたカードが元の所へ戻る
@@ -33,6 +35,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -41,6 +44,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
 import type { Item, ItemKind } from '../../../../domain/types'
 import { useCalendarUi } from '../../../../store/uiStore'
@@ -48,11 +52,12 @@ import { ChevronLeftIcon, ChevronRightIcon } from '../../../../ui/icons'
 import { vibrate15 } from '../../../../ui/motion'
 import { scrollIntoViewWithin, toastInset } from '../../../../ui/scrollWithin'
 import { testIds } from '../../common/testIds'
+import type { WidthClass } from '../../common/types'
 import { useCalendarNav } from '../../common/useCalendarRoute'
 import { useWeekScroller } from '../weekScroller'
 import { applyDrop, settle, SETTLE_BACK } from './drop'
 import { EdgeDriver, type EdgeCue } from './edgeDriver'
-import { WEEK_EDGE_PX } from './edges'
+import { insideBand, TO_SCREEN, type Outer, type Side } from './edges'
 import { activationOf, pointerKind } from './gesture'
 import { useLockGesture } from './lockGesture'
 import {
@@ -198,18 +203,20 @@ function EdgeCueView({ cue }: { cue: Signal<EdgeCue | null> }) {
     height: c.height,
     '--cue-ms': `${c.period}ms`,
   } as CSSProperties
-  return (
+  // 字は浮いたカードのすぐ上（場所が無い時はすぐ下）。指を動かすとついてくる
+  const label: CSSProperties = c.label.place === 'above' ? { bottom: c.height - c.label.edge } : { top: c.label.edge }
+  return createPortal(
     <div
-      className={`wk-cue ${next ? 'is-next' : 'is-prev'} is-label-${c.label}`}
+      className={`wk-cue ${next ? 'is-next' : 'is-prev'} is-label-${c.label.place}`}
       style={style}
       data-edge-cue=""
       data-side={next ? 'next' : 'prev'}
       data-testid={testIds.weekEdgeCue}
       aria-hidden="true"
     >
-      {/* 満ちる地（留まった時間。続けて移る時はやり直す） */}
-      <span key={c.since} className="wk-cue-fill" />
-      <span className="wk-cue-body">
+      {/* 満ちる地（留まった時間。続けて移る時はやり直す。目印は帯に入って少したってから出すので、その分だけ満ちた所から始める） */}
+      <span key={c.since} className="wk-cue-fill" style={{ animationDelay: `-${c.elapsed}ms` }} />
+      <span className="wk-cue-body" style={label}>
         {next ? <ChevronRightIcon /> : <ChevronLeftIcon />}
         {/* 縦に1字ずつ（帯が狭いので。縦書きの設定は字が重なる端末があるので使わない） */}
         <span className="wk-cue-label">
@@ -218,7 +225,8 @@ function EdgeCueView({ cue }: { cue: Signal<EdgeCue | null> }) {
           ))}
         </span>
       </span>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -229,14 +237,14 @@ export interface WeekDndProps {
   week: WeekCtx
   /** 今見ている日（落とさずにやめた時に、掴んだ週と一緒に戻す） */
   viewed: string
-  /** 7日を縦（S）か横（L・M）か（左右の端の帯の幅。edges.ts） */
-  layout: 'S' | 'wide'
+  /** 幅の区分（左右の端の帯の幅と、帯の外の端。edges.ts） */
+  width: WidthClass
   /** 週を描く（frozen は、掴んだまま別の週へ移った間の、見えないまま残す掴んだ週） */
   renderWeek: (week: WeekCtx, frozen: boolean) => ReactNode
 }
 
 /** ウィークリーを包む（ドラッグの受け持ち。段階2はウィークリーだけ、段階3で TopPage へ上げる。D52） */
-export function WeekDnd({ week, viewed, layout, renderWeek }: WeekDndProps): ReactElement {
+export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): ReactElement {
   const scroller = useWeekScroller()
   const nav = useCalendarNav()
   const [store] = useState(() => new ActiveDragStore(null))
@@ -255,19 +263,45 @@ export function WeekDnd({ week, viewed, layout, renderWeek }: WeekDndProps): Rea
   const rekey = useRef(false)
   const manager = useRef<DragDropManager | null>(null)
   // 描くたびに新しい値を置く（掴んでいる間の出来事は、その時の週・見ている日・行き来で決める）
-  const latest = useRef({ week, viewed, nav, layout })
-  latest.current = { week, viewed, nav, layout }
+  const latest = useRef({ week, viewed, nav, width })
+  latest.current = { week, viewed, nav, width }
+  /** 掴んだまま左右の端で今移った向き（S で前の週へ移った時は、その週をいちばん下まで送って出す） */
+  const shifted = useRef<Side>(0)
 
   const [driver] = useState(
     () =>
       new EdgeDriver({
         root: () => scroller.current,
-        stage: () => stageEl.current,
-        band: () => WEEK_EDGE_PX[latest.current.layout === 'S' ? 'S' : 'wide'],
-        onShift: (side) => latest.current.nav.shift(side),
+        // 週の内側の幅: S 28px、L・M は 40px か日の列の 1/4 の狭い方（S は半分、L・M は 7日の列の幅で測る）
+        band: () => {
+          const el = scroller.current
+          const s = latest.current.width === 'S'
+          return insideBand(s ? 'S' : 'wide', el ? el.scrollWidth / (s ? 2 : 7) : Number.POSITIVE_INFINITY)
+        },
+        // 帯の外の端: S・M は画面の左右の端まで。L は左は画面の端まで、右はカレンダーの領域の右の端まで（右の列には掛けない）
+        outer: (): Outer => {
+          if (latest.current.width !== 'L') return TO_SCREEN
+          const cal = stageEl.current?.closest('.cal')
+          return cal ? { ...TO_SCREEN, right: cal.getBoundingClientRect().right } : TO_SCREEN
+        },
+        onShift: (side) => {
+          shifted.current = side
+          latest.current.nav.shift(side)
+        },
         onCue: (c) => cue.set(c),
       }),
   )
+
+  // S で、掴んだまま前の週へ移った時は、その週をいちばん下（土曜）まで送って出し、次の週へ移った時はいちばん上（日曜）から出す
+  // （移った週の、元の週にいちばん近い日が見えるように。描いた後すぐ、見える前に。掴んだ週へ戻ってきた時は、掴んだ時の所のまま）（開発）
+  useLayoutEffect(() => {
+    const side = shifted.current
+    shifted.current = 0
+    const el = scroller.current
+    if (side === 0 || !dragging.current || !el || latest.current.width !== 'S') return
+    if (origin.current?.week.from === week.from) return
+    el.scrollTop = side < 0 ? el.scrollHeight : 0
+  }, [week, scroller])
 
   // 週が替わった: 掴んでいる間なら、落とせる日の印を今の週で付け直し、指を止めたままでも落とす所を数え直す（dnd-kit は指の位置が
   // 変わらない間は数え直さないので、前の週の日（見えないまま残した掴んだ週の日）が「上にある日」のまま残り、そのまま離すとその日へ

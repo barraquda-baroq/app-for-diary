@@ -4,16 +4,23 @@
 import { describe, expect, it } from 'vitest'
 import {
   allowedSpeed,
+  bandRect,
+  CUE_LABEL_GAP,
+  CUE_LABEL_ROOM,
+  cueLabel,
   EDGE_SCROLL_MAX,
   edgeSpeed,
+  insideBand,
   NOT_MOVED,
   noteMove,
   sideOf,
   startSide,
   stepSide,
+  TO_SCREEN,
   visibleBox,
   WEEK_DWELL_MS,
   WEEK_EDGE_PX,
+  WEEK_EDGE_SHARE,
   WEEK_REPEAT_MS,
   type Box,
   type Side,
@@ -39,23 +46,75 @@ describe('見えている所（作者の iPhone で「週が動かない」の�
   })
 })
 
-describe('左右の帯（どの端末でも。S 28px・L・M 40px）', () => {
-  const week = box(41, 142, 1035, 867)
-  it('帯の中なら左 -1・右 1、真ん中と週の外は 0', () => {
+describe('左右の帯（どの端末でも。週の端の内側と、その外の画面の端までの余白）', () => {
+  it('内側の幅: S 28px、L・M は 40px か日の列の 1/4 の狭い方', () => {
     expect(WEEK_EDGE_PX).toEqual({ S: 28, wide: 40 })
-    expect(sideOf({ x: 41, y: 500 }, week, 40)).toBe(-1)
-    expect(sideOf({ x: 81, y: 500 }, week, 40)).toBe(-1)
-    expect(sideOf({ x: 82, y: 500 }, week, 40)).toBe(0)
-    expect(sideOf({ x: 600, y: 500 }, week, 40)).toBe(0)
-    expect(sideOf({ x: 995, y: 500 }, week, 40)).toBe(1)
-    expect(sideOf({ x: 1035, y: 500 }, week, 40)).toBe(1)
-    expect(sideOf({ x: 1040, y: 500 }, week, 40)).toBe(0)
-    expect(sideOf({ x: 1000, y: 100 }, week, 40)).toBe(0)
+    expect(WEEK_EDGE_SHARE).toBe(0.25)
+    // S（Pixel 7 の半分 181px）
+    expect(insideBand('S', 181)).toBe(28)
+    // L 1400px（列 142px）・960px（列 79px）・M 768px（列 100px）
+    expect(insideBand('wide', 142)).toBe(35)
+    expect(insideBand('wide', 79)).toBe(19)
+    expect(insideBand('wide', 100)).toBe(25)
+    expect(insideBand('wide', 400)).toBe(40)
+    expect(insideBand('wide', Number.POSITIVE_INFINITY)).toBe(40)
   })
 
-  it('週がとても狭い時は、帯が重ならないよう半分まで', () => {
+  // L 1400px: 週は 41〜1035、カレンダーの領域の右の端は 1051（その右は右の列）
+  const week = box(41, 142, 1035, 867)
+  const L = { ...TO_SCREEN, right: 1051 }
+  it('内側の帯の中なら左 -1・右 1、真ん中は 0', () => {
+    expect(sideOf({ x: 41, y: 500 }, week, 35, L)).toBe(-1)
+    expect(sideOf({ x: 76, y: 500 }, week, 35, L)).toBe(-1)
+    expect(sideOf({ x: 77, y: 500 }, week, 35, L)).toBe(0)
+    expect(sideOf({ x: 600, y: 500 }, week, 35, L)).toBe(0)
+    expect(sideOf({ x: 999, y: 500 }, week, 35, L)).toBe(0)
+    expect(sideOf({ x: 1000, y: 500 }, week, 35, L)).toBe(1)
+    expect(sideOf({ x: 1035, y: 500 }, week, 35, L)).toBe(1)
+  })
+
+  it('週の外の余白も帯（画面の端まで。L の右はカレンダーの領域の右の端まで、右の列は帯にしない）。縦は週の見えている所だけ', () => {
+    expect(sideOf({ x: 5, y: 500 }, week, 35, L)).toBe(-1)
+    expect(sideOf({ x: 0, y: 500 }, week, 35, L)).toBe(-1)
+    expect(sideOf({ x: 1043, y: 500 }, week, 35, L)).toBe(1)
+    expect(sideOf({ x: 1051, y: 500 }, week, 35, L)).toBe(1)
+    expect(sideOf({ x: 1060, y: 500 }, week, 35, L)).toBe(0)
+    expect(sideOf({ x: 1200, y: 500 }, week, 35, L)).toBe(0)
+    expect(sideOf({ x: 5, y: 100 }, week, 35, L)).toBe(0)
+    expect(sideOf({ x: 1000, y: 900 }, week, 35, L)).toBe(0)
+    // S（Pixel 7。週は 25〜387、画面は 412）: 画面の端に指を寄せた所
+    const s = box(25, 216, 387, 839)
+    expect(sideOf({ x: 410, y: 500 }, s, 28)).toBe(1)
+    expect(sideOf({ x: 2, y: 500 }, s, 28)).toBe(-1)
+    expect(sideOf({ x: 359, y: 500 }, s, 28)).toBe(1)
+    expect(sideOf({ x: 358, y: 500 }, s, 28)).toBe(0)
+  })
+
+  it('週がとても狭い時は、内側の帯が重ならないよう半分まで', () => {
     expect(sideOf({ x: 29, y: 10 }, box(0, 0, 60, 100), 40)).toBe(-1)
     expect(sideOf({ x: 31, y: 10 }, box(0, 0, 60, 100), 40)).toBe(1)
+  })
+
+  it('目印の帯は、その側の帯の画面の中の所（外の端が画面の端の時は画面の端まで）', () => {
+    const screen = box(0, 0, 1400, 900)
+    expect(bandRect(-1, week, 35, L, screen)).toEqual(box(0, 142, 76, 867))
+    expect(bandRect(1, week, 35, L, screen)).toEqual(box(1000, 142, 1051, 867))
+    const s = box(25, 216, 387, 839)
+    expect(bandRect(1, s, 28, TO_SCREEN, box(0, 0, 412, 839))).toEqual(box(359, 216, 412, 839))
+    expect(bandRect(-1, box(0, 0, 60, 100), 40, TO_SCREEN, box(0, 0, 60, 100))).toEqual(box(0, 0, 30, 100))
+  })
+
+  it('目印の帯の字は、浮いたカードのすぐ上。上に場所が無い時はすぐ下', () => {
+    const r = box(1000, 142, 1051, 867)
+    expect(cueLabel(r, { top: 400, bottom: 440 })).toEqual({ place: 'above', edge: 400 - 142 - CUE_LABEL_GAP })
+    expect(cueLabel(r, { top: 142 + CUE_LABEL_ROOM, bottom: 300 })).toEqual({
+      place: 'above',
+      edge: CUE_LABEL_ROOM - CUE_LABEL_GAP,
+    })
+    expect(cueLabel(r, { top: 142 + CUE_LABEL_ROOM - 1, bottom: 300 })).toEqual({
+      place: 'below',
+      edge: 300 - 142 + CUE_LABEL_GAP,
+    })
   })
 })
 
@@ -162,7 +221,7 @@ describe('左右の帯に留まると前後の週へ（0.6秒。留まってい�
     ).toEqual([[600, -1]])
   })
 
-  it('週がまだ横にスクロールできる間は、スクロールが先（留まった時間を数えない）', () => {
+  it('週がまだ横にスクロールできる間・上下の端で週の中を送っている間は、スクロールが先（留まった時間を数えない）', () => {
     expect(
       run(0, [
         [0, 1, true],

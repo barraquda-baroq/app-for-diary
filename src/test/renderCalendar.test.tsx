@@ -122,7 +122,7 @@ describe('仮の画面（受け取る物は最後の形）', () => {
         </div>
       )
     }
-    await renderView(() => <WeekDnd week={week} viewed="2026-11-10" layout="wide" renderWeek={() => <Card />} />, {})
+    await renderView(() => <WeekDnd week={week} viewed="2026-11-10" width="L" renderWeek={() => <Card />} />, {})
     expect(screen.getByTestId('card').textContent).toBe('カード')
     expect(drag).toMatchObject({ isDragging: false, grabProps: {} })
     expect(drop).toMatchObject({ state: 'none' })

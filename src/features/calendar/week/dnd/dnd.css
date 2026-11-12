@@ -79,8 +79,6 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
-  /* 目印の帯の重なりの順を、週の中（名札の行は z-index: 2）だけで決める */
-  isolation: isolate;
 }
 
 .wk-slot {
@@ -101,27 +99,20 @@
 }
 
 /* ===== 左右の端の目印の帯（掴んだまま左右の端の帯に留まっている間。7.11） =====
-   帯の幅は S 28px・L・M 40px（edges.ts）、高さは週の見えている所。地は --surface、内側の辺に 1px の --accent。留まった時間で
-   下から --accent の淡い地が満ちる（0.6秒。続けて移る時は 0.9秒。transform だけ）。視差効果を減らす設定では満ちる動きを出さない
-   （帯と字は出て、週はその時間で移る）。縦に1字ずつ並べた「前の週へ」「次の週へ」と ‹ ›。字は指で隠れないよう、指と反対の側（指が帯の下の
-   半分なら上の端、上の半分なら下の端）に置く */
+   帯は、見えている週の端の内側（S 28px、L・M は 40px か日の列の 1/4 の狭い方。edges.ts）と、その外の画面の端（L の右はカレンダーの
+   領域の右の端）までの余白。週の外の余白にも掛かるので、ページの上に固定して描く（WeekDnd が body に出す。画面の座標。ヘッダーと
+   切り替えの列（z-index 15・20）の下には入らない高さなので、その下の重なりの順）。帯に入って 0.15秒たってから出す。地は --surface、
+   週の側の辺に 1px の --accent。留まった時間で下から --accent の淡い地が満ちる（0.6秒。続けて移る時は 0.9秒。transform だけ）。
+   視差効果を減らす設定では満ちる動きを出さない（帯と字は出て、週はその時間で移る）。‹ ›と縦に1字ずつ並べた「前の週へ」「次の週へ」は、
+   浮いたカードのすぐ上（上に場所が無い時はすぐ下）に置く（指とカードで隠れないように。指を動かすとついてくる。位置は edgeDriver.ts が決める） */
 .wk-cue {
-  position: absolute;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 12px 0;
+  position: fixed;
+  z-index: 10;
   overflow: hidden;
   pointer-events: none;
   background: var(--surface);
   color: var(--text);
   animation: wk-cue-in var(--dur-hover) ease-out;
-}
-
-.wk-cue.is-label-bottom {
-  justify-content: flex-end;
 }
 
 .wk-cue.is-prev {
@@ -145,7 +136,9 @@
 }
 
 .wk-cue-body {
-  position: relative;
+  position: absolute;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
