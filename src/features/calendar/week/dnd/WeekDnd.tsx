@@ -48,6 +48,7 @@ import {
 import { createPortal } from 'react-dom'
 import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
 import { quickAddDragStarted } from '../../common/parts/QuickAdd'
+import { skipTurnTo } from '../../common/pageTurnDom'
 import type { Item, ItemKind } from '../../../../domain/types'
 import { useCalendarUi } from '../../../../store/uiStore'
 import { ChevronLeftIcon, ChevronRightIcon } from '../../../../ui/icons'
@@ -396,7 +397,9 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
         rekey.current = true
         afterDrop(m, settleStage)
       } else if (away && origin.current) {
-        // 落とさずにやめた: 掴んだ週へ戻る（掴んだ週の入れ物は、戻ってから今の週の入れ物に戻る。上の useEffect）
+        // 落とさずにやめた: 掴んだ週へ戻る（掴んだ週の入れ物は、戻ってから今の週の入れ物に戻る。上の useEffect）。戻る時もページを
+        // めくらずにすぐ替える（離した後は掴んでいる印が外れていくので、行き先で決める。PageTurn・3.7・7.11）
+        skipTurnTo(origin.current.viewed)
         latest.current.nav.goTo(origin.current.viewed)
       } else origin.current = null
       if (moved && data) {

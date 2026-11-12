@@ -16,6 +16,7 @@
 // 前の期間の絵は、描き直しで画面が替わる前に写す（クラスの部品の getSnapshotBeforeUpdate。関数の部品には、DOM を替える直前に呼ばれる
 // 所が無い）。モードの画面を包まない（.cal-body の横に置く）ので、モードの画面の並べ方・高さの決まりには触らない
 import { Component, type RefObject } from 'react'
+import { useCalendarUi } from '../../../store/uiStore'
 import { TURN_MS } from '../../../ui/motion'
 import {
   applyScroll,
@@ -127,7 +128,8 @@ export class PageTurn extends Component<PageTurnProps> {
     if (prev.mode !== mode || skipped) return null
     const dir = turnDirection(prev.from, from)
     const el = body.current
-    if (!dir || !el?.isConnected || !el.parentElement || !canTurn()) return null
+    // 掴んでいる間（ウィークリーの WeekDnd が付ける印。dnd-kit の掴んだ物の印 canTurn と重ねて見る）もめくらない
+    if (!dir || !el?.isConnected || !el.parentElement || !canTurn() || useCalendarUi.getState().dragging) return null
     return { dir, old: cloneForTurn(el) }
   }
 

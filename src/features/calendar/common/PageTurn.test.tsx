@@ -6,6 +6,7 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useCalendarUi } from '../../../store/uiStore'
 import { setTestMedia } from '../../../test/renderCalendar'
 import { PageTurn, TURN_CLEANUP_MS, TURN_START_GUARD_MS, turnPerspective } from './PageTurn'
 import { cloneForTurn, holdTurnsForTest, SKIP_TURN_MS, skipTurnTo, turnDirection } from './pageTurnDom'
@@ -312,6 +313,19 @@ describe('めくらない時', () => {
     r.rerender(<Frame mode="week" from="2026-11-15" />)
     expect(layer()).toBeNull()
     grabbed.remove()
+    r.rerender(<Frame mode="week" from="2026-11-22" />)
+    expect(layer()).not.toBeNull()
+  })
+
+  it('ウィークリーで掴んでいる間（WeekDnd が付ける useCalendarUi の dragging）も、めくらずにすぐ替える', () => {
+    const r = render(<Frame mode="week" from="2026-11-08" />)
+    act(() => useCalendarUi.getState().setDragging(true))
+    try {
+      r.rerender(<Frame mode="week" from="2026-11-15" />)
+      expect(layer()).toBeNull()
+    } finally {
+      act(() => useCalendarUi.getState().setDragging(false))
+    }
     r.rerender(<Frame mode="week" from="2026-11-22" />)
     expect(layer()).not.toBeNull()
   })
