@@ -5,6 +5,7 @@
 //   60px に指が届かなかった。作者の iPhone の「週が動かない」の原因）。左右の帯の上でも、まだ送れる間は先に送る
 // - 左右の端: 帯（見えている週の端の内側と、その外の画面の端までの余白）に留まると onShift（前後の週へ。WeekDnd が［‹］［›］と
 //   同じ移り方をする）。帯の目印は onCue で WeekDnd が描く（画面の座標。週の外の余白にも掛かるので、ページの上に固定して描く）
+// - 落とす所を探す範囲（area）: 同じ見えている所と帯を、WeekDnd の当たりの計算に渡す（範囲の外では落とさない。edges.ts の inDropArea）
 // 見えている所の上に重なる物（S・M でページを送った時のヘッダーと切り替えの列）は、掴んだ時と週を移した後に、指の届く所を上から
 // 調べて決める（document.elementsFromPoint。掴んだ物と目印の帯は数えない）
 import {
@@ -43,6 +44,13 @@ export interface EdgeCue {
   top: number
   width: number
   height: number
+}
+
+/** 落とす所を探す範囲（画面の座標）: 見えている週の箱と、左右の帯の内側の幅・外の端 */
+export interface DropArea {
+  box: Box
+  inside: number
+  outer: Outer
 }
 
 export interface EdgeDriverOptions {
@@ -183,6 +191,15 @@ export class EdgeDriver {
     this.p = null
     this.side = startSide(0)
     this.setCue(null)
+  }
+
+  /**
+   * 落とす所を探す範囲（今見ている週の見えている所と、左右の帯の内側の幅・外の端。edges.ts の inDropArea・dropHit。掴んでいる間の
+   * 当たりの計算から読む）。週が見えていない・測れない（jsdom）時は null
+   */
+  area(): DropArea | null {
+    const box = this.visible()
+    return box ? { box, inside: this.opts.band(), outer: this.opts.outer() } : null
   }
 
   /** 今見ている週の見えている所 */
