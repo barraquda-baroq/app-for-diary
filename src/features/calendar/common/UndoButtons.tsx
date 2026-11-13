@@ -6,6 +6,8 @@
 // - 押してもフォーカスを動かさない（開いているすばやく足すの入力欄は閉じず、打っている字も足さない。KEEP_QUICK_ADD）
 // - キー（PC。3.10）: Ctrl+Z・⌘+Z で元に戻す、Ctrl+Shift+Z・⌘+Shift+Z・Ctrl+Y でやり直す。文字を打っている間（入力欄・メモの中。
 //   そこではブラウザの字の元に戻す）・小さな画面やメニューを開いている間・ドラッグ中は効かない
+// - 戻した・やり直した時は、何を当てたかのお知らせを出し、当てた予定・休みの日を目立たせる（見えていなければ［見る］。■26 の今の
+//   決め方。undoFeedback.ts）
 import { useEffect } from 'react'
 import { nextRedo, nextUndo } from '../../../domain/undo'
 import { undoButtonLabel } from '../../../domain/itemText'
@@ -15,6 +17,8 @@ import { RedoIcon, UndoIcon } from '../../../ui/icons'
 import { IS_MAC } from '../../../ui/keys'
 import { KEEP_QUICK_ADD } from './parts/QuickAdd'
 import { testIds } from './testIds'
+import type { CalendarMode } from './types'
+import { useUndoFeedback } from './undoFeedback'
 
 /** 文字を打つ所か（そこでは Ctrl/⌘+Z をブラウザの字の元に戻すに任せる） */
 function isTextTarget(t: EventTarget | null): boolean {
@@ -55,15 +59,19 @@ function useUndoShortcuts(enabled: boolean): void {
 }
 
 export interface UndoButtonsProps {
+  /** 今のモードと見ている日（戻した予定が今の期間に見えているか・［見る］の行き先） */
+  mode: CalendarMode
+  viewed: string
   /** そのモードでは出さない（年・月。場所は残す） */
   hidden: boolean
   className?: string
 }
 
-export function UndoButtons({ hidden, className }: UndoButtonsProps) {
+export function UndoButtons({ mode, viewed, hidden, className }: UndoButtonsProps) {
   const past = useUndo((s) => nextUndo(s.stack))
   const future = useUndo((s) => nextRedo(s.stack))
   useUndoShortcuts(!hidden)
+  useUndoFeedback(mode, viewed, !hidden)
   const undoLabel = undoButtonLabel('undo', past?.label)
   const redoLabel = undoButtonLabel('redo', future?.label)
   const keepAttr = { [KEEP_QUICK_ADD]: '' }

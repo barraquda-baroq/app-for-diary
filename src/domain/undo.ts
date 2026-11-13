@@ -8,7 +8,9 @@
 //   直されていたら、そのステップは当てずに捨てる（「ほかの所で直されたので戻せません」）。比べるのは記録の内容の指紋（revOf。直した
 //   日時と並びの数は見ない。形2）
 // - 詳細の画面を開いてから閉じるまでに直した所は、1つのステップにまとめる（sessionStep）
+// - ボタン・キーで戻した・やり直した後に見せる所（undoFocus。予定とその日、休みの日。■26 の今の決め方）
 import { revOf } from './hash'
+import { periodOf } from './items'
 import type { ID, Item } from './types'
 
 /** 戻せる操作の数（これより古い物は捨てる） */
@@ -202,4 +204,39 @@ export function chainConflict(steps: UndoStep[], read: UndoReader): { step: Undo
     }
   }
   return null
+}
+
+// ---------- 戻した・やり直した後に見せる所（7.13・■26） ----------
+
+/**
+ * 戻した・やり直した後に見せる所。予定（id）か休みの日。date は見に行く日（今のモードのままその日の期間へ移る）、from〜to はその日の
+ * 期間のどこかが今の期間に入っていれば足りる所（日付の動いた操作は動いた端の日だけ、日付の変わらない操作は予定の期間の全部）
+ */
+export type UndoFocus =
+  | { table: 'items'; id: ID; date: string; from: string; to: string }
+  | { table: 'offDays'; date: string; from: string; to: string }
+
+/** 1つの変わり方の、当てる前と当てた後（戻す時は「後」→「前」、やり直す時は「前」→「後」） */
+export function appliedSides<T extends UndoChange>(c: T, dir: UndoDirection): { from: T['before']; to: T['before'] } {
+  return dir === 'undo' ? { from: c.after, to: c.before } : { from: c.before, to: c.after }
+}
+
+/**
+ * 戻した（undo）・やり直した（redo）ステップの、見せる所（最初の変わり方で決める。どのステップも変わり方は1つ）:
+ * - 予定: 当てた後の記録の期間（6.3）。開始日が動いた（か、前はカレンダーに出ていなかった）時は期間の初めの日（始点・1日のカード）、
+ *   締め切り日だけが動いた時は期間の終わりの日（終点の●・〆）、日付の変わらない時は期間の全部（見に行くのは初めの日）
+ * - 当てた後に予定が無い（足したのを戻した・削除をやり直した。ゴミ箱へ）・カレンダーに出ない時は null
+ * - 休み: その日
+ */
+export function undoFocus(step: UndoStep, dir: UndoDirection): UndoFocus | null {
+  const c = step.changes[0]
+  if (!c) return null
+  if (c.table === 'offDays') return { table: 'offDays', date: c.id, from: c.id, to: c.id }
+  const { from: was, to: now } = appliedSides(c, dir)
+  const p = now ? periodOf(now) : null
+  if (!p) return null
+  const prev = was ? periodOf(was) : null
+  if (prev && prev.from === p.from && prev.to === p.to) return { table: 'items', id: c.id, date: p.from, from: p.from, to: p.to }
+  const date = prev && prev.from === p.from ? p.to : p.from
+  return { table: 'items', id: c.id, date, from: date, to: date }
 }

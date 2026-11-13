@@ -3,10 +3,11 @@
 // （同じ文を何か所にも書かない）。時刻は画面では時の頭の 0 を落とす（9:00。保存は 'HH:MM' のまま。開発）。月日は 0 で埋めない（11/9）
 import type { CalItem } from './calendar'
 import { displayHm, isYmd, jaDateLabel, mdLabel, shortDateLabel } from './dates'
-import { formatCount, type DayCounts } from './items'
+import { formatCount, periodOf, type DayCounts } from './items'
 import { UNTITLED } from './repair'
 import { ITEM_KIND_LABELS } from './trash'
 import type { ItemKind } from './types'
+import { appliedSides, type UndoDirection, type UndoStep } from './undo'
 
 // ---------- 時刻・期間の表記（7.7） ----------
 
@@ -129,6 +130,33 @@ export const undoText = {
 export function undoButtonLabel(dir: 'undo' | 'redo', label: string | null | undefined): string {
   const verb = dir === 'undo' ? '元に戻す' : 'やり直す'
   return label ? `${verb}（${label}）` : verb
+}
+
+/**
+ * 当てた変わり方の添え書き（ボタン・キーで戻した・やり直した時のお知らせの、操作の名前の後ろ）: ゴミ箱へ移った時は「（ゴミ箱へ）」、
+ * ゴミ箱から戻った時は「（ゴミ箱から戻した）」、日付が動いた時は動いた端の日の「（11/14（土）→ 11/12（木））」（開始日が動いた時は
+ * 開始日、締め切り日だけが動いた時は締め切り日。期間は 6.3 の決まりで。「（土）」の閉じ括弧と → の間は空けない。カレンダーに
+ * 出ない側がある時は日付を添えない）。休み・完了などは無し
+ */
+function undoDetail(step: UndoStep, dir: UndoDirection): string {
+  const c = step.changes[0]
+  if (!c || c.table !== 'items') return ''
+  const { from, to } = appliedSides(c, dir)
+  if (to === null) return '（ゴミ箱へ）'
+  if (from === null) return '（ゴミ箱から戻した）'
+  const a = periodOf(from)
+  const b = periodOf(to)
+  if (!a || !b) return ''
+  const [x, y] = a.from !== b.from ? [a.from, b.from] : a.to !== b.to ? [a.to, b.to] : [null, null]
+  return x && y ? `（${shortDateLabel(x)}→ ${shortDateLabel(y)}）` : ''
+}
+
+/**
+ * 操作の列の元に戻す・やり直す（ボタン・キー）で当てた時のお知らせ（7.13・■26）。ボタンの名前と同じ言葉で
+ * 「元に戻しました：『打ち合わせ』を移した（11/14（土）→ 11/12（木））」「やり直しました：11/12（木）を休みにした」
+ */
+export function undoDoneText(dir: UndoDirection, step: UndoStep): string {
+  return `${dir === 'undo' ? '元に戻しました' : 'やり直しました'}：${step.label}${undoDetail(step, dir)}`
 }
 
 // ---------- 読み上げ（4.11・4.12） ----------

@@ -13,6 +13,7 @@
 // - 要素の scroll-margin と箱の scroll-padding は scrollIntoView と同じく見込む
 // - bottomInset を渡すと、画面の下の端からその高さは見える所に数えない（下に重なるお知らせ。toastInset）。箱の中で送れる所までなので、
 //   箱の終わりの近くの物はお知らせの下に残ることがある（docs/SPEC.md の 4.9）
+// - isShownWithin は、同じ決め方で、もう見える所に入っているか（送らなくてよいか）を見る（元に戻す・やり直すの［見る］。7.13・■26）
 import { scrollBehavior } from './motion'
 
 export interface ScrollWithinOptions {
@@ -130,6 +131,56 @@ export function scrollIntoViewWithin(el: Element | null | undefined, opts: Scrol
     }
     if (cs.position === 'fixed') break
   }
+}
+
+/**
+ * el が、それを入れたスクロールする所と画面の中で、もう見える所に入っているか（scrollIntoViewWithin が送らない時。見える所より大きくて
+ * 両側にはみ出している物も入っているとする）。スクロールする箱の中で少しでも切れている物（画面の下の端で切れている物も）は見えて
+ * いない。スクロールしない箱の中の物は、画面の外へ全部出ている時（S・M でページを下のリストまで送った時のカレンダー）だけ見えて
+ * いない（ページは動かさないので、送っても変わらない）。上に固定したヘッダーの下と、お知らせの下は見込まない
+ */
+export function isShownWithin(el: Element | null | undefined): boolean {
+  if (!el?.isConnected) return false
+  const r = el.getBoundingClientRect()
+  // 大きさを測れない（描いていない所・jsdom）時は見えているとする
+  if (r.width === 0 && r.height === 0) return true
+  const m = getComputedStyle(el)
+  const top = r.top - px(m.scrollMarginTop)
+  const bottom = r.bottom + px(m.scrollMarginBottom)
+  const left = r.left - px(m.scrollMarginLeft)
+  const right = r.right + px(m.scrollMarginRight)
+  const screen = viewport()
+  for (let p = el.parentElement; p && !isPage(p); p = p.parentElement) {
+    const cs = getComputedStyle(p)
+    const canY = SCROLLS.has(cs.overflowY) && p.scrollHeight > p.clientHeight
+    const canX = SCROLLS.has(cs.overflowX) && p.scrollWidth > p.clientWidth
+    if (canY || canX) {
+      const b = p.getBoundingClientRect()
+      const boxTop = b.top + p.clientTop
+      const boxLeft = b.left + p.clientLeft
+      if (canY) {
+        const [lo, hi] = onScreen(
+          boxTop + px(cs.scrollPaddingTop),
+          boxTop + p.clientHeight - px(cs.scrollPaddingBottom),
+          screen.height,
+        )
+        if (roundOut(nearestDelta(top, bottom, lo, hi)) !== 0) return false
+      }
+      if (canX) {
+        const [lo, hi] = onScreen(
+          boxLeft + px(cs.scrollPaddingLeft),
+          boxLeft + p.clientWidth - px(cs.scrollPaddingRight),
+          screen.width,
+        )
+        if (roundOut(nearestDelta(left, right, lo, hi)) !== 0) return false
+      }
+    }
+    if (cs.position === 'fixed') break
+  }
+  // スクロールする箱の外（ページ）は動かさないので、画面と重なっていれば見えているとする（画面の外へ全部出ていれば見えていない。
+  // 画面を測れない時は見えているとする）
+  if (screen.height > 0 && (r.bottom <= 0 || r.top >= screen.height)) return false
+  return !(screen.width > 0 && (r.right <= 0 || r.left >= screen.width))
 }
 
 /**

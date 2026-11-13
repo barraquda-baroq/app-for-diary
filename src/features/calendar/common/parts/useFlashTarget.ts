@@ -5,8 +5,11 @@
 // - 見える所へ出す（scroll）のは flashTarget で置いた時だけ。ドラッグで落とした時は flashInPlace で置き、目立たせるだけにする
 //   （出すのは WeekDnd が、動かした物を。目立つ物が動かした物と違う時（●を動かして、始点のカード・受けた表示が目立つ）に、
 //   二つの送りがぶつからないように）
-// - キー: 'item:{id}'（登録・ドラッグで移った予定）、'day-area:{区分}'（デイリーの区切り）、'day-events:{区分}'（タイムスケジュールの
-//   その区分の予定。マンスリーの数字から来た時は区切りと一緒に。11.2）。1つの要素に、いくつかのキーを渡せる
+// - キー: 'item:{id}'（登録・ドラッグで移った予定、元に戻す・やり直すで当てた予定）、'day-area:{区分}'（デイリーの区切り）、
+//   'day-events:{区分}'（タイムスケジュールのその区分の予定。マンスリーの数字から来た時は区切りと一緒に。11.2）、'day-head:{日付}'
+//   （ウィークリー・デイリーの日の見出し。元に戻す・やり直すで休みを当てた日。7.13・■26）。1つの要素に、いくつかのキーを渡せる
+// - 見える所へ出す時は、画面の下のお知らせ（元に戻した・やり直したお知らせなど）と横に重なれば、その上まで（toastInset。4.9）
+// - 今出ている目立たせられる要素を、キーごとに覚える（flashTargetsOf。元に戻す・やり直すで当てた予定が見えているかを見る。■26）
 // - 枠は outline で出す（.flash）。目立たせる要素に outline・animation の CSS を付けない（隠れる）。
 //   描き直しで要素の className が替わって .flash が消えた時は、目立たせている間だけ付け直す
 // - 見つけた最初の 1.2秒の後に置いたキーを消す（後で同じ画面を開き直しても、もう一度は目立たせない）。どこにも出ないまま
@@ -15,7 +18,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type { ID, ItemKind } from '../../../../domain/types'
 import { flashMatches, useCalendarUi, type FlashTarget } from '../../../../store/uiStore'
 import { FLASH_MS, flash, scrollBehavior } from '../../../../ui/motion'
-import { scrollIntoViewWithin } from '../../../../ui/scrollWithin'
+import { scrollIntoViewWithin, toastInset } from '../../../../ui/scrollWithin'
 
 /** 目立たせる所のキー（目立たせる側・目立たせられる側が同じ物を使う） */
 export const flashKey = {
@@ -25,7 +28,36 @@ export const flashKey = {
   dayArea: (kind: ItemKind) => `day-area:${kind}`,
   /** タイムスケジュールのその区分の予定の枠 */
   dayEvents: (kind: ItemKind) => `day-events:${kind}`,
+  /** ウィークリー・デイリーの日の見出し（元に戻す・やり直すで休みを当てた日） */
+  dayHead: (date: string) => `day-head:${date}`,
 } as const
+
+/** 今出ている目立たせられる要素（キー → 要素。1つの要素に、いくつかのフックがキーを付けることがある） */
+const mounted = new Map<string, Map<Element, number>>()
+
+function attach(el: Element, keys: readonly string[]): void {
+  for (const k of keys) {
+    const els = mounted.get(k) ?? new Map<Element, number>()
+    els.set(el, (els.get(el) ?? 0) + 1)
+    mounted.set(k, els)
+  }
+}
+
+function detach(el: Element, keys: readonly string[]): void {
+  for (const k of keys) {
+    const els = mounted.get(k)
+    const n = els?.get(el) ?? 0
+    if (!els || n === 0) continue
+    if (n > 1) els.set(el, n - 1)
+    else els.delete(el)
+    if (els.size === 0) mounted.delete(k)
+  }
+}
+
+/** そのキーで今出ている目立たせられる要素（ページに付いている物だけ） */
+export function flashTargetsOf(key: string): Element[] {
+  return [...(mounted.get(key)?.keys() ?? [])].filter((el) => el.isConnected)
+}
 
 /** 置いたキーが、どこにも出ないまま消えるまで（移った先の画面が出るまでは待つ） */
 export const FLASH_STALE_MS = 3000
@@ -92,18 +124,60 @@ export function useFlashTarget<T extends Element = HTMLElement>(
   const node = useRef<T | null>(null)
   /** 目立たせ終えた seq（同じ seq で2回目立たせない） */
   const done = useRef(0)
-  /** 目立たせている間の終わり（Date.now() のミリ秒。0 は目立たせていない） */
-  const until = useRef(0)
+  /**
+   * 付け直してよい間か（目立たせてから FLASH_MS − REAPPLY_MARGIN_MS の間。時計ではなくタイマーで数える: 時計を止めた E2E
+   * （page.clock.setFixedTime）・端末の時計を直した時も、終わった後に付け直さない）
+   */
+  const live = useRef(false)
+  const liveTimer = useRef<number | undefined>(undefined)
+
+  /** 覚えさせている要素とキー（flashTargetsOf） */
+  const shown = useRef<{ el: T; keys: readonly string[] } | null>(null)
+  const keysNow = useRef(joined)
+  keysNow.current = joined
+  /** 覚えさせている要素・キーを、今の物にそろえる */
+  const sync = useCallback((el: T | null, joinedKeys: string) => {
+    const prev = shown.current
+    const keys = joinedKeys ? joinedKeys.split('\n') : []
+    if (prev && prev.el === el && prev.keys.join('\n') === joinedKeys) return
+    if (prev) detach(prev.el, prev.keys)
+    shown.current = el && keys.length > 0 ? { el, keys } : null
+    if (shown.current) attach(el as T, keys)
+  }, [])
 
   const start = useCallback((el: T) => {
     const { seq: s, scroll } = latest.current
     if (!s || done.current === s) return
     done.current = s
     flash(el)
-    until.current = Date.now() + FLASH_MS
-    if (scroll) scrollIntoViewWithin(el, { behavior: scrollBehavior() })
+    live.current = true
+    window.clearTimeout(liveTimer.current)
+    liveTimer.current = window.setTimeout(() => (live.current = false), FLASH_MS - REAPPLY_MARGIN_MS)
+    if (scroll) {
+      // 画面の下のお知らせ（6秒の［元に戻す］・元に戻した・やり直したお知らせ）の下に隠さない（4.9）
+      const inset = toastInset(el)
+      scrollIntoViewWithin(el, inset > 0 ? { behavior: scrollBehavior(), bottomInset: inset } : { behavior: scrollBehavior() })
+    }
     clearAfter(s, FLASH_MS)
   }, [])
+
+  // キーが替わった時は覚え直し、外れた時（部品を外した時）は忘れる。替わったキーが目立たせている所ともう合わない時（デイリーの日の
+  // 見出しが次の日の物になった時など）は、出している枠をすぐ外す（別の日・別の予定を目立たせたままにしない）
+  useLayoutEffect(() => {
+    sync(node.current, joined)
+    if (live.current && matchedSeq(useCalendarUi.getState().flash, joined) !== done.current) {
+      live.current = false
+      window.clearTimeout(liveTimer.current)
+      node.current?.classList.remove('flash')
+    }
+  }, [joined, sync])
+  useLayoutEffect(
+    () => () => {
+      sync(null, '')
+      window.clearTimeout(liveTimer.current)
+    },
+    [sync],
+  )
 
   // キーを置いた時（要素はもう出ている）
   useEffect(() => {
@@ -113,15 +187,16 @@ export function useFlashTarget<T extends Element = HTMLElement>(
   // 描き直し（className の替わり・要素の入れ替わり）で枠が消えたら付け直す
   useLayoutEffect(() => {
     const el = node.current
-    if (el && until.current - REAPPLY_MARGIN_MS > Date.now() && !el.classList.contains('flash')) flash(el)
+    if (el && live.current && !el.classList.contains('flash')) flash(el)
   })
 
   // 要素が付いた時（キーを置いた後に出た要素も、出た時に目立つ）
   return useCallback(
     (el: T | null) => {
       node.current = el
+      sync(el, keysNow.current)
       if (el) start(el)
     },
-    [start],
+    [start, sync],
   )
 }

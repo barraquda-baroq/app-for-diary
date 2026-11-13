@@ -84,6 +84,28 @@ describe('戻す・やり直す', () => {
     expect(futureLabels()).toEqual([])
   })
 
+  it('ボタン・キー（undo・redo）で当てた時だけ applied に置く（向き・当てた後のステップ・増える番号）。お知らせの［元に戻す］・断った時は置かない（■26）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const s = moveTo('2026-11-12')
+    expect(useUndo.getState().applied).toBeNull()
+    await undo()
+    expect(useUndo.getState().applied).toMatchObject({ seq: 1, dir: 'undo', step: { id: s.id, label: '移した' } })
+    await redo()
+    expect(useUndo.getState().applied).toMatchObject({ seq: 2, dir: 'redo', step: { id: s.id } })
+    // お知らせの［元に戻す］
+    await undoStep(s.id)
+    expect(item()?.start).toBe('2026-11-10')
+    expect(useUndo.getState().applied?.seq).toBe(2)
+    // 断った時
+    await redo()
+    expect(useUndo.getState().applied?.seq).toBe(3)
+    actions.restoreItemContent('a', { ...item()!, title: 'ほかの端末で直した' })
+    expect(await undo()).toBe(false)
+    expect(useUndo.getState().applied?.seq).toBe(3)
+    resetUndoForTests()
+    expect(useUndo.getState().applied).toBeNull()
+  })
+
   it('戻す物・やり直す物が無ければ何もしない。何も変わらなかった操作は積まない', async () => {
     await start(dataWith({ items: [meeting] }))
     expect(await undo()).toBe(false)

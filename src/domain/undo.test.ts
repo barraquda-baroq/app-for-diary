@@ -19,6 +19,7 @@ import {
   sessionStep,
   settleStep,
   UNDO_LIMIT,
+  undoFocus,
   type UndoReader,
   type UndoStack,
   type UndoStep,
@@ -278,5 +279,73 @@ describe('お知らせの［元に戻す］で、いちばん新しくないス�
     expect(chainConflict([del, s1], reader([], ['e1']))).toBeNull()
     // ゴミ箱から戻して（並びの外で）また動かした: 消したステップは戻せない
     expect(chainConflict([del, s1], reader([at('2026-11-15')], ['e1']))?.step.id).toBe(2)
+  })
+})
+
+describe('戻した・やり直した後に見せる所（undoFocus。7.13・■26）', () => {
+  const item = (p: Partial<Item>) => mkItem({ id: 'a', title: '会議', ...p })
+  const change = (b: Item | null, a: Item | null): UndoStep => ({
+    id: 1,
+    label: 'x',
+    changes: [{ table: 'items', id: 'a', before: b, after: a, entry: b && a ? null : 'e1' }],
+  })
+
+  it('1日の予定を動かした: 戻すと前の日、やり直すと後の日（その日だけ）', () => {
+    const s = change(item({ start: '2026-11-14' }), item({ start: '2026-11-12' }))
+    expect(undoFocus(s, 'undo')).toEqual({ table: 'items', id: 'a', date: '2026-11-14', from: '2026-11-14', to: '2026-11-14' })
+    expect(undoFocus(s, 'redo')).toEqual({ table: 'items', id: 'a', date: '2026-11-12', from: '2026-11-12', to: '2026-11-12' })
+  })
+
+  it('複数日の始点を動かした時は始点の日、終点（締め切り日の●）だけを動かした時は●の日', () => {
+    const start = change(item({ start: '2026-11-10', due: '2026-11-14' }), item({ start: '2026-11-12', due: '2026-11-14' }))
+    expect(undoFocus(start, 'undo')).toMatchObject({ date: '2026-11-10', from: '2026-11-10', to: '2026-11-10' })
+    expect(undoFocus(start, 'redo')).toMatchObject({ date: '2026-11-12', from: '2026-11-12', to: '2026-11-12' })
+    const end = change(item({ start: '2026-11-10', due: '2026-11-14' }), item({ start: '2026-11-10', due: '2026-11-18' }))
+    expect(undoFocus(end, 'undo')).toMatchObject({ date: '2026-11-14', from: '2026-11-14', to: '2026-11-14' })
+    expect(undoFocus(end, 'redo')).toMatchObject({ date: '2026-11-18', from: '2026-11-18', to: '2026-11-18' })
+  })
+
+  it('list 生まれの〆（締め切り日だけ）を動かした時は締め切り日', () => {
+    const s = change(
+      item({ origin: 'list', start: null, due: '2026-11-11' }),
+      item({ origin: 'list', start: null, due: '2026-11-13' }),
+    )
+    expect(undoFocus(s, 'undo')).toMatchObject({ date: '2026-11-11' })
+    expect(undoFocus(s, 'redo')).toMatchObject({ date: '2026-11-13' })
+  })
+
+  it('日付の変わらない操作（完了・件名）は期間の全部（どこかが見えていれば足りる）。見に行くのは期間の初めの日', () => {
+    const s = change(
+      item({ start: '2026-11-10', due: '2026-11-17' }),
+      item({ start: '2026-11-10', due: '2026-11-17', done: true }),
+    )
+    for (const dir of ['undo', 'redo'] as const) {
+      expect(undoFocus(s, dir)).toEqual({ table: 'items', id: 'a', date: '2026-11-10', from: '2026-11-10', to: '2026-11-17' })
+    }
+  })
+
+  it('ゴミ箱へ移る側（足したのを戻す・削除をやり直す）は無い。ゴミ箱から戻る側は、その予定', () => {
+    const added = change(null, item({ start: '2026-11-12' }))
+    expect(undoFocus(added, 'undo')).toBeNull()
+    expect(undoFocus(added, 'redo')).toMatchObject({ table: 'items', id: 'a', date: '2026-11-12' })
+    const deleted = change(item({ start: '2026-11-12' }), null)
+    expect(undoFocus(deleted, 'undo')).toMatchObject({ table: 'items', id: 'a', date: '2026-11-12' })
+    expect(undoFocus(deleted, 'redo')).toBeNull()
+  })
+
+  it('カレンダーに出ない予定（list 生まれで締め切り日なし）は無い', () => {
+    const s = change(item({ origin: 'list', start: null, due: '2026-11-12' }), item({ origin: 'list', start: null, due: null }))
+    expect(undoFocus(s, 'redo')).toBeNull()
+    expect(undoFocus(s, 'undo')).toMatchObject({ date: '2026-11-12' })
+  })
+
+  it('休み: その日', () => {
+    const s: UndoStep = { id: 1, label: 'x', changes: [{ table: 'offDays', id: '2026-11-12', before: false, after: true }] }
+    expect(undoFocus(s, 'undo')).toEqual({ table: 'offDays', date: '2026-11-12', from: '2026-11-12', to: '2026-11-12' })
+    expect(undoFocus(s, 'redo')).toEqual({ table: 'offDays', date: '2026-11-12', from: '2026-11-12', to: '2026-11-12' })
+  })
+
+  it('変わり方の無いステップは無い', () => {
+    expect(undoFocus({ id: 1, label: 'x', changes: [] }, 'undo')).toBeNull()
   })
 })

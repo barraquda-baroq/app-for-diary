@@ -13,6 +13,8 @@
 //   laterDependents））
 // - 戻す・やり直すは1つずつ順に当てる（続けて押した分は待って順に。ゴミ箱の出し入れは保存を待つ）。ほかの所で直されていたら
 //   当てずに「ほかの所で直されたので戻せません」と出し、そのステップを捨てる
+// - ボタン・キー（undo・redo）で当てたステップは applied に置く（何を戻した・やり直したかのお知らせと、その予定を見せるのは画面の
+//   側。src/features/calendar/common/undoFeedback.ts。■26 の今の決め方）。お知らせの［元に戻す］で戻した時は置かない
 import { create } from 'zustand'
 import { undoText } from '../domain/itemText'
 import { UNDO_REFUSED } from '../domain/ops'
@@ -28,11 +30,21 @@ export const UNDO_LABEL = '元に戻す'
 /** ほかの所で直されていて戻せない・やり直せない時の文（7.13） */
 export const UNDO_CONFLICT = 'ほかの所で直されたので戻せません'
 
-export interface UndoState {
-  stack: U.UndoStack
+/** ボタン・キーで当てたステップ（seq は当てるたびに増える番号。同じステップをまた当てた時も替わる） */
+export interface UndoApplied {
+  seq: number
+  dir: U.UndoDirection
+  /** 当てた後のステップ（ゴミ箱の1件が替わった物） */
+  step: U.UndoStep
 }
 
-export const useUndo = create<UndoState>(() => ({ stack: U.emptyUndoStack() }))
+export interface UndoState {
+  stack: U.UndoStack
+  /** 最後にボタン・キーで当てた物（無ければ null） */
+  applied: UndoApplied | null
+}
+
+export const useUndo = create<UndoState>(() => ({ stack: U.emptyUndoStack(), applied: null }))
 
 /** 戻した・やり直した後にすること（すばやく足すの、打った字を書きかけに戻す・消すなど） */
 export interface StepHooks {
@@ -41,6 +53,8 @@ export interface StepHooks {
 }
 
 let seq = 0
+/** ボタン・キーで当てた回数（UndoApplied の seq） */
+let appliedSeq = 0
 /** 新しい操作を積んだ回数（戻している間に新しい操作が来たかを見る） */
 let pushes = 0
 /** ウィークリー・デイリーを出している数（0 の間は積まない） */
@@ -243,13 +257,14 @@ function refuse(step: U.UndoStep, e?: unknown): void {
   forget(step.id)
 }
 
-async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<boolean> {
+/** 1つ当てる（当てた後のステップを返す。当てる物が無い・断った時は null） */
+async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<U.UndoStep | null> {
   const step = pick()
-  if (!step) return false
+  if (!step) return null
   const at = pushes
   if (U.conflictOf(step, dir, reader()) !== null) {
     refuse(step)
-    return false
+    return null
   }
   let next: U.UndoStep
   try {
@@ -259,7 +274,7 @@ async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promi
     next = { ...step, changes: dir === 'undo' ? done.reverse() : done }
   } catch (e) {
     refuse(step, e)
-    return false
+    return null
   }
   if (detached.has(step.id)) detached.delete(step.id)
   else if (dir === 'undo' && pushes !== at) setStack(U.dropStep(stackNow(), step.id))
@@ -273,7 +288,7 @@ async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promi
   const h = hooks.get(step.id)
   if (dir === 'undo') h?.afterUndo?.()
   else h?.afterRedo?.()
-  return true
+  return next
 }
 
 /** 当てるのを順に並べる（続けて押した分は、前の分が終わってから） */
@@ -283,7 +298,13 @@ function enqueueRun(op: () => Promise<boolean>): Promise<boolean> {
   return run
 }
 
-const enqueue = (dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<boolean> => enqueueRun(() => apply(dir, pick))
+/** ボタン・キーで当てる（当てたら applied に置く） */
+const enqueue = (dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<boolean> =>
+  enqueueRun(async () => {
+    const step = await apply(dir, pick)
+    if (step) useUndo.setState({ applied: { seq: ++appliedSeq, dir, step } })
+    return step !== null
+  })
 
 /** 並びの中か、積まなかった物の、まだ戻していないステップ（無ければ null） */
 function undoableStep(stepId: number): U.UndoStep | null {
@@ -311,7 +332,7 @@ async function undoWithLater(stepId: number): Promise<boolean> {
     return false
   }
   for (const s of later) if (!(await apply('undo', () => (U.placeOf(stackNow(), s.id) === 'past' ? s : null)))) return false
-  return apply('undo', () => undoableStep(stepId))
+  return (await apply('undo', () => undoableStep(stepId))) !== null
 }
 
 /**
@@ -325,7 +346,7 @@ async function undoDetached(step: U.UndoStep): Promise<boolean> {
     refuse(step)
     return false
   }
-  return apply('undo', () => detached.get(step.id) ?? null)
+  return (await apply('undo', () => detached.get(step.id) ?? null)) !== null
 }
 
 /** いちばん新しい操作を元に戻す（ボタン・Ctrl/⌘+Z）。戻せた時 true */
@@ -349,6 +370,7 @@ export const undoIdle = (): Promise<unknown> => queue
 /** テスト用: 並びと控えを空にする */
 export function resetUndoForTests(): void {
   seq = 0
+  appliedSeq = 0
   pushes = 0
   scope = 0
   hooks.clear()
@@ -356,5 +378,5 @@ export function resetUndoForTests(): void {
   detached.clear()
   sessions.clear()
   queue = Promise.resolve()
-  setStack(U.emptyUndoStack())
+  useUndo.setState({ stack: U.emptyUndoStack(), applied: null })
 }
