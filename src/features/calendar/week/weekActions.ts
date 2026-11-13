@@ -2,13 +2,17 @@
 // 1つだけ作って渡す。予定を押すと詳細（12.3）は、カード・始点のカード・受けた表示・●・＞が useItemSheets().openDetail を自分で
 // 呼ぶので、ここには無い。完了の丸（お知らせと［元に戻す］）も共通の部品（DoneToggle）が自分でする。
 // - 日付の見出し（丸いラベル＋「11/8」）→ その日のデイリーへ（積む。見ている日はその日。7.12・CALENDAR-192）
-// - 休みのチェック → その日の休みを付ける・外す（offDays の off を切り替えるだけ。記録は消さない。6.5・7.4・D33）
+// - 休みのチェック → その日の休みを付ける・外す（offDays の off を切り替えるだけ。記録は消さない。6.5・7.4・D33）。元に戻す・やり直すの
+//   並びに積む（お知らせは出さない。7.13）
 // - 「＋」の行 → その日・その段のすばやく足す（12.1）。その「＋」の行が、その場で1行の入力欄に替わる（D44）。開くのはいつも1か所
 //   だけで、ほかの「＋」を押すとそちらへ移る（前の入力欄は外を押したので、字があれば足して閉じる）。週を移ると閉じる
 import { useCallback, useMemo, useState } from 'react'
+import { undoText } from '../../../domain/itemText'
 import type { ItemKind } from '../../../domain/types'
 import { actions } from '../../../store/actions'
+import { getData } from '../../../store/appStore'
 import { attempt } from '../../../store/uiStore'
+import { recordStep } from '../../../store/undoStore'
 import { useCalendarNav } from '../common/useCalendarRoute'
 
 /** 開いているすばやく足す（その日・その段） */
@@ -48,7 +52,12 @@ export function useWeekActions(sunday: string): WeekActions {
     () => ({
       openDay: (date) => nav.openDay(date),
       setOff: (date, off) => {
-        attempt(() => actions.setOffDay(date, off))
+        const before = Boolean(getData().offDays[date]?.off)
+        if (attempt(() => (actions.setOffDay(date, off), true))) {
+          recordStep(undoText.off(date, off), [
+            { table: 'offDays', id: date, before, after: Boolean(getData().offDays[date]?.off) },
+          ])
+        }
       },
       quickAdd,
       quick,

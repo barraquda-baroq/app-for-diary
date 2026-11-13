@@ -4,6 +4,7 @@
 import type { CalItem } from './calendar'
 import { displayHm, isYmd, jaDateLabel, mdLabel, shortDateLabel } from './dates'
 import { formatCount, type DayCounts } from './items'
+import { UNTITLED } from './repair'
 import { ITEM_KIND_LABELS } from './trash'
 import type { ItemKind } from './types'
 
@@ -89,6 +90,46 @@ export const toastText = {
   /** list 生まれの締め切り日を消して Task List に戻した（6.3） */
   relisted: 'カレンダーから外れたので Task List に戻しました',
 } as const
+
+// ---------- 元に戻す・やり直す（7.13） ----------
+
+/** 操作の名前に入れる件名の長さ（これより長い件名は切って「…」） */
+export const UNDO_TITLE_MAX = 20
+
+/** 操作の名前に入れる件名（空なら「（件名なし）」、長ければ切る） */
+function undoTitle(title: string): string {
+  const t = title.trim() || UNTITLED
+  const chars = Array.from(t)
+  return chars.length > UNDO_TITLE_MAX ? `${chars.slice(0, UNDO_TITLE_MAX).join('')}…` : t
+}
+
+/** 元に戻す・やり直すの操作の名前（ボタンの読み上げ・ヒントの括弧の中。「元に戻す（『会議』を移した）」） */
+export const undoText = {
+  /** ドラッグで日を動かした（7.11） */
+  moved: (title: string): string => `『${undoTitle(title)}』を移した`,
+  /** 完了にした・外した（12.5） */
+  done: (title: string, done: boolean): string =>
+    done ? `『${undoTitle(title)}』を完了にした` : `『${undoTitle(title)}』の完了を外した`,
+  /** すばやく足すで足した（12.1） */
+  added: (title: string): string => `『${undoTitle(title)}』を足した`,
+  /** 登録の画面で登録した（12.2） */
+  registered: (title: string): string => `『${undoTitle(title)}』を登録した`,
+  /** 複製した（12.7） */
+  duplicated: (title: string): string => `『${undoTitle(title)}』を複製した`,
+  /** 削除した（ゴミ箱へ。12.8） */
+  deleted: (title: string): string => `『${undoTitle(title)}』を削除した`,
+  /** 詳細の画面で直した（開いてから閉じるまで。12.3） */
+  edited: (title: string): string => `『${undoTitle(title)}』を直した`,
+  /** 休みを付けた・外した（7.4） */
+  off: (date: string, off: boolean): string =>
+    off ? `${shortDateLabel(date)}を休みにした` : `${shortDateLabel(date)}の休みを外した`,
+} as const
+
+/** 元に戻す・やり直すのボタンの読み上げとヒント（何も無い時は「元に戻す」「やり直す」だけ） */
+export function undoButtonLabel(dir: 'undo' | 'redo', label: string | null | undefined): string {
+  const verb = dir === 'undo' ? '元に戻す' : 'やり直す'
+  return label ? `${verb}（${label}）` : verb
+}
 
 // ---------- 読み上げ（4.11・4.12） ----------
 

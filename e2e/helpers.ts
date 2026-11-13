@@ -120,6 +120,23 @@ export interface DevHook {
   flushNow: () => Promise<boolean>
   /** ゴミ箱の期限切れを決める時刻を差し替える */
   setTrashClock: (fn: () => number | null) => void
+  /** アプリの履歴（src/history/appHistory.ts）が、ブラウザの履歴を動かし終えるまで待つ */
+  historyIdle: () => Promise<void>
+  /** 今の履歴の形 */
+  historyShape: () => HistoryShape | null
+}
+
+/** アプリの履歴の形（src/history/appHistory.ts の HistoryShape） */
+export interface HistoryShape {
+  /** popstate が何から来るか（iPhone・iPad は edge-flick、Android・PC は os-back） */
+  source: 'edge-flick' | 'os-back'
+  busy: boolean
+  cur: number
+  base: number | null
+  shownIdx: number
+  top: number
+  buildPending: boolean
+  exitArmed: boolean
 }
 
 declare global {
@@ -237,6 +254,11 @@ export interface OpenCalendarOptions {
   prefs?: Partial<Prefs>
   /** 開いた後に置くデータ */
   data?: Partial<AppData>
+  /**
+   * 開いた後に、何も無い所（ヘッダーの真ん中）を1回押して、アプリの履歴の形（土台と「戻る」「進む」の印）を作らせるか（既定 true。
+   * アプリは押す前には履歴に積まない。src/history/appHistory.ts）。押す前の形を確かめる時は false
+   */
+  arm?: boolean
 }
 
 /** openCalendar を呼んだ回の番号（表示の設定を置いたかの印を、呼んだ回ごとに分ける） */
@@ -272,6 +294,58 @@ export async function openCalendar(page: Page, hash = '/', opts: OpenCalendarOpt
   await page.waitForFunction(() => Boolean(window.__ds))
   await expect(page.getByTestId('top-page')).toBeVisible()
   if (data) await seedData(page, data)
+  if (opts.arm ?? true) await armHistory(page)
+}
+
+// ---------- 段階2: 履歴（docs/SPEC.md の 3.1。src/history/appHistory.ts） ----------
+
+/** 今の履歴の形（今いる所・土台の番号など。window.__ds.historyShape） */
+export function historyShape(page: Page): Promise<HistoryShape | null> {
+  return page.evaluate(() => window.__ds.historyShape())
+}
+
+/**
+ * アプリの履歴が落ち着くまで待つ: ブラウザの今の履歴が、アプリの思う今いる所で、ルーターが出している所（土台へ戻し終えた。
+ * 閉じられずに最初の履歴へ戻った時はそこ）で、動かしている途中の物が無い
+ */
+export async function historySettled(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const s = window.__ds.historyShape()
+        const idx = (history.state as { idx?: number } | null)?.idx
+        return Boolean(s && !s.busy && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
+      }),
+    )
+    .toBe(true)
+}
+
+/**
+ * 何も無い所（ヘッダーの、左のアイコンと右のボタンの間の真ん中）を押して、アプリの履歴の形を作らせる（押した直後だけ作る。
+ * openCalendar が開いた後に呼ぶ）
+ */
+export async function armHistory(page: Page): Promise<void> {
+  const brand = await page.getByTestId('brand').boundingBox()
+  const gear = await page.getByTestId('open-settings').boundingBox()
+  if (!brand || !gear) throw new Error('ヘッダーが見えていません')
+  // 右のボタンの左の端（同期の表示があればそこ）
+  const sync = (await page.getByTestId('sync-indicator').count()) ? await page.getByTestId('sync-indicator').boundingBox() : null
+  const right = Math.min(gear.x, sync?.x ?? Infinity)
+  await page.mouse.click((brand.x + brand.width + right) / 2, brand.y + brand.height / 2)
+  await expect.poll(async () => (await historyShape(page))?.base ?? null).not.toBeNull()
+  await historySettled(page)
+}
+
+/** ブラウザ（端末）の「戻る」（iPhone では左の端からのフリック）をして、アプリの履歴が落ち着くまで待つ */
+export async function goBack(page: Page): Promise<void> {
+  await page.goBack()
+  await historySettled(page)
+}
+
+/** ブラウザ（端末）の「進む」（iPhone では右の端からのフリック）をして、アプリの履歴が落ち着くまで待つ */
+export async function goForward(page: Page): Promise<void> {
+  await page.goForward()
+  await historySettled(page)
 }
 
 // ---------- 段階2: マウス・指の操作 ----------

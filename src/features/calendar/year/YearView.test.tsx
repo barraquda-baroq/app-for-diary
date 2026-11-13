@@ -197,12 +197,12 @@ describe('マスの中身（8.2・8.3・7.1〜7.4・7.9）', () => {
 })
 
 describe('押した時（7.12・8.4。CALENDAR-186・187・223・224）', () => {
-  it('日のマスはその日の月のマンスリーへ（積む。見ている日はその日）', async () => {
+  it('日のマスはその日の月のマンスリーへ（置き換える。3.1。見ている日はその日）', async () => {
     const { router } = await renderAt('/year/2026', { data: sample() })
     // jsdom の領域は 0×0 なので小さな月（押した時の動きは同じ）
     await userEvent.setup().click(cell('2026-11-28'))
     expect(router.state.location.pathname).toBe('/month/2026-11')
-    expect(router.state.historyAction).toBe('PUSH')
+    expect(router.state.historyAction).toBe('REPLACE')
     expect(useCalendarUi.getState().viewed).toBe('2026-11-28')
   })
 

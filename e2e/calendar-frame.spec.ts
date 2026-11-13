@@ -1,4 +1,4 @@
-// カレンダーの枠の E2E（docs/SPEC.md の 3.1・3.3〜3.5・3.7・3.8・6.4・7.3・7.12）: 行き先と履歴（積む・置き換える・戻る）、
+// カレンダーの枠の E2E（docs/SPEC.md の 3.1・3.3〜3.5・3.7・3.8・6.4・7.3・7.12）: 行き先と履歴（カレンダーの中は置き換える・戻る）、
 // 正しくない行き先・日曜でない週、前回のモード、左のアイコン、高さ（L はページがスクロールしない・S・M の週と日は固定）、
 // 0時を過ぎた時の今日の印、裏から戻って6時間、登録・詳細の小さな画面と「戻る」・Esc、スワイプ、期間を移った時にページをめくる動き。
 // 今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。モードの画面の中身は各モードの担当の E2E で確かめる
@@ -6,6 +6,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
 import {
   collectDiagnosticsOnFailure,
+  goBack,
   holdTurns,
   iosCancelledTouch,
   longPressDrag,
@@ -55,6 +56,13 @@ async function flickY(page: Page): Promise<number> {
   return Math.round(Math.min(box.y + box.height / 2, vh - 160))
 }
 
+/** 「Diary Studio を閉じますか？」が出て（OS の「戻る」をカレンダーで押した。3.1）、［キャンセル］で閉じる */
+async function cancelClose(page: Page) {
+  await expect(page.getByTestId('app-close')).toBeVisible()
+  await page.getByTestId('app-close-cancel').click()
+  await expect(page.getByTestId('app-close')).toHaveCount(0)
+}
+
 /** ページ全体がスクロールしない（L。3.4） */
 async function pageDoesNotScroll(page: Page, label: string) {
   const [scrollH, innerH] = await page.evaluate(() => [document.documentElement.scrollHeight, window.innerHeight])
@@ -62,12 +70,13 @@ async function pageDoesNotScroll(page: Page, label: string) {
 }
 
 test.describe('行き先と履歴（PC）', { tag: ['@pc'] }, () => {
-  test('トップ #/ は前回のモードの今日を含む期間へ置き換え、モードを替えると見ている日を保って積み、› を3回押しても「戻る」1回で前のモードへ', async ({
+  test('トップ #/ は前回のモードの今日を含む期間へ置き換え、モードを替えても見ている日を保って置き換え（履歴に積まない）、‹ ›・［今日］も置き換える。「戻る」は前のモードへ戻らず、閉じるかを聞く（3.1）', async ({
     page,
   }) => {
     await openCalendar(page, '/')
     await at(page, '/month/2026-11')
     await expect(page.getByTestId('view-month')).toBeVisible()
+    const length = await page.evaluate(() => history.length)
     await page.getByTestId('cal-mode-week').click()
     await at(page, '/week/2026-11-08')
     await page.getByTestId('cal-mode-year').click()
@@ -79,18 +88,13 @@ test.describe('行き先と履歴（PC）', { tag: ['@pc'] }, () => {
     for (let i = 0; i < 3; i++) await page.getByTestId('cal-next').click()
     await at(page, '/week/2026-11-29')
     await expect(page.getByTestId('cal-period')).toContainText('11.29–12.05')
-    await page.goBack()
-    await at(page, '/day/2026-11-10')
-    await page.goBack()
-    await at(page, '/year/2026')
-    // ［今日］も置き換える
-    await page.getByTestId('cal-next').click()
     await page.getByTestId('cal-today').click()
-    await at(page, '/year/2026')
-    await page.goBack()
     await at(page, '/week/2026-11-08')
-    await page.goBack()
-    await at(page, '/month/2026-11')
+    expect(await page.evaluate(() => history.length)).toBe(length)
+    await goBack(page)
+    await cancelClose(page)
+    await at(page, '/week/2026-11-08')
+    expect(await page.evaluate(() => history.length)).toBe(length)
   })
 
   test('日付の形が正しくない行き先は今日を含む期間へ置き換え（「戻る」で戻らない）、日曜でない週はその週の日曜へ置き換える', async ({
@@ -104,8 +108,10 @@ test.describe('行き先と履歴（PC）', { tag: ['@pc'] }, () => {
     ]) {
       await page.evaluate((h) => (window.location.hash = h), bad)
       await at(page, good)
-      await page.goBack()
-      await at(page, '/week/2026-11-15')
+      // 正しくない行き先へは戻らない（カレンダーの「戻る」は閉じるかを聞く。3.1）
+      await goBack(page)
+      await cancelClose(page)
+      await at(page, good)
     }
     // 日曜でない日はその日を見ている日にする（「日」でその日）
     await page.evaluate(() => (window.location.hash = '/week/2026-11-12'))
@@ -131,18 +137,17 @@ test.describe('行き先と履歴（PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId('cal-mode-week')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  test('左のアイコンと名前: カレンダーからは前回のモードの今日を含む期間へ置き換え、設定からは積む（FRAME-029）', async ({
+  test('左のアイコンと名前: カレンダーからは前回のモードの今日を含む期間へ置き換え、設定からはカレンダーの履歴の所へ戻って置き換える（FRAME-029。3.1）', async ({
     page,
   }) => {
     await openCalendar(page, '/month/2026-11')
+    const length = await page.evaluate(() => history.length)
     await page.getByTestId('cal-mode-week').click()
     await page.getByTestId('cal-next').click()
     await at(page, '/week/2026-11-15')
     await page.getByTestId('brand').click()
     await at(page, '/week/2026-11-08')
-    await page.goBack()
-    await at(page, '/month/2026-11')
-    // 設定から（積む）。［‹ 戻る］・「戻る」で前のモード・期間へ（FRAME-268）
+    // 設定から。［‹ 戻る］・「戻る」で開く前の期間へ（FRAME-268）
     await page.getByTestId('cal-mode-day').click()
     await page.getByTestId('cal-next').click()
     await at(page, '/day/2026-11-11')
@@ -152,10 +157,17 @@ test.describe('行き先と履歴（PC）', { tag: ['@pc'] }, () => {
     await at(page, '/day/2026-11-11')
     await page.getByTestId('open-settings').click()
     await expect(page.getByTestId('app-settings')).toBeVisible()
+    await goBack(page)
+    await at(page, '/day/2026-11-11')
+    await page.getByTestId('open-settings').click()
+    await expect(page.getByTestId('app-settings')).toBeVisible()
     await page.getByTestId('brand').click()
     await at(page, '/day/2026-11-10')
-    await page.goBack()
-    await at(page, '/settings')
+    // 設定へは戻らない（カレンダーの「戻る」は閉じるかを聞く）。履歴は増えない
+    await goBack(page)
+    await cancelClose(page)
+    await at(page, '/day/2026-11-10')
+    expect(await page.evaluate(() => history.length)).toBe(length)
   })
 
   test('L はどのモードでもページ全体がスクロールしない。幅を替えると並べ直してもモード・期間はそのまま（FRAME-021・036）', async ({
@@ -375,9 +387,10 @@ test.describe('今日（PC。6.4・7.3）', { tag: ['@pc'] }, () => {
     await page.clock.fastForward('00:01:30')
     await setVisibility(page, 'visible')
     await at(page, '/day/2026-11-11')
-    // 置き換えたので、「戻る」は前のモード（マンスリー）へ
-    await page.goBack()
-    await at(page, '/month/2026-11')
+    // 置き換えたので、「戻る」は前の日へ戻らず、閉じるかを聞く
+    await goBack(page)
+    await cancelClose(page)
+    await at(page, '/day/2026-11-11')
   })
 })
 
@@ -396,27 +409,33 @@ test.describe('登録・詳細の小さな画面（PC。3.1・3.8）', { tag: ['
     await expect(sheet).toHaveCount(0)
     await at(page, '/week/2026-11-15')
     await expect(page.getByTestId('view-week')).toBeVisible()
-    // ［×］でも閉じる。閉じた後の「戻る」は前の画面（小さな画面を開き直さない）
+    // ［×］でも閉じる。閉じた後の「戻る」はカレンダーの「戻る」（小さな画面を開き直さない。閉じるかを聞く）
     await page.getByTestId('cal-add').click()
     await expect(sheet).toBeVisible()
     await page.getByTestId('modal-close').click()
     await expect(sheet).toHaveCount(0)
-    await page.goBack()
-    await at(page, '/month/2026-11')
+    await goBack(page)
+    await cancelClose(page)
+    await at(page, '/week/2026-11-15')
     await expect(sheet).toHaveCount(0)
   })
 
-  test('読み込み直すと、登録の画面は開き直さない（「戻る」の数は変わらない: 1回で前のモードへ）', async ({ page }) => {
+  test('読み込み直すと、登録の画面は開き直さない（「戻る」の数は変わらない: 次の「戻る」はカレンダーの「戻る」）', async ({
+    page,
+  }) => {
     await openCalendar(page, '/month/2026-11')
     await page.getByTestId('cal-mode-day').click()
+    const length = await page.evaluate(() => history.length)
     await page.getByTestId('cal-add').click()
     await expect(page.getByTestId('item-sheet')).toBeVisible()
     await page.reload()
     await expect(page.getByTestId('view-day')).toBeVisible()
     await expect(page.getByTestId('item-sheet')).toHaveCount(0)
     await at(page, '/day/2026-11-10')
-    await page.goBack()
-    await at(page, '/month/2026-11')
+    await goBack(page)
+    await cancelClose(page)
+    await at(page, '/day/2026-11-10')
+    expect(await page.evaluate(() => history.length)).toBe(length)
   })
 
   test('読み込み直すと、詳細の画面は予定があれば開き直し（履歴の state が残る）、［×］で1つ前へ閉じる（D03）', async ({
@@ -444,8 +463,9 @@ test.describe('登録・詳細の小さな画面（PC。3.1・3.8）', { tag: ['
     await page.getByTestId('modal-close').click()
     await expect(sheet).toHaveCount(0)
     await at(page, '/day/2026-11-10')
-    await page.goBack()
-    await at(page, '/month/2026-11')
+    await goBack(page)
+    await cancelClose(page)
+    await at(page, '/day/2026-11-10')
   })
 })
 
@@ -501,8 +521,13 @@ test.describe('スマホ（S）の枠', { tag: ['@s'] }, () => {
     await longPressDrag(page, { x: box.x + box.width - 40, y }, { x: box.x + 40, y })
     await page.waitForTimeout(200)
     await at(page, '/month/2026-10')
-    // 置き換えたので「戻る」は前のモードへ
-    await page.goBack()
+    // 置き換えたので、Android の「戻る」は前の月・前のモードへ戻らず、閉じるかを聞く
+    await goBack(page)
+    await cancelClose(page)
+    await at(page, '/month/2026-10')
+    await page.getByTestId('cal-mode-week').click()
+    await at(page, '/week/2026-10-04')
+    await page.getByTestId('cal-today').click()
     await at(page, '/week/2026-11-08')
     await touchSwipe(page, page.getByTestId('calendar-body'), -150, 0)
     await at(page, '/week/2026-11-15')
@@ -681,7 +706,9 @@ test.describe('スマホ（S）の枠', { tag: ['@s'] }, () => {
     await at(page, '/day/2026-11-10')
   })
 
-  test('‹ › ではページのスクロールの位置を変えず、モードを替える（積む）と先頭へ戻る（D54）', async ({ page }) => {
+  test('‹ › ではページのスクロールの位置を変えず、モードを替える（積まずに置き換えるが、モードが替わる）と先頭へ戻る（D54）', async ({
+    page,
+  }) => {
     await openCalendar(page, '/month/2026-11')
     // ページを伸ばして少し下へ送る（操作の列はまだ見えている）
     await page.evaluate(() => {
@@ -772,22 +799,6 @@ test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
     // iPhone の本物の指のように、12px 動いた所で pointercancel が来て、その後は touch の出来事だけが来る払い（親指の弧。34°）
     await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: vw - 330, y: y - 200 }, 25))
     await at(page, '/week/2026-11-15')
-  })
-
-  test('登録・詳細のシートは「戻る」で閉じ、モード・期間はそのまま（FRAME-015）', async ({ page }) => {
-    await openCalendar(page, '/day/2026-11-10', { data: demoData() })
-    await page.getByTestId('cal-add').click()
-    await expect(page.getByTestId('item-sheet')).toBeVisible()
-    await page.goBack()
-    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
-    await at(page, '/day/2026-11-10')
-    // 詳細（予定を指で押して開く）
-    await page.getByTestId(`day-event-${DEMO_IDS.weekly}`).locator('.dy-ev-open').tap()
-    await expect(page.getByTestId('item-sheet')).toBeVisible()
-    await expect(page.getByTestId('item-title')).toHaveValue('定例ミーティング')
-    await page.goBack()
-    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
-    await at(page, '/day/2026-11-10')
   })
 })
 

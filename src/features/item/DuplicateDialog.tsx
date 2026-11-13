@@ -6,14 +6,18 @@
 //   すると開始日もそろえる（6.3）
 // - 写す時刻で 1日の予定の終了 < 開始になる日付は［複製する］を押せなくし、6.4 の理由（DATE_REFUSED）を出す（ITEMS-259）
 // - ［複製する］で新しい項目を作り（src/domain/ops.ts の duplicateItem。完了は写さない）、閉じて「11/17（火）に複製しました［開く］」
-//   （6秒。期間の初めの日。カレンダーに出ない list 生まれは「Task List に複製しました［開く］」）。［開く］で新しい予定の詳細へ
+//   （6秒。期間の初めの日。カレンダーに出ない list 生まれは「Task List に複製しました［開く］」）。［開く］で新しい予定の詳細へ。
+//   複製したことは元に戻す・やり直すの並びに積む（詳細の中で直していた所は、その前に1つにまとめて積む。7.13）
 import { useState } from 'react'
 import { duplicateDates, editDates } from '../../domain/itemInput'
 import { periodOf } from '../../domain/items'
-import { listStatusLine, toastText } from '../../domain/itemText'
+import { listStatusLine, toastText, undoText } from '../../domain/itemText'
 import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
+import { getData } from '../../store/appStore'
 import { attempt, notify } from '../../store/uiStore'
+import { itemChange, recordStep } from '../../store/undoStore'
+import { displayTitle } from '../calendar/common/parts/itemLook'
 import { Modal } from '../../ui/Modal'
 import { useItemSheets } from '../calendar/common/sheets'
 import { testIds } from '../calendar/common/testIds'
@@ -66,6 +70,7 @@ export function DuplicateDialog({ item, onClose }: DuplicateDialogProps) {
     if (!canSubmit) return
     const newId = attempt(() => actions.duplicateItem(item.id, dates))
     if (newId === undefined) return
+    recordStep(undoText.duplicated(displayTitle(item)), [itemChange(newId, null, getData().items[newId])])
     onClose()
     const first = periodOf({ origin: item.origin, ...dates })?.from ?? null
     notify(toastText.duplicated(first), { label: OPEN_LABEL, run: () => openDetail(newId) })

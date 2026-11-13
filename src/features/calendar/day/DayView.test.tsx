@@ -8,6 +8,7 @@ import type { AppData, Item } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData } from '../../../store/appStore'
 import { useCalendarUi, useToasts } from '../../../store/uiStore'
+import { undoIdle } from '../../../store/undoStore'
 import { renderView, resizeObserved, setupCalendarTests, viewProps } from '../../../test/renderCalendar'
 import { scrollIntoViewWithin } from '../../../ui/scrollWithin'
 import { testIds } from '../common/testIds'
@@ -488,7 +489,10 @@ describe('押した時の動き（WP8B）', () => {
     const [toast] = useToasts.getState().toasts
     expect(toast.message).toBe('『定例』を完了にしました')
     expect(toast.action?.label).toBe('元に戻す')
-    act(() => toast.action?.run())
+    await act(async () => {
+      toast.action?.run()
+      await undoIdle()
+    })
     expect(getData().items.a.done).toBe(false)
     expect(screen.getByTestId(testIds.dayEvent('a')).classList.contains('is-done')).toBe(false)
   })

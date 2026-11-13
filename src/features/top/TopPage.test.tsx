@@ -217,28 +217,25 @@ describe('カレンダーの行き先（3.1・6.13・7.12）', () => {
     expect(screen.queryByTestId('top-page')).toBeNull()
   })
 
-  it('モードを替えると履歴に積み、見ている日を引き継ぐ（11/10 → 週 11/8〜 → 年 2026 → 日 11/10）。「戻る」で前のモードへ', async () => {
+  it('モードを替えても履歴に積まずに置き換え、見ている日を引き継ぐ（11/10 → 週 11/8〜 → 年 2026 → 日 11/10）。「戻る」で前のモードへは戻らない（3.1）', async () => {
     const user = userEvent.setup()
-    const router = renderAt('/month/2026-11')
+    const router = renderAt(['/settings', '/month/2026-11'])
     await user.click(screen.getByTestId('cal-mode-week'))
     expect(router.state.location.pathname).toBe('/week/2026-11-08')
-    expect(router.state.historyAction).toBe('PUSH')
+    expect(router.state.historyAction).toBe('REPLACE')
     await user.click(screen.getByTestId('cal-mode-year'))
     expect(router.state.location.pathname).toBe('/year/2026')
     await user.click(screen.getByTestId('cal-mode-day'))
     expect(router.state.location.pathname).toBe('/day/2026-11-10')
-    // 今と同じモードを押しても積まない
-    await user.click(screen.getByTestId('cal-mode-day'))
-    expect(router.state.historyAction).toBe('PUSH')
+    expect(router.state.historyAction).toBe('REPLACE')
+    // 「戻る」はカレンダーの前の履歴へ（前のモードは残っていない）
     await act(() => router.navigate(-1))
-    expect(router.state.location.pathname).toBe('/year/2026')
-    await act(() => router.navigate(-1))
-    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(router.state.location.pathname).toBe('/settings')
   })
 
-  it('‹ › ［今日］は置き換える（何回押しても「戻る」1回で前のモードへ。FRAME-016）。月をまたぐと見ている日は月末にそろえる', async () => {
+  it('‹ › ［今日］も置き換える（FRAME-016）。月をまたぐと見ている日は月末にそろえる', async () => {
     const user = userEvent.setup()
-    const router = renderAt('/day/2027-01-31')
+    const router = renderAt(['/settings', '/day/2027-01-31'])
     await user.click(screen.getByTestId('cal-mode-month'))
     expect(router.state.location.pathname).toBe('/month/2027-01')
     await user.click(screen.getByTestId('cal-next'))
@@ -253,18 +250,17 @@ describe('カレンダーの行き先（3.1・6.13・7.12）', () => {
     expect(router.state.location.pathname).toBe('/day/2026-11-10')
     expect(router.state.historyAction).toBe('REPLACE')
     await act(() => router.navigate(-1))
-    expect(router.state.location.pathname).toBe('/month/2027-02')
+    expect(router.state.location.pathname).toBe('/settings')
   })
 
-  it('月・年の行き先へ「戻る」で戻った時、覚えている日が期間に無ければ今日、それも無ければ1日を見ている日にする（D02）', async () => {
+  it('月・年の行き先へ移った時、覚えている日が期間に無ければ今日、それも無ければ1日を見ている日にする（D02）', async () => {
     const user = userEvent.setup()
-    const router = renderAt('/month/2026-10')
-    await user.click(screen.getByTestId('cal-mode-day'))
-    // 10月の中に覚えている日も今日も無いので、10月1日
-    expect(router.state.location.pathname).toBe('/day/2026-10-01')
-    await user.click(screen.getByTestId('cal-today'))
+    const router = renderAt(['/month/2026-10', '/day/2026-11-10'])
+    // 10月の中に覚えている日（11/10）も今日も無いので、10月1日
     await act(() => router.navigate(-1))
     expect(router.state.location.pathname).toBe('/month/2026-10')
+    await user.click(screen.getByTestId('cal-mode-day'))
+    expect(router.state.location.pathname).toBe('/day/2026-10-01')
     await user.click(screen.getByTestId('cal-mode-week'))
     expect(router.state.location.pathname).toBe('/week/2026-09-27')
   })

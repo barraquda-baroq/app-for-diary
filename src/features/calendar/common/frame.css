@@ -86,6 +86,25 @@
   visibility: hidden;
 }
 
+/* ［Task View］（年・月）と元に戻す・やり直す（週・日。7.13）は同じ場所に重ねる（片方は visibility: hidden。場所の幅は広い方。
+   どのモードでもほかのボタンの位置は動かない） */
+.cal-slot {
+  display: grid;
+  align-items: center;
+}
+
+.cal-slot > * {
+  grid-area: 1 / 1;
+}
+
+/* 元に戻す・やり直す: 線のアイコンだけの 34px 四方のボタン（.icon-btn）を、［‹］［›］と同じ 4px の間で並べ、場所の右に寄せる */
+.cal-undo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: end;
+}
+
 .cal-add .icon,
 .cal-taskview .icon {
   width: 16px;
@@ -288,6 +307,20 @@
 
   .cal-toolbar-right {
     margin-left: 0;
+  }
+
+  /* 週・日（元に戻す・やり直すを出す時）は、無い［休み］の場所を詰め、元に戻す・やり直すを列の右の端に寄せる（2行目に［年｜月｜週｜日］
+     ［＋］と並べて 360px に収める。7.13。開発）。重ねた場所は、出ている方の幅だけ取る（月の［Task View］は今までどおり［＋］の隣） */
+  .cal-toolbar-right.has-undo .cal-off {
+    display: none;
+  }
+
+  .cal-slot > .cal-tool-hidden {
+    display: none;
+  }
+
+  .cal-toolbar-right.has-undo .cal-slot {
+    margin-left: auto;
   }
 
   /* 1字の［年｜月｜週｜日］は押せる所の 34px が幅を決める（左右の余白は 1字が 34px に入るまでの物） */

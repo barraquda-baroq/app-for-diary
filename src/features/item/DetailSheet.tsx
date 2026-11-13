@@ -15,6 +15,9 @@
 //   押せない。締め切り日を消して Task List に戻した時は「カレンダーから外れたので Task List に戻しました」（4秒。6.3）
 // - ［複製］で「複製する日を選ぶ」（DuplicateDialog）、「…」→［削除］（deleteItem.ts）。消したら閉じる。重なった小さな画面は、Esc で
 //   上の物だけが閉じる（AMB-ITEMS-32）
+// - 開いてから閉じるまでに直した所（欄・完了・ロック）は、元に戻す・やり直すの並びに1つにまとめて積む（ウィークリー・デイリーから
+//   開いた時。中の［複製］・［削除］は別の1つ。閉じた時の文字の欄の保存も入るよう、閉じた後（部品の後片付けが全部済んだ後）に積む。
+//   7.13）
 // 予定が無い時（ほかの端末で消した・ゴミ箱へ移した・消した後に「進む」で戻った）は閉じる（onClose。履歴を1つ戻す）。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { editDates, editTimes } from '../../domain/itemInput'
@@ -25,6 +28,7 @@ import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
 import { getData, getStoredRecord, useApp, useRecord } from '../../store/appStore'
 import { attempt, notify, notifyError } from '../../store/uiStore'
+import { beginItemSession } from '../../store/undoStore'
 import { CopyIcon, DotCheckIcon, MoreIcon, TrashIcon } from '../../ui/icons'
 import { PopupMenu } from '../../ui/PopupMenu'
 import { toggleDone } from '../calendar/common/parts'
@@ -90,6 +94,12 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const offCalendar = offCalendarTask(form)
 
+  // 開いてから閉じるまでを1つにまとめる（閉じた時の文字の欄の保存（子の後片付け）の後に積む）
+  useEffect(() => {
+    const end = beginItemSession(id)
+    return () => queueMicrotask(end)
+  }, [id])
+
   /** 直した物を保存する（予定が無くなった後は書かない）。list 生まれの締め切り日を消して Task List に戻した時は知らせる（6.3） */
   const save = (patch: ItemPatch) => {
     if (!getData().items[id]) return
@@ -151,7 +161,7 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
           type="button"
           className="it-done"
           aria-pressed={item.done}
-          onClick={() => toggleDone(item, false)}
+          onClick={() => toggleDone(item, false, false)}
           data-testid={testIds.itemDone}
         >
           <DotCheckIcon done={item.done} size={18} />

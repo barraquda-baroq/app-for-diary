@@ -161,6 +161,18 @@ export function shiftViewed(mode: CalendarMode, viewed: string, dir: 1 | -1): st
   return toYmd(shiftPeriod(mode, v, dir))
 }
 
+/** モードの円環の並び（年→月→週→日→年。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」） */
+export const MODE_RING: readonly CalendarMode[] = ['year', 'month', 'week', 'day']
+
+/**
+ * 円環でとなりのモード（画面の端からのフリック。3.1）: dir 1（右の端から払う「進む」）= 年→月→週→日→年、
+ * dir -1（左の端から払う「戻る」）= 日→週→月→年→日
+ */
+export function ringMode(mode: CalendarMode, dir: 1 | -1): CalendarMode {
+  const i = MODE_RING.indexOf(mode)
+  return MODE_RING[(i + dir + MODE_RING.length) % MODE_RING.length]
+}
+
 /** 裏から戻って今日へ移すまでの、最後の操作からの時間（6時間。docs/SPEC.md の 6.4） */
 export const RETURN_TO_TODAY_MS = 6 * 60 * 60 * 1000
 

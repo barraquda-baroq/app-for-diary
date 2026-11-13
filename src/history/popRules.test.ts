@@ -1,0 +1,38 @@
+// 「戻る」「進む」（popstate）が来た時にすること（docs/SPEC.md の 3.1。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・
+// ■22・■23）: 端末（端からのフリック・OS の戻る）× 画面（カレンダー・登録・詳細・ほか）× 向き
+import { describe, expect, it } from 'vitest'
+import { decidePop, type PopDirection, type ScreenKind } from './popRules'
+
+const both: PopDirection[] = ['back', 'forward']
+
+describe('iPhone・iPad（画面の端からのフリック）', () => {
+  it('カレンダー: 左の端から（戻る）は 1つ前のモード（日→週→月→年→日）、右の端から（進む）は1つ次（年→月→週→日→年）', () => {
+    expect(decidePop('edge-flick', 'calendar', 'back')).toEqual({ kind: 'ring', dir: -1 })
+    expect(decidePop('edge-flick', 'calendar', 'forward')).toEqual({ kind: 'ring', dir: 1 })
+  })
+
+  it('登録の画面: どちらへ払っても何もしない（事故を防ぐ）', () => {
+    for (const d of both) expect(decidePop('edge-flick', 'register', d)).toEqual({ kind: 'stay' })
+  })
+
+  it('詳細の画面とほかの画面: どちらへ払っても閉じる・1つ戻る', () => {
+    for (const screen of ['detail', 'other'] as ScreenKind[])
+      for (const d of both) expect(decidePop('edge-flick', screen, d)).toEqual({ kind: 'back-one' })
+  })
+})
+
+describe('Android・PC（OS の戻る・進む）', () => {
+  it('カレンダーの「戻る」はアプリを閉じるかを聞く', () => {
+    expect(decidePop('os-back', 'calendar', 'back')).toEqual({ kind: 'ask-exit' })
+  })
+
+  it('登録・詳細・ほかの画面の「戻る」は1つ戻る（登録の書きかけの確かめはルーターの所で）', () => {
+    for (const screen of ['register', 'detail', 'other'] as ScreenKind[])
+      expect(decidePop('os-back', screen, 'back')).toEqual({ kind: 'back-one' })
+  })
+
+  it('「進む」はどの画面でも何もしない', () => {
+    for (const screen of ['calendar', 'register', 'detail', 'other'] as ScreenKind[])
+      expect(decidePop('os-back', screen, 'forward')).toEqual({ kind: 'stay' })
+  })
+})

@@ -6,12 +6,16 @@
 // - 読み上げは「『件名』を完了にする」／「『件名』の完了を外す」
 // - 完了にした時だけ「『件名』を完了にしました［元に戻す］」を 6秒出す（［元に戻す］で完了を外す）。完了を外した時は出さない。
 //   詳細の中のチェック・Task List のチェックは toast={false}（その場で切り替わりが見えるため）
+// - 完了にした・外したは、元に戻す・やり直すの並びに積む（ウィークリー・デイリーの間。お知らせの［元に戻す］も同じ並びを使う。7.13）。
+//   詳細の中のチェックは積まない（詳細を開いてから閉じるまでを1つにまとめる方に入る）
 // - カード・行の「押すと詳細」には渡さない（押した出来事を止める）
 import type { CSSProperties } from 'react'
-import { doneLabel, toastText } from '../../../../domain/itemText'
+import { doneLabel, toastText, undoText } from '../../../../domain/itemText'
 import type { Item } from '../../../../domain/types'
 import { actions } from '../../../../store/actions'
-import { attempt, notify } from '../../../../store/uiStore'
+import { getData } from '../../../../store/appStore'
+import { attempt } from '../../../../store/uiStore'
+import { itemChange, notifyUndoable, recordStep, UNDO_LABEL } from '../../../../store/undoStore'
 import { DotCheckIcon } from '../../../../ui/icons'
 import { testIds } from '../testIds'
 import { stopActivationKeys } from './events'
@@ -19,8 +23,8 @@ import { cls, displayTitle } from './itemLook'
 import { LabelDot } from './LabelDot'
 import './parts.css'
 
-/** ［元に戻す］の字（3.9） */
-export const UNDO_LABEL = '元に戻す'
+/** ［元に戻す］の字（3.9。src/store/undoStore.ts の物） */
+export { UNDO_LABEL }
 
 export interface DoneToggleProps {
   item: Pick<Item, 'id' | 'title' | 'done' | 'kind' | 'label'>
@@ -36,20 +40,20 @@ export interface DoneToggleProps {
   testId?: string
 }
 
-/** 完了にする・外す。完了にした時だけ［元に戻す］付きのお知らせを出す（toast が true の時） */
-export function toggleDone(item: Pick<Item, 'id' | 'title' | 'done'>, toast = true): void {
+/**
+ * 完了にする・外す。完了にした時だけ［元に戻す］付きのお知らせを出す（toast が true の時）。undoable なら元に戻す・やり直すの並びに
+ * 積む（既定 true。詳細の中のチェックは false: 詳細を開いてから閉じるまでのまとめに入る。7.13）
+ */
+export function toggleDone(item: Pick<Item, 'id' | 'title' | 'done'>, toast = true, undoable = true): void {
   const next = !item.done
+  const before = getData().items[item.id]
   const ok = attempt(() => {
     actions.setItemDone(item.id, next)
     return true
   })
-  if (!ok || !next || !toast) return
-  notify(toastText.done(displayTitle(item)), {
-    label: UNDO_LABEL,
-    run: () => {
-      attempt(() => actions.setItemDone(item.id, false))
-    },
-  })
+  if (!ok || !undoable) return
+  const step = recordStep(undoText.done(displayTitle(item), next), [itemChange(item.id, before, getData().items[item.id])])
+  if (next && toast) notifyUndoable(toastText.done(displayTitle(item)), step)
 }
 
 export function DoneToggle({ item, look = 'ring', size = 16, hit, toast = true, className, testId }: DoneToggleProps) {

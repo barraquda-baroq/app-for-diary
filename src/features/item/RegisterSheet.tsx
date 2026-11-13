@@ -9,17 +9,21 @@
 //   終了 < 開始になる時は、その日付にはできない（最後に直した欄の決まり。AMB-ITEMS-29）
 // - ボタンは［やめる］［登録］（件名が空・空白だけの間は［登録］を押せない）。Ctrl+Enter・⌘+Enter でも登録（3.10。どの欄の中でも。
 //   打ちかけの時刻は先に決める）。登録すると 12.4 の決まりを当ててから足し（ITEMS-194）、閉じて、新しいカード（見えていれば）を
-//   1.2秒目立たせる（4.9。お知らせは出さない）
+//   1.2秒目立たせる（4.9。お知らせは出さない）。登録したことは元に戻す・やり直すの並びに積む（ウィークリー・デイリーから開いた時。
+//   戻すとゴミ箱へ、やり直すとゴミ箱から戻る。7.13）
 // - 書きかけ（件名・依頼者・メモのどれかに字がある）のまま閉じようとした時（［やめる］・［×］・Esc・背景・「戻る」）は「書きかけを捨てますか？
-//   ［捨てる］［戻る］」と確かめる。「戻る」は履歴を戻すのを止めて（useBlocker）確かめ、［戻る］なら画面を開いたままにする（D03・
+//   ［捨てる］［戻る］」と確かめる。「戻る」（Android・PC の OS の戻る）は履歴を戻すのを止めて（useBlocker）確かめ、［戻る］なら画面を
+//   開いたままにする（iPhone の端からのフリックは、アプリの履歴（src/history/appHistory.ts）がルーターに渡さずに開いたまま戻す。3.1）（D03・
 //   AMB-ITEMS-10）。閉じる（onClose = common/sheets.ts の closeSheet）のは確かめが終わってから。書きかけの間に、この画面を別の小さな
 //   画面に替える時（複製のお知らせの［開く］で詳細を開く）も、同じく止めて確かめる（［戻る］なら登録の画面と書きかけはそのまま。開発）
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, type BlockerFunction } from 'react-router-dom'
 import { editDates, editTimes } from '../../domain/itemInput'
+import { undoText } from '../../domain/itemText'
 import { actions } from '../../store/actions'
-import { useApp } from '../../store/appStore'
+import { getData, useApp } from '../../store/appStore'
 import { attempt, notifyError, useCalendarUi } from '../../store/uiStore'
+import { itemChange, recordStep } from '../../store/undoStore'
 import { choiceDialog } from '../../ui/dialogs'
 import { isSubmitShortcut, submitShortcutLabel } from '../../ui/keys'
 import { flashKey } from '../calendar/common/parts/useFlashTarget'
@@ -123,6 +127,8 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
       }),
     )
     if (id === undefined) return
+    const added = getData().items[id]
+    if (added) recordStep(undoText.registered(added.title), [itemChange(id, null, added)])
     leaving.current = true
     useCalendarUi.getState().flashTarget(flashKey.item(id))
     onClose()

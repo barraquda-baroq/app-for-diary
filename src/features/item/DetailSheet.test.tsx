@@ -13,6 +13,7 @@ import { actions } from '../../store/actions'
 import { getRaw, useApp } from '../../store/appStore'
 import { flushAllDrafts } from '../../store/draftRegistry'
 import { useToasts, type Prefs } from '../../store/uiStore'
+import { enterUndoScope, undo, useUndo } from '../../store/undoStore'
 import { renderView, setupCalendarTests } from '../../test/renderCalendar'
 import { testIds } from '../calendar/common/testIds'
 import { DetailSheet, MORE_MENU_TEST_ID } from './DetailSheet'
@@ -848,8 +849,22 @@ describe('複製・削除の入口と、重なった小さな画面（12.7・12.
   })
 
   it('カレンダーに出ていないタスク（Task List だけ）は確かめずに消し、「『件名』を削除しました［元に戻す］」。［元に戻す］でゴミ箱から戻す（ITEMS-266）', async () => {
-    const trash = vi.spyOn(actions, 'trashItem').mockResolvedValue('entry-9')
-    const restore = vi.spyOn(actions, 'restoreTrashEntry').mockResolvedValue({ restored: 1 } as never)
+    // ゴミ箱へ移す・戻すの代わり（この保存先は何も書かないので、表示のデータだけを動かす）
+    let kept: Item | null = null
+    const trash = vi.spyOn(actions, 'trashItem').mockImplementation(async (id) => {
+      act(() =>
+        useApp.setState((st) => {
+          const { [id]: gone, ...items } = st.data.items
+          kept = gone
+          return { data: { ...st.data, items, trashEntries: { ...st.data.trashEntries, 'entry-9': { id: 'entry-9' } as never } } }
+        }),
+      )
+      return 'entry-9'
+    })
+    const restore = vi.spyOn(actions, 'restoreTrashEntry').mockImplementation(async () => {
+      act(() => useApp.setState((st) => ({ data: { ...st.data, items: { ...st.data.items, t: kept! }, trashEntries: {} } })))
+      return { restored: 1 } as never
+    })
     const { user, onClose } = await open([mkTask({ id: 't', title: '見積書を出す' })])
     await user.click(byId(testIds.itemMore))
     await user.click(byId(testIds.itemDelete))
@@ -861,5 +876,60 @@ describe('複製・削除の入口と、重なった小さな画面（12.7・12.
     expect(toast.action?.label).toBe('元に戻す')
     act(() => toast.action?.run())
     await vi.waitFor(() => expect(restore).toHaveBeenCalledWith('entry-9'))
+    await vi.waitFor(() => expect(useApp.getState().data.items.t?.title).toBe('見積書を出す'))
+  })
+})
+
+describe('元に戻す・やり直す（7.13）: 開いてから閉じるまでを1つに', () => {
+  const labels = () => useUndo.getState().stack.past.map((st) => st.label)
+  /** 閉じた（部品が消えた）後、まとめを積むまで（後片付けの後） */
+  const closeSheet = async (unmount: () => void) => {
+    unmount()
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
+
+  it('件名・区分・ロックを直して閉じると1つのステップ。戻すと全部戻り、やり直すと全部直る', async () => {
+    const leave = enterUndoScope()
+    const { user, unmount } = await open([materials])
+    const title = byId(testIds.itemTitle) as HTMLTextAreaElement
+    await user.type(title, '（改）')
+    await user.click(byId(testIds.itemKind('private')))
+    await user.click(byId(testIds.itemLock))
+    await user.click(byId(testIds.itemDone))
+    expect(labels()).toEqual([])
+    await closeSheet(unmount)
+    expect(labels()).toEqual(['『資料づくり（改）』を直した'])
+    await act(async () => void (await undo()))
+    expect(useApp.getState().data.items.a).toMatchObject({ title: '資料づくり', kind: 'work', locked: false, done: false })
+    expect(useUndo.getState().stack.future).toHaveLength(1)
+    leave()
+  })
+
+  it('閉じる時にまだ保存していなかった字（止まってから 0.6秒の前）も、同じ1つに入る', async () => {
+    const leave = enterUndoScope()
+    const { user, unmount } = await open([materials])
+    await user.click(byId(MEMO_VIEW_TEST_ID).querySelector('.it-memo-text span') ?? byId(MEMO_VIEW_TEST_ID))
+    const memo = byId(testIds.itemMemo) as HTMLTextAreaElement
+    await user.type(memo, '。紙は A4')
+    await closeSheet(unmount)
+    expect(useApp.getState().data.items.a.memo).toBe('表紙を先に決める。紙は A4')
+    expect(labels()).toEqual(['『資料づくり』を直した'])
+    await act(async () => void (await undo()))
+    expect(useApp.getState().data.items.a.memo).toBe('表紙を先に決める')
+    leave()
+  })
+
+  it('何も直さずに閉じた時・ウィークリー・デイリーの外で開いた時は積まない', async () => {
+    const first = await open([materials])
+    await first.user.type(byId(testIds.itemTitle) as HTMLTextAreaElement, '（改）')
+    await closeSheet(first.unmount)
+    expect(labels()).toEqual([])
+    const leave = enterUndoScope()
+    const second = await open([materials])
+    await closeSheet(second.unmount)
+    expect(labels()).toEqual([])
+    leave()
   })
 })

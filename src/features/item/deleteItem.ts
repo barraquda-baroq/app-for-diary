@@ -3,15 +3,16 @@
 //   （それまではゴミ箱から元に戻せます）。Task List からも消えます。」（Task List に出ていない時（isInTaskList。済んで 7日を過ぎた物も
 //   出ていない）は最後の1文を出さない）。確かめて消した物はお知らせを出さない（ゴミ箱の画面は段階5）
 // - カレンダーに出ていないタスク（Task List だけ）は確かめずに消し、「『件名』を削除しました［元に戻す］」（6秒）。［元に戻す］でゴミ箱から戻す
-// どちらもゴミ箱へ移す（カレンダーと Task List の両方から消え、戻すと両方に戻る。同じ1件）。消せた時 true（確かめで［やめる］・失敗は false）
+// どちらもゴミ箱へ移す（カレンダーと Task List の両方から消え、戻すと両方に戻る。同じ1件）。消せた時 true（確かめで［やめる］・失敗は false）。
+// どちらも元に戻す・やり直すの並びに積む（ウィークリー・デイリーから開いた詳細の時。お知らせの［元に戻す］も同じ並び。7.13）
 import { isInTaskList, isOnCalendar } from '../../domain/items'
-import { toastText } from '../../domain/itemText'
+import { toastText, undoText } from '../../domain/itemText'
 import { trashNotice } from '../../domain/trash'
 import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
-import { attemptAsync, notify } from '../../store/uiStore'
+import { attemptAsync } from '../../store/uiStore'
+import { itemChange, notifyUndoable, recordStep } from '../../store/undoStore'
 import { confirmDialog } from '../../ui/dialogs'
-import { UNDO_LABEL } from '../calendar/common/parts/DoneToggle'
 import { displayTitle } from '../calendar/common/parts/itemLook'
 
 /** Task List にも出ている時に、確かめの文の終わりに足す1文（12.8・ITEMS-263・264） */
@@ -34,15 +35,17 @@ export async function deleteItem(item: Item, nowMs: number = Date.now()): Promis
       danger: true,
     })
     if (!ok) return false
-    return (await attemptAsync(() => actions.trashItem(item.id))) !== undefined
+    return (await trash(item)).ok
   }
-  const entry = await attemptAsync(() => actions.trashItem(item.id))
-  if (entry === undefined) return false
-  notify(toastText.deleted(displayTitle(item)), {
-    label: UNDO_LABEL,
-    run: () => {
-      void attemptAsync(() => actions.restoreTrashEntry(entry))
-    },
-  })
+  const r = await trash(item)
+  if (!r.ok) return false
+  notifyUndoable(toastText.deleted(displayTitle(item)), r.step)
   return true
+}
+
+/** ゴミ箱へ移して、元に戻す・やり直すの並びに積む（ok: 消せた。step: 積んだ物） */
+async function trash(item: Item) {
+  const entry = await attemptAsync(() => actions.trashItem(item.id))
+  if (entry === undefined) return { ok: false, step: null } as const
+  return { ok: true, step: recordStep(undoText.deleted(displayTitle(item)), [itemChange(item.id, item, null, entry)]) } as const
 }

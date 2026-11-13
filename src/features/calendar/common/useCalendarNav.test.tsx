@@ -1,5 +1,6 @@
-// カレンダーの行き来（docs/SPEC.md の 3.1・3.7・7.12。FRAME-014・016・071。D02・D04・D30）: 履歴に積むのはモードを替えた時だけで、
-// 同じモードの中で期間を移る（マンスリーの前後の月の日を押す）時は置き換える。デイリーへ移る時に区分を目立たせる。
+// カレンダーの行き来（docs/SPEC.md の 3.1・3.7・7.12。FRAME-014・016・071。D02・D04・D30）: カレンダーの中の行き来は、モードを替える
+// 時も、同じモードの中で期間を移る（マンスリーの前後の月の日を押す）時も、履歴に積まずに置き換える（22. の段階2の終わりの確かめ）。
+// iPhone の端からのフリックの円環（年→月→週→日→年・その逆）。デイリーへ移る時に区分を目立たせる。
 // 年の端の週から移っても年の外の行き先にならない。返す物は行き先が変わっても同じ物（押した時の今の行き先から決める）
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -33,6 +34,12 @@ function Harness() {
       <button type="button" onClick={() => nav.shift(-1)}>
         前へ
       </button>
+      <button type="button" onClick={() => nav.ring(1)}>
+        円環で次
+      </button>
+      <button type="button" onClick={() => nav.ring(-1)}>
+        円環で前
+      </button>
     </>
   )
 }
@@ -40,16 +47,16 @@ function Harness() {
 const click = (user: ReturnType<typeof userEvent.setup>, name: string) => user.click(screen.getByText(name))
 
 describe('7.12 の行き来', () => {
-  it('イヤーから月へはモードが替わるので積む（見ている日はその日）', async () => {
+  it('イヤーから月へは、モードが替わっても積まずに置き換える（見ている日はその日。3.1）', async () => {
     const user = userEvent.setup()
     const { router } = await renderView(Harness, {}, { path: '/year/2026' })
     await click(user, '12月3日の月へ')
     expect(router.state.location.pathname).toBe('/month/2026-12')
-    expect(router.state.historyAction).toBe('PUSH')
+    expect(router.state.historyAction).toBe('REPLACE')
     expect(useCalendarUi.getState().viewed).toBe('2026-12-03')
   })
 
-  it('マンスリーの前後の月の日からは、同じモードの中で期間を移るだけなので置き換える（積むのはモードを替えた時だけ。3.1・FRAME-016）', async () => {
+  it('マンスリーの前後の月の日からも置き換える（3.1・FRAME-016）', async () => {
     const user = userEvent.setup()
     const { router } = await renderView(Harness, {}, { path: '/year/2026' })
     await act(() => router.navigate('/month/2026-11'))
@@ -57,17 +64,17 @@ describe('7.12 の行き来', () => {
     expect(router.state.location.pathname).toBe('/month/2026-12')
     expect(router.state.historyAction).toBe('REPLACE')
     expect(useCalendarUi.getState().viewed).toBe('2026-12-03')
-    // 「戻る」1回で前のモードへ
+    // 「戻る」1回で、その前の履歴（ここでは、押す前に積んだイヤー）へ
     await act(() => router.navigate(-1))
     expect(router.state.location.pathname).toBe('/year/2026')
   })
 
-  it('マンスリーからデイリーへは積み、区分を渡すとその区切りと予定を目立たせる。デイリーの中で日を移る時は置き換える', async () => {
+  it('マンスリーからデイリーへも置き換え、区分を渡すとその区切りと予定を目立たせる。デイリーの中で日を移る時も置き換える', async () => {
     const user = userEvent.setup()
     const { router } = await renderView(Harness, {}, { path: '/month/2026-11' })
     await click(user, '11月12日の日へ（プライベート）')
     expect(router.state.location.pathname).toBe('/day/2026-11-12')
-    expect(router.state.historyAction).toBe('PUSH')
+    expect(router.state.historyAction).toBe('REPLACE')
     expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
     await click(user, '11月13日の日へ')
     expect(router.state.location.pathname).toBe('/day/2026-11-13')
@@ -99,6 +106,28 @@ describe('7.12 の行き来', () => {
     expect(useCalendarUi.getState().offMode).toBe(true)
     await click(user, '11月13日の日へ')
     expect(useCalendarUi.getState().offMode).toBe(false)
+  })
+})
+
+describe('iPhone の端からのフリックの円環（3.1。22. の段階2の終わりの確かめ）', () => {
+  it('次（右の端から払う「進む」）は 年→月→週→日→年、前（左の端から払う「戻る」）は 日→週→月→年→日。見ている日を保ち、置き換える', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderView(Harness, {}, { path: '/year/2026' })
+    const forward: string[] = []
+    for (let i = 0; i < 4; i++) {
+      await click(user, '円環で次')
+      forward.push(router.state.location.pathname)
+      expect(router.state.historyAction).toBe('REPLACE')
+    }
+    expect(forward).toEqual(['/month/2026-11', '/week/2026-11-08', '/day/2026-11-10', '/year/2026'])
+    const back: string[] = []
+    for (let i = 0; i < 4; i++) {
+      await click(user, '円環で前')
+      back.push(router.state.location.pathname)
+      expect(router.state.historyAction).toBe('REPLACE')
+    }
+    expect(back).toEqual(['/day/2026-11-10', '/week/2026-11-08', '/month/2026-11', '/year/2026'])
+    expect(useCalendarUi.getState().viewed).toBe('2026-11-10')
   })
 })
 

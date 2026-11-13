@@ -1,21 +1,10 @@
 // 端末とブラウザの見分け（ログインの画面の iPhone の案内と、ホーム画面に追加の手順で使う）。NS の src/features/appSettings/settingsLogic.ts の
 // detectPlatform と InstallHelp.tsx の useStandalone から（docs/SPEC.md の 2.5・2.7）。iOS のブラウザの見分け（detectIosBrowser）は DS で足した
 
-export type Platform = 'ios' | 'android' | 'desktop'
+import type { Platform } from '../../ui/device'
 
-export function detectPlatform(userAgent: string, maxTouchPoints = 0): Platform {
-  if (/iPhone|iPad|iPod/i.test(userAgent)) return 'ios'
-  // iPadOS の Safari は Mac として名乗るので、タッチ対応かどうかで見分ける
-  if (/Macintosh/i.test(userAgent) && maxTouchPoints > 1) return 'ios'
-  if (/Android/i.test(userAgent)) return 'android'
-  return 'desktop'
-}
-
-/** いまの端末 */
-export function currentPlatform(): Platform {
-  if (typeof navigator === 'undefined') return 'desktop'
-  return detectPlatform(navigator.userAgent, navigator.maxTouchPoints ?? 0)
-}
+// iPhone・iPad・Android・PC の見分けそのものは src/ui/device.ts（「戻る」「進む」の扱いと同じ1か所）
+export { currentPlatform, detectPlatform, type Platform } from '../../ui/device'
 
 /**
  * iPhone・iPad で開いているブラウザ（ログインの画面の案内の言葉に使う）。iPhone は Chrome を基準にし、Safari でも同じ

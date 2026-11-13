@@ -5,7 +5,9 @@
 //   細かい項目は後で詳細で
 // - Enter・［足す］で足した後は開いたまま（空に戻り、フォーカスも入力欄に残る）。足した予定は入力欄のすぐ上に出るので目立たせない
 // - 入力欄の外を押した時と、押さずにフォーカスが外れた時（iPhone のキーボードの上の✓（完了）・キーボードを閉じた）は、字があれば
-//   足してから閉じ、「『件名』を足しました［元に戻す］」を出す（［元に戻す］はゴミ箱へ移して書きかけに戻す）。作者が iPhone で、
+//   足してから閉じ、「『件名』を足しました［元に戻す］」を出す（［元に戻す］はゴミ箱へ移して書きかけに戻す）。どちらの足し方も、
+//   元に戻す・やり直すの並びに積む（ツールバーの元に戻すでも、ゴミ箱へ移して書きかけに戻す。やり直すとゴミ箱から戻し、戻した字が
+//   書きかけのままなら消す。7.13）。作者が iPhone で、
 //   キーボードの上の✓を押しても何も起きず（✓は入力欄からフォーカスを外すだけで、前の作りはそれを窓の切り替えと同じに扱い何も
 //   しなかった）、外を押すと閉じて字が消えたように見えた（書きかけには控えていたが、次に開くまで見えない）ことへの直し
 //   （22. の段階2の終わりの確かめ）。空の時は、どちらも足さずに閉じる。日本語の変換を決める前に外れた時も、見えている字で足す
@@ -40,6 +42,8 @@
 //   見えなくなる出来事が来ることがある。来たら決めるのをやめる。その間に押した時は、押した方で決める）
 // - 書きかけは diary-studio:draft:quick:{日付}:{区分} に控え（閉じても残し、同じ日・同じ区分で開き直すと戻る）、足したら消す。
 //   ［元に戻す］で戻した字は、同じ日・同じ区分の入力欄が空で開いていれば、そこにも出す
+// - ツールバーの元に戻す・やり直す（7.13）を押しても、開いている入力欄は閉じない（外を押したとは扱わない。フォーカスも入力欄に
+//   残る。押した時に字を足してから戻すと、戻るのが今足した物になるため）。KEEP_QUICK_ADD の印の付いた物の上で押した時
 import {
   useEffect,
   useLayoutEffect,
@@ -51,17 +55,18 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { shortDateLabel } from '../../../../domain/dates'
-import { toastText } from '../../../../domain/itemText'
+import { toastText, undoText } from '../../../../domain/itemText'
 import { ITEM_KIND_LABELS } from '../../../../domain/trash'
 import type { ID, ItemKind } from '../../../../domain/types'
 import { actions } from '../../../../store/actions'
+import { getData } from '../../../../store/appStore'
 import { quickDraftKey, readLocal, writeLocal } from '../../../../store/localDrafts'
-import { attempt, attemptAsync, notify } from '../../../../store/uiStore'
+import { attempt } from '../../../../store/uiStore'
+import { itemChange, notifyUndoable, recordStep } from '../../../../store/undoStore'
 import { CheckIcon } from '../../../../ui/icons'
 import { scrollBehavior } from '../../../../ui/motion'
 import { SWIPE_SLOP_PX } from '../swipe'
 import { testIds } from '../testIds'
-import { UNDO_LABEL } from './DoneToggle'
 import { cls } from './itemLook'
 import './parts.css'
 
@@ -111,8 +116,17 @@ export function quickAddDragStarted(): void {
   for (const fn of dragListeners) fn()
 }
 
-/** 開いているすばやく足すの、書きかけを入力欄に戻す物（書きかけの控えの名前ごと。［元に戻す］で、空で開いている欄に字を出す） */
-const openFields = new Map<string, (text: string) => void>()
+/**
+ * 開いているすばやく足すの、書きかけを入力欄に戻す・消す物（書きかけの控えの名前ごと。［元に戻す］で、空で開いている欄に字を出す。
+ * やり直すで、戻した字のままの欄を空にする）
+ */
+const openFields = new Map<string, { fill: (text: string) => void; clear: (text: string) => void }>()
+
+/**
+ * この印（data-keep-quick-add）の付いた物の上で押しても、開いているすばやく足すを閉じない（外を押したとは扱わない）。元に戻す・
+ * やり直すのボタン（7.13）。押してもフォーカスを動かさないのは、その物の側（mousedown を止める）
+ */
+export const KEEP_QUICK_ADD = 'data-keep-quick-add'
 
 /** 変換を決める Enter・変換をやめる Esc か（React の出来事は変換中かを持たないので元の出来事を見る。Safari は keyCode 229） */
 function composing(e: KeyboardEvent): boolean {
@@ -129,14 +143,23 @@ function keepFocus(e: ReactMouseEvent): void {
 }
 
 /**
- * 閉じる時に足した予定の［元に戻す］: ゴミ箱へ移し（30日は戻せる。18.5 の Claude が足した物を戻す時と同じ）、打った字を書きかけに
- * 戻す（その日・その区分に新しい書きかけが無い時だけ。次に開くと出る。同じ日・同じ区分の入力欄が空で開いていれば、そこにも出す）
+ * 足した予定を元に戻す・やり直すの並びに積む（7.13）。戻す（お知らせの［元に戻す］・ツールバーの元に戻す）とゴミ箱へ移し（30日は
+ * 戻せる。18.5 の Claude が足した物を戻す時と同じ）、打った字を書きかけに戻す（その日・その区分に新しい書きかけが無い時だけ。次に
+ * 開くと出る。同じ日・同じ区分の入力欄が空で開いていれば、そこにも出す）。やり直すとゴミ箱から戻し、戻した字が書きかけのままなら
+ * 消す（入力欄に出したままなら空にする。同じ予定を二度足さないように）
  */
-function undoAdd(id: ID, key: string, text: string): void {
-  void attemptAsync(() => actions.trashItem(id)).then((entry) => {
-    if (entry === undefined || readLocal(key)) return
-    writeLocal(key, text)
-    openFields.get(key)?.(text)
+function recordAdd(id: ID, key: string, text: string) {
+  return recordStep(undoText.added(text), [itemChange(id, null, getData().items[id])], {
+    afterUndo: () => {
+      if (readLocal(key)) return
+      writeLocal(key, text)
+      openFields.get(key)?.fill(text)
+    },
+    afterRedo: () => {
+      if (readLocal(key) !== text) return
+      writeLocal(key, null)
+      openFields.get(key)?.clear(text)
+    },
   })
 }
 
@@ -192,7 +215,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     writeLocal(key, null)
     latest.current = { ...latest.current, text: '' }
     setDraft({ key, text: '' })
-    notify(toastText.added(text.trim()), { label: UNDO_LABEL, run: () => undoAdd(id, key, text) })
+    notifyUndoable(toastText.added(text.trim()), recordAdd(id, key, text))
     return true
   }
 
@@ -218,6 +241,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     latest.current = { ...latest.current, text: '' }
     setAdded((n) => n + 1)
     writeLocal(key, null)
+    recordAdd(id, key, text)
     return true
   }
 
@@ -367,7 +391,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       // 前に変換中に押した［足す］の click は来なかった（待つのをやめる。次に押した物の click は捨てない）
       if (addPress.current?.up) addPress.current = null
       press.current = {}
-      if (box.current && e.target instanceof Node && !box.current.contains(e.target)) close('press')
+      // 元に戻す・やり直すのボタン（KEEP_QUICK_ADD）の上では閉じない
+      const keep = e.target instanceof Element && e.target.closest(`[${KEEP_QUICK_ADD}]`) !== null
+      if (box.current && e.target instanceof Node && !box.current.contains(e.target) && !keep) close('press')
     }
     const onUp = (e: PointerEvent) => {
       const a = addPress.current
@@ -472,15 +498,23 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   }, [])
 
   // ［元に戻す］で戻した字を、この入力欄が空なら出す（空でなければ、打っている字を残す）
+  // やり直すで、戻した字のままの入力欄を空にする（打ち直していれば残す）
   useEffect(() => {
-    const fill = (restored: string) => {
-      if (latest.current.text.trim() || latest.current.key !== key) return
-      latest.current = { ...latest.current, text: restored }
-      setDraft({ key, text: restored })
+    const field = {
+      fill: (restored: string) => {
+        if (latest.current.text.trim() || latest.current.key !== key) return
+        latest.current = { ...latest.current, text: restored }
+        setDraft({ key, text: restored })
+      },
+      clear: (restored: string) => {
+        if (latest.current.text !== restored || latest.current.key !== key) return
+        latest.current = { ...latest.current, text: '' }
+        setDraft({ key, text: '' })
+      },
     }
-    openFields.set(key, fill)
+    openFields.set(key, field)
     return () => {
-      if (openFields.get(key) === fill) openFields.delete(key)
+      if (openFields.get(key) === field) openFields.delete(key)
     }
   }, [key])
 

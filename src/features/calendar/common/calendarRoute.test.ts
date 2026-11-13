@@ -1,5 +1,6 @@
 // カレンダーの行き先を読む・直す決まり（docs/SPEC.md の 3.1・3.7・6.4。確かめ A2・A4。D02・D04）:
-// トップ #/ の置き換え、正しくない行き先、日曜でない週、見ている日の決め方、［‹］［›］の月末、裏から戻って6時間の今日
+// トップ #/ の置き換え、正しくない行き先、日曜でない週、見ている日の決め方、［‹］［›］の月末、裏から戻って6時間の今日、
+// 端からのフリックのモードの円環
 import { describe, expect, it } from 'vitest'
 import {
   clampToRouteYears,
@@ -10,6 +11,7 @@ import {
   resolveViewed,
   RETURN_TO_TODAY_MS,
   returnToTodayTarget,
+  ringMode,
   shiftViewed,
 } from './calendarRoute'
 
@@ -202,6 +204,32 @@ describe('shiftViewed（［‹］［›］。FRAME-063・072）', () => {
   it('年・月をまたぐ週と日', () => {
     expect(shiftViewed('week', '2026-12-30', 1)).toBe('2027-01-06')
     expect(shiftViewed('day', '2026-12-31', 1)).toBe('2027-01-01')
+  })
+})
+
+describe('ringMode（画面の端からのフリックの円環。3.1・22. の段階2の終わりの確かめ）', () => {
+  it('次（右の端から払う「進む」）は 年→月→週→日→年（日の次は年へ回る）', () => {
+    expect(ringMode('year', 1)).toBe('month')
+    expect(ringMode('month', 1)).toBe('week')
+    expect(ringMode('week', 1)).toBe('day')
+    expect(ringMode('day', 1)).toBe('year')
+  })
+
+  it('前（左の端から払う「戻る」）は 日→週→月→年→日（年の前は日へ回る）', () => {
+    expect(ringMode('day', -1)).toBe('week')
+    expect(ringMode('week', -1)).toBe('month')
+    expect(ringMode('month', -1)).toBe('year')
+    expect(ringMode('year', -1)).toBe('day')
+  })
+
+  it('4回回すと元のモードに戻る（どちら向きでも）', () => {
+    for (const start of ['year', 'month', 'week', 'day'] as const) {
+      for (const dir of [1, -1] as const) {
+        let m: typeof start | ReturnType<typeof ringMode> = start
+        for (let i = 0; i < 4; i++) m = ringMode(m, dir)
+        expect(m).toBe(start)
+      }
+    }
   })
 })
 

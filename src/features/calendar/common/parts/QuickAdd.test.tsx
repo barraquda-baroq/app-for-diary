@@ -9,6 +9,7 @@ import { actions } from '../../../../store/actions'
 import { getData } from '../../../../store/appStore'
 import { quickDraftKey, readLocal } from '../../../../store/localDrafts'
 import { useToasts } from '../../../../store/uiStore'
+import { undoIdle } from '../../../../store/undoStore'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
 import { testIds } from '../testIds'
 import { BLUR_SETTLE_MS, CLICK_WAIT_MS, COMMIT_WAIT_MS, QuickAdd, quickAddDragStarted, type QuickAddProps } from './QuickAdd'
@@ -412,13 +413,14 @@ describe('入力欄の外を押すと、字があれば足してから閉じる�
     const first = await open()
     await user.type(first.input, '見積もりの提出')
     await user.click(screen.getByTestId('outside'))
-    first.unmount()
-    // 同じ所を開き直した（書きかけは消えているので空）
-    const again = await open()
-    expect(again.input.value).toBe('')
+    // 同じ所を開き直した（別の日へ替えてから戻す。書きかけは消えているので空。データはそのまま）
+    first.setProps({ date: '2026-11-11', kind: 'work', onClose: first.onClose })
+    first.setProps({ date: '2026-11-10', kind: 'work', onClose: first.onClose })
+    const again = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+    expect(again.value).toBe('')
     await act(async () => toasts()[0].action?.run())
-    await vi.waitFor(() => expect(again.input.value).toBe('見積もりの提出'))
-    await user.type(again.input, 'を急ぐ')
+    await vi.waitFor(() => expect(again.value).toBe('見積もりの提出'))
+    await user.type(again, 'を急ぐ')
     expect(readLocal(quickDraftKey('2026-11-10', 'work'))).toBe('見積もりの提出を急ぐ')
   })
 
@@ -445,18 +447,27 @@ describe('入力欄の外を押すと、字があれば足してから閉じる�
     await user.type(input, '一件目')
     await user.click(screen.getByTestId('outside'))
     localStorage.setItem(quickDraftKey('2026-11-10', 'work'), '新しい書きかけ')
-    await act(async () => toasts()[0].action?.run())
+    await act(async () => {
+      toasts()[0].action?.run()
+      await undoIdle()
+    })
     expect(trash).toHaveBeenCalledTimes(1)
     expect(readLocal(quickDraftKey('2026-11-10', 'work'))).toBe('新しい書きかけ')
 
+    // 二件目: ゴミ箱へ移せなかった
     localStorage.clear()
+    const again = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+    await user.click(again)
+    await user.type(again, '二件目')
+    await user.click(screen.getByTestId('outside'))
     trash.mockRejectedValue(new Error('ゴミ箱へ移せない'))
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await act(async () =>
+    await act(async () => {
       toasts()
-        .find((t) => t.message === '『一件目』を足しました')
-        ?.action?.run(),
-    )
+        .find((t) => t.message === '『二件目』を足しました')
+        ?.action?.run()
+      await undoIdle()
+    })
     expect(readLocal(quickDraftKey('2026-11-10', 'work'))).toBeNull()
     expect(toasts().some((t) => t.kind === 'error')).toBe(true)
   })
