@@ -135,7 +135,8 @@ function createAppRouter() {
   setHistoryHandler('consumePop', consumeBackPress)
   // ドラッグの途中は、押し終えても落とし終えるまで、アプリから履歴を動かさない（印の履歴を作るのも後に回す）
   setHistoryHandler('dragging', dragActive)
-  // iPhone の端からのフリックの間に見える絵（3.1）: 写す時の画面をカレンダーだけにする・モードを回した直後の描く物の数
+  // iPhone の端からのフリックの間に見える絵（3.1）: 印の履歴を作る・閉じた後に「進む」の印の絵を写す時の画面がカレンダーだけか・
+  // 登録・詳細の画面を閉じる前に隠す・モードを回した直後の描く物の数と見えない描く物
   setHistoryHandler('cleanScreen', screenIsClean)
   setHistoryHandler('hideSheets', hideSheets)
   setHistoryHandler('renderWeight', renderWeight)

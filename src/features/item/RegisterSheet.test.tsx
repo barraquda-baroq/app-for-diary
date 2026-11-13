@@ -8,8 +8,10 @@ import { DATE_REFUSED } from '../../domain/itemInput'
 import { LABEL_DEFAULT_NAMES, LABEL_KEYS } from '../../domain/labels'
 import { mkItem, T0, DAY } from '../../domain/testData'
 import type { LabelName } from '../../domain/types'
+import { createAppHistory } from '../../history/appHistory'
 import { useApp } from '../../store/appStore'
 import { useCalendarUi, useToasts } from '../../store/uiStore'
+import { FakeWindow } from '../../test/fakeHistoryWindow'
 import { renderView, setupCalendarTests } from '../../test/renderCalendar'
 import { testIds } from '../calendar/common/testIds'
 import type { RegisterInit } from '../calendar/common/types'
@@ -501,6 +503,34 @@ describe('書きかけのまま閉じる時の確かめ（12.2・ITEMS-186・AMB
     await act(() => router.navigate(-1))
     await user.click(byId(DISCARD_TEST_IDS.discard))
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+
+  it('iPhone の端からのフリックで閉じる時（アプリの履歴が flickDiscard を呼んでから「戻る」を渡す）は、書きかけでも確かめずに閉じる（■27）。ふつうの「戻る」はこれまでどおり確かめる', async () => {
+    const history = createAppHistory({
+      window: new FakeWindow('#/'),
+      source: 'edge-flick',
+      armOnLeaveFail: false,
+      screenOf: () => 'other',
+    })
+    try {
+      const { user, router, unmount } = await open()
+      await act(() => router.navigate('/month/2026-11'))
+      await user.type(byId(testIds.itemTitle), '会議')
+      await act(() => router.navigate(-1))
+      expect(discardDialog()).not.toBeNull()
+      await user.click(byId(DISCARD_TEST_IDS.keep))
+      expect(router.state.location.pathname).toBe('/month/2026-11')
+      // 端からのフリック: 閉じる前に flickDiscard（書きかけを捨ててよい）、それから「戻る」
+      act(() => history.handlers.flickDiscard?.())
+      await act(() => router.navigate(-1))
+      expect(discardDialog()).toBeNull()
+      await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+      // 閉じたら外す
+      unmount()
+      expect(history.handlers.flickDiscard).toBeUndefined()
+    } finally {
+      history.dispose()
+    }
   })
 
   it('書きかけでなければ「戻る」は止めない', async () => {

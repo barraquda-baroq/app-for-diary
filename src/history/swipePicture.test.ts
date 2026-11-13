@@ -1,7 +1,6 @@
 // iPhone の端からのフリックの間に見える絵のための、画面の側の物（docs/SPEC.md の 3.1。src/history/swipePicture.ts）
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as device from '../ui/device'
-import * as appHistory from './appHistory'
 import {
   BALLAST_ID,
   hideSheets,
@@ -52,14 +51,6 @@ describe('画面がカレンダーだけか（screenIsClean）', () => {
     expect(screenIsClean()).toBe(false)
     vi.advanceTimersByTime(200)
     expect(screenIsClean()).toBe(true)
-  })
-
-  it('すばやく足すの入力欄が消えたら、アプリの履歴に、消えた画面が描かれた後に絵を写し直すかを確かめさせる（Esc・キーボードの完了で閉じた時は押し終わりが無い）', () => {
-    // 消えた時刻は作り物の時計で控える（ほかのテストの時計とずれないように）
-    vi.useFakeTimers()
-    const uncovered = vi.spyOn(appHistory, 'calendarUncovered')
-    overCalendarGone()
-    expect(uncovered).toHaveBeenCalledWith(150)
   })
 
   it('ページが見えていない時は偽', () => {

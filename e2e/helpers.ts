@@ -276,6 +276,8 @@ export interface DevHook {
   historyIdle: () => Promise<void>
   /** 今の履歴の形 */
   historyShape: () => HistoryShape | null
+  /** iPhone の端からのフリックの記録（設定で記録を取る時だけ控える。1行に1つ） */
+  swipeLog: () => string
 }
 
 /** アプリの履歴の形（src/history/appHistory.ts の HistoryShape） */
@@ -295,8 +297,10 @@ export interface HistoryShape {
   held: boolean
   /** iPhone: ブラウザが身振りの絵を出しているとみなす間（端からのフリックが来てから） */
   swipePicture: boolean
-  /** iPhone: 土台の前後の履歴の絵を写し直すのを待っている・写し直している（docs/SPEC.md の 3.1） */
-  refreshing: boolean
+  /** iPhone: 閉じた後に、土台の後ろの「進む」の印の絵を写すのを待っている・写している・その印で指を離すのを待っている（docs/SPEC.md の 3.1） */
+  recording: boolean
+  /** iPhone: 土台の後ろの履歴の絵が、まだ今のカレンダーでない */
+  forwardDirty: boolean
 }
 
 declare global {
@@ -475,8 +479,9 @@ export async function historySettled(page: Page): Promise<void> {
       page.evaluate(() => {
         const s = window.__ds.historyShape()
         const idx = (history.state as { idx?: number } | null)?.idx
-        // iPhone で土台の前後の履歴の絵を写し直すのを待っている・写し直している間も、動かしている途中（docs/SPEC.md の 3.1）
-        return Boolean(s && !s.busy && !s.refreshing && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
+        // iPhone で身振りの絵を出しているとみなす間・閉じた後に「進む」の印の絵を写すのを待っている・写している間も、動かしている
+        // 途中（docs/SPEC.md の 3.1）
+        return Boolean(s && !s.busy && !s.swipePicture && !s.recording && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
       }),
     )
     .toBe(true)

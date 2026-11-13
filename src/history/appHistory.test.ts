@@ -4,12 +4,15 @@
 // アプリは聞かずに、もう一度［戻る］で閉じる所にし（■25）、どれも土台へ戻す（ルーターには渡さない）。
 // 登録・詳細の画面・ほかの画面での扱い、ルーターの戻る（閉じる・書きかけの確かめ）、読み込み直し、アプリを閉じる。
 // 押している間・ドラッグの途中は、アプリから履歴を動かさない（印の履歴は押し終えてから作る。その間も「戻る」「進む」から戻すのは待たない。
-// 離す出来事が来ないまま残った指は、次に指を下ろした時に捨てる）。印の履歴は、スクロールの位置を戻させない
+// 離す出来事が来ないまま残った指は、次に指を下ろした時に捨てる）。印の履歴は、スクロールの位置を戻させない。
+// iPhone の身振りの絵（WebKit のまね: src/test/fakeHistoryWindow.ts）: 払いの popstate で最初に今の履歴を置き換え、popstate の中では
+// 積まない。回した後は動かない。閉じた後に1度だけ「進む」の印の絵を写す（指が下りている間は動かない）。行き先は身振りの始まりに決まる
 import type { Location } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
-import { FakeWindow } from '../test/fakeHistoryWindow'
-import { AppHistory, ARM_HOLD_MS, PRESS_STALE_MS, type LeaveResult } from './appHistory'
+import { FakeWindow, type FakeWindowOptions, type HistoryCall } from '../test/fakeHistoryWindow'
+import { AppHistory, ARM_HOLD_MS, createAppHistory, PRESS_STALE_MS, userPopSince, type LeaveResult } from './appHistory'
+import { clearSwipeLog, setSwipeLogEnabled, swipeLogText } from './swipeLog'
 import type { ExitStyle, PopSource } from './popRules'
 
 type Update = Parameters<Parameters<AppHistory['listen']>[0]>[0]
@@ -514,18 +517,29 @@ describe('iPhone（端からのフリック）', () => {
     expect(s.h.shape().busy).toBe(false)
   })
 
-  it('登録の画面: どちらへ払っても何もしない（開いたまま。後ろに「進む」の印は置かない）', async () => {
-    const s = setup('#/day/2026-11-10', 'edge-flick')
-    await arm(s)
-    s.win.navigator.userActivation.isActive = true
-    s.h.push(loc('/day/2026-11-10', register))
-    await settle(s.h)
-    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+register'])
-    s.win.userGo(-1)
-    await settle(s.h)
-    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+register'])
-    expect(s.updates).toEqual([])
-    expect(s.ring).not.toHaveBeenCalled()
+  it('登録の画面: 左右どちらへ払っても閉じる（詳細の画面と同じ。■27）。後ろに「進む」の印を置き、閉じる前に flickDiscard（書きかけの確かめを通さずに捨てる）を呼んでからルーターに渡す', async () => {
+    for (const dir of [-1, 1] as const) {
+      const s = setup('#/day/2026-11-10', 'edge-flick')
+      let seen: number | null = null
+      s.h.handlers.flickDiscard = () => {
+        seen = s.updates.length
+      }
+      await arm(s)
+      s.win.navigator.userActivation.isActive = true
+      s.h.push(loc('/day/2026-11-10', register))
+      await settle(s.h)
+      expect(s.win.describe(), `${dir}`).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+register', '[fwd]'])
+      s.win.userGo(dir)
+      await settle(s.h)
+      // 呼んだのは、ルーターに渡す前（RegisterSheet が閉じてよいと控えてから、ルーターの POP が来る）
+      expect(seen, `${dir}`).toBe(0)
+      expect(
+        s.updates.map((u) => [u.location.state, u.delta]),
+        `${dir}`,
+      ).toEqual([[null, -1]])
+      expect(s.win.index, `${dir}`).toBe(1)
+      expect(s.ring).not.toHaveBeenCalled()
+    }
   })
 
   it('詳細の画面: 左の端から（戻る）でも右の端から（進む）でも閉じる（土台へ1つ戻ってルーターに渡す。押した直後なら、後ろに残った詳細の画面の履歴は切り捨てて「進む」の印を積み直す）', async () => {
@@ -641,8 +655,8 @@ interface SwipeHooks {
  * 「モード+上に出ている物」（detail・register・quick）。描き替えは2回描いた後に描かれる（show）。モードを回すと上の物は消え、
  * ルーターが土台へ戻すと小さな画面は消える（隠した小さな画面を出し直すのは、まだ消えていない時だけ）
  */
-function setupSwipes(mode: Mode, hooks: SwipeHooks = {}): Setup {
-  const win = new FakeWindow(`#${PATHS[mode]}`, { swipes: true })
+function setupSwipes(mode: Mode, hooks: SwipeHooks = {}, options: Omit<FakeWindowOptions, 'swipes'> = {}): Setup {
+  const win = new FakeWindow(`#${PATHS[mode]}`, { swipes: true, strict: true, ...options })
   win.screen = win.painted = mode
   for (const m of Object.keys(WEIGHTS) as Mode[]) {
     win.weights[m] = WEIGHTS[m]
@@ -687,7 +701,11 @@ function setupSwipes(mode: Mode, hooks: SwipeHooks = {}): Setup {
     if ((to as Location).state && ((to as Location).state as { sheet?: unknown }).sheet) sheetOpen = true
     push(to, state)
   }
-  disposers.push(() => h.dispose())
+  disposers.push(() => {
+    h.dispose()
+    // popstate を送っている間に積んだ（WebKit が身振りの絵を3秒外さない）
+    if (win.violations.length > 0) throw new Error(win.violations.join('\n'))
+  })
   return { win, h, updates, ring, askExit }
 }
 
@@ -700,31 +718,298 @@ async function openSheet(s: Setup, kind: 'detail' | 'register') {
   await settle(s.h)
 }
 
-/** 土台の前後の履歴（「戻る」の印・土台・後ろの履歴）の絵 */
-function aroundBase(s: Setup): string[] {
-  const base = s.h.shape().base as number
-  return s.win.pictures().slice(base - 1, base + 2)
+/** 身振りの絵が消えるまで進める（長くて3秒） */
+async function untilOverlayGone(s: Setup) {
+  for (let k = 0; k < 700 && s.win.overlay; k++) await vi.advanceTimersByTimeAsync(5)
 }
 
-/**
- * すぐ続けて払う（n 回）: 身振りの絵が消えてから gap ms で次の指を下ろし（離す出来事は来ない。身振りが取る）、0.15秒後に払う。
- * 最後に落ち着くまで待つ
- */
-async function quickFlicks(s: Setup, n: number, gap: number, dir: 1 | -1 = 1) {
-  for (let i = 0; i < n; i++) {
-    await vi.advanceTimersByTimeAsync(1)
-    for (let k = 0; k < 400 && s.win.overlay; k++) await vi.advanceTimersByTimeAsync(5)
-    await vi.advanceTimersByTimeAsync(gap)
-    fire(s, pointer('pointerdown', 'touch', 1, { id: 100 + i, primary: true }))
-    fire(s, touch('touchstart', 1))
-    await vi.advanceTimersByTimeAsync(150)
-    s.win.userGo(dir)
-  }
-  await settle(s.h)
-}
+/** from 番目から後に、アプリが呼んだ履歴 */
+const callsFrom = (s: Setup, from: number): HistoryCall[] => s.win.calls.slice(from)
+
+/** 呼んだ履歴の短い名前（go は差、同じ物の置き換えは (same)） */
+const callName = (c: HistoryCall): string => (c.op === 'go' ? `go(${c.delta})` : `${c.op}${c.same ? '(same)' : ''}`)
 
 describe('iPhone の身振りの絵（端からのフリックの間に見える絵。WebKit のまね）', () => {
-  it('作者の報告3: ウィークリーで詳細を開き、右の端から閉じた後、右の端から払うたびに出る絵は閉じた詳細の画面でなく、今のモードのカレンダー（履歴は増えない）', async () => {
+  // ---------- 払った後に固まる（S2）・白（S3）・閉じた画面の絵（S0） ----------
+
+  it('詳細を左の端から払って閉じた時、払いの popstate で最初にするのは今の履歴を同じ物で置き換えること（WebKit が絵を3秒外さず固まって見えたのを直す）。popstate の中では積まない', async () => {
+    const s = setupSwipes('week')
+    await arm(s)
+    await openSheet(s, 'detail')
+    const from = s.win.calls.length
+    s.win.userGo(-1)
+    await settle(s.h)
+    const during = callsFrom(s, from).filter((c) => c.inPop)
+    expect(during[0]).toMatchObject({ op: 'replaceState', same: true })
+    expect(s.win.violations).toEqual([])
+    expect(s.win.overlayEnds[0]).toBeLessThan(1000)
+    expect(s.updates.map((u) => [u.location.state, u.delta])).toEqual([[null, -1]])
+  })
+
+  it.each([
+    ['左', -1],
+    ['右', 1],
+  ] as const)(
+    '詳細を%sの端から払って閉じた後: 押した直後なら閉じた画面の履歴は動きの間に切り捨て（popstate の後の処理で積む）、動きが終わった後に1度だけ後ろの「進む」の印へ行って戻り、その絵を今のカレンダーにする。次に右の端から払うと今のカレンダーの絵',
+    async (_side, dir) => {
+      const s = setupSwipes('week')
+      await arm(s)
+      const length = s.win.entries.length
+      await openSheet(s, 'detail')
+      s.win.userGo(dir)
+      await settle(s.h)
+      expect(s.win.violations).toEqual([])
+      expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+      expect(s.h.shape()).toMatchObject({ base: 1, cur: 1, top: 2, forwardDirty: false, recording: false })
+      expect(s.win.pictures()[2]).toBe('week')
+      expect(s.win.entries.length).toBe(length)
+      s.win.userGo(1)
+      await settle(s.h)
+      expect(s.win.slid.at(-1)).toBe('week')
+      expect(s.ring).toHaveBeenCalledWith(1)
+      expect(s.win.hazards).toEqual([])
+    },
+  )
+
+  it('押してから時間がたって（6秒）から右の端から詳細を閉じた時は、積まず（ブラウザが行き先から外すので）、動きが終わった後に閉じた画面の履歴を「進む」の印に替えて今のカレンダーの絵にする', async () => {
+    const s = setupSwipes('week')
+    await arm(s)
+    await openSheet(s, 'detail')
+    s.win.navigator.userActivation.isActive = false
+    await vi.advanceTimersByTimeAsync(6000)
+    const from = s.win.calls.length
+    s.win.userGo(1)
+    await settle(s.h)
+    expect(callsFrom(s, from).filter((c) => c.op === 'pushState')).toEqual([])
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]', '[fwd]'])
+    expect(s.win.pictures()[2]).toBe('week')
+    s.win.userGo(1)
+    await settle(s.h)
+    expect(s.win.slid.at(-1)).toBe('week')
+    expect(s.win.screen).toBe('day')
+  })
+
+  // ---------- モードを回す払い（S1） ----------
+
+  it('モードを回す払いは、払いの popstate で置き換え・土台へ戻る go・回した先の置き換えだけ。動きが終わった後も履歴を動かさない（20回）', async () => {
+    const s = setupSwipes('day')
+    await arm(s)
+    const shape = s.win.describe()
+    for (let i = 0; i < 20; i++) {
+      const dir = i % 2 === 0 ? -1 : 1
+      const from = s.win.calls.length
+      s.win.userGo(dir)
+      await settle(s.h)
+      expect(callsFrom(s, from).map(callName), `${i}`).toEqual(['replaceState(same)', `go(${-dir})`, 'replaceState'])
+    }
+    expect(s.win.describe()).toEqual(shape)
+    expect(s.win.hazards).toEqual([])
+    expect(s.win.refused).toBe(0)
+  })
+
+  it.each([1, -1] as const)(
+    'モードを回した後、すぐ次を払う（%i。0〜0.9秒後に 25ms ごと）: 行き先が消える・今いる所になることは無く、始まった払いはどれも1度だけ回し、始まらなかった払いは履歴を変えない',
+    async (dir) => {
+      for (let t = 0; t <= 900; t += 25) {
+        const s = setupSwipes('week')
+        await arm(s)
+        s.win.userGo(1)
+        await vi.advanceTimersByTimeAsync(0)
+        await vi.advanceTimersByTimeAsync(t)
+        const result = s.win.userGo(dir)
+        await settle(s.h)
+        expect(s.win.hazards, `${t}ms`).toEqual([])
+        expect(s.ring.mock.calls.length, `${t}ms`).toBe(result === 'started' ? 2 : 1)
+        expect(s.win.entries.length, `${t}ms`).toBe(3)
+        expect(s.h.shape(), `${t}ms`).toMatchObject({ cur: 1, base: 1, shownIdx: 1, busy: false, recording: false })
+        s.h.dispose()
+      }
+    },
+  )
+
+  // ---------- 身振りの始まりの blur・押している間 ----------
+
+  it('身振りの始まりにページが window の blur を受けても、指は離したとみなさない（指を下ろしている間は履歴を動かさない）', async () => {
+    const s = setupSwipes('week', {}, { focused: true, edgeTouch: true })
+    await arm(s)
+    await openSheet(s, 'detail')
+    s.win.userGo(-1)
+    await vi.advanceTimersByTimeAsync(0)
+    await untilOverlayGone(s)
+    expect(s.h.shape().forwardDirty).toBe(true)
+    // 次の身振り（右の端から）: 指を下ろし、身振りが始まると blur が来る。0.25秒で離す
+    const from = s.win.calls.length
+    expect(s.win.userGo(1, { fingerMs: 250 })).toBe('started')
+    const held: boolean[] = []
+    for (let k = 0; k < 24; k++) {
+      await vi.advanceTimersByTimeAsync(10)
+      held.push(s.h.shape().held)
+    }
+    expect(held.every(Boolean)).toBe(true)
+    expect(callsFrom(s, from)).toEqual([])
+    await settle(s.h)
+    expect(s.ring).toHaveBeenCalledWith(1)
+    expect(s.win.hazards).toEqual([])
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, forwardDirty: false, held: false })
+  })
+
+  it('ウインドウを離れた時、iPhone では指は残し（身振りの始まりの blur）、マウスなどは離したとみなす。ページが隠れた時はどれも離したとみなす', async () => {
+    const s = setupSwipes('week')
+    await arm(s)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 5, primary: true }))
+    fire(s, touch('touchstart', 1))
+    fire(s, pointer('pointerdown', 'mouse', 1))
+    s.win.dispatch('blur', new Event('blur'))
+    expect(s.h.shape().held).toBe(true)
+    fire(s, pointer('pointerup', 'touch', 0, { id: 5, primary: true }))
+    fire(s, touch('touchend', 0))
+    expect(s.h.shape().held).toBe(false)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 6, primary: true }))
+    fire(s, touch('touchstart', 1))
+    s.win.document.visibilityState = 'hidden'
+    s.win.dispatch('visibilitychange', new Event('visibilitychange'))
+    expect(s.h.shape().held).toBe(false)
+  })
+
+  it('動きが終わった時に指が下りていれば「進む」の印へは行かず、離した時（押し終えた時）に行って戻る', async () => {
+    const s = setupSwipes('week')
+    await arm(s)
+    await openSheet(s, 'detail')
+    s.win.userGo(-1)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+    expect(s.win.pictures()[2]).toBe('-')
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 7, primary: true }))
+    fire(s, touch('touchstart', 1))
+    const from = s.win.calls.length
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(callsFrom(s, from)).toEqual([])
+    expect(s.h.shape()).toMatchObject({ held: true, forwardDirty: true, recording: false })
+    const lift = s.win.calls.length
+    fire(s, pointer('pointerup', 'touch', 0, { id: 7, primary: true }))
+    fire(s, touch('touchend', 0))
+    await settle(s.h)
+    expect(callsFrom(s, lift).map(callName)).toEqual(['go(1)', 'go(-1)'])
+    expect(s.win.pictures()[2]).toBe('week')
+    expect(s.h.shape()).toMatchObject({ forwardDirty: false, recording: false })
+  })
+
+  /** 払って閉じ、動きの後に「進む」の印へ着いた時（戻る前）に指を下ろす */
+  async function parkOnForward(s: Setup): Promise<void> {
+    await arm(s)
+    await openSheet(s, 'detail')
+    s.win.userGo(-1)
+    await vi.advanceTimersByTimeAsync(0)
+    let downed = false
+    s.win.addEventListener('popstate', () => {
+      const last = s.win.calls.at(-1)
+      if (downed || s.win.index !== 2 || last?.op !== 'go' || last.delta !== 1) return
+      downed = true
+      fire(s, pointer('pointerdown', 'touch', 1, { id: 8, primary: true }))
+      fire(s, touch('touchstart', 1))
+    })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(downed).toBe(true)
+  }
+
+  it('「進む」の印へ着いた後（戻る前）に指が下りたら、そこで待つ（指を下ろしている間は動かない）。その指で左の端から払うと土台へ着き、モードを回す（履歴は動かさない）', async () => {
+    const s = setupSwipes('week')
+    await parkOnForward(s)
+    const from = s.win.calls.length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(callsFrom(s, from)).toEqual([])
+    expect(s.win.index).toBe(2)
+    expect(s.h.shape()).toMatchObject({ cur: 2, shownIdx: 1, held: true, recording: true })
+    expect(s.win.userGo(-1)).toBe('started')
+    await settle(s.h)
+    expect(s.ring).toHaveBeenCalledWith(-1)
+    expect(callsFrom(s, from).filter((c) => c.op === 'go')).toEqual([])
+    expect(s.win.index).toBe(1)
+    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, held: false, recording: false, forwardDirty: false })
+    expect(s.win.pictures()[2]).toBe('week')
+    expect(s.win.hazards).toEqual([])
+  })
+
+  it('「進む」の印で待っている時に、払わずに離した（押した）時は、土台へ戻る', async () => {
+    const s = setupSwipes('week')
+    await parkOnForward(s)
+    fire(s, pointer('pointerup', 'touch', 0, { id: 8, primary: true }))
+    fire(s, touch('touchend', 0))
+    await settle(s.h)
+    expect(s.win.index).toBe(1)
+    expect(s.ring).not.toHaveBeenCalled()
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+    expect(s.win.pictures()[2]).toBe('week')
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, recording: false, forwardDirty: false })
+  })
+
+  it.each([
+    ['go(+1) を送ってから着くまでに、左の端からの身振りが始まった', 1, -1, []],
+    ['go(+1) を送ってから着くまでに、右の端からの身振りが始まった（行き先は今いる所になる: 残る窓）', 1, 1, ['reload']],
+    ['go(+1) が着いた後に、左の端からの身振りが始まった', 0, -1, []],
+    ['go(-1) を送ってから着くまでに、左の端からの身振りが始まった（行き先は今いる所になる: 残る窓）', -1, -1, ['reload']],
+    ['go(-1) を送ってから着くまでに、右の端からの身振りを始めようとした（後ろに履歴が無く始まらない）', -1, 1, []],
+  ] as const)(
+    '「進む」の印の絵を写すのに自分で行き来する間に身振りが始まった（行き先は始まった時に決まる）: %s',
+    async (_name, at, dir, hazards) => {
+      const s = setupSwipes('week', {}, { edgeTouch: true })
+      await arm(s)
+      await openSheet(s, 'detail')
+      s.win.userGo(-1)
+      await vi.advanceTimersByTimeAsync(0)
+      const go = s.win.history.go
+      let started = false
+      // recordForward の go(+1) と、その後の go(-1)（閉じた時に積み直して戻る go(-1) は数えない）
+      let forward = false
+      vi.spyOn(s.win.history, 'go').mockImplementation((delta: number) => {
+        go(delta)
+        if (delta === 1) forward = true
+        if (!started && forward && at !== 0 && delta === at) {
+          started = true
+          expect(s.win.userGo(dir, { fingerMs: 150 })).toBe(dir === 1 && at === -1 ? 'none' : 'started')
+        }
+      })
+      if (at === 0) {
+        s.win.addEventListener('popstate', () => {
+          if (started || s.win.index !== 2) return
+          started = true
+          s.win.userGo(dir, { fingerMs: 150 })
+        })
+      }
+      await vi.advanceTimersByTimeAsync(2000)
+      await settle(s.h)
+      expect(started).toBe(true)
+      expect(s.win.hazards).toEqual(hazards)
+      if (hazards.length > 0) return
+      // 始まった身振りは、左の端からならモードを回した。どれも土台に落ち着く
+      expect(s.ring.mock.calls.map((c) => c[0])).toEqual(dir === -1 ? [-1] : [])
+      expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, busy: false, recording: false })
+      expect(s.win.index).toBe(1)
+    },
+  )
+
+  // ---------- 印の絵を作る時（開いて最初に押し終えた時） ----------
+
+  it('開いて最初に押し終えた時にカレンダーの上に物が出ていれば作らず（積まない）、カレンダーだけが描かれた後に押し終えた時に作る（印の絵はどれもカレンダー）', async () => {
+    const s = setupSwipes('week')
+    s.win.show('week+quick')
+    await settle(s.h)
+    s.win.press()
+    await settle(s.h)
+    expect(s.win.calls.filter((c) => c.op === 'pushState')).toEqual([])
+    expect(s.h.shape()).toMatchObject({ base: null, buildPending: true })
+    s.win.show('week')
+    await settle(s.h)
+    s.win.press()
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+    expect(s.win.pictures()).toEqual(['week', 'week', 'week'])
+  })
+
+  // ---------- 印の絵は写し直さない ----------
+
+  it('印の絵は作った時のカレンダーのまま（モードを回した後に写し直さない）。閉じた詳細の画面の絵は出ず、履歴は増えない', async () => {
     const s = setupSwipes('week')
     await arm(s)
     const length = s.win.entries.length
@@ -736,36 +1021,22 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       s.win.userGo(1)
       await settle(s.h)
     }
-    // 1回目（詳細を閉じた身振り）は詳細の後ろの「進む」の印の絵（開いた時のカレンダー）。その後は回すたびに、その時のモード
-    expect(s.win.slid).toEqual(['week', 'week', 'day', 'year', 'month'])
+    expect(s.win.slid).toEqual(['week', 'week', 'week', 'week', 'week'])
     expect(s.win.screen).toBe('week')
-    expect(aroundBase(s)).toEqual(['week', 'week', 'week'])
-    // 閉じた詳細の画面とその後ろの印の履歴は、閉じた時に切り捨てた（押した直後。開く前と同じ数）
     expect(s.win.entries.length).toBe(length)
     expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
-  })
-
-  it('左の端から払っても、どちらの印の絵もその時のモード（前に見ていたモード・上に出ていた物は出ない）', async () => {
-    const s = setupSwipes('day')
-    await arm(s)
-    for (let i = 0; i < 4; i++) {
-      s.win.userGo(-1)
-      await settle(s.h)
-    }
-    s.win.userGo(1)
+    s.win.userGo(-1)
     await settle(s.h)
-    expect(s.win.slid).toEqual(['day', 'week', 'month', 'year', 'day'])
-    expect(s.win.screen).toBe('year')
-    expect(aroundBase(s)).toEqual(['year', 'year', 'year'])
+    expect(s.win.slid.at(-1)).toBe('week')
   })
 
-  it('作者の報告2: 登録の画面を［×］で閉じた後、すばやく足すを開いたまま払っても、出る絵に登録の画面は無い（閉じる前に隠して描かせてから戻る）', async () => {
+  it('登録の画面を［×］で閉じた後、すばやく足すを開いたまま払っても、出る絵に登録の画面・すばやく足すは無い（閉じる前に隠して描かせてから戻る）', async () => {
     const hooks: SwipeHooks = {}
     const s = setupSwipes('week', hooks)
     await arm(s)
     await openSheet(s, 'register')
     expect(s.win.painted).toBe('week+register')
-    // ［×］（ルーターの戻る）。戻ってすぐ、すばやく足すを開いた（カレンダーだけの画面にならないので、絵は写し直せない）
+    // ［×］（ルーターの戻る）。戻ってすぐ、すばやく足すを開いた
     hooks.afterClose = () => s.win.show('week+quick')
     s.h.go(-1)
     await vi.advanceTimersByTimeAsync(20)
@@ -775,18 +1046,19 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     await settle(s.h)
     hooks.afterClose = undefined
     expect(s.win.screen).toBe('week+quick')
-    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '/week/2026-11-08+register'])
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '/week/2026-11-08+register', '[fwd]'])
     // 右の端から: すばやく足すは閉じてモードが回る。出た絵は閉じた登録の画面の履歴の絵だが、隠した後のカレンダー
     s.win.userGo(1)
     await settle(s.h)
-    expect(s.win.slid).toEqual(['week'])
-    expect(s.ring).toHaveBeenCalledWith(1)
-    expect(s.win.screen).toBe('day')
-    expect(aroundBase(s)).toEqual(['day', 'day', 'day'])
-    expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
+    s.win.userGo(1)
+    await settle(s.h)
+    expect(s.win.slid).toEqual(['week', 'week'])
+    expect(s.ring.mock.calls.map((c) => c[0])).toEqual([1, 1])
+    expect(s.win.screen).toBe('year')
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, forwardDirty: false })
   })
 
-  it('すばやく足すを開いたまま払ってモードを回した後も、次に払った時の絵はすばやく足すの無い今のモード', async () => {
+  it('すばやく足すを開いたまま払ってモードを回した後も、次に払った時の絵はすばやく足すの無いカレンダー', async () => {
     const s = setupSwipes('week')
     await arm(s)
     s.win.show('week+quick')
@@ -795,48 +1067,26 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     await settle(s.h)
     s.win.userGo(1)
     await settle(s.h)
-    expect(s.win.slid).toEqual(['week', 'day'])
-    expect(s.win.pictures().filter((p) => p.includes('+'))).toEqual([])
+    expect(s.win.slid).toEqual(['week', 'week'])
   })
 
-  it('作者の報告1: 登録の画面で左の端から払うと、ブラウザは土台の絵（カレンダー）を出してから戻り、アプリは登録の画面へ戻す（止められない。履歴は変わらない）', async () => {
-    const s = setupSwipes('week')
+  it('設定をルーターの戻るで閉じた時（隠さない画面）は、閉じた後に閉じた画面の履歴を「進む」の印に替えて、今のカレンダーの絵にする', async () => {
+    const hooks: SwipeHooks = {}
+    const s = setupSwipes('month', hooks)
     await arm(s)
-    await openSheet(s, 'register')
-    s.win.userGo(-1)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/settings'))
+    s.win.show('settings')
     await settle(s.h)
-    expect(s.win.slid).toEqual(['week'])
-    expect(s.win.describe()).toEqual(['[back]', '/week/2026-11-08', '*/week/2026-11-08+register'])
-    expect(s.updates).toEqual([])
-    // 右の端からは、後ろに履歴が無いので身振りにならない
+    hooks.afterClose = () => s.win.show('month')
+    s.h.go(-1)
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]', '[fwd]'])
+    expect(s.win.pictures()[2]).toBe('month')
     s.win.userGo(1)
     await settle(s.h)
-    expect(s.win.slid).toEqual(['week'])
-  })
-
-  it('写し直すのは押し終えてから（押している間は履歴を動かさない）。身振りに取られた指（離す出来事が来ない）は待たない', async () => {
-    const s = setupSwipes('week')
-    await arm(s)
-    // 右の端からの身振り: 指を下ろした出来事だけが来る
-    fire(s, pointer('pointerdown', 'touch', 1, { id: 5, primary: true }))
-    fire(s, touch('touchstart', 1))
-    s.win.userGo(1)
-    await settle(s.h)
-    expect(s.h.shape().held).toBe(false)
-    expect(aroundBase(s)).toEqual(['day', 'day', 'day'])
-    // 次の身振りの後、絵を写し直す前に別の指で押した: 離すまで写さない
-    s.win.userGo(1)
-    await vi.advanceTimersByTimeAsync(5)
-    fire(s, pointer('pointerdown', 'touch', 1, { id: 6, primary: true }))
-    fire(s, touch('touchstart', 1))
-    await vi.advanceTimersByTimeAsync(2000)
-    expect(s.win.screen).toBe('year')
-    expect(aroundBase(s)).toEqual(['day', 'day', 'day'])
-    expect(s.h.shape()).toMatchObject({ held: true, refreshing: false, busy: false })
-    fire(s, pointer('pointerup', 'touch', 0, { id: 6, primary: true }))
-    fire(s, touch('touchend', 0))
-    await settle(s.h)
-    expect(aroundBase(s)).toEqual(['year', 'year', 'year'])
+    expect(s.win.slid.at(-1)).toBe('month')
+    expect(s.win.screen).toBe('week')
   })
 
   it('モードを回した先の描く物が行き先の絵の半分に届かない時（イヤーから月へ）は、見えない描く物を足してすぐ絵を外させ、後で外す', async () => {
@@ -856,12 +1106,12 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     expect(placed).toEqual([expect.any(Number), 0])
     expect(WEIGHTS.month + placed[0]).toBeGreaterThan(WEIGHTS.year / 2)
     expect(s.win.ballastCount).toBe(0)
-    // 月から週（描く物が足りている）は足さない
-    const counts: number[] = []
-    s.h.handlers.ballast = (n) => counts.push(n)
+    // 月から週: 「進む」の印の絵は作った時（イヤー）のまま（写し直さない）なので、週でも半分に届かず、足す
+    placed.length = 0
     s.win.userGo(1)
     await settle(s.h)
-    expect(counts).toEqual([])
+    expect(placed).toEqual([expect.any(Number), 0])
+    expect(WEIGHTS.week + placed[0]).toBeGreaterThan(WEIGHTS.year / 2)
     expect(s.win.overlayEnds[1]).toBeLessThan(1000)
     // 日からイヤーへ戻って、イヤーから日へ（左の端から）
     s.h.handlers.ballast = (n) => {
@@ -877,24 +1127,89 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     expect(s.win.overlayEnds.every((ms) => ms < 1000)).toBe(true)
   })
 
-  it('ほかの端末（Android・PC）は写し直さない（自分で履歴を動かさない）', async () => {
+  it('行き先の絵の描く物の半分に届いていれば（日の印から週へ）、見えない描く物は足さない', async () => {
+    const s = setupSwipes('day')
+    await arm(s)
+    const counts: number[] = []
+    s.h.handlers.ballast = (n) => counts.push(n)
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(s.win.screen).toBe('week')
+    expect(counts).toEqual([])
+    expect(s.win.overlayEnds[0]).toBeLessThan(1000)
+  })
+
+  it('身振りの絵を出している間にアプリの中で回して描く物が減った時（topUpBallast。続けて払った分）は、見えない描く物を足し直す', async () => {
+    const s = setupSwipes('year')
+    await arm(s)
+    const placed: number[] = []
+    const ballast = s.h.handlers.ballast
+    s.h.handlers.ballast = (n) => {
+      placed.push(n)
+      ballast?.(n)
+    }
+    s.win.userGo(1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(placed).toHaveLength(1)
+    // 月から日へ（アプリの中で回した）
+    s.win.show('day')
+    s.h.topUpBallast()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(placed).toHaveLength(2)
+    expect(placed[1]).toBeGreaterThan(placed[0])
+    expect(WEIGHTS.day + placed[1]).toBeGreaterThanOrEqual(Math.ceil(WEIGHTS.year * 0.8))
+    // 減っていなければ足さない
+    s.h.topUpBallast()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(placed).toHaveLength(2)
+    await settle(s.h)
+    expect(placed.at(-1)).toBe(0)
+    // 絵を出していない時は何もしない
+    s.h.topUpBallast()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(placed.at(-1)).toBe(0)
+    // 回さなかった払い（詳細の画面を閉じた）の絵の間は足さない
+    await openSheet(s, 'detail')
+    s.win.userGo(-1)
+    await vi.advanceTimersByTimeAsync(0)
+    s.h.topUpBallast()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(placed.at(-1)).toBe(0)
+  })
+
+  it('ほかの端末（Android・PC）は、「戻る」「進む」が来ても今の履歴を置き換えず、閉じた後に自分で行き来しない。ウインドウを離れたら押している物は無い', async () => {
     const win = new FakeWindow('#/month/2026-11', { swipes: true })
     const s = setup('#/month/2026-11', 'os-back', { win })
     const cleanScreen = vi.fn(() => true)
     s.h.handlers.cleanScreen = cleanScreen
     await arm(s)
-    const go = vi.spyOn(win.history, 'go')
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    const from = s.win.calls.length
     s.win.userGo(-1)
     await settle(s.h)
-    expect(s.askExit).toHaveBeenCalled()
-    expect(go).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(callsFrom(s, from)).toEqual([])
+    expect(s.updates.map((u) => u.delta)).toEqual([-1])
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(s.askExit).toHaveBeenCalledTimes(1)
+    expect(callsFrom(s, from).map(callName)).toEqual(['go(1)'])
     expect(cleanScreen).not.toHaveBeenCalled()
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 4, primary: true }))
+    fire(s, touch('touchstart', 1))
+    expect(s.h.shape().held).toBe(true)
+    s.win.dispatch('blur', new Event('blur'))
+    expect(s.h.shape().held).toBe(false)
   })
 
   // ---------- 検査の直し（2回目） ----------
 
-  it('［×］で登録の画面を隠して描かせている間に左の端から払っても、閉じ終えた時にブラウザの今いる所と出している所が合う（その間に来た払いから戻すのを先に済ませる）', async () => {
+  it('［×］で登録の画面を隠して描かせている間に左の端から払うと、払いで閉じる（書きかけは聞かずに捨てる）。閉じ終えた時にブラウザの今いる所と出している所が合う', async () => {
     const s = setupSwipes('week')
+    const discard = vi.fn()
+    s.h.handlers.flickDiscard = discard
     await arm(s)
     const length = s.win.entries.length
     await openSheet(s, 'register')
@@ -904,7 +1219,8 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     await settle(s.h)
     await vi.advanceTimersByTimeAsync(5000)
     await settle(s.h)
-    expect(s.h.shape()).toMatchObject({ cur: 1, base: 1, shownIdx: 1, busy: false, refreshing: false })
+    expect(discard).toHaveBeenCalledTimes(1)
+    expect(s.h.shape()).toMatchObject({ cur: 1, base: 1, shownIdx: 1, busy: false, recording: false })
     expect(s.win.index).toBe(1)
     expect(s.win.screen).toBe('week')
     expect(s.updates.map((u) => [u.location.state, u.delta])).toEqual([[null, -1]])
@@ -942,169 +1258,38 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     expect(s.win.index).toBe(1)
   })
 
-  it('右の端から詳細の画面を閉じた時、押してから間もなければ、閉じた画面の履歴をすぐ切り捨てる: すぐ続けて払っても閉じた詳細の画面は出ない（写し直すまでは絵が無く、地の色）。少し待つと今のモードの絵', async () => {
-    const s = setupSwipes('week')
-    await arm(s)
-    const length = s.win.entries.length
-    await openSheet(s, 'detail')
-    s.win.userGo(1)
-    await vi.advanceTimersByTimeAsync(1)
-    // 閉じた身振りの絵を出している間に、詳細の画面とその後ろの印の履歴を切り捨てた（新しい「進む」の印には、まだ絵が無い）
-    await vi.advanceTimersByTimeAsync(20)
-    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
-    expect(s.win.pictures()[2]).toBe('-')
-    // 絵が消えて 0.12秒で次の指を下ろす（写し直す前）。それを4回
-    await quickFlicks(s, 4, 120)
-    expect(s.win.slid).toEqual(['week', 'none', 'none', 'none', 'none'])
-    // 少し待ってから払うと、今のモードの絵
-    const mode = modeOf(s.win.screen)
-    s.win.userGo(1)
-    await settle(s.h)
-    expect(s.win.slid.at(-1)).toBe(mode)
-    expect(s.win.entries.length).toBe(length)
-  })
-
-  it('左の端から詳細の画面を閉じた時も、押してから間もなければ、閉じた画面の履歴をすぐ切り捨てる（すぐ右の端から払っても閉じた画面は出ない）', async () => {
+  it('閉じた直後（「進む」の印の絵を写す前）に右の端から払うと、印に絵が無く地の色が動く（iPhone の限界）。閉じた詳細の画面は出ない', async () => {
     const s = setupSwipes('day')
     await arm(s)
     await openSheet(s, 'detail')
     s.win.userGo(-1)
-    await quickFlicks(s, 1, 120)
+    await vi.advanceTimersByTimeAsync(0)
+    await untilOverlayGone(s)
+    expect(s.h.shape().forwardDirty).toBe(true)
+    s.win.userGo(1)
+    await settle(s.h)
     expect(s.win.slid).toEqual(['day', 'none'])
     expect(s.win.describe()).toEqual(['[back]', '*/year/2026', '[fwd]'])
-  })
-
-  it('押してから時間がたってから右の端から詳細の画面を閉じた時（ブラウザが積んだ履歴を行き先から外すので、切り捨てられない）は、すぐ続けて払うと閉じた詳細の画面が出る（iPhone の限界）。指を離して少し待つと、今のモードの絵', async () => {
-    const s = setupSwipes('week')
-    await arm(s)
-    await openSheet(s, 'detail')
-    s.win.navigator.userActivation.isActive = false
-    s.win.userGo(1)
-    await quickFlicks(s, 2, 120)
-    expect(s.win.slid).toEqual(['week', 'week+detail', 'week+detail'])
-    expect(s.win.screen).toBe('year')
+    // その払いの動きの後に、印の絵を写した（今のモード）
+    expect(s.h.shape().forwardDirty).toBe(false)
     s.win.userGo(1)
     await settle(s.h)
     expect(s.win.slid.at(-1)).toBe('year')
-    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]', '[fwd]'])
-  })
-
-  it('閉じた直後にすばやく足すを開き、押し終わりの無い閉じ方（Esc・キーボードの完了）で閉じた時も、閉じた後に絵を写し直す（画面の側が知らせる）', async () => {
-    const s = setupSwipes('week')
-    await arm(s)
-    await openSheet(s, 'detail')
-    s.win.navigator.userActivation.isActive = false
-    s.win.userGo(1)
-    await vi.advanceTimersByTimeAsync(40)
-    s.win.show('week+quick')
-    await settle(s.h)
-    // すばやく足すを開いている間は写さない
-    expect(aroundBase(s)[2]).toBe('week+detail')
-    // Esc で閉じた（押し終わりは無い。QuickAdd が外れた時に知らせる）
-    s.win.show('week')
-    s.h.uncovered(150)
-    expect(s.h.shape().refreshing).toBe(true)
-    await settle(s.h)
-    expect(aroundBase(s)).toEqual(['week', 'week', 'week'])
-    s.win.userGo(1)
-    await settle(s.h)
-    expect(s.win.slid).toEqual(['week', 'week'])
-  })
-
-  it('写し直す時に画面がカレンダーだけでなくても（上の物が消える動きの途中など）、少し後にもう一度確かめる（決めた回数まで）', async () => {
-    const s = setupSwipes('week')
-    s.win.weights['day+menu'] = WEIGHTS.day + 20
-    s.win.weights['year+menu'] = WEIGHTS.year + 20
-    await arm(s)
-    s.win.userGo(1)
-    await vi.advanceTimersByTimeAsync(40)
-    // 回した後すぐ、上に物が出て、出来事の無いまま 0.3秒で消えた
-    s.win.show('day+menu')
-    await vi.advanceTimersByTimeAsync(300)
-    s.win.show('day')
-    await settle(s.h)
-    expect(aroundBase(s)).toEqual(['day', 'day', 'day'])
-    // 出たままなら、決めた回数で止める（動かし続けない）
-    s.win.userGo(1)
-    await vi.advanceTimersByTimeAsync(40)
-    s.win.show('year+menu')
-    await settle(s.h)
-    expect(s.h.shape()).toMatchObject({ refreshing: false, busy: false })
-    expect(aroundBase(s)).toEqual(['day', 'day', 'day'])
-  })
-
-  it('読み込み直した後も、右の端から払って土台の後ろが「進む」の印と分かったら、その絵も写し直す（払うたびにその時のモード）', async () => {
-    const s = setupSwipes('week')
-    await arm(s)
-    s.win.userGo(1)
-    await settle(s.h)
-    s.h.dispose()
-    const win = s.win
-    const h2 = new AppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf })
-    h2.handlers = {
-      ring: (dir) => {
-        const next = (dir === 1 ? RING_NEXT : RING_PREV)[modeOf(win.screen)]
-        win.show(next)
-        h2.replace(loc(PATHS[next]))
-      },
-      cleanScreen: () => !win.screen.includes('+'),
-      renderWeight: () => win.weight() - win.ballastCount,
-      ballast: (n) => {
-        win.ballastCount = n
-      },
-    }
-    h2.listen(() => {})
-    disposers.push(() => h2.dispose())
-    await settle(h2)
-    for (let i = 0; i < 4; i++) {
-      win.userGo(1)
-      await settle(h2)
-    }
-    expect(win.slid).toEqual(['week', 'day', 'year', 'month', 'week'])
-    expect(win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
-  })
-
-  it('写し直すのに自分で動いている間に利用者の払いが来た（思った所と違う所へ着いた）時は、その払いの身振りの絵の間とみなし、絵は古いままにして後で写し直す', async () => {
-    const s = setupSwipes('week')
-    await arm(s)
-    await openSheet(s, 'detail')
-    s.win.navigator.userActivation.isActive = false
-    s.win.userGo(1)
-    await vi.advanceTimersByTimeAsync(1)
-    const go = vi.spyOn(s.win.history, 'go')
-    let n = 0
-    go.mockImplementation((d: number) => {
-      n++
-      s.win.move(d)
-      // 写し直す1つ目の動き（土台の後ろへ）の直後に、利用者が右の端から払った
-      if (n === 1) {
-        s.win.overlay = false
-        s.win.userGo(1)
-      }
-    })
-    await vi.advanceTimersByTimeAsync(6000)
-    await settle(s.h)
-    go.mockRestore()
-    const shape = s.h.shape()
-    expect(shape.cur).toBe(shape.shownIdx)
-    expect(s.win.index).toBe(shape.base)
-    const mode = modeOf(s.win.screen)
-    expect(aroundBase(s)).toEqual([mode, mode, mode])
   })
 
   it.each([
     [1, '/settings'],
     [2, '/settings'],
-    [3, '/settings'],
+    [1, '/year/2026'],
     [2, '/year/2026'],
   ])(
-    '写し直すのに自分で動いている間（%i つ目の動きの直後）に # を書き換えた（%s。アドレス欄・ページの location.hash など、アプリが作っていない履歴が来た）時は、待っていた動きでなく利用者の行き先として描き（# と画面が合う）、「進む」の印に替えず、そこから動かない',
+    '「進む」の印の絵を写すのに自分で動いている間（%i つ目の動きの直後）に # を書き換えた（%s。アドレス欄・ページの location.hash など、アプリが作っていない履歴が来た）時は、待っていた動きでなく利用者の行き先として描き（# と画面が合う）、そこから動かない',
     async (at, path) => {
       const s = setupSwipes('month')
       await arm(s)
-      // 右の端から払って回した: 絵が古くなり、身振りの絵が消えた後に写し直す
-      s.win.userGo(1)
-      await vi.advanceTimersByTimeAsync(1)
+      await openSheet(s, 'detail')
+      s.win.userGo(-1)
+      await vi.advanceTimersByTimeAsync(50)
       const go = vi.spyOn(s.win.history, 'go')
       let n = 0
       go.mockImplementation((d: number) => {
@@ -1115,26 +1300,26 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       await vi.advanceTimersByTimeAsync(6000)
       await settle(s.h)
       go.mockRestore()
-      expect(n).toBeGreaterThanOrEqual(at)
+      expect(n).toBe(at)
       expect(s.win.hashPath()).toBe(path)
-      expect(s.updates.map((u) => u.location.pathname)).toEqual([path])
+      expect(s.updates.map((u) => u.location.pathname)).toEqual(['/month/2026-11', path])
       const shape = s.h.shape()
       expect(shape.cur).toBe(shape.shownIdx)
       expect(s.win.index).toBe(shape.cur)
       expect(s.win.describe()[s.win.index]).toBe(`*${path}`)
-      // カレンダーでない画面へ来た時は、写し直すのもやめた（カレンダーの時は、そこを新しい土台にして写し直す）
-      if (path === '/settings') expect(n).toBe(at)
-      else expect(shape.base).toBe(shape.cur)
+      expect(shape.recording).toBe(false)
+      if (path !== '/settings') expect(shape.base).toBe(shape.cur)
     },
   )
 
-  it.each([1, 2, 3])(
-    '写し直すのに自分で動いている間（%i つ目の動きの直後）に # を書き換え、ブラウザが待っていた動きを書き換えた所から後で行った時も、# と出している画面は合う（書き換えた所は「進む」の印に替えない）',
+  it.each([1, 2])(
+    '「進む」の印の絵を写すのに自分で動いている間（%i つ目の動きの直後）に # を書き換え、ブラウザが待っていた動きを書き換えた所から後で行った時も、# と出している画面は合う',
     async (at) => {
       const s = setupSwipes('month')
       await arm(s)
-      s.win.userGo(1)
-      await vi.advanceTimersByTimeAsync(1)
+      await openSheet(s, 'detail')
+      s.win.userGo(-1)
+      await vi.advanceTimersByTimeAsync(50)
       const go = vi.spyOn(s.win.history, 'go')
       let n = 0
       go.mockImplementation((d: number) => {
@@ -1145,7 +1330,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       await vi.advanceTimersByTimeAsync(6000)
       await settle(s.h)
       go.mockRestore()
-      expect(s.updates[0]?.location.pathname).toBe('/settings')
+      expect(s.updates[1]?.location.pathname).toBe('/settings')
       expect(s.updates.at(-1)?.location.pathname).toBe(s.win.hashPath())
       const shape = s.h.shape()
       expect(shape.cur).toBe(shape.shownIdx)
@@ -1153,6 +1338,65 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       expect(s.win.describe().filter((e) => e.endsWith('/settings'))).toHaveLength(1)
     },
   )
+})
+
+describe('端からのフリックの記録（src/history/swipeLog.ts。設定で記録を取る時だけ）', () => {
+  afterEach(() => {
+    setSwipeLogEnabled(false)
+    localStorage.clear()
+  })
+
+  it('払って閉じた時の popstate・置き換え・切り捨て・動きの後・「進む」の印へ行って戻るを、順に控える', async () => {
+    setSwipeLogEnabled(true)
+    clearSwipeLog()
+    const s = setupSwipes('week')
+    await arm(s)
+    await openSheet(s, 'detail')
+    clearSwipeLog()
+    s.win.userGo(-1)
+    await settle(s.h)
+    const kinds = swipeLogText()
+      .split('\n')
+      .map((line) => line.split(' ')[1])
+    expect(kinds.slice(0, 2)).toEqual(['guard', 'pop'])
+    for (const kind of ['drop-closed', 'raf1', 'settle', 'go', 'recorded']) expect(kinds, kind).toContain(kind)
+    expect(kinds.indexOf('drop-closed')).toBeLessThan(kinds.indexOf('settle'))
+    expect(swipeLogText()).toMatch(/ pop \{"idx":1,"from":2,"ua":true,"expect":null\}/)
+  })
+
+  it('記録を取っていない時は控えない', async () => {
+    clearSwipeLog()
+    const s = setupSwipes('week')
+    await arm(s)
+    s.win.userGo(1)
+    await settle(s.h)
+    expect(swipeLogText()).toBe('')
+  })
+})
+
+describe('利用者の「戻る」「進む」が来たか（userPopSince。src/ui/useSwipe.ts が使う）', () => {
+  it('その時刻より後に利用者の「戻る」「進む」（端からのフリック）が来たら true。アプリが自分で動いた分は数えない', async () => {
+    const win = new FakeWindow('#/week/2026-11-08', { swipes: true })
+    const h = createAppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf, now: () => Date.now() })
+    disposers.push(() => h.dispose())
+    h.listen(() => {})
+    win.press()
+    await settle(h)
+    const t0 = Date.now()
+    expect(userPopSince(t0)).toBe(false)
+    win.userGo(1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(userPopSince(t0)).toBe(true)
+    await settle(h)
+    await vi.advanceTimersByTimeAsync(10)
+    const t1 = Date.now()
+    // アプリが自分で動いた（詳細の画面の後ろに「進む」の印を置いて戻る）
+    win.navigator.userActivation.isActive = true
+    h.push(loc('/week/2026-11-08', detail))
+    await settle(h)
+    expect(win.calls.some((c) => c.op === 'go' && c.at >= t1)).toBe(true)
+    expect(userPopSince(t1)).toBe(false)
+  })
 })
 
 describe('Android・PC（OS の戻る）', () => {
@@ -1190,8 +1434,10 @@ describe('Android・PC（OS の戻る）', () => {
     expect(s.win.index).toBe(1)
   })
 
-  it('登録の画面: 「戻る」はルーターに渡し、書きかけの確かめで止めた時のルーターの戻し（go(1)）と続け（go(-1)）も渡す', async () => {
+  it('登録の画面: 「戻る」はルーターに渡し（書きかけの確かめを通す: flickDiscard は呼ばない）、書きかけの確かめで止めた時のルーターの戻し（go(1)）と続け（go(-1)）も渡す', async () => {
     const s = setup('#/day/2026-11-10', 'os-back')
+    const discard = vi.fn()
+    s.h.handlers.flickDiscard = discard
     await arm(s)
     s.h.push(loc('/day/2026-11-10', register))
     await settle(s.h)
@@ -1213,6 +1459,7 @@ describe('Android・PC（OS の戻る）', () => {
     await settle(s.h)
     expect(s.updates.map((u) => u.delta)).toEqual([-1, 1, -1])
     expect(s.win.index).toBe(1)
+    expect(discard).not.toHaveBeenCalled()
   })
 
   it('確かめのダイアログが開いている・ドラッグの途中の「戻る」は、片付けるだけ（詳細の画面を閉じない・閉じるかを聞かない）', async () => {

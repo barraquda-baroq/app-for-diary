@@ -13,6 +13,7 @@ import { registerSW } from 'virtual:pwa-register'
 import { App } from './App'
 import { holdTurnsForTest } from './features/calendar/common/pageTurnDom'
 import { historyShape, whenHistoryIdle } from './history/appHistory'
+import { swipeLogText } from './history/swipeLog'
 import { afterNextPaint, notifyAppReady } from './launch/launchHook'
 import { actions } from './store/actions'
 import { flushNow, getData, getRaw, initStore, replaceAllData, setTrashClock, startTrashPurge } from './store/appStore'
@@ -98,6 +99,8 @@ if (import.meta.env.DEV) {
      */
     historyIdle: whenHistoryIdle,
     historyShape,
+    /** iPhone の端からのフリックの記録（src/history/swipeLog.ts。設定で記録を取る時だけ控える） */
+    swipeLog: swipeLogText,
   }
 }
 

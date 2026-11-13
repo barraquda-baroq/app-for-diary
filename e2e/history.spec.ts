@@ -283,25 +283,33 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await showing(page, YEAR)
   })
 
-  test('登録の画面: 左右どちらのフリックでも閉じない（開いたまま。書きかけの確かめも出さない）', async ({ page }) => {
+  test('登録の画面: 左右どちらのフリックでも閉じ、書きかけがあっても確かめずに捨てる（詳細の画面と同じ。■27）。［やめる］は今までどおり確かめる', async ({
+    page,
+  }) => {
     await openCalendar(page, DAY)
-    await page.getByTestId('cal-add').click()
     const sheet = page.getByTestId('item-sheet')
+    const added = () =>
+      page.evaluate(() => Object.values(window.__ds.getData().items).filter((i) => i.title === '書きかけの予定').length)
+    for (const flick of [goBack, goForward]) {
+      await page.getByTestId('cal-add').click()
+      await expect(sheet).toBeVisible()
+      await page.getByTestId('item-title').fill('書きかけの予定')
+      await historySettled(page)
+      await flick(page)
+      await expect(sheet).toHaveCount(0)
+      await expect(page.getByTestId('item-discard')).toHaveCount(0)
+      await showing(page, DAY)
+      expect(await added()).toBe(0)
+    }
+    // ［やめる］は今までどおり書きかけを確かめて閉じる
+    await page.getByTestId('cal-add').click()
     await expect(sheet).toBeVisible()
     await page.getByTestId('item-title').fill('書きかけの予定')
-    await historySettled(page)
-    await goBack(page)
-    await expect(sheet).toBeVisible()
-    await goForward(page)
-    await expect(sheet).toBeVisible()
-    await expect(page.getByTestId('item-discard')).toHaveCount(0)
-    await expect(page.getByTestId('item-title')).toHaveValue('書きかけの予定')
-    await at(page, DAY)
-    // ［やめる］は今までどおり書きかけを確かめて閉じる
     await page.getByTestId('item-cancel').click()
     await page.getByTestId('item-discard').click()
     await expect(sheet).toHaveCount(0)
     await showing(page, DAY)
+    expect(await added()).toBe(0)
   })
 
   test('登録の画面の全体（背景を含む）は touch-action: pan-y pinch-zoom（左の端からの身振りを止める試し。3.1・■27）。中で押す・字を打つ・縦のスクロール・登録はそのまま。詳細の画面には付けない', async ({
@@ -971,17 +979,15 @@ test.describe('iPhone（WebKit）', { tag: ['@ios'] }, () => {
     expect(await historyLength(page)).toBe(length)
   })
 
-  test('登録の画面はフリックで閉じず、詳細の画面は左右どちらのフリックでも閉じる（■23）', async ({ page }) => {
+  test('登録・詳細の画面は、左右どちらのフリックでも閉じる（■23・■27）', async ({ page }) => {
     await openCalendar(page, DAY, { data: demoData() })
     const sheet = page.getByTestId('item-sheet')
     await page.getByTestId('cal-add').click()
     await expect(sheet).toBeVisible()
     await historySettled(page)
     await goBack(page)
-    await expect(sheet).toBeVisible()
-    await page.getByTestId('modal-close').click()
     await expect(sheet).toHaveCount(0)
-    await historySettled(page)
+    await showing(page, DAY)
     await openDetail(page, true)
     await goBack(page)
     await expect(sheet).toHaveCount(0)

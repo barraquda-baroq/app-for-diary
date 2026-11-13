@@ -485,7 +485,7 @@ test.describe('登録の画面の長さ（スマホ）', { tag: ['@s'] }, () => 
 })
 
 test.describe('登録の画面（iPhone）', { tag: ['@ios'] }, () => {
-  test('件名の欄の字は 16px 以上（iOS のズームを防ぐ）、キーボードの高さ（--kb）でシートを持ち上げる。端からのフリック（「戻る」）では閉じず、［×］で閉じる（3.1・FRAME-086・199・ITEMS-190・191・192）', async ({
+  test('件名の欄の字は 16px 以上（iOS のズームを防ぐ）、キーボードの高さ（--kb）でシートを持ち上げる。端からのフリック（「戻る」）でも［×］でも閉じる（3.1・■27・FRAME-086・199・ITEMS-190・191・192）', async ({
     page,
   }) => {
     await openCalendar(page, '/month/2026-11')
@@ -506,6 +506,8 @@ test.describe('登録の画面（iPhone）', { tag: ['@ios'] }, () => {
     expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(vh - 300)
     await page.goBack()
     await historySettled(page)
+    await expect(sheetOf(page)).toHaveCount(0)
+    await page.getByTestId('cal-add').click()
     await expect(sheetOf(page)).toBeVisible()
     await page.getByTestId('modal-close').click()
     await expect(sheetOf(page)).toHaveCount(0)

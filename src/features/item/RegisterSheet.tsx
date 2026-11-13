@@ -13,8 +13,9 @@
 //   戻すとゴミ箱へ、やり直すとゴミ箱から戻る。7.13）
 // - 書きかけ（件名・依頼者・メモのどれかに字がある）のまま閉じようとした時（［やめる］・［×］・Esc・背景・「戻る」）は「書きかけを捨てますか？
 //   ［捨てる］［戻る］」と確かめる。「戻る」（Android・PC の OS の戻る）は履歴を戻すのを止めて（useBlocker）確かめ、［戻る］なら画面を
-//   開いたままにする（iPhone の端からのフリックは、アプリの履歴（src/history/appHistory.ts）がルーターに渡さずに開いたまま戻す。3.1）（D03・
-//   AMB-ITEMS-10）。閉じる（onClose = common/sheets.ts の closeSheet）のは確かめが終わってから。書きかけの間に、この画面を別の小さな
+//   開いたままにする（D03・AMB-ITEMS-10）。iPhone・iPad の端からのフリック（左右どちら）は、詳細の画面と同じく、書きかけでも確かめずに
+//   捨てて閉じる（■27。3.1）: アプリの履歴（src/history/appHistory.ts）が、ルーターに渡す前に flickDiscard を呼ぶので、止めない。
+//   閉じる（onClose = common/sheets.ts の closeSheet）のは確かめが終わってから。書きかけの間に、この画面を別の小さな
 //   画面に替える時（複製のお知らせの［開く］で詳細を開く）も、同じく止めて確かめる（［戻る］なら登録の画面と書きかけはそのまま。開発）
 // - iPhone・iPad では、登録の画面の全体（背景を含む）に it-edge-guard を付け、横のなぞりを止める（item.css の touch-action:
 //   pan-y pinch-zoom。縦のスクロール・二本指の拡大・押す・字を打つ・字を選ぶはそのまま）。左の端からの身振り（ブラウザの「戻る」。
@@ -25,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, type BlockerFunction } from 'react-router-dom'
 import { editDates, editTimes } from '../../domain/itemInput'
 import { undoText } from '../../domain/itemText'
+import { setHistoryHandler } from '../../history/appHistory'
 import { actions } from '../../store/actions'
 import { getData, useApp } from '../../store/appStore'
 import { attempt, notifyError, useCalendarUi } from '../../store/uiStore'
@@ -170,6 +172,15 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
     [],
   )
   const blocker = useBlocker(shouldBlock)
+  // iPhone・iPad の端からのフリックで閉じる直前（アプリの履歴が呼ぶ）: 書きかけでも止めずに捨てる（■27。確かめのダイアログが出ている時の
+  // フリックは、アプリの履歴が先にその確かめだけを閉じるので、ここへは来ない）
+  useEffect(
+    () =>
+      setHistoryHandler('flickDiscard', () => {
+        leaving.current = true
+      }),
+    [],
+  )
   useEffect(() => {
     if (blocker.state !== 'blocked') return
     if (asking.current === 'back') return

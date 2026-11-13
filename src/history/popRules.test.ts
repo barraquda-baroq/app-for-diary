@@ -11,12 +11,8 @@ describe('iPhone・iPad（画面の端からのフリック）', () => {
     expect(decidePop('edge-flick', 'calendar', 'forward')).toEqual({ kind: 'ring', dir: 1 })
   })
 
-  it('登録の画面: どちらへ払っても何もしない（事故を防ぐ）', () => {
-    for (const d of both) expect(decidePop('edge-flick', 'register', d)).toEqual({ kind: 'stay' })
-  })
-
-  it('詳細の画面とほかの画面: どちらへ払っても閉じる・1つ戻る', () => {
-    for (const screen of ['detail', 'other'] as ScreenKind[])
+  it('登録・詳細の画面とほかの画面: どちらへ払っても閉じる・1つ戻る（登録の画面も詳細と同じ。書きかけは聞かずに捨てる。■27）', () => {
+    for (const screen of ['register', 'detail', 'other'] as ScreenKind[])
       for (const d of both) expect(decidePop('edge-flick', screen, d)).toEqual({ kind: 'back-one' })
   })
 })
@@ -52,6 +48,6 @@ describe('ホーム画面から開いた Android のアプリ（閉じ方 press-
 
   it('端からのフリック（iPhone）は閉じ方に関わらず今までどおり', () => {
     expect(decidePop('edge-flick', 'calendar', 'back', 'press-again')).toEqual({ kind: 'ring', dir: -1 })
-    expect(decidePop('edge-flick', 'register', 'back', 'press-again')).toEqual({ kind: 'stay' })
+    expect(decidePop('edge-flick', 'register', 'back', 'press-again')).toEqual({ kind: 'back-one' })
   })
 })
