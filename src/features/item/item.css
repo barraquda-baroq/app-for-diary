@@ -26,7 +26,8 @@
    なぞって動かす物は無い（件名・メモは折り返す欄、依頼者・時刻は1行の欄、日付・時刻の一覧・依頼者の候補の小窓は body の直下で
    この外）。WebKit は、iOS 26 の1つの道筋（UIKit が身振りを始めるかを聞く時に、身振りの見分けが「失敗」になっている時）でだけ、
    指を下ろした所の touch-action に auto・pan-x・manipulation のどれも無ければ身振りを始めない。WebKit は中でスクロールする所
-   （.modal-body）で touch-action を数え直すので、中のどの要素にも付ける。効くかは作者の iPhone で確かめる */
+   （.modal-body）で touch-action を数え直すので、中のどの要素にも付ける。効くかは作者の iPhone で確かめる（効かない見込みが高い:
+   カレンダーのなぞる所（frame.css の .cal.is-swipe と端までの帯）も同じ値で、そこからの端のフリックはモードを回している） */
 .it-edge-guard,
 .it-edge-guard * {
   touch-action: pan-y pinch-zoom;
