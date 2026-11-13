@@ -1,6 +1,7 @@
 // 落とした時にすること（docs/SPEC.md の 7.11・3.9・4.9・13.6）: 決まり（src/domain/drag.ts の dropPatch）で日付を決めて動かし、
-// 「11/12（木）へ移しました［元に戻す］」などを 6秒出し（［元に戻す］は動かす前の開始日・締め切り日・終了時刻に戻す。戻せない時は
-// その旨のエラーのお知らせ。D25）、移った先のカードを 1.2秒目立たせる（FRAME-231）。元の日（'same'）・落とせない日・取り消し
+// 「11/12（木）へ移しました［元に戻す］」などを 6秒出し（［元に戻す］は動かす前の記録に戻す。元に戻す・やり直すの並びの1つで、
+// ツールバーの元に戻すと同じ。その後ほかの所で直されていた時は「ほかの所で直されたので戻せません」。7.13・D25）、移った先のカードを
+// 1.2秒目立たせる（FRAME-231）。元の日（'same'）・落とせない日・取り消し
 // （Esc）では何もしない（並べ替えもしない。CALENDAR-094・173）。
 // 落とした後は 160ms の ease-out で収まる（FRAME-230・CALENDAR-182）:
 // - 動かした時: カードは React が元の列から外して移った先の列に描き直すので、dnd-kit の落とす時の動き（浮いた物が元の場所へ戻る）は
@@ -12,10 +13,13 @@
 // のは週・段の中のスクロールだけで、ページは動かさない（WP11s の G4）。目立たせる枠は flashInPlace で置き、目立つ側は動かさない
 // （出すのは WeekDnd の1か所だけ）
 import { dropPatch, dropToast } from '../../../../domain/drag'
+import { undoText } from '../../../../domain/itemText'
 import { actions } from '../../../../store/actions'
-import { attempt, notify, useCalendarUi } from '../../../../store/uiStore'
+import { getData } from '../../../../store/appStore'
+import { attempt, useCalendarUi } from '../../../../store/uiStore'
+import { itemChange, notifyUndoable, recordStep } from '../../../../store/undoStore'
 import { prefersReducedMotion } from '../../../../ui/motion'
-import { flashKey, UNDO_LABEL } from '../../common/parts'
+import { displayTitle, flashKey } from '../../common/parts'
 import type { DragData, DropData } from './types'
 
 /** 落とした後に収まる時間（ms。src/styles.css の --dur-settle と同じ） */
@@ -33,17 +37,14 @@ export function applyDrop(data: DragData, target: DropData): boolean {
   const { item, handle, week } = data
   const patch = dropPatch(item, handle, target, week)
   if (patch === null || patch === 'same') return false
+  const before = getData().items[item.id]
   const prev = attempt(() => actions.moveItemDates(item.id, patch))
   if (prev === undefined) return false
+  const step = recordStep(undoText.moved(displayTitle(item)), [itemChange(item.id, before, getData().items[item.id])])
   // 目立たせるだけ（見える所へ出すのは WeekDnd が、動かした物（カード・始点のカード・●）を。目立つのはその予定のカード・始点の
   // カード・受けた表示で、●を動かした時は●と違う物なので、そちらへ送ると●が画面の外へ外れる）
   useCalendarUi.getState().flashInPlace(flashKey.item(item.id))
-  notify(dropToast(item, handle, patch), {
-    label: UNDO_LABEL,
-    run: () => {
-      attempt(() => actions.restoreItemDates(item.id, prev))
-    },
-  })
+  notifyUndoable(dropToast(item, handle, patch), step)
   return true
 }
 

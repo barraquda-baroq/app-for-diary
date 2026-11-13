@@ -7,9 +7,11 @@
 // 今の週のスクロールする要素は WeekScrollerContext で WeekDnd に渡す（端の自動のスクロールと、左右の端を測る。weekScroller.ts）。
 // 見出し → デイリー・休みのチェック・「＋」→ すばやく足すは useWeekActions（weekActions.ts）。S・M の指で横になぞると前後の週へ
 // （ほかのモードと同じ。22. の段階2の終わりの確かめ。画面の枠 common/CalendarView の useSwipe。カードは長押ししてから動かすと掴み、
-// すぐ横へ払うとなぞる。すばやく足すで文字を打っている間・ドラッグ中はなぞっても移らない）
-import { useCallback, useMemo, useRef, type RefObject } from 'react'
+// すぐ横へ払うとなぞる。すばやく足すで文字を打っている間・ドラッグ中はなぞっても移らない）。
+// 出している間は、予定を変える操作を元に戻す・やり直すの並びに積む（enterUndoScope。7.13）
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
 import { addDaysYmd, weekStartOf } from '../../../domain/dates'
+import { enterUndoScope } from '../../../store/undoStore'
 import { useCalendarData } from '../common/parts'
 import type { ViewProps } from '../common/types'
 import { WeekDnd, type WeekCtx } from './dnd'
@@ -24,6 +26,7 @@ export function WeekView({ viewed, today, width, area }: ViewProps) {
   const sunday = weekStartOf(viewed)
   const week = useMemo<WeekCtx>(() => ({ from: sunday, to: addDaysYmd(sunday, 6) }), [sunday])
   const scroller = useRef<HTMLDivElement>(null)
+  useEffect(() => enterUndoScope(), [])
   const renderWeek = useCallback(
     (w: WeekCtx, frozen: boolean) => (
       <WeekBody sunday={w.from} today={today} width={width} area={area} scroller={frozen ? null : scroller} />

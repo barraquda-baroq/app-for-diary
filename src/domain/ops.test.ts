@@ -14,6 +14,7 @@ import {
   duplicateItem,
   moveItemDates,
   reorder,
+  restoreItemContent,
   restoreItemDates,
   setItemDone,
   setLabelName,
@@ -469,5 +470,39 @@ describe('日が過ぎても完了していない予定（12.4・ITEMS-238）', 
     const overdue = mkItem({ start: '2026-10-01', due: '2026-10-03' })
     const data = dataWith({ items: [overdue] })
     expect(repairData(data).data.items.i1).toBe(overdue)
+  })
+})
+
+describe('元に戻す・やり直すで中身を前・後の記録の値にする（restoreItemContent。7.13）', () => {
+  const cur = mkItem({ title: '会議', start: '2026-11-10', startTime: '10:00', by: 'connector', ai: 'claude', via: 'メール' })
+  const data = dataWith({ items: [cur] })
+
+  it('中身の項目（件名・日付・時刻・完了の3つ・ロック・ラベル・メモなど）を写し、出どころ・作った日時・並びは変えない。直した日時は今', () => {
+    const target: Item = {
+      ...cur,
+      title: '定例会議',
+      start: '2026-11-12',
+      done: true,
+      doneAt: T0 + 1,
+      doneOn: '2026-11-10',
+      locked: true,
+      memo: 'm',
+      by: 'user',
+      createdAt: 1,
+      order: 2,
+    }
+    const back = restoreItemContent(data, 'i1', target, T0 + 9).items.i1
+    expect(back).toMatchObject({ title: '定例会議', start: '2026-11-12', done: true, doneAt: T0 + 1, locked: true, memo: 'm' })
+    expect(back).toMatchObject({ by: 'connector', ai: 'claude', via: 'メール', createdAt: cur.createdAt, order: cur.order })
+    expect(back.updatedAt).toBe(T0 + 9)
+  })
+
+  it('同じ中身なら何もしない（同じデータを返す）', () => {
+    expect(restoreItemContent(data, 'i1', { ...cur, updatedAt: 5 })).toBe(data)
+  })
+
+  it('予定が無い・その値にすると決まりに合わない時は UNDO_REFUSED', () => {
+    expect(() => restoreItemContent(data, 'zz', cur)).toThrow(UNDO_REFUSED)
+    expect(() => restoreItemContent(data, 'i1', { ...cur, endTime: '09:00' })).toThrow(UNDO_REFUSED)
   })
 })

@@ -9,6 +9,7 @@ import { mkItem, mkTask } from '../../../../domain/testData'
 import type { Item } from '../../../../domain/types'
 import { quickDraftKey, readLocal } from '../../../../store/localDrafts'
 import { useCalendarUi, useToasts } from '../../../../store/uiStore'
+import { UNDO_CONFLICT, undoIdle } from '../../../../store/undoStore'
 import { renderView, setupCalendarTests, viewProps } from '../../../../test/renderCalendar'
 import { testIds } from '../../common/testIds'
 import type { ViewProps } from '../../common/types'
@@ -418,11 +419,11 @@ describe('落とした時（applyDrop。7.11・3.9・FRAME-231）', () => {
       const { one: _gone, ...rest } = getData().items
       await replaceAllData({ ...getData(), items: rest })
     })
-    await act(async () => toast.action!.run())
-    expect(useToasts.getState().toasts.at(-1)).toMatchObject({
-      kind: 'error',
-      message: '元に戻せませんでした（予定が見つからないか、今の内容に合いません）',
+    await act(async () => {
+      toast.action!.run()
+      await undoIdle()
     })
+    expect(useToasts.getState().toasts.at(-1)).toMatchObject({ kind: 'error', message: UNDO_CONFLICT })
   })
 })
 

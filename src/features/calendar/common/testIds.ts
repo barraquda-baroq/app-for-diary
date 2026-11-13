@@ -19,6 +19,9 @@ export const testIds = {
   calOff: 'cal-off',
   calAdd: 'cal-add',
   calTaskView: 'cal-taskview',
+  /** 元に戻す・やり直す（週・日だけ。7.13） */
+  calUndo: 'cal-undo',
+  calRedo: 'cal-redo',
 
   // ----- モードの画面（中身ができるまでの仮の画面も同じ名前） -----
   view: (mode: CalendarMode) => `view-${mode}`,

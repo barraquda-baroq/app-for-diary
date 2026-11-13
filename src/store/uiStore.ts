@@ -207,7 +207,8 @@ const TOAST_MAX = 3
 
 interface ToastState {
   toasts: Toast[]
-  push: (kind: Toast['kind'], message: string, action?: ToastAction) => void
+  /** 出す（戻り値はお知らせの番号。dismiss で消せる） */
+  push: (kind: Toast['kind'], message: string, action?: ToastAction) => number
   dismiss: (id: number) => void
 }
 
@@ -219,12 +220,14 @@ export const useToasts = create<ToastState>((set, get) => ({
     const id = ++toastSeq
     set({ toasts: [...get().toasts.slice(-(TOAST_MAX - 1)), { id, kind, message, action }] })
     setTimeout(() => get().dismiss(id), kind === 'error' || action ? TOAST_MS.long : TOAST_MS.info)
+    return id
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }))
 
-export function notify(message: string, action?: ToastAction): void {
-  useToasts.getState().push('info', message, action)
+/** お知らせを出す（戻り値はお知らせの番号。元に戻す・やり直すのボタンで戻した時に、そのお知らせを消すのに使う） */
+export function notify(message: string, action?: ToastAction): number {
+  return useToasts.getState().push('info', message, action)
 }
 
 export function notifyError(message: string): void {

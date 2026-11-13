@@ -64,6 +64,8 @@ export const actions = {
   moveItemDates: (id: ID, p: DatePatch) => run((d) => O.moveItemDates(d, id, p)),
   /** ドラッグの［元に戻す］（開始日・締め切り日・終了時刻だけ。戻せない時は DomainError の O.UNDO_REFUSED。D25） */
   restoreItemDates: (id: ID, prev: O.ItemDates) => apply((d) => O.restoreItemDates(d, id, prev)),
+  /** 元に戻す・やり直す（7.13）: 予定の中身を前・後の記録の値にする（src/store/undoStore.ts から。戻せない時は O.UNDO_REFUSED） */
+  restoreItemContent: (id: ID, target: Item) => apply((d) => O.restoreItemContent(d, id, target)),
   /** 複製する（12.7。日付は複製する日を選ぶ小さな画面で決めた値）。戻り値は新しい id（［開く］で詳細へ） */
   duplicateItem: (id: ID, dates: { start: string | null; due: string | null }) => duplicate(id, dates),
 

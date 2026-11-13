@@ -36,6 +36,9 @@ describe('線のアイコン', () => {
       'CloudOffIcon',
       // Claude からの提案の印（段階2で形だけ足す。使うのは段階5。確かめ A20）
       'ProposalIcon',
+      // ウィークリー・デイリーの元に戻す・やり直す（7.13）
+      'UndoIcon',
+      'RedoIcon',
     ]) {
       expect(names, name).toContain(name)
     }

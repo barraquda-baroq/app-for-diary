@@ -65,11 +65,18 @@ export const TrashIcon = (p: IconProps) => (
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
   </Svg>
 )
-/** 元に戻す（ゴミ箱から戻す） */
+/** 元に戻す（ゴミ箱から戻す・カレンダーの操作の列の元に戻す。左へ返る曲がった矢印） */
 export const UndoIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M9 14 4 9l5-5" />
     <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Svg>
+)
+/** やり直す（カレンダーの操作の列。元に戻すの左右を返した、右へ進む曲がった矢印） */
+export const RedoIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
   </Svg>
 )
 export const EditIcon = (p: IconProps) => (

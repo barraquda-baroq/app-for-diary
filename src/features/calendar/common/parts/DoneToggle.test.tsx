@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { mkItem, T0 } from '../../../../domain/testData'
 import type { ID, Item } from '../../../../domain/types'
 import { getData, useApp } from '../../../../store/appStore'
-import { actions } from '../../../../store/actions'
 import { useToasts } from '../../../../store/uiStore'
+import { enterUndoScope, UNDO_CONFLICT, undoIdle, useUndo } from '../../../../store/undoStore'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
 import { testIds } from '../testIds'
 import { DoneToggle, type DoneToggleProps } from './DoneToggle'
@@ -91,12 +91,44 @@ describe('お知らせ（FRAME-091・095・CALENDAR-147・ITEMS-244・245）', (
     expect(toastTexts()).toEqual(['『経費の精算』を完了にしました'])
     const toast = screen.getByText('『経費の精算』を完了にしました').closest('.toast') as HTMLElement
     expect(useToasts.getState().toasts[0].action?.label).toBe('元に戻す')
-    const spy = vi.spyOn(actions, 'setItemDone')
     await user.click(within(toast).getByRole('button', { name: '元に戻す' }))
-    expect(spy).toHaveBeenCalledWith('a', false)
-    spy.mockRestore()
-    expect(getData().items.a.done).toBe(false)
+    await act(async () => void (await undoIdle()))
+    expect(getData().items.a).toMatchObject({ done: false, doneAt: null, doneOn: null })
     expect(toastTexts()).toEqual([])
+  })
+
+  it('完了にした・外したは元に戻す・やり直すの並びに積み、お知らせの［元に戻す］はその1つを戻す（7.13）', async () => {
+    const leave = enterUndoScope()
+    const user = userEvent.setup()
+    const { button } = await renderCard(mkItem({ id: 'a', title: '経費の精算' }))
+    await user.click(button)
+    await user.click(button)
+    expect(useUndo.getState().stack.past.map((s) => s.label)).toEqual([
+      '『経費の精算』を完了にした',
+      '『経費の精算』の完了を外した',
+    ])
+    await user.click(button)
+    // 3回目の完了のお知らせ（1回目の物も残っている）
+    const toast = screen.getAllByText('『経費の精算』を完了にしました').at(-1)!.closest('.toast') as HTMLElement
+    await user.click(within(toast).getByRole('button', { name: '元に戻す' }))
+    await act(async () => void (await undoIdle()))
+    expect(getData().items.a.done).toBe(false)
+    expect(useUndo.getState().stack.past).toHaveLength(2)
+    expect(useUndo.getState().stack.future.map((s) => s.label)).toEqual(['『経費の精算』を完了にした'])
+    leave()
+  })
+
+  it('toast={false} でも並びには積む。詳細の中のチェック（undoable: false）は積まない', async () => {
+    const leave = enterUndoScope()
+    const user = userEvent.setup()
+    const { button } = await renderCard(mkItem({ id: 'a', title: '経費の精算' }), { toast: false })
+    await user.click(button)
+    expect(useUndo.getState().stack.past).toHaveLength(1)
+    const { toggleDone } = await import('./DoneToggle')
+    act(() => toggleDone(getData().items.a, false, false))
+    expect(getData().items.a.done).toBe(false)
+    expect(useUndo.getState().stack.past).toHaveLength(1)
+    leave()
   })
 
   it('完了を外した時は出さない', async () => {
@@ -130,12 +162,13 @@ describe('お知らせ（FRAME-091・095・CALENDAR-147・ITEMS-244・245）', (
     // ほかの端末で消された（表示のデータから無くなった）
     act(() => useApp.setState((s) => ({ data: { ...s.data, items: {} } })))
     act(() => undo?.run())
+    await act(async () => void (await undoIdle()))
     expect(
       useToasts
         .getState()
         .toasts.filter((t) => t.kind === 'error')
         .map((t) => t.message),
-    ).toEqual(['予定が見つかりません。'])
+    ).toEqual([UNDO_CONFLICT])
   })
 })
 

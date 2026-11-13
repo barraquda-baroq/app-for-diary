@@ -205,6 +205,45 @@ export function restoreItemDates(data: AppData, id: ID, prev: ItemDates, at: num
   return transact(data, (tx) => tx.put('items', next)).data
 }
 
+/** 元に戻す・やり直すで、記録まるごとの前・後の値に戻す項目（生まれ・id・作った日時・出どころ・並びは変えない。7.13） */
+export const RESTORED_ITEM_FIELDS = [
+  'kind',
+  'title',
+  'start',
+  'due',
+  'startTime',
+  'endTime',
+  'listed',
+  'done',
+  'doneAt',
+  'doneOn',
+  'locked',
+  'label',
+  'requester',
+  'memo',
+] as const satisfies readonly (keyof Item)[]
+
+/**
+ * 元に戻す・やり直す（7.13）: 予定の中身（RESTORED_ITEM_FIELDS）を target の値にする（違う項目だけを書く。直した日時は今）。
+ * 予定が無い時・その値にすると決まりに合わない時は UNDO_REFUSED。ロック中でも書く（ロックしたこと自体も戻す物の1つ）。
+ * 戻してよいか（ほかの所で直されていないか）は、呼ぶ前に src/domain/undo.ts の conflictOf で確かめる
+ */
+export function restoreItemContent(data: AppData, id: ID, target: Item, at: number = now()): AppData {
+  const cur = data.items[id]
+  if (!cur) throw new DomainError(UNDO_REFUSED)
+  const next: Item = { ...cur }
+  let changed = false
+  for (const k of RESTORED_ITEM_FIELDS) {
+    if (cur[k] === target[k]) continue
+    Object.assign(next, { [k]: target[k] })
+    changed = true
+  }
+  if (!changed) return data
+  next.updatedAt = at
+  if (itemProblems(next).length > 0) throw new DomainError(UNDO_REFUSED)
+  return transact(data, (tx) => tx.put('items', next)).data
+}
+
 /**
  * 複製する（12.7）。新しい項目に、件名・区分・ラベル・依頼者・開始時刻・終了時刻・ロック・メモと、生まれ（origin）・Task List に出すか
  * （listed）を写す。写さない物: 日付（dates にする）・完了（未完了）・作った日時（今）・by／ai／via（手で作った物）・知らない項目。
