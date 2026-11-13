@@ -34,6 +34,8 @@ export interface ModalProps {
   titleIcon?: ReactNode
   /** 題の列の［×］の読み上げ（既定「閉じる」。アプリを閉じるかの確かめでは、［閉じる］のボタンと分けて「キャンセル」） */
   closeLabel?: string
+  /** 背景（.modal-backdrop。小さな画面の全体を包む）に足すクラス（iPhone・iPad の登録の画面の it-edge-guard など） */
+  backdropClassName?: string
 }
 
 /** 開いているモーダルの重なり（いちばん上だけが Esc と Tab を扱う） */
@@ -77,6 +79,7 @@ export function Modal({
   dataLabel,
   titleIcon,
   closeLabel = '閉じる',
+  backdropClassName,
 }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -145,7 +148,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="modal-backdrop"
+      className={['modal-backdrop', backdropClassName].filter(Boolean).join(' ')}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}

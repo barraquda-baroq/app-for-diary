@@ -304,6 +304,97 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await showing(page, DAY)
   })
 
+  test('登録の画面の全体（背景を含む）は touch-action: pan-y pinch-zoom（左の端からの身振りを止める試し。3.1・■27）。中で押す・字を打つ・縦のスクロール・登録はそのまま。詳細の画面には付けない', async ({
+    page,
+  }) => {
+    // 中で縦にスクロールするように、背を低くする
+    await page.setViewportSize({ width: 390, height: 600 })
+    await openCalendar(page, DAY, { data: demoData() })
+    await page.getByTestId('cal-add').tap()
+    const sheet = page.getByTestId('item-sheet')
+    await expect(sheet).toBeVisible()
+    const guard = page.locator('.modal-backdrop.it-edge-guard')
+    await expect(guard).toHaveCount(1)
+    await expect(guard.getByTestId('item-sheet')).toHaveCount(1)
+    const touchAction = (testId: string | null, selector = '') =>
+      page.evaluate(
+        ({ testId, selector }) => {
+          const el = testId
+            ? document.querySelector(`[data-testid="${testId}"]`)
+            : document.querySelector(`.modal-backdrop.it-edge-guard${selector}`)
+          return el ? getComputedStyle(el).touchAction : null
+        },
+        { testId, selector },
+      )
+    expect(await touchAction(null)).toBe('pan-y pinch-zoom')
+    for (const id of ['item-sheet', 'item-title', 'item-requester', 'item-memo', 'item-register'])
+      expect(await touchAction(id), id).toBe('pan-y pinch-zoom')
+    expect(await touchAction(null, ' .modal-body')).toBe('pan-y pinch-zoom')
+    // 中に横になぞって動かす物が無い（横にスクロールする所・はみ出した中身が無い）
+    const sideways = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>('.modal-backdrop.it-edge-guard *')]
+        .filter((el) => {
+          const x = getComputedStyle(el).overflowX
+          return (x === 'auto' || x === 'scroll') && el.scrollWidth > el.clientWidth + 1
+        })
+        .map((el) => el.dataset.testid ?? el.className),
+    )
+    expect(sideways).toEqual([])
+    // 押す・字を打つ
+    const title = page.getByTestId('item-title')
+    await title.tap()
+    await expect(title).toBeFocused()
+    await page.keyboard.type('試しの予定')
+    await expect(title).toHaveValue('試しの予定')
+    await page.getByTestId('item-kind-private').tap()
+    await expect(sheet).toHaveAttribute('data-kind', 'private')
+    const requester = page.getByTestId('item-requester')
+    await requester.tap()
+    await expect(requester).toBeFocused()
+    await page.keyboard.type('総務')
+    await expect(requester).toHaveValue('総務')
+    // 縦のスクロール（指でなぞる）
+    const body = sheet.locator('.modal-body')
+    const scrollTop = () => body.evaluate((el) => el.scrollTop)
+    const room = await body.evaluate((el) => el.scrollHeight - el.clientHeight)
+    expect(room).toBeGreaterThan(40)
+    // 欄を押した時に、その欄が見える所まで送られていることがあるので、いちばん上から
+    await body.evaluate((el) => el.scrollTo({ top: 0 }))
+    expect(await scrollTop()).toBe(0)
+    const box = await body.boundingBox()
+    if (!box) throw new Error('登録の画面の中身が見えていません')
+    await touchSwipe(page, { x: box.x + box.width / 2, y: box.y + box.height * 0.7 }, 0, -Math.min(200, box.height * 0.5), {
+      steps: 10,
+      durationMs: 300,
+    })
+    await expect.poll(scrollTop).toBeGreaterThan(20)
+    // 払った惰性のスクロールが止まるまで待つ（動いている間に押すと、ブラウザはスクロールを止めるだけで押したことにしない）
+    let last = -1
+    await expect
+      .poll(async () => {
+        const now = await scrollTop()
+        const still = now === last
+        last = now
+        return still
+      })
+      .toBe(true)
+    // 登録できる（閉じる）
+    await page.getByTestId('item-register').tap()
+    await expect(sheet).toHaveCount(0)
+    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
+    expect(
+      await page.evaluate(() =>
+        Object.values(window.__ds.getData().items).some((i) => i.title === '試しの予定' && i.requester === '総務'),
+      ),
+    ).toBe(true)
+    // 詳細の画面には付けない（端からのフリックで閉じる。■23）
+    await historySettled(page)
+    await openDetail(page, true)
+    await expect(page.locator('.modal-backdrop')).toHaveCount(1)
+    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
+    expect(await touchAction('item-sheet')).toBe('auto')
+  })
+
   test('詳細の画面: 左の端からでも右の端からでも閉じ（モード・期間はそのまま）、［×］でも閉じる。閉じた後に払うとモードを回す（開き直さない）', async ({
     page,
   }) => {
@@ -509,6 +600,17 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     await expect(armedToast(page)).toBeVisible({ timeout: 800 })
     await historySettled(page)
     expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
+  })
+
+  test('登録の画面の左の端からの身振りを止める試し（touch-action。3.1・■27）は iPhone・iPad だけ: Android の登録の画面には付けない', async ({
+    page,
+  }) => {
+    await openCalendar(page, DAY)
+    await page.getByTestId('cal-add').tap()
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await expect(page.locator('.modal-backdrop')).toHaveCount(1)
+    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
+    expect(await page.getByTestId('item-sheet').evaluate((el) => getComputedStyle(el).touchAction)).toBe('auto')
   })
 
   test('前に履歴が無いタブの［閉じる］の後の「もう一度［戻る］を押すと閉じます」の所で予定を長押しで掴むと、掴む前に元の所へ戻り（■25 の所と同じ）、掴んでいる間の「戻る」は何もしない', async ({

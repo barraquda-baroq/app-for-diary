@@ -523,3 +523,70 @@ describe('書きかけのまま閉じる時の確かめ（12.2・ITEMS-186・AMB
     expect(discardDialog()).toBeNull()
   })
 })
+
+// iPhone・iPad の、登録の画面での左の端からの身振り（ページが動く絵）を止める試し（docs/SPEC.md の 3.1。22. の ■27）: 登録の画面の
+// 全体（背景を含む）に it-edge-guard を付け、CSS で touch-action: pan-y pinch-zoom にする。iPhone・iPad だけ（src/ui/device.ts）で、
+// ほかの端末・ほかの小さな画面（詳細の画面・書きかけの確かめ）には付けない。効くかは作者の iPhone で確かめる
+describe('iPhone・iPad の左の端からの身振りを止める試し（3.1・■27）', () => {
+  const IPHONE_UA =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
+  const ANDROID_UA =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36'
+  const backdrop = () => sheet().closest('.modal-backdrop')
+
+  function withUserAgent(ua: string) {
+    const original = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent')
+    Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true })
+    return () => {
+      if (original) Object.defineProperty(window.navigator, 'userAgent', original)
+      else delete (window.navigator as { userAgent?: string }).userAgent
+    }
+  }
+
+  it('iPhone では登録の画面の全体（背景）に it-edge-guard を付ける。書きかけの確かめ（別の小さな画面）には付けない', async () => {
+    const restore = withUserAgent(IPHONE_UA)
+    try {
+      const { user } = await open()
+      expect(backdrop()?.classList.contains('it-edge-guard')).toBe(true)
+      // 登録の画面の中の物は、どれもその下にある（CSS の .it-edge-guard * が当たる）
+      expect(backdrop()?.contains(byId(testIds.itemTitle))).toBe(true)
+      await user.type(byId(testIds.itemTitle), '会議')
+      await user.click(byId(testIds.itemCancel))
+      const discard = screen.getByRole('dialog', { name: '書きかけを捨てますか？' })
+      expect(discard.closest('.it-edge-guard')).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
+  it('Android・PC では付けない', async () => {
+    const restore = withUserAgent(ANDROID_UA)
+    try {
+      await open()
+      expect(backdrop()).not.toBeNull()
+      expect(backdrop()?.classList.contains('it-edge-guard')).toBe(false)
+    } finally {
+      restore()
+    }
+    await open()
+    expect(document.querySelectorAll('.it-edge-guard')).toHaveLength(0)
+  })
+
+  it('CSS: it-edge-guard とその中のどの要素も touch-action: pan-y pinch-zoom（縦のスクロールと二本指の拡大は残し、横のなぞりだけを止める）', async () => {
+    // CSS は import するとテストでは中身が空になるので、ファイルを読む（src/ui/PopupMenu.test.tsx と同じ読み方。決まった文字の
+    // new URL(…, import.meta.url) は Vite が置き換えるので、場所は変数で渡す）
+    const NODE_FS = 'node:fs'
+    const { readFileSync } = (await import(/* @vite-ignore */ NODE_FS)) as {
+      readFileSync: (path: string, encoding: 'utf8') => string
+    }
+    const relative = './item.css'
+    const css = readFileSync(decodeURIComponent(new URL(relative, import.meta.url).pathname), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    )
+    const found = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)].find((m) => m[1].includes('.it-edge-guard'))
+    expect(found, '.it-edge-guard の規則').toBeDefined()
+    expect(found![1].split(',').map((s) => s.trim())).toEqual(['.it-edge-guard', '.it-edge-guard *'])
+    expect(found![2]).toMatch(/touch-action:\s*pan-y pinch-zoom;/)
+  })
+})
