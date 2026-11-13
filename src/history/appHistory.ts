@@ -33,10 +33,12 @@
 // - 読み込み直した時は、今の履歴の state（idx・ds）をそのまま使う（履歴を増やさない。印の履歴で読み込み直した時は土台へ戻る）
 // - アプリを閉じる（leave。「Diary Studio を閉じますか？」の［閉じる］）: アプリの最初の履歴（idx 0）より前へ戻る。前が無い時（ほかの
 //   アプリから開いたブラウザのタブなど）は window.close() を試し、それも効かなければ、最初の履歴へ戻って「もう一度［戻る］で閉じる」所に
-//   する（Android）か、そのまま（PC）
+//   する（Android。指を下ろした・キーを打った時に終え、押し終えてから出していた所へ戻る）か、そのまま（PC）
 // - もう一度［戻る］で閉じる所（armExit。ホーム画面から開いた Android のアプリのカレンダーでの「戻る」。■25）: 最初の履歴へ戻り、決めた
 //   長さ（お知らせを出している間）だけその所にする。その間のもう一度の「戻る」で、ブラウザがアプリの前へ戻る（ホーム画面のアプリは
-//   閉じる）。時間が過ぎた・押し終えた・キーを打った時は、出していた所へ戻る（次の「戻る」でまたその所にする。履歴は増えない）
+//   閉じる）。時間が過ぎた・押し終えた・キーを打った・押したまま ARM_HOLD_MS たった（長押しで掴む前）時は、押している間でも待たずに
+//   出していた所へ戻る（お知らせが消えた後・掴んでいる間の「戻る」でアプリを離れないように。次の「戻る」でまたその所にする。履歴は
+//   増えない）。頼まれてから（書きかけを保存している間に）押し終えた・キーを打った時は、その所にしない
 // 画面の決まり（どの行き先がカレンダー・登録・詳細か）は、ここでは持たない（screenOf で受け取る）
 import { createPath, NavigationType, parsePath, type Location, type RouterInit } from 'react-router-dom'
 import { decidePop, type ExitStyle, type PopSource, type ScreenKind } from './popRules'
@@ -146,6 +148,13 @@ export const FREE_POLL_MS = 50
  * ならないように）
  */
 export const PRESS_STALE_MS = 10_000
+/**
+ * ホーム画面から開いた Android のアプリのもう一度［戻る］で閉じる所で、指（マウス・ペン）を下ろしたまま、これより長くたったら（長押し。
+ * 取り消されていない物だけ）、離すのを待たずに出していた所へ戻る。指で掴む（src/features/calendar/week/dnd/gesture.ts の
+ * TOUCH_HOLD_MS = 400）・一覧の長押しのメニュー（500）より短く、掴む前に戻る。Android の戻る身振りは、下ろした指を身振りと分かった所で
+ * 取り消す見込みなので、身振りの「戻る」では戻らない（開発）
+ */
+export const ARM_HOLD_MS = 300
 /** 聞く出来事（押す・離す・キーを打つ。capture で、アプリの部品より先に聞く） */
 const INPUT_EVENTS = [
   'pointerdown',
@@ -230,9 +239,18 @@ export class AppHistory implements RouterHistory {
   private startOnMarker = false
   /** 最初の履歴へ戻った、もう一度「戻る」で閉じる所（閉じられなかった・armExit）。押し終えたら土台へ戻る */
   private exitArmed = false
+  /** その所は armExit の物（ホーム画面から開いた Android のアプリの1回目の「戻る」）。でなければ［閉じる］の後の物 */
+  private armedOnBack = false
   /** armExit の所を終える時の見張り（決めた長さが過ぎたら土台へ戻る）と、終わった時に知らせる先 */
   private armTimer: number | null = null
   private armEnd: (() => void) | null = null
+  /** armExit の所で、下ろしたままの指を見張る（ARM_HOLD_MS） */
+  private armHoldTimer: number | null = null
+  /**
+   * armExit にする「戻る」が来てから、その所にするまで（書きかけを保存している間）: 来た時に押していたか（その押し方を離したのは数えない）と、
+   * その後に押し終えた・キーを打ったか（その所にしない）
+   */
+  private armBack: { held: boolean; pressed: boolean } | null = null
   private leaveGen = 0
   private pageHidden = false
   private lastActivation = -Infinity
@@ -366,15 +384,19 @@ export class AppHistory implements RouterHistory {
   /**
    * もう一度［戻る］で閉じる所にする（ホーム画面から開いた Android のアプリのカレンダーでの「戻る」。docs/SPEC.md の 3.1・■25）:
    * 押し終えてドラッグも終わってから、アプリの最初の履歴（idx 0）へ移り、ms の間だけその所にする（その間のもう一度の「戻る」で、
-   * ブラウザがアプリの前へ戻る＝閉じる）。時間が過ぎた・押し終えた・キーを打った・ほかの「戻る」「進む」が来た・アプリが自分で土台へ
-   * 戻った時に終わり、onEnd を呼んで出していた所へ戻る（次の「戻る」でまたこの所にする）。返す Promise は、その所にした時 true、
-   * できなかった時（カレンダーを出していない・最初の履歴へ移れなかった）false（その時 onEnd は呼ばない）
+   * ブラウザがアプリの前へ戻る＝閉じる）。時間が過ぎた・押し終えた・キーを打った・押したまま ARM_HOLD_MS たった・ほかの「戻る」
+   * 「進む」が来た・アプリが自分で土台へ戻った・ほかの画面を開いた時に終わり、onEnd を呼んで出していた所へ戻る（次の「戻る」でまたこの
+   * 所にする）。返す Promise は、その所にした時 true、できなかった時（カレンダーを出していない・最初の履歴へ移れなかった・「戻る」の後に
+   * 押し終えた・キーを打った）false（その時 onEnd は呼ばない）
    */
   armExit(ms: number, onEnd: () => void): Promise<boolean> {
     return new Promise((resolve) =>
       this.run(async () => {
         await this.untilFree()
-        if (this.base === null || this.shownIdx === 0 || this.screen(this.shown) !== 'calendar') {
+        // 「戻る」の後に（書きかけを保存している間に）押し終えた・キーを打った: カレンダーを使い続けている
+        const pressed = this.armBack?.pressed === true
+        this.armBack = null
+        if (pressed || this.base === null || this.shownIdx === 0 || this.screen(this.shown) !== 'calendar') {
           resolve(false)
           return
         }
@@ -385,6 +407,7 @@ export class AppHistory implements RouterHistory {
           return
         }
         this.exitArmed = true
+        this.armedOnBack = true
         this.armEnd = onEnd
         this.armTimer = this.win.setTimeout(() => this.expireArmed(), ms)
         resolve(true)
@@ -423,7 +446,8 @@ export class AppHistory implements RouterHistory {
     for (const type of INPUT_EVENTS) this.win.removeEventListener(type, this.onInput, true)
     this.stopFreeTimer()
     if (this.armTimer !== null) this.win.clearTimeout(this.armTimer)
-    this.armTimer = null
+    if (this.armHoldTimer !== null) this.win.clearTimeout(this.armHoldTimer)
+    this.armTimer = this.armHoldTimer = null
   }
 
   // ---------- 中身 ----------
@@ -536,6 +560,12 @@ export class AppHistory implements RouterHistory {
     this.act = kind === 'push' ? NavigationType.Push : NavigationType.Replace
     const screen = this.screen(location)
     if (screen === 'calendar') return this.writeCalendar(location)
+    if (this.exitArmed && this.cur !== this.shownIdx) {
+      // もう一度［戻る］で閉じる所（最初の履歴）でほかの画面を開いた（押したまま開いた時など）: 終えて、出していた所へ戻ってから書く
+      // （最初の履歴の後ろに積んで、土台と「進む」の印を書きつぶさないように）
+      this.endArmed()
+      return this.travelTo(this.shownIdx).then(() => this.write(kind, location))
+    }
     if (kind === 'replace') this.replaceHere(location)
     else this.pushHere(location)
     // iPhone: 詳細の画面・MIM・設定の後ろにも「進む」の印を置く（右の端からのフリックでも閉じる・戻る。登録の画面は置かない: 何もしない）。
@@ -650,9 +680,14 @@ export class AppHistory implements RouterHistory {
   /** 「もう一度［戻る］で閉じる」所を終える（見張りを止め、armExit の onEnd に知らせる。出していた所へ戻すのは呼んだ所） */
   private endArmed(): void {
     this.exitArmed = false
+    this.armedOnBack = false
     if (this.armTimer !== null) {
       this.win.clearTimeout(this.armTimer)
       this.armTimer = null
+    }
+    if (this.armHoldTimer !== null) {
+      this.win.clearTimeout(this.armHoldTimer)
+      this.armHoldTimer = null
     }
     const end = this.armEnd
     this.armEnd = null
@@ -666,12 +701,29 @@ export class AppHistory implements RouterHistory {
   /** armExit の長さが過ぎた（もう一度の「戻る」が来なかった）: 出していた所へ戻る */
   private expireArmed(): void {
     this.armTimer = null
-    if (!this.exitArmed) return
-    this.endArmed()
-    this.backToShown()
+    if (this.exitArmed) this.leaveArmed()
   }
 
-  /** 出していた所へ戻る（押し終えてドラッグも終わってから。もう一度［戻る］で閉じる所が終わった時） */
+  /**
+   * armExit の所を終えて、出していた所へ戻る。押している間・ドラッグの途中でも待たない（rush。お知らせが消えた後・掴んでいる間に、
+   * 最初の履歴に残ったまま、もう一度の「戻る」でアプリを離れないように）
+   */
+  private leaveArmed(): void {
+    this.endArmed()
+    const shownIdx = this.shownIdx
+    this.rush(() => this.travelTo(shownIdx))
+  }
+
+  /** armExit の所で指を下ろした: 下ろしたまま ARM_HOLD_MS たったら（長押し。取り消された指・離した指は見ない）、出していた所へ戻る */
+  private watchArmHold(id: number | string): void {
+    if (this.armHoldTimer !== null) this.win.clearTimeout(this.armHoldTimer)
+    this.armHoldTimer = this.win.setTimeout(() => {
+      this.armHoldTimer = null
+      if (this.exitArmed && this.armedOnBack && (this.pointers.has(id) || this.handlers.dragging?.())) this.leaveArmed()
+    }, ARM_HOLD_MS)
+  }
+
+  /** 出していた所へ戻る（押し終えてドラッグも終わってから。［閉じる］の後のもう一度［戻る］で閉じる所で指を下ろした時） */
   private backToShown(): void {
     const shownIdx = this.shownIdx
     this.run(async () => {
@@ -952,8 +1004,10 @@ export class AppHistory implements RouterHistory {
         this.handlers.askExit?.()
         return
       case 'arm-exit':
-        // 聞かない。書きかけを保存してから、もう一度［戻る］で閉じる所にする（保存している間の「戻る」は、ここへまた来て土台へ戻る）
+        // 聞かない。書きかけを保存してから、もう一度［戻る］で閉じる所にする（保存している間の「戻る」は、ここへまた来て土台へ戻る。
+        // この後に押し終えた・キーを打った時は、その所にしない。今押している物を離したのは数えない）
         this.rush(() => this.travelTo(shownIdx))
+        this.armBack = { held: this.pressing(), pressed: false }
         this.handlers.armExit?.()
         return
       case 'back-one': {
@@ -1046,13 +1100,27 @@ export class AppHistory implements RouterHistory {
         this.countTouches(event, true)
         break
     }
-    if (this.exitArmed && (type === 'pointerup' || type === 'touchend' || type === 'keydown')) {
-      // もう一度［戻る］で閉じる所（最初の履歴）で、押し終えた（指・マウスを離した。スクロールに取られた指は touchend）・キーを打った:
-      // 出していた所へ戻り、それから押した物を動かす（capture で、アプリの部品より先に聞く。押した物の行き先の書き込みは、戻り終える
-      // まで順番を待つ）。下ろしただけ・取り消された押し方（pointercancel・touchcancel）では戻らない: Android の戻る身振りは、ページに
-      // 指を下ろした出来事が来た後、身振りと分かった所で取り消す見込み（その身振りの「戻る」で閉じられるように）
+    const pressEnd = type === 'pointerup' || type === 'touchend' || type === 'keydown'
+    if (this.exitArmed && this.armedOnBack) {
+      // ホーム画面から開いた Android のアプリの、もう一度［戻る］で閉じる所（最初の履歴）で、押し終えた（指・マウスを離した。スクロールに
+      // 取られた指は touchend）・キーを打った: 出していた所へ戻り、それから押した物を動かす（capture で、アプリの部品より先に聞く。
+      // 押した物の行き先の書き込みは、戻り終えるまで順番を待つ）。下ろしただけ・取り消された押し方（pointercancel・touchcancel）では
+      // 戻らない: Android の戻る身振りは、ページに指を下ろした出来事が来た後、身振りと分かった所で取り消す見込み（その身振りの「戻る」で
+      // 閉じられるように）。下ろしたまま ARM_HOLD_MS たった時（長押し）は、離すのを待たずに戻る
+      if (pressEnd) this.leaveArmed()
+      else if (type === 'pointerdown') this.watchArmHold(id)
+    } else if (this.exitArmed && (type === 'pointerdown' || type === 'keydown')) {
+      // ［閉じる］で閉じられずに最初の履歴へ戻っていた所で押した（今までどおり。■22）: 押し終えたら出していた所へ戻り、それから押した物を
+      // 動かす（押した物の行き先の書き込みは、戻り終えるまで順番を待つ）
       this.endArmed()
       this.backToShown()
+      return
+    }
+    const armBack = this.armBack
+    if (armBack && pressEnd) {
+      // armExit にする「戻る」の後に押し終えた・キーを打った（「戻る」が来た時に押していた物を離したのは数えない）
+      if (type === 'keydown' || !armBack.held) armBack.pressed = true
+      else if (!this.pressing()) armBack.held = false
     }
     if (PRESS_END_EVENTS.has(type)) this.afterPress()
   }

@@ -652,6 +652,34 @@ test.describe('ホーム画面から開いた Android のアプリ（Pixel 7 の
     await expect(closeDialog(page)).toHaveCount(0)
   })
 
+  test('出ている間に予定を長押しで掴むと、掴む前に元の所へ戻り（お知らせも消える）、掴んでいる間の「戻る」は何もしない（アプリを離れない）', async ({
+    page,
+    baseURL,
+  }) => {
+    await openAlone(page, baseURL, { standalone: true, before: true, path: WEEK, data: demoData() })
+    await meetingCard(page).scrollIntoViewIfNeeded()
+    await historySettled(page)
+    const start = await centerOf(meetingCard(page))
+    await backArms(page)
+    const drag = await startLongPress(page, start)
+    await expect(page.locator('[data-dnd-dragging]')).toHaveCount(1)
+    await expect(armedToast(page)).toHaveCount(0)
+    expect(await historyShape(page)).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false })
+    await drag.moveTo({ x: start.x + 4, y: start.y + 60 })
+    await goBack(page)
+    await page.waitForTimeout(300)
+    expect(page.url()).not.toMatch(/^data:/)
+    await expect(closeDialog(page)).toHaveCount(0)
+    await expect(armedToast(page)).toHaveCount(0)
+    await expect(page.locator('[data-dnd-dragging]')).toHaveCount(1)
+    await drag.moveTo(start)
+    await drag.drop()
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false })
+    expect(await page.evaluate((i) => window.__ds.getData().items[i]?.start, DEMO_IDS.meeting)).toBe('2026-11-10')
+    await backArms(page)
+  })
+
   test('詳細のシートが開いている時の「戻る」はシートを閉じるだけ（お知らせは出さない）。次の「戻る」で出す', async ({
     page,
     baseURL,

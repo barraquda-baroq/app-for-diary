@@ -9,7 +9,7 @@ import type { Location } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
 import { FakeWindow } from '../test/fakeHistoryWindow'
-import { AppHistory, PRESS_STALE_MS, type LeaveResult } from './appHistory'
+import { AppHistory, ARM_HOLD_MS, PRESS_STALE_MS, type LeaveResult } from './appHistory'
 import type { ExitStyle, PopSource } from './popRules'
 
 type Update = Parameters<Parameters<AppHistory['listen']>[0]>[0]
@@ -804,7 +804,21 @@ describe('アプリを閉じる', () => {
     expect(s.h.shape().exitArmed).toBe(false)
   })
 
-  it('前が無いと分かる時（ホーム画面から開いた Android のアプリ）は、前へ戻って待たずに、すぐ「もう一度［戻る］で閉じる」所にする', async () => {
+  it('前が無くて「もう一度［戻る］で閉じる」所にした Android のブラウザのタブは、今までどおり指を下ろした時に終え（■22）、離してから土台へ戻る', async () => {
+    const s = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(s)
+    expect(await leave(s)).toBe('armed')
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 5, primary: true }))
+    fire(s, touch('touchstart', 1))
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: false, held: true })
+    fire(s, pointer('pointerup', 'touch', 0, { id: 5, primary: true }))
+    fire(s, touch('touchend', 0))
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false, held: false })
+  })
+
+  it('前が無いと分かる時（ほかのアプリから開いたブラウザのタブなど）は、前へ戻って待たずに、すぐ「もう一度［戻る］で閉じる」所にする', async () => {
     const s = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
     await arm(s)
     let result: LeaveResult | null = null
@@ -850,7 +864,7 @@ describe('アプリを閉じる', () => {
     expect(s.win.left).toBe(true)
   })
 
-  it('土台で読み込み直した後に前が無い時（ホーム画面から開いた Android のアプリ）も、前へ戻ってから「もう一度［戻る］で閉じる」所にする', async () => {
+  it('土台で読み込み直した後に前が無い時（ほかのアプリから開いたブラウザのタブなど）も、前へ戻ってから「もう一度［戻る］で閉じる」所にする', async () => {
     const first = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
     await arm(first)
     first.h.dispose()
@@ -1113,6 +1127,109 @@ describe('ホーム画面から開いた Android のアプリ: 聞かずに、�
     await tick(100)
     expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true, held: false })
     expect(s.log.results).toEqual([true])
+  })
+
+  it('出ている間に押したまま（長押しで掴む）にした時は、掴む前（ARM_HOLD_MS）に終えて出していた所へ戻る（掴んでいる間の「戻る」で離れない）', async () => {
+    const s = homeApp({ before: 1 })
+    await arm(s)
+    await back(s)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 11, primary: true }))
+    fire(s, touch('touchstart', 1))
+    await tick(ARM_HOLD_MS - 50)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true })
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false, held: true })
+    expect(s.log.ends).toBe(1)
+    // 掴んだ（指は 400ms）。掴んでいる間の「戻る」は何もしない
+    s.h.handlers.dragging = () => true
+    s.h.handlers.consumePop = () => true
+    await back(s)
+    expect(s.win.left).toBe(false)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false })
+    expect(s.log.arms).toBe(1)
+    // 落とした後の「戻る」で、また同じ所にする
+    s.h.handlers.dragging = () => false
+    s.h.handlers.consumePop = () => false
+    fire(s, pointer('pointerup', 'touch', 0, { id: 11, primary: true }))
+    fire(s, touch('touchend', 0))
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false, held: false })
+    await back(s)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true })
+    expect(s.log).toMatchObject({ arms: 2, ends: 1 })
+  })
+
+  it('指を下ろしてすぐ取り消された（スクロールに取られた・戻る身振り）指は、押したままでも決めた長さまでは終えない。過ぎた時は離すのを待たずに戻る（お知らせが消えた後の「戻る」で離れない）', async () => {
+    const s = homeApp({ before: 1 })
+    await arm(s)
+    await back(s)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 12, primary: true }))
+    fire(s, touch('touchstart', 1))
+    fire(s, pointer('pointercancel', 'touch', 0, { id: 12, primary: true }))
+    await tick(ARM_MS - 200)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true, held: true })
+    await tick(200)
+    expect(s.log.ends).toBe(1)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false, held: true })
+    await back(s)
+    expect(s.win.left).toBe(false)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false })
+    // 離してから、その「戻る」の所にする
+    fire(s, touch('touchend', 0))
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true, held: false })
+    expect(s.log).toMatchObject({ arms: 2, ends: 1, results: [true, true] })
+  })
+
+  it('出ている間に押したまま、ほかの画面を積んだ時は、終えて出していた所へ戻ってから積む（土台と「進む」の印を書きつぶさない）', async () => {
+    const s = homeApp()
+    await arm(s)
+    await back(s)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 13, primary: true }))
+    fire(s, touch('touchstart', 1))
+    s.h.push(loc('/month/2026-11', detail))
+    await tick(100)
+    expect(s.win.describe()).toEqual(['[back]', '/month/2026-11', '*/month/2026-11+detail'])
+    expect(s.h.shape()).toMatchObject({ cur: 2, base: 1, shownIdx: 2, exitArmed: false })
+    expect(s.log.ends).toBe(1)
+  })
+
+  it('書きかけを保存している間に押した・キーを打った時は、保存し終えても、その所にしない。もう一度の「戻る」の身振り（取り消された指）は押したに数えない', async () => {
+    const s = homeApp()
+    // 保存に時間がかかる: armExit を頼まれても、保存し終えた時（後で）呼ぶ
+    const saved: (() => void)[] = []
+    s.h.handlers.armExit = () => {
+      s.log.arms += 1
+      saved.push(() => void s.h.armExit(ARM_MS, () => (s.log.ends += 1)).then((r) => s.log.results.push(r)))
+    }
+    await arm(s)
+    await back(s)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false })
+    tapFinger(s, 14)
+    await tick(100)
+    saved.shift()!()
+    await tick(100)
+    expect(s.log.results).toEqual([false])
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false })
+    // キーを打った時も
+    await back(s)
+    fire(s, new Event('keydown'))
+    saved.shift()!()
+    await tick(100)
+    expect(s.log.results).toEqual([false, false])
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false })
+    // 保存している間の、もう一度の「戻る」の身振り（指を下ろして取り消される）。closeApp は保存している間の2回目を頼み直さない
+    await back(s)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 15, primary: true }))
+    fire(s, touch('touchstart', 1))
+    fire(s, pointer('pointercancel', 'touch', 0, { id: 15, primary: true }))
+    fire(s, touch('touchcancel', 0))
+    await back(s)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false })
+    saved.shift()!()
+    await tick(100)
+    expect(s.log.results).toEqual([false, false, true])
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true })
   })
 
   it('アプリが自分で土台へ戻った時（今日へ戻すなど）・「進む」が来た時も終わり、次の「戻る」でまた同じ所にする', async () => {
