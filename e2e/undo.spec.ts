@@ -176,6 +176,42 @@ test.describe('PC（マウス・キー）', { tag: ['@pc'] }, () => {
     await expect.poll(() => page.evaluate(() => Object.keys(window.__ds.getRaw().trashEntries).length)).toBe(0)
   })
 
+  test('詳細で直してから中で削除すると、直した所が先に1つ、削除が別の1つ。戻すと直した所のまま戻り、もう一度で直す前へ。やり直すも順に', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await card(page, I.meeting).locator('.wk-open').click()
+    await sheetReady(page)
+    await page.getByTestId('item-title').fill('打ち合わせ（本社）')
+    await page.getByTestId('item-title').press('Tab')
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.title).toBe('打ち合わせ（本社）')
+    await openItemMore(page)
+    await page.getByTestId('item-delete').click()
+    await page
+      .getByRole('dialog', { name: '『打ち合わせ（本社）』を削除しますか？' })
+      .getByRole('button', { name: '削除' })
+      .click()
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await expect(card(page, I.meeting)).toHaveCount(0)
+    await expectLabel(undoBtn(page), '元に戻す（『打ち合わせ（本社）』を削除した）')
+    await undoBtn(page).click()
+    await expect(card(page, I.meeting)).toHaveCount(1)
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.title).toBe('打ち合わせ（本社）')
+    await expectLabel(undoBtn(page), '元に戻す（『打ち合わせ（本社）』を直した）')
+    await undoBtn(page).click()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.title).toBe('打ち合わせ')
+    await expectLabel(undoBtn(page), '元に戻す', false)
+    // やり直すは古い方から: 直した所、それから削除
+    await expectLabel(redoBtn(page), 'やり直す（『打ち合わせ（本社）』を直した）')
+    await redoBtn(page).click()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.title).toBe('打ち合わせ（本社）')
+    await expectLabel(redoBtn(page), 'やり直す（『打ち合わせ（本社）』を削除した）')
+    await redoBtn(page).click()
+    await expect(card(page, I.meeting)).toHaveCount(0)
+    await expect.poll(() => itemOf(page, I.meeting)).toBeNull()
+    await expect(toast(page, 'ほかの所で直されたので戻せません')).toHaveCount(0)
+  })
+
   test('月・年では出さない（場所は残す）。月へ替えて戻っても並びは残り、日でも同じ並びを使う', async ({ page }) => {
     await openWeek(page)
     await mouseMoveMeeting(page, '2026-11-11')

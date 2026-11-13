@@ -461,4 +461,48 @@ describe('アプリを閉じる', () => {
     expect(await leave(s)).toBe('stayed')
     expect(s.win.index).toBe(1)
   })
+
+  it('土台で読み込み直した後（土台の後ろの数は分からない）は、前が無いと決めずに前へ戻る: アドレス欄で # を書き換えて土台が最後の履歴でも離れる', async () => {
+    const first = setup('#/month/2026-11', 'os-back', { before: 1 })
+    await arm(first)
+    // アドレス欄の書き換えで、新しい土台が最後の履歴になる（後ろの「進む」の印は消える）。押さずに読み込み直す
+    first.win.typeHash('#/month/2026-12')
+    await settle(first.h)
+    first.h.dispose()
+    const s = setup('', 'os-back', { win: first.win })
+    await settle(s.h)
+    expect(s.win.history.length).toBe(4)
+    expect(await leave(s)).toBe('left')
+    expect(s.win.left).toBe(true)
+  })
+
+  it('土台で読み込み直した後に前が無い時（ホーム画面から開いた Android のアプリ）も、前へ戻ってから「もう一度［戻る］で閉じる」所にする', async () => {
+    const first = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(first)
+    first.h.dispose()
+    const s = setup('', 'os-back', { armOnLeaveFail: true, win: first.win })
+    await settle(s.h)
+    expect(await leave(s)).toBe('armed')
+    expect(s.win.index).toBe(0)
+    expect(s.h.shape().exitArmed).toBe(true)
+  })
+
+  it('読み込み直した後でも、アプリが積んだ後は数が分かる（前が無ければ待たずに「もう一度［戻る］で閉じる」所にする）', async () => {
+    const first = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(first)
+    first.h.dispose()
+    const s = setup('', 'os-back', { armOnLeaveFail: true, win: first.win })
+    await settle(s.h)
+    // 詳細の画面を開いて閉じる（積んだので、後ろの数が分かる）
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    s.h.go(-1)
+    await settle(s.h)
+    let result: LeaveResult | null = null
+    void s.h.leave().then((r) => (result = r))
+    await vi.advanceTimersByTimeAsync(50)
+    expect(result).toBe('armed')
+    expect(s.win.index).toBe(0)
+  })
 })

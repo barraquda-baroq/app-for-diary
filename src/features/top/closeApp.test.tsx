@@ -4,7 +4,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useToasts } from '../../store/uiStore'
+import { useCalendarUi, useToasts } from '../../store/uiStore'
 import { useSync } from '../../sync/controller'
 import type { SyncStatus } from '../../sync/engine'
 import { confirmDialog, DialogHost, hasOpenDialog } from '../../ui/dialogs'
@@ -142,15 +142,25 @@ describe('「戻る」「進む」の前に片付ける（consumeBackPress）', 
     expect(hasOpenDialog()).toBe(false)
   })
 
-  it('何も開いていなければ false。ドラッグの途中（掴んだ物の印）は true（何もしない）', () => {
+  it('何も開いていなければ false。ドラッグの途中（掴んでから離すまで）は true（何もしない）', () => {
     expect(consumeBackPress()).toBe(false)
-    const dragged = document.createElement('div')
-    dragged.setAttribute('data-dnd-dragging', '')
-    document.body.append(dragged)
+    useCalendarUi.getState().setDragging(true)
     try {
       expect(consumeBackPress()).toBe(true)
     } finally {
-      dragged.remove()
+      useCalendarUi.getState().setDragging(false)
+    }
+  })
+
+  it('離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印は残る）は、もうドラッグの途中ではない（false）', () => {
+    const settling = document.createElement('div')
+    settling.setAttribute('data-dnd-dragging', '')
+    settling.setAttribute('data-dnd-dropping', '')
+    document.body.append(settling)
+    try {
+      expect(consumeBackPress()).toBe(false)
+    } finally {
+      settling.remove()
     }
   })
 })

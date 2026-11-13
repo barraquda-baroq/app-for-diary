@@ -159,6 +159,8 @@ export class AppHistory implements RouterHistory {
   private base: number | null
   /** あると分かっている履歴のいちばん大きい idx（これより後ろに履歴があるかを見る） */
   private top: number
+  /** top は読み込み直した時の当て推量（土台の後ろに1つあるとみなした。アプリが積むまで。doLeave の近道には使わない） */
+  private topGuessed = false
   /** ルーターが出している行き先と、その履歴の idx */
   private shown: Location
   private shownIdx: number
@@ -192,6 +194,7 @@ export class AppHistory implements RouterHistory {
     if (meta?.mark && meta.base !== this.cur) this.startOnMarker = true
     // 読み込み直した土台の後ろには、作った時の印の履歴か、閉じた画面の履歴がある
     if (this.base !== null && this.cur === this.base) this.top = this.cur + 1
+    this.topGuessed = this.top > this.cur
     if (this.base === null && this.screen(this.shown) === 'calendar') this.buildPending = true
     win.addEventListener('popstate', this.onPop)
     win.addEventListener('pagehide', this.onPageHide)
@@ -381,6 +384,7 @@ export class AppHistory implements RouterHistory {
       return
     }
     this.cur = this.top = idx
+    this.topGuessed = false
     this.shown = location
     this.shownIdx = idx
   }
@@ -514,9 +518,10 @@ export class AppHistory implements RouterHistory {
     const gen = ++this.leaveGen
     this.pageHidden = false
     // アプリの最初の履歴（idx 0）より前に、ほかのページの履歴が無いと分かる時（タブの履歴の数が、アプリの分だけ。ホーム画面から
-    // 開いた Android のアプリはいつも）は、前へ戻って待つのを省く。window.close() も、履歴が2つ以上あるので効かない（試すだけ）
+    // 開いた Android のアプリはいつも）は、前へ戻って待つのを省く。window.close() も、履歴が2つ以上あるので効かない（試すだけ）。
+    // 読み込み直してからアプリがまだ積んでいない時は、アプリの分の数が分からない（topGuessed）ので省かない
     const length = this.win.history.length
-    const nothingBefore = typeof length === 'number' && length <= this.top + 1
+    const nothingBefore = !this.topGuessed && typeof length === 'number' && length <= this.top + 1
     if (!nothingBefore) {
       // アプリの最初の履歴（idx 0）より前へ
       const came = await this.traverse(-(this.cur + 1), LEAVE_WAIT_MS)
@@ -615,6 +620,7 @@ export class AppHistory implements RouterHistory {
     const idx = this.cur + 1
     this.win.history.replaceState({ ...st, usr: st?.usr ?? null, key: st?.key ?? makeKey(), idx, ...this.meta() }, '')
     this.top = idx
+    this.topGuessed = false
     return idx
   }
 

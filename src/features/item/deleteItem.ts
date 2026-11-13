@@ -4,14 +4,16 @@
 //   出ていない）は最後の1文を出さない）。確かめて消した物はお知らせを出さない（ゴミ箱の画面は段階5）
 // - カレンダーに出ていないタスク（Task List だけ）は確かめずに消し、「『件名』を削除しました［元に戻す］」（6秒）。［元に戻す］でゴミ箱から戻す
 // どちらもゴミ箱へ移す（カレンダーと Task List の両方から消え、戻すと両方に戻る。同じ1件）。消せた時 true（確かめで［やめる］・失敗は false）。
-// どちらも元に戻す・やり直すの並びに積む（ウィークリー・デイリーから開いた詳細の時。お知らせの［元に戻す］も同じ並び。7.13）
+// どちらも元に戻す・やり直すの並びに積む（ウィークリー・デイリーから開いた詳細の時。お知らせの［元に戻す］も同じ並び。7.13）。
+// 詳細の画面で消す前に直した所は、その前に別の1つとして積む
 import { isInTaskList, isOnCalendar } from '../../domain/items'
 import { toastText, undoText } from '../../domain/itemText'
 import { trashNotice } from '../../domain/trash'
 import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
+import { getData } from '../../store/appStore'
 import { attemptAsync } from '../../store/uiStore'
-import { itemChange, notifyUndoable, recordStep } from '../../store/undoStore'
+import { flushItemSession, itemChange, notifyUndoable, recordStep } from '../../store/undoStore'
 import { confirmDialog } from '../../ui/dialogs'
 import { displayTitle } from '../calendar/common/parts/itemLook'
 
@@ -43,9 +45,15 @@ export async function deleteItem(item: Item, nowMs: number = Date.now()): Promis
   return true
 }
 
-/** ゴミ箱へ移して、元に戻す・やり直すの並びに積む（ok: 消せた。step: 積んだ物） */
+/**
+ * ゴミ箱へ移して、元に戻す・やり直すの並びに積む（ok: 消せた。step: 積んだ物）。詳細の画面で直した所は、移す前に先に1つにまとめて
+ * 積む（移すと詳細の画面はすぐ閉じ、閉じた時には予定が無いので、まとめを積めない。7.13）
+ */
 async function trash(item: Item) {
+  flushItemSession(item.id)
+  // 消す前の記録は今の物（確かめを出している間に直っていても、まとめた所の後と同じ記録から戻す）
+  const before = getData().items[item.id] ?? item
   const entry = await attemptAsync(() => actions.trashItem(item.id))
   if (entry === undefined) return { ok: false, step: null } as const
-  return { ok: true, step: recordStep(undoText.deleted(displayTitle(item)), [itemChange(item.id, item, null, entry)]) } as const
+  return { ok: true, step: recordStep(undoText.deleted(displayTitle(item)), [itemChange(item.id, before, null, entry)]) } as const
 }

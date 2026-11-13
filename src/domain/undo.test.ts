@@ -217,6 +217,15 @@ describe('お知らせの［元に戻す］で、いちばん新しくないス�
     expect(laterDependents([s1, both, doneB, off], s1).map((s) => s.id)).toEqual([4, 2])
   })
 
+  it('後かどうかは番号ではなく並びの順（後ろの物が後に当てた物）。並びに無いステップ（積まなかった物）には後の物を付けない', () => {
+    const s1 = moveA(1, '2026-11-10', '2026-11-12')
+    const s2 = moveA(2, '2026-11-12', '2026-11-13')
+    // 番号の小さい s1 が後ろ（後に当てた）
+    expect(laterDependents([s2, s1], s2).map((s) => s.id)).toEqual([1])
+    expect(laterDependents([s2, s1], s1)).toEqual([])
+    expect(laterDependents([s2], s1)).toEqual([])
+  })
+
   it('後のステップを戻した後の記録と比べる: 2回動かした予定の1回目は、2回目を戻せば戻せる', () => {
     const s1 = moveA(1, '2026-11-10', '2026-11-12')
     const s2 = moveA(2, '2026-11-12', '2026-11-13')

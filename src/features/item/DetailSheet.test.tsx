@@ -921,6 +921,42 @@ describe('元に戻す・やり直す（7.13）: 開いてから閉じるまで�
     leave()
   })
 
+  it('直してから中で削除すると、直した所を先に1つ積み、削除は別の1つ（消して詳細の画面が閉じても直した所は残る）', async () => {
+    const leave = enterUndoScope()
+    // ゴミ箱へ移す・戻すの代わり（この保存先は何も書かないので、表示のデータだけを動かす。消すと詳細の画面はすぐ閉じる）
+    let kept: Item | null = null
+    const trash = vi.spyOn(actions, 'trashItem').mockImplementation(async (id) => {
+      act(() =>
+        useApp.setState((st) => {
+          const { [id]: gone, ...items } = st.data.items
+          kept = gone
+          return { data: { ...st.data, items, trashEntries: { ...st.data.trashEntries, 'entry-9': { id: 'entry-9' } as never } } }
+        }),
+      )
+      return 'entry-9'
+    })
+    const restore = vi.spyOn(actions, 'restoreTrashEntry').mockImplementation(async () => {
+      act(() => useApp.setState((st) => ({ data: { ...st.data, items: { ...st.data.items, a: kept! }, trashEntries: {} } })))
+      return { restored: 1 } as never
+    })
+    const { user, onClose } = await open([materials])
+    await user.type(byId(testIds.itemTitle) as HTMLTextAreaElement, '（改）')
+    await user.click(byId(testIds.itemMore))
+    await user.click(byId(testIds.itemDelete))
+    await user.click(
+      within(screen.getByRole('dialog', { name: '『資料づくり（改）』を削除しますか？' })).getByRole('button', { name: '削除' }),
+    )
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(labels()).toEqual(['『資料づくり（改）』を直した', '『資料づくり（改）』を削除した'])
+    await act(async () => void (await undo()))
+    expect(useApp.getState().data.items.a?.title).toBe('資料づくり（改）')
+    await act(async () => void (await undo()))
+    expect(useApp.getState().data.items.a?.title).toBe('資料づくり')
+    trash.mockRestore()
+    restore.mockRestore()
+    leave()
+  })
+
   it('何も直さずに閉じた時・ウィークリー・デイリーの外で開いた時は積まない', async () => {
     const first = await open([materials])
     await first.user.type(byId(testIds.itemTitle) as HTMLTextAreaElement, '（改）')

@@ -6,6 +6,7 @@ import { devices, expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
   armHistory,
+  centerOf,
   collectDiagnosticsOnFailure,
   E2E_NOW,
   goBack,
@@ -15,6 +16,7 @@ import {
   openCalendar,
   openItemMore,
   recordTurns,
+  startLongPress,
   startMouseDrag,
   touchSwipe,
   turnDone,
@@ -62,6 +64,49 @@ async function askDelete(page: Page, finger: boolean) {
 
 /** 予定がまだある（消していない） */
 const itemExists = (page: Page, id: string) => page.evaluate((i) => Boolean(window.__ds.getData().items[i]), id)
+
+/**
+ * 掴んだ物を離してから 50ms 後（浮いたカードが元の所へ戻る動き（0.16秒）の間。dnd-kit の掴んだ印 data-dnd-dragging はまだ残る）に
+ * 「戻る」（ブラウザの戻ると同じ popstate）。その時に掴んだ印が残っていた数を返す
+ */
+async function backSoonAfterDrop(page: Page): Promise<number> {
+  const marked = await page.evaluate(
+    () =>
+      new Promise<number>((resolve) =>
+        setTimeout(() => {
+          const n = document.querySelectorAll('[data-dnd-dragging]').length
+          history.back()
+          resolve(n)
+        }, 50),
+      ),
+  )
+  await historySettled(page)
+  return marked
+}
+
+/**
+ * アプリの前にほかのページ（タブの初めの about:blank）が1つだけある所で、アドレス欄で # を書き換え（新しいカレンダーの履歴が最後の
+ * 履歴になる）、押さずに読み込み直してから、「戻る」→［閉じる］。前のページへ戻る（読み込み直した後は、カレンダーの後ろの数が
+ * 分からないので、前が無いと決めない）
+ */
+async function reloadThenClose(page: Page) {
+  await openCalendar(page, MONTH)
+  expect(await historyLength(page)).toBe(4)
+  await page.goto(page.url().replace(`#${MONTH}`, '#/month/2026-12'))
+  await at(page, '/month/2026-12')
+  await historySettled(page)
+  await page.reload()
+  await showing(page, '/month/2026-12')
+  await historySettled(page)
+  await goBack(page)
+  await expect(closeDialog(page)).toBeVisible()
+  expect(await historyLength(page)).toBe(4)
+  await page.getByTestId('app-close').click()
+  await expect.poll(() => page.url()).toBe('about:blank')
+}
+
+/** ウィークリーの打ち合わせ（11/10）のカード */
+const meetingCard = (page: Page) => page.locator(`[data-testid="week-card-${DEMO_IDS.meeting}"]:not([data-dnd-placeholder])`)
 
 /** 詳細の画面を開く（デイリーの「定例ミーティング」。指なら tap） */
 async function openDetail(page: Page, finger: boolean) {
@@ -244,6 +289,10 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     await expect.poll(() => page.url()).toMatch(/^data:/)
   })
 
+  test('アドレス欄で # を書き換えて押さずに読み込み直した後でも、［閉じる］でアプリの前のページへ戻る', async ({ page }) => {
+    await reloadThenClose(page)
+  })
+
   test('シートが開いている時の「戻る」はシートを閉じ、次の「戻る」で閉じるかを聞く。書きかけの登録の画面は「書きかけを捨てますか？」', async ({
     page,
   }) => {
@@ -319,6 +368,26 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     await showing(page, DAY)
   })
 
+  test('長押しで掴んでいる間の「戻る」は何もしない。動かさずに離した直後（元の所へ戻る動きの間）の「戻る」は閉じるかを聞く', async ({
+    page,
+  }) => {
+    await openCalendar(page, WEEK, { data: demoData() })
+    await meetingCard(page).scrollIntoViewIfNeeded()
+    const start = await centerOf(meetingCard(page))
+    const drag = await startLongPress(page, start)
+    await expect(page.locator('[data-dnd-dragging]')).toHaveCount(1)
+    await drag.moveTo({ x: start.x + 4, y: start.y + 60 })
+    await goBack(page)
+    await page.waitForTimeout(200)
+    await expect(closeDialog(page)).toHaveCount(0)
+    await drag.moveTo(start)
+    await drag.drop()
+    expect(await backSoonAfterDrop(page)).toBeGreaterThan(0)
+    await expect(closeDialog(page)).toBeVisible()
+    await page.getByTestId('app-close-cancel').click()
+    expect(await page.evaluate((i) => window.__ds.getData().items[i]?.start, DEMO_IDS.meeting)).toBe('2026-11-10')
+  })
+
   test('読み込み直しても、モード・期間はそのままで、「戻る」は閉じるかを聞く（履歴は増えない）', async ({ page }) => {
     await openCalendar(page, MONTH)
     await page.getByTestId('cal-next').click()
@@ -350,6 +419,10 @@ test.describe('PC のブラウザの戻る・進む（■22）', { tag: ['@pc'] 
     await goForward(page)
     await expect(page.getByTestId('item-sheet')).toHaveCount(0)
     await showing(page, DAY)
+  })
+
+  test('［閉じる］でアプリの前のページへ戻る。アドレス欄で # を書き換えて押さずに読み込み直した後でも同じ', async ({ page }) => {
+    await reloadThenClose(page)
   })
 
   test('詳細の画面は外を押すと閉じ、下にあった物（ヘッダーの設定の歯車）は押されない（■23）', async ({ page }) => {
@@ -388,6 +461,21 @@ test.describe('PC のブラウザの戻る・進む（■22）', { tag: ['@pc'] 
     await expect(closeDialog(page)).toHaveCount(0)
     await goBack(page)
     await expect(closeDialog(page)).toBeVisible()
+  })
+
+  test('動かさずに離した直後（浮いたカードが元の所へ戻る動きの間）の「戻る」は、もうドラッグの途中ではないので閉じるかを聞く', async ({
+    page,
+  }) => {
+    await openCalendar(page, `/week/${DEMO_WEEKS.main}`, { data: demoData() })
+    const start = await centerOf(meetingCard(page))
+    const drag = await startMouseDrag(page, start)
+    await drag.moveTo({ x: start.x + 4, y: start.y + 60 })
+    await drag.moveTo(start)
+    await drag.drop()
+    expect(await backSoonAfterDrop(page)).toBeGreaterThan(0)
+    await expect(closeDialog(page)).toBeVisible()
+    await page.getByTestId('app-close-cancel').click()
+    expect(await page.evaluate((i) => window.__ds.getData().items[i]?.start, DEMO_IDS.meeting)).toBe('2026-11-10')
   })
 
   test('開いた直後（まだ押していない）は履歴に積まず、最初に押した時に「戻る」「進む」の印を作る。‹ › を20回押しても増えない', async ({

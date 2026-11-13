@@ -13,6 +13,7 @@ import { useToasts } from './uiStore'
 import {
   beginItemSession,
   enterUndoScope,
+  flushItemSession,
   itemChange,
   notifyUndoable,
   recordStep,
@@ -317,6 +318,43 @@ describe('お知らせの［元に戻す］も同じ並び', () => {
     expect(labels()).toEqual(['移した'])
     expect(await undo()).toBe(true)
   })
+
+  it('積まなかった操作のお知らせは、並びの中の後の操作を一緒に戻さない: 後で同じ予定に触れていれば断り、並びはそのまま（やり直すも効く）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    notifyUndoable('完了にしました', d)
+    leave = enterUndoScope()
+    moveTo('2026-11-12', '移した')
+    expect(await undoStep(d.id)).toBe(false)
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(item()).toMatchObject({ start: '2026-11-12', done: true })
+    expect(labels()).toEqual(['移した'])
+    expect(futureLabels()).toEqual([])
+    expect(await undo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: true })
+    expect(await redo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-12', done: true })
+  })
+
+  it('積まなかった操作のお知らせでも、並びの中の後の操作がほかの予定だけなら戻す', async () => {
+    await start(dataWith({ items: [meeting, mkItem({ id: 'b', title: '昼食', start: '2026-11-10' })] }))
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    leave = enterUndoScope()
+    const bb = item('b')
+    actions.setItemDone('b', true)
+    recordStep('昼食', [itemChange('b', bb, item('b'))])
+    expect(await undoStep(d.id)).toBe(true)
+    expect(item()?.done).toBe(false)
+    expect(item('b')?.done).toBe(true)
+    expect(labels()).toEqual(['昼食'])
+    expect(futureLabels()).toEqual([])
+  })
 })
 
 describe('詳細の画面は開いてから閉じるまでを1つに', () => {
@@ -365,6 +403,60 @@ describe('詳細の画面は開いてから閉じるまでを1つに', () => {
     expect(item()?.title).toBe('定例会議')
     await undo()
     expect(item()?.title).toBe('会議')
+  })
+
+  it('まとめて先に積んだ直した所は、後の操作より前の番号（並びの順）。消したお知らせの［元に戻す］で戻せる', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    const b = item()
+    const entry = await actions.trashItem('a')
+    const del = recordStep('削除した', [itemChange('a', b, null, entry)])!
+    notifyUndoable('『定例会議』を削除しました', del)
+    end()
+    const past = useUndo.getState().stack.past
+    expect(past.map((s) => s.label)).toEqual(['『定例会議』を直した', '削除した'])
+    expect(past[0].id).toBeLessThan(past[1].id)
+    expect(await undoStep(del.id)).toBe(true)
+    expect(toastTexts()).not.toContain(UNDO_CONFLICT)
+    expect(item()?.title).toBe('定例会議')
+    expect(labels()).toEqual(['『定例会議』を直した'])
+  })
+
+  it('消す前に flushItemSession で先に積む（画面と同じく、積む前に詳細の画面が閉じても直した所は残る）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    flushItemSession('a')
+    expect(labels()).toEqual(['『定例会議』を直した'])
+    const b = item()
+    const entry = await actions.trashItem('a')
+    // 詳細の画面は、消して予定が無くなるとすぐ閉じる（削除のステップを積む前に）
+    end()
+    recordStep('削除した', [itemChange('a', b, null, entry)])
+    expect(labels()).toEqual(['『定例会議』を直した', '削除した'])
+    expect(await undo()).toBe(true)
+    expect(item()?.title).toBe('定例会議')
+    expect(await undo()).toBe(true)
+    expect(item()?.title).toBe('会議')
+    expect(await redo()).toBe(true)
+    expect(item()?.title).toBe('定例会議')
+    expect(await redo()).toBe(true)
+    expect(item()).toBeUndefined()
+  })
+
+  it('flushItemSession は、まとめた後も開いたまま続ける（後で直した所は閉じた時に別の1つ）。開いていなければ何もしない', async () => {
+    await start(dataWith({ items: [meeting] }))
+    flushItemSession('a')
+    expect(labels()).toEqual([])
+    const end = beginItemSession('a')
+    flushItemSession('a')
+    expect(labels()).toEqual([])
+    actions.updateItem('a', { title: '定例会議' })
+    flushItemSession('a')
+    actions.updateItem('a', { memo: 'あとで' })
+    end()
+    expect(labels()).toEqual(['『定例会議』を直した', '『定例会議』を直した'])
   })
 
   it('ウィークリー・デイリーを出していない時に開いた詳細は積まない', async () => {
