@@ -106,12 +106,18 @@ function coverTopOf(el: HTMLElement, box: Box): number {
 
 const SCROLLS = /(auto|scroll|overlay)/
 
+/**
+ * 端まで残り半ピクセル未満なら、もう送れないとみなす（scrollTop は小数になることがある。1px の余りを見ると、整数の歩みで端の1つ手前
+ * （max − 1）に止まった時に送り切らずに終わっていた。e2e/week-drag.spec.ts の自動のスクロールで 858 のはずが 857 になった）
+ */
+const END_SLACK_PX = 0.5
+
 /** その向きにまだスクロールできるか（axis の向き dir。1 は下・右） */
-function canScroll(el: HTMLElement, axis: 'x' | 'y', dir: number): boolean {
+export function canScroll(el: HTMLElement, axis: 'x' | 'y', dir: number): boolean {
   const cs = getComputedStyle(el)
   if (!SCROLLS.test(axis === 'x' ? cs.overflowX : cs.overflowY)) return false
-  if (axis === 'x') return dir < 0 ? el.scrollLeft > 0 : el.scrollLeft < el.scrollWidth - el.clientWidth - 1
-  return dir < 0 ? el.scrollTop > 0 : el.scrollTop < el.scrollHeight - el.clientHeight - 1
+  if (axis === 'x') return dir < 0 ? el.scrollLeft > 0 : el.scrollLeft < el.scrollWidth - el.clientWidth - END_SLACK_PX
+  return dir < 0 ? el.scrollTop > 0 : el.scrollTop < el.scrollHeight - el.clientHeight - END_SLACK_PX
 }
 
 /**

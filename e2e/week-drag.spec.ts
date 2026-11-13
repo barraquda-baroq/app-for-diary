@@ -491,7 +491,8 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     let drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
     await drag.moveTo({ x, y: yBelow }, { steps: 1 })
     expect(await fri.evaluate((e) => e.getBoundingClientRect().bottom)).toBeGreaterThan(yBelow + 20)
-    expect((await card(page, I.meeting).boundingBox())!.y).toBeGreaterThan(bodyBottom)
+    // 浮いたカードは、dnd-kit が指の動きを次の描画で当てるので、描き終わるまで待つ（負荷の高い時は動かした直後にはまだ元の所にいる）
+    await expect.poll(async () => (await card(page, I.meeting).boundingBox())!.y).toBeGreaterThan(bodyBottom)
     await unmoved()
     await drag.drop()
     await noToast(page)
@@ -503,9 +504,14 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
     await drag.moveTo({ x, y: top + 15 }, { steps: 1 })
     expect(await fri.evaluate((e) => e.getBoundingClientRect().top)).toBeLessThan(top + 15)
-    // 浮いたカードは段（見えている所）に掛からない
-    const liftedBox = (await card(page, I.meeting).boundingBox())!
-    expect(liftedBox.y + liftedBox.height).toBeLessThan(await body.evaluate((e) => e.getBoundingClientRect().top))
+    // 浮いたカードは段（見えている所）に掛からない（動かした分が描かれるまで待つ）
+    const bodyTop = await body.evaluate((e) => e.getBoundingClientRect().top)
+    await expect
+      .poll(async () => {
+        const b = (await card(page, I.meeting).boundingBox())!
+        return b.y + b.height
+      })
+      .toBeLessThan(bodyTop)
     await unmoved()
     await drag.drop()
     await noToast(page)
