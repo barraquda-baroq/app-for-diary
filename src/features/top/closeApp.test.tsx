@@ -1,6 +1,8 @@
-// カレンダーの画面での OS の「戻る」で、アプリを閉じるかを聞く（docs/SPEC.md の 3.1。22. の段階2の終わりの確かめの ■22）:
-// 「Diary Studio を閉じますか？」［キャンセル］［閉じる］。データの保存の注意は出さず、同期していない変更がある時だけ1行。
-// ［閉じる］で書きかけを保存してからアプリの履歴の前へ。閉じられなかった時はお知らせ。聞いている間の「戻る」は聞くのをやめる
+// カレンダーの画面での OS の「戻る」で、アプリを閉じる（docs/SPEC.md の 3.1。22. の段階2の終わりの確かめの ■22・■25）:
+// Android のブラウザのタブ・PC は「Diary Studio を閉じますか？」［キャンセル］［閉じる］。データの保存の注意は出さず、同期していない
+// 変更がある時だけ1行。［閉じる］で書きかけを保存してからアプリの履歴の前へ。閉じられなかった時はお知らせ。聞いている間の「戻る」は
+// 聞くのをやめる。ホーム画面から開いた Android のアプリは聞かずに、書きかけを保存してから、もう一度［戻る］で閉じる所にし、
+// 「もう一度［戻る］を押すと閉じます」を、その所にしている長さだけ出す
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,12 +12,26 @@ import type { SyncStatus } from '../../sync/engine'
 import { confirmDialog, DialogHost, hasOpenDialog } from '../../ui/dialogs'
 
 const leaveApp = vi.fn<() => Promise<'left' | 'armed' | 'stayed'>>()
+const armExitApp = vi.fn<(ms: number, onEnd: () => void) => Promise<boolean>>()
 const saveBeforeLeave = vi.fn<() => Promise<boolean>>()
 
-vi.mock('../../history/appHistory', () => ({ leaveApp: () => leaveApp() }))
+vi.mock('../../history/appHistory', () => ({
+  leaveApp: () => leaveApp(),
+  armExitApp: (ms: number, onEnd: () => void) => armExitApp(ms, onEnd),
+}))
 vi.mock('../../store/lifecycle', () => ({ saveBeforeLeave: () => saveBeforeLeave() }))
 
-const { askToCloseApp, CLOSE_TEST_IDS, CLOSE_TITLE, consumeBackPress, leaveNotice, unsyncedLine } = await import('./closeApp')
+const {
+  ARMED_NOTICE,
+  armExitOnBack,
+  askToCloseApp,
+  CLOSE_TEST_IDS,
+  CLOSE_TITLE,
+  consumeBackPress,
+  EXIT_ARMED_MS,
+  leaveNotice,
+  unsyncedLine,
+} = await import('./closeApp')
 
 function syncStatus(pending: number): SyncStatus {
   return { phase: pending > 0 ? 'offline' : 'synced', pending, lastSyncedAt: null, error: null }
@@ -23,6 +39,7 @@ function syncStatus(pending: number): SyncStatus {
 
 beforeEach(() => {
   leaveApp.mockReset().mockResolvedValue('left')
+  armExitApp.mockReset().mockResolvedValue(true)
   saveBeforeLeave.mockReset().mockResolvedValue(true)
   useToasts.setState({ toasts: [] })
   useSync.setState({ status: syncStatus(0) })
@@ -31,6 +48,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
 })
 
 /** 聞き始めて、確かめが出るまで（done は聞き終えた時。async の戻り値にすると、聞き終えるまで待ってしまうので包む） */
@@ -162,5 +180,86 @@ describe('「戻る」「進む」の前に片付ける（consumeBackPress）', 
     } finally {
       settling.remove()
     }
+  })
+})
+
+describe('ホーム画面から開いた Android のアプリの「戻る」（■25）', () => {
+  const messages = () => useToasts.getState().toasts.map((t) => t.message)
+
+  it('聞かずに、書きかけを端末に保存してから、もう一度［戻る］で閉じる所にし、「もう一度［戻る］を押すと閉じます」を出す', async () => {
+    await act(() => armExitOnBack())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(hasOpenDialog()).toBe(false)
+    expect(saveBeforeLeave).toHaveBeenCalledTimes(1)
+    expect(armExitApp).toHaveBeenCalledTimes(1)
+    expect(saveBeforeLeave.mock.invocationCallOrder[0]).toBeLessThan(armExitApp.mock.invocationCallOrder[0])
+    expect(armExitApp.mock.calls[0][0]).toBe(EXIT_ARMED_MS)
+    expect(leaveApp).not.toHaveBeenCalled()
+    expect(messages()).toEqual([ARMED_NOTICE])
+    expect(ARMED_NOTICE).toBe('もう一度［戻る］を押すと閉じます')
+  })
+
+  it('その所にしている長さは 3秒で、お知らせもちょうどその間だけ出す（その所が先に終わったら、お知らせも消す）', async () => {
+    expect(EXIT_ARMED_MS).toBe(3000)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await act(() => armExitOnBack())
+    await act(() => vi.advanceTimersByTimeAsync(EXIT_ARMED_MS - 1))
+    expect(messages()).toEqual([ARMED_NOTICE])
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(messages()).toEqual([])
+    // 押した・時間が過ぎた（アプリの履歴が onEnd で知らせる）時は、すぐ消す
+    await act(() => armExitOnBack())
+    expect(messages()).toEqual([ARMED_NOTICE])
+    const onEnd = armExitApp.mock.calls[1][1]
+    act(() => onEnd())
+    expect(messages()).toEqual([])
+  })
+
+  it('同期していない変更がある時だけ、端末に保存してあって次に開いた時に送ることを、次の行に添える', async () => {
+    useSync.setState({ status: syncStatus(2) })
+    await act(() => armExitOnBack())
+    expect(messages()).toEqual([`${ARMED_NOTICE}\n同期していない変更（2件）は、この端末に保存してあり、次に開いた時に送ります。`])
+    useToasts.setState({ toasts: [] })
+    useSync.setState({ status: syncStatus(0) })
+    await act(() => armExitOnBack())
+    expect(messages()).toEqual([ARMED_NOTICE])
+  })
+
+  it('端末に保存できなかった時は、その所にせず、閉じるのをやめたことを言う', async () => {
+    saveBeforeLeave.mockResolvedValue(false)
+    await act(() => armExitOnBack())
+    expect(armExitApp).not.toHaveBeenCalled()
+    expect(messages()).toHaveLength(1)
+    expect(messages()[0]).toContain('保存できなかったため、閉じるのをやめました')
+    expect(messages()[0]).not.toContain(ARMED_NOTICE)
+  })
+
+  it('その所にできなかった時（カレンダーを出していないなど）・できる前に終わった時は、お知らせを出さない', async () => {
+    armExitApp.mockResolvedValue(false)
+    await act(() => armExitOnBack())
+    expect(messages()).toEqual([])
+    armExitApp.mockImplementation(async (_ms, onEnd) => {
+      onEnd()
+      return true
+    })
+    await act(() => armExitOnBack())
+    expect(messages()).toEqual([])
+  })
+
+  it('保存している間に来たもう一度の「戻る」では、もう一度頼まない（1回だけ）', async () => {
+    let finish!: (ok: boolean) => void
+    saveBeforeLeave.mockImplementation(() => new Promise<boolean>((resolve) => (finish = resolve)))
+    let first!: Promise<void>
+    act(() => {
+      first = armExitOnBack()
+    })
+    await act(() => armExitOnBack())
+    await act(async () => {
+      finish(true)
+      await first
+    })
+    expect(saveBeforeLeave).toHaveBeenCalledTimes(1)
+    expect(armExitApp).toHaveBeenCalledTimes(1)
+    expect(messages()).toEqual([ARMED_NOTICE])
   })
 })

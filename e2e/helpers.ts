@@ -270,6 +270,8 @@ export interface DevHook {
   flushNow: () => Promise<boolean>
   /** ゴミ箱の期限切れを決める時刻を差し替える */
   setTrashClock: (fn: () => number | null) => void
+  /** 同期していない変更の件数を決める（同期を始めない E2E で、閉じる時に添える1行を出す） */
+  fakeSyncPending: (pending: number) => void
   /** アプリの履歴（src/history/appHistory.ts）が、ブラウザの履歴を動かし終えるまで待つ */
   historyIdle: () => Promise<void>
   /** 今の履歴の形 */
@@ -280,6 +282,8 @@ export interface DevHook {
 export interface HistoryShape {
   /** popstate が何から来るか（iPhone・iPad は edge-flick、Android・PC は os-back） */
   source: 'edge-flick' | 'os-back'
+  /** カレンダーでの OS の「戻る」の閉じ方（ホーム画面から開いた Android のアプリは press-again、ほかは ask） */
+  exit: 'ask' | 'press-again'
   busy: boolean
   cur: number
   base: number | null
@@ -459,7 +463,7 @@ export function historyShape(page: Page): Promise<HistoryShape | null> {
 
 /**
  * アプリの履歴が落ち着くまで待つ: ブラウザの今の履歴が、アプリの思う今いる所で、ルーターが出している所（土台へ戻し終えた。
- * 閉じられずに最初の履歴へ戻った時はそこ）で、動かしている途中の物が無い
+ * もう一度［戻る］で閉じる所として最初の履歴へ戻った時はそこ）で、動かしている途中の物が無い
  */
 export async function historySettled(page: Page): Promise<void> {
   await expect

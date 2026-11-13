@@ -3,8 +3,8 @@
 
 import type { Platform } from '../../ui/device'
 
-// iPhone・iPad・Android・PC の見分けそのものは src/ui/device.ts（「戻る」「進む」の扱いと同じ1か所）
-export { currentPlatform, detectPlatform, type Platform } from '../../ui/device'
+// iPhone・iPad・Android・PC の見分けと、ホーム画面のアプリとして開いているかは src/ui/device.ts（「戻る」「進む」の扱いと同じ1か所）
+export { currentPlatform, detectPlatform, isStandalone, type Platform } from '../../ui/device'
 
 /**
  * iPhone・iPad で開いているブラウザ（ログインの画面の案内の言葉に使う）。iPhone は Chrome を基準にし、Safari でも同じ
@@ -28,14 +28,6 @@ export function detectIosBrowser(userAgent: string): IosBrowser {
 export function currentIosBrowser(): IosBrowser {
   if (typeof navigator === 'undefined') return 'other'
   return detectIosBrowser(navigator.userAgent)
-}
-
-/** ホーム画面に追加したアプリとして開いている（iPhone の navigator.standalone か、表示の形が standalone） */
-export function isStandalone(): boolean {
-  if (typeof window === 'undefined') return false
-  const nav = navigator as Navigator & { standalone?: boolean }
-  if (nav.standalone === true) return true
-  return window.matchMedia?.('(display-mode: standalone)').matches ?? false
 }
 
 /**
