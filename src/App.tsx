@@ -23,6 +23,7 @@ import { useInteractionClock } from './features/calendar/common/useReturnToToday
 import { askToCloseApp, consumeBackPress } from './features/top/closeApp'
 import { TopPage } from './features/top/TopPage'
 import { createAppHistory, setHistoryHandler } from './history/appHistory'
+import { hideSheets, renderWeight, screenIsClean, setBallast } from './history/swipePicture'
 import { paths } from './routes'
 import { canShowData, useSync } from './sync/controller'
 import { ErrorBoundary, ErrorScreen } from './ui/ErrorBoundary'
@@ -131,6 +132,11 @@ function createAppRouter() {
   setHistoryHandler('consumePop', consumeBackPress)
   // ドラッグの途中は、押し終えても落とし終えるまで、アプリから履歴を動かさない（印の履歴を作るのも後に回す）
   setHistoryHandler('dragging', dragActive)
+  // iPhone の端からのフリックの間に見える絵（3.1）: 写す時の画面をカレンダーだけにする・モードを回した直後の描く物の数
+  setHistoryHandler('cleanScreen', screenIsClean)
+  setHistoryHandler('hideSheets', hideSheets)
+  setHistoryHandler('renderWeight', renderWeight)
+  setHistoryHandler('ballast', setBallast)
   return UNSAFE_createRouter({
     routes,
     history,

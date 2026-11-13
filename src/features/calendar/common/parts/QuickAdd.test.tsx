@@ -12,7 +12,15 @@ import { useToasts } from '../../../../store/uiStore'
 import { undoIdle } from '../../../../store/undoStore'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
 import { testIds } from '../testIds'
-import { BLUR_SETTLE_MS, CLICK_WAIT_MS, COMMIT_WAIT_MS, QuickAdd, quickAddDragStarted, type QuickAddProps } from './QuickAdd'
+import {
+  BLUR_SETTLE_MS,
+  CLICK_WAIT_MS,
+  COMMIT_WAIT_MS,
+  QuickAdd,
+  quickAddDragStarted,
+  quickAddModeChanging,
+  type QuickAddProps,
+} from './QuickAdd'
 
 setupCalendarTests()
 afterEach(() => {
@@ -1151,5 +1159,52 @@ describe('書きかけ（ITEMS-159・FRAME-264・D44）', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+})
+
+describe('iPhone の端からのフリックでモードが替わる時（quickAddModeChanging。docs/SPEC.md の 3.1・12.1）', () => {
+  it('モードのボタンを押した時と同じく、字があれば足して閉じ（press）、「『件名』を足しました［元に戻す］」を出す', async () => {
+    const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'work' })
+    typeText(input, '資料の確認')
+    act(() => quickAddModeChanging())
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
+    expect(items()).toHaveLength(1)
+    expect(items()[0]).toMatchObject({ title: '資料の確認', start: '2026-11-12', kind: 'work' })
+    expect(toasts()[0].message).toBe('『資料の確認』を足しました')
+    expect(localStorage.getItem(quickDraftKey('2026-11-12', 'work'))).toBeNull()
+    // 閉じた後にモードの画面ごと外れても、もう一度は足さない
+    unmount()
+    expect(items()).toHaveLength(1)
+  })
+
+  it('身振りの指が入力欄の外に下りていた（離す出来事は来ない）時も、押し終わりを待たずに1回だけ足して閉じる', async () => {
+    const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'private' })
+    typeText(input, '買い物')
+    fireEvent.pointerDown(screen.getByTestId('outside'))
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => quickAddModeChanging())
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
+    unmount()
+    fireEvent.click(document.body)
+    expect(items()).toHaveLength(1)
+    expect(toasts()).toHaveLength(1)
+  })
+
+  it('空の時は足さずに閉じる。Esc で閉じた後は何もしない', async () => {
+    const empty = await open()
+    act(() => quickAddModeChanging())
+    expect(empty.onClose).toHaveBeenCalledWith('press')
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
+    empty.unmount()
+    const typed = await open()
+    typeText(typed.input, '書きかけ')
+    fireEvent.keyDown(typed.input, { key: 'Escape' })
+    expect(typed.onClose).toHaveBeenCalledWith('escape')
+    act(() => quickAddModeChanging())
+    expect(typed.onClose).toHaveBeenCalledTimes(1)
+    expect(items()).toHaveLength(0)
   })
 })

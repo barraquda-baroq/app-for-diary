@@ -1217,6 +1217,24 @@ h4 {
   animation: fade-in var(--dur-backdrop) ease-out;
 }
 
+/* iPhone: ルーターの戻るで閉じる前に隠した小さな画面（描く物も外す。離れる履歴の絵に写さない。src/history/swipePicture.ts） */
+.modal-backdrop[data-ds-leaving] {
+  display: none;
+}
+
+/* iPhone: 端からのフリックでモードを回した直後だけ置く、見えない描く物の箱（大きさが無く、見えず・押せない。src/history/swipePicture.ts） */
+#ds-ballast {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
 .modal {
   width: min(520px, 100%);
   max-height: calc(100dvh - 32px - var(--kb, 0px));

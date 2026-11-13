@@ -42,6 +42,8 @@
 //   見えなくなる出来事が来ることがある。来たら決めるのをやめる。その間に押した時は、押した方で決める）
 // - 書きかけは diary-studio:draft:quick:{日付}:{区分} に控え（閉じても残し、同じ日・同じ区分で開き直すと戻る）、足したら消す。
 //   ［元に戻す］で戻した字は、同じ日・同じ区分の入力欄が空で開いていれば、そこにも出す
+// - iPhone の端からのフリックでモードが替わる時（quickAddModeChanging。CalendarView）は、モードのボタンを押した時（外を押した時）と
+//   同じく、字があれば足してから閉じ、「『件名』を足しました［元に戻す］」を出す（press。身振りの指は、離す出来事が来ないので待たない）
 // - ツールバーの元に戻す・やり直す（7.13）を押しても、開いている入力欄は閉じない（外を押したとは扱わない。フォーカスも入力欄に
 //   残る。押した時に字を足してから戻すと、戻るのが今足した物になるため）。KEEP_QUICK_ADD の印の付いた物の上で押した時
 import {
@@ -61,6 +63,7 @@ import type { ID, ItemKind } from '../../../../domain/types'
 import { actions } from '../../../../store/actions'
 import { getData } from '../../../../store/appStore'
 import { quickDraftKey, readLocal, writeLocal } from '../../../../store/localDrafts'
+import { overCalendarGone } from '../../../../history/swipePicture'
 import { attempt } from '../../../../store/uiStore'
 import { itemChange, notifyUndoable, recordStep } from '../../../../store/undoStore'
 import { CheckIcon } from '../../../../ui/icons'
@@ -114,6 +117,18 @@ const dragListeners = new Set<() => void>()
  */
 export function quickAddDragStarted(): void {
   for (const fn of dragListeners) fn()
+}
+
+/** 開いているすばやく足すの、モードが替わる時に閉じる物 */
+const modeListeners = new Set<() => void>()
+
+/**
+ * iPhone の端からのフリックでモードが替わる（CalendarView の ring。docs/SPEC.md の 3.1・12.1）: 開いているすばやく足すを、モードの
+ * ボタンを押した時（外を押した時）と同じく閉じる（字があれば足して［元に戻す］付きで知らせる）。身振りが取った指は離す出来事が
+ * 来ないので、押し終わりを待たない
+ */
+export function quickAddModeChanging(): void {
+  for (const fn of [...modeListeners]) fn()
 }
 
 /**
@@ -349,6 +364,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     input.current?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
   }, [])
 
+  // 閉じた（外した）時を知らせる: iPhone で、閉じた後すぐに小さな画面を開く時は、入力欄の消えた画面が描かれてから開く（3.1）
+  useLayoutEffect(() => overCalendarGone, [])
+
   // 押した・離した・窓を離れたを、window の捕まえる段階で見る（押した物の pointerdown・mousedown（フォーカスの移り）・click より
   // 先に分かる）。入力欄の外を押したら、押し終わってから足して閉じる（押した所の操作はそのまま。ほかの日の「＋」なら、そこの
   // 入力欄が開く）
@@ -470,8 +488,20 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       if (press.current) dragged.current = true
     }
     dragListeners.add(onDrag)
+    // モードが替わる（端からのフリック）: 押し終わりを待たずに、外を押した時と同じく閉じる（Esc で閉じた後なら何もしない）
+    const onModeChange = () => {
+      if (press.current) window.clearTimeout(press.current.timer)
+      press.current = null
+      addPress.current = null
+      if (closing.current && !pending.current) return
+      closing.current = true
+      window.clearTimeout(settleTimer.current)
+      finish(pending.current ?? 'press')
+    }
+    modeListeners.add(onModeChange)
     return () => {
       dragListeners.delete(onDrag)
+      modeListeners.delete(onModeChange)
       window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('pointerup', onUp, true)
       window.removeEventListener('pointercancel', cancelPress, true)
