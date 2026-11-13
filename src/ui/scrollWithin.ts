@@ -13,6 +13,8 @@
 // - 要素の scroll-margin と箱の scroll-padding は scrollIntoView と同じく見込む
 // - bottomInset を渡すと、画面の下の端からその高さは見える所に数えない（下に重なるお知らせ。toastInset）。箱の中で送れる所までなので、
 //   箱の終わりの近くの物はお知らせの下に残ることがある（docs/SPEC.md の 4.9）
+// - bottomInset の分の余白が箱の終わりに無いと、終わりの近くの物はお知らせの上まで送れない。［OK］まで出すお知らせ（■26）が出ている
+//   間は、S の週・日のタイムスケジュールの終わりに、その分の余白を足してある（src/styles.css の --toasts-h）
 // - isShownWithin は、同じ決め方で、もう見える所に入っているか（送らなくてよいか）を見る（元に戻す・やり直すで当てた所が見えている
 //   時だけ、開いているすばやく足すの入力欄をお知らせの上へ送る。7.13・■26）
 import { scrollBehavior } from './motion'
@@ -185,18 +187,30 @@ export function isShownWithin(el: Element | null | undefined): boolean {
 }
 
 /**
- * 画面の下に出ているお知らせ（src/ui/Layout.tsx の .toasts。3.9）が el と横に重なる時の、お知らせの上の端から画面の下の端までの
- * 高さに、すき間 8px を足した物（scrollIntoViewWithin の bottomInset。出ていない・重ならない・上に出している時は 0）。ドラッグで
- * 落とした時の「〜へ移しました［元に戻す］」は 6秒出るので、移した物をその下に出すと、目立たせる 1.2秒の間も見えない（7.11）
+ * 画面の下に出ているお知らせ（src/ui/Layout.tsx の .toasts。3.9）が el と横に重なる時の、その上に出す物の下の端（お知らせの上の端
+ * から 8px 上。画面の上からの位置）。出ていない・重ならない・上に出している時は null。iPhone の画面キーボードが出ている間は、
+ * お知らせはキーボードの上に出る（画面の上の半分のこともある）ので、位置ではなく、小さな画面を開いているか（上に出す時。
+ * src/styles.css の body:has(.modal-backdrop) .toasts）で見分ける
  */
-export function toastInset(el: Element): number {
+export function toastEdge(el: Element): number | null {
   const toasts = document.querySelector('.toasts')
-  if (!toasts || toasts.childElementCount === 0) return 0
+  if (!toasts || toasts.childElementCount === 0) return null
+  if (document.querySelector('.modal-backdrop')) return null
   const t = toasts.getBoundingClientRect()
   const r = el.getBoundingClientRect()
   const { height } = viewport()
-  // 小さな画面を開いている間は上に出す（その時は下を空けない）
-  if (!(height > 0) || t.height === 0 || t.top < height / 2 || t.top >= height) return 0
-  if (r.right <= t.left || r.left >= t.right) return 0
-  return height - t.top + TOAST_GAP
+  if (!(height > 0) || t.height === 0 || t.top >= height) return null
+  if (r.right <= t.left || r.left >= t.right) return null
+  return t.top - TOAST_GAP
+}
+
+/**
+ * 画面の下に出ているお知らせ（3.9）が el と横に重なる時の、お知らせの上の端から画面の下の端までの高さに、すき間 8px を足した物
+ * （scrollIntoViewWithin の bottomInset。出ていない・重ならない・上に出している時は 0。toastEdge）。ドラッグで落とした時の「〜へ
+ * 移しました［元に戻す］」は 6秒出るので、移した物をその下に出すと、目立たせる 1.2秒の間も見えない（7.11）。元に戻す・やり直すの
+ * お知らせは［OK］を押すまで出る（■26）
+ */
+export function toastInset(el: Element): number {
+  const edge = toastEdge(el)
+  return edge === null ? 0 : viewport().height - edge
 }

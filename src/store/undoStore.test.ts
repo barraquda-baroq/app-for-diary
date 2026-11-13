@@ -135,6 +135,27 @@ describe('戻す・やり直す', () => {
     expect(shown()).toEqual([['error', UNDO_CONFLICT, false, null]])
   })
 
+  it('お知らせの［元に戻す］で、［OK］まで出しているお知らせが言うステップも戻した時は、そのお知らせを消す（もう本当でないので）。ほかのステップだけなら残す', async () => {
+    const other = mkItem({ id: 'b', title: '資料', start: '2026-11-11' })
+    await start(dataWith({ items: [meeting, other] }))
+    const first = moveTo('2026-11-12')
+    moveTo('2026-11-13', '移した2')
+    await undo()
+    await redo()
+    const redone = 'やり直しました：移した2（11/12（木）→ 11/13（金））'
+    expect(toastTexts()).toEqual([redone])
+    // ほかの予定の操作のお知らせの［元に戻す］: ［OK］まで出しているお知らせ（予定 a の物）は残す
+    const b = getData().items.b
+    actions.moveItemDates('b', { start: '2026-11-20', due: null, clearEnd: false })
+    const sb = recordStep('移した b', [itemChange('b', b, getData().items.b)])!
+    expect(await undoStep(sb.id)).toBe(true)
+    expect(toastTexts()).toEqual([redone])
+    // 前の「〜へ移しました」の［元に戻す］: 後の「移した2」（お知らせが言うステップ）も一緒に戻すので、そのお知らせは消す
+    expect(await undoStep(first.id)).toBe(true)
+    expect(item()?.start).toBe('2026-11-10')
+    expect(toastTexts()).toEqual([])
+  })
+
   it('refused は、ボタン・キーで断った時だけ替わる（当てる物が無い時・お知らせの［元に戻す］で断った時は替えない）', async () => {
     await start(dataWith({ items: [meeting] }))
     expect(await undo()).toBe(false)

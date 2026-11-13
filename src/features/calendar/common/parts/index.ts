@@ -22,6 +22,6 @@ export {
 } from './itemLook'
 export { LabelDot, type LabelDotProps } from './LabelDot'
 export { OffMark } from './OffMark'
-export { QuickAdd, type QuickAddProps } from './QuickAdd'
+export { QuickAdd, revealQuickAddInput, type QuickAddProps } from './QuickAdd'
 export { useCalendarData, type CalendarData } from './useCalendarData'
 export { FLASH_STALE_MS, flashKey, flashTargetsOf, useFlashTarget, type FlashOptions } from './useFlashTarget'

@@ -3,7 +3,15 @@
 // NS のパンくず・端末への保存の状態・別のタブの変更の帯・iPhone / Android のアプリの帯は持ち込まない（保存の帯などは段階1で足す）。
 // 段階2で、左のアイコンと名前の行き先（前回のモードの今日を含む期間）・カレンダーの ‹ › 今日 でスクロールを戻さないこと・
 // iPhone のキーボードの高さ（--kb）を足した。お知らせのボタンは、指で押した時は指を離した時に効く（src/ui/fingerTap.ts）
-import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { todayStr } from '../domain/dates'
@@ -24,6 +32,7 @@ import { DialogHost, cancelAllDialogs } from './dialogs'
 import { useFingerTap } from './fingerTap'
 import { GearIcon, KeyIcon, XIcon } from './icons'
 import { useKeyboardInset } from './keyboardInset'
+import { keepQuickAddAttr } from './keepQuickAdd'
 import { SyncIndicator } from './SyncIndicator'
 import './layout.css'
 
@@ -129,11 +138,36 @@ export function AppHeader({ actions }: { actions?: ReactNode }) {
   )
 }
 
+/**
+ * 出ているお知らせ（重ねた全部）の高さを <html> の --toasts-h に入れ続ける。［OK］まで出すお知らせ（■26）が画面の下に出ている間、
+ * S のウィークリー・デイリーのタイムスケジュールの中の終わりに、その分の余白を足す（src/styles.css。終わりの近くの予定・入力欄も
+ * お知らせの上まで送れるように。4.9）。出し入れした時は描いた直後に測る（その後に、目立たせる物・入力欄をお知らせの上へ送る）。
+ * 字の折り返しなどで高さが変わった時は ResizeObserver で
+ */
+function useToastsHeight(box: RefObject<HTMLDivElement | null>, toasts: readonly Toast[]): void {
+  const measure = useCallback(() => {
+    const el = box.current
+    if (el) document.documentElement.style.setProperty('--toasts-h', `${Math.ceil(el.getBoundingClientRect().height)}px`)
+  }, [box])
+  useLayoutEffect(measure, [measure, toasts])
+  useEffect(() => {
+    const el = box.current
+    const observer = el && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    if (el) observer?.observe(el)
+    return () => {
+      observer?.disconnect()
+      document.documentElement.style.removeProperty('--toasts-h')
+    }
+  }, [box, measure])
+}
+
 function Toasts() {
   const toasts = useToasts((s) => s.toasts)
+  const box = useRef<HTMLDivElement>(null)
+  useToastsHeight(box, toasts)
   // ダイアログ表示中は画面本体が操作不可（inert）になるので、お知らせは body 直下に出す
   return createPortal(
-    <div className="toasts" aria-live="assertive">
+    <div className="toasts" aria-live="assertive" ref={box}>
       {toasts.map((t) => (
         <ToastView key={t.id} toast={t} />
       ))}
@@ -142,12 +176,17 @@ function Toasts() {
   )
 }
 
+/** 押してもフォーカスを動かさない（ブラウザがフォーカスを移すのは mousedown。指の時は useFingerTap が離した時に click を送り、mousedown は来ない） */
+const keepFocus = (e: ReactMouseEvent) => e.preventDefault()
+
 /**
  * お知らせ1つ。［元に戻す］などのボタンと［×］は、指で押した時は指を離した時に効く（ブラウザが click を作るのを待たない。
  * iPhone でウィークリーのカードを動かした後に［元に戻す］が効かなかったことへの手当て。iPhone が click を作らなかった見込みで、
  * 原因は確かめられていない。src/ui/fingerTap.ts・docs/SPEC.md の 3.9）。
  * ［OK］まで出すお知らせ（untilOk。元に戻す・やり直すのボタン・キーで当てた・断った時。■26）は、［×］の代わりに［OK］を出す（同じく
- * 指を離した時に効く。出してもフォーカスは取らない。キーボードでは Tab で届く）。小さな画面を開いている間は出さない（styles.css）
+ * 指を離した時に効く。出してもフォーカスは取らない。キーボードでは Tab で届く）。小さな画面を開いている間は出さない（styles.css）。
+ * ［OK］は、押してもフォーカスを動かさず（mousedown を止める）、開いているすばやく足すを閉じない（字も足さない。KEEP_QUICK_ADD の印。
+ * 操作の列の［元に戻す］［やり直す］と同じ。12.1）
  */
 function ToastView({ toast: t }: { toast: Toast }) {
   const dismiss = useToasts((s) => s.dismiss)
@@ -165,7 +204,7 @@ function ToastView({ toast: t }: { toast: Toast }) {
         </button>
       ) : null}
       {t.untilOk ? (
-        <button type="button" className="toast-action" {...close}>
+        <button type="button" className="toast-action" {...close} {...keepQuickAddAttr} onMouseDown={keepFocus}>
           {OK_LABEL}
         </button>
       ) : (

@@ -45,7 +45,11 @@
 // - iPhone の端からのフリックでモードが替わる時（quickAddModeChanging。CalendarView）は、モードのボタンを押した時（外を押した時）と
 //   同じく、字があれば足してから閉じ、「『件名』を足しました［元に戻す］」を出す（press。身振りの指は、離す出来事が来ないので待たない）
 // - ツールバーの元に戻す・やり直す（7.13）を押しても、開いている入力欄は閉じない（外を押したとは扱わない。フォーカスも入力欄に
-//   残る。押した時に字を足してから戻すと、戻るのが今足した物になるため）。KEEP_QUICK_ADD の印の付いた物の上で押した時
+//   残る。押した時に字を足してから戻すと、戻るのが今足した物になるため）。戻した・やり直したお知らせの［OK］（3.9・■26）も同じ
+//   （閉じず、字も足さない。［OK］を押すのはお知らせを読み終えた時で、打っている字を決めた時ではないため）。どちらも KEEP_QUICK_ADD の
+//   印の付いた物の上で押した時（src/ui/keepQuickAdd.ts）
+// - 開いた時・足した後に入力欄を見える所へ出す時は、画面の下のお知らせ（［OK］まで出す物など。3.9）と横に重なれば、その上まで
+//   出す（revealQuickAddInput。4.9）
 import {
   useEffect,
   useLayoutEffect,
@@ -67,7 +71,9 @@ import { overCalendarGone } from '../../../../history/swipePicture'
 import { attempt } from '../../../../store/uiStore'
 import { itemChange, notifyUndoable, recordStep } from '../../../../store/undoStore'
 import { CheckIcon } from '../../../../ui/icons'
+import { KEEP_QUICK_ADD } from '../../../../ui/keepQuickAdd'
 import { scrollBehavior } from '../../../../ui/motion'
+import { toastInset } from '../../../../ui/scrollWithin'
 import { SWIPE_SLOP_PX } from '../swipe'
 import { testIds } from '../testIds'
 import { cls } from './itemLook'
@@ -138,10 +144,17 @@ export function quickAddModeChanging(): void {
 const openFields = new Map<string, { fill: (text: string) => void; clear: (text: string) => void }>()
 
 /**
- * この印（data-keep-quick-add）の付いた物の上で押しても、開いているすばやく足すを閉じない（外を押したとは扱わない）。元に戻す・
- * やり直すのボタン（7.13）。押してもフォーカスを動かさないのは、その物の側（mousedown を止める）
+ * 入力欄を見える所まで出す（打つ欄は全部見えていることが大事なので、ページも動かしてよい。scrollIntoView）。画面の下のお知らせ
+ * （［OK］まで出す「元に戻しました：…」など。3.9）と横に重なる時は、その上の端から 8px 上まで出す（お知らせの分は、送る間だけ欄の
+ * 下の scroll-margin に足して見込ませる。4.9）。開いた時・足した後と、開いたまま元に戻す・やり直した時（undoFeedback.ts）に使う
  */
-export const KEEP_QUICK_ADD = 'data-keep-quick-add'
+export function revealQuickAddInput(el: HTMLElement): void {
+  const inset = toastInset(el)
+  const margin = el.style.scrollMarginBottom
+  if (inset > 0) el.style.scrollMarginBottom = `${inset}px`
+  el.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
+  if (inset > 0) el.style.scrollMarginBottom = margin
+}
 
 /** 変換を決める Enter・変換をやめる Esc か（React の出来事は変換中かを持たないので元の出来事を見る。Safari は keyCode 229） */
 function composing(e: KeyboardEvent): boolean {
@@ -358,10 +371,10 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
 
   // 開いたらすぐ打てるように（押した出来事の中で描くので、iPhone でもキーボードが開く）。見える所まで出す。打つ欄は全部見えている
   // ことが大事なので、ここはページも動かしてよい（scrollIntoView。S・M の週・日の下の端は画面の下に少し出ている。ドラッグの後・
-  // 目立たせる時はページを動かさない src/ui/scrollWithin.ts を使う）
+  // 目立たせる時はページを動かさない src/ui/scrollWithin.ts を使う）。画面の下のお知らせと重なれば、その上まで（revealQuickAddInput）
   useLayoutEffect(() => {
     input.current?.focus({ preventScroll: true })
-    input.current?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
+    if (input.current) revealQuickAddInput(input.current)
   }, [])
 
   // 閉じた（外した）時を知らせる: iPhone で、閉じた後すぐに小さな画面を開く時は、入力欄の消えた画面が描かれてから開き、アプリの履歴は
@@ -549,9 +562,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     }
   }, [key])
 
-  // 足した予定の分だけ入力欄が下へ動くので、描いた後に見える所に残す
+  // 足した予定の分だけ入力欄が下へ動くので、描いた後に見える所に残す（画面の下のお知らせの上に）
   useLayoutEffect(() => {
-    if (added) input.current?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
+    if (added && input.current) revealQuickAddInput(input.current)
   }, [added])
 
   const change = (next: string) => {

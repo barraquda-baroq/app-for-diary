@@ -3,8 +3,10 @@
 // Android Chrome はキーボードの分だけ画面（レイアウトの表示領域）が縮むので 0 のまま。iOS は画面が縮まず、見えている範囲
 // （visualViewport）だけが縮むので、その差を --kb に入れる。下からのシート・お知らせ・メニューは bottom: var(--kb) で
 // キーボードの上に収まる（src/styles.css）。入力欄にフォーカスしている時は、その欄がキーボードの上 16px に来るまでスクロールする
+// （キーボードの上のお知らせと重なる時は、その上まで）
 import { useEffect } from 'react'
 import { scrollBehavior } from './motion'
+import { toastEdge } from './scrollWithin'
 
 /** 拡大している時（ピンチ）は測らない */
 const MAX_SCALE = 1.01
@@ -45,11 +47,15 @@ function scrollParent(el: HTMLElement): Element | null {
   return document.scrollingElement
 }
 
-/** 入力欄がキーボードの上 16px より下に隠れていたら、見える所までスクロールする */
+/**
+ * 入力欄がキーボードの上 16px より下に隠れていたら、見える所までスクロールする。キーボードの上に画面の下のお知らせ（［OK］まで出す
+ * 「元に戻しました：…」など。3.9）が出ていて欄と横に重なる時は、お知らせの上の端の 8px 上まで（toastEdge。4.9・■26）
+ */
 export function revealAboveKeyboard(el: HTMLElement): void {
   const vv = window.visualViewport
   if (!vv) return
-  const limit = vv.offsetTop + vv.height - KEYBOARD_GAP
+  const edge = toastEdge(el)
+  const limit = Math.min(vv.offsetTop + vv.height - KEYBOARD_GAP, edge ?? Number.POSITIVE_INFINITY)
   const over = el.getBoundingClientRect().bottom - limit
   if (over <= 0) return
   scrollParent(el)?.scrollBy({ top: over, behavior: scrollBehavior() })

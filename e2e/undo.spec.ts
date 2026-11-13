@@ -713,6 +713,58 @@ test.describe(
       await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
     })
 
+    test('キーを続けて押して、前の分で別の週へ移る途中に次が当たっても、終わりは最後に押した分の週（お知らせも最後の物）', async ({
+      page,
+    }) => {
+      // 前の分は次の週（11/16 の休み）、最後の分は今の週（11/12 の休み）。間を空けずに・少し空けて押す（キーを押したままにした時など）
+      for (const gap of [0, 10, 30]) {
+        await openWeek(page)
+        await page.getByTestId('week-off-2026-11-12').click()
+        await page.getByTestId('cal-next').click()
+        await expect(page).toHaveURL(/#\/week\/2026-11-15$/)
+        await page.getByTestId('week-off-2026-11-16').click()
+        await page.getByTestId('cal-prev').click()
+        await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
+        await historySettled(page)
+        await page.keyboard.press('Control+z')
+        if (gap) await page.waitForTimeout(gap)
+        await page.keyboard.press('Control+z')
+        await expect
+          .poll(() =>
+            page.evaluate(() => [
+              window.__ds.getData().offDays['2026-11-12']?.off,
+              window.__ds.getData().offDays['2026-11-16']?.off,
+            ]),
+          )
+          .toEqual([false, false])
+        await expect(feedback(page), `間 ${gap}ms`).toHaveText('元に戻しました：11/12（木）を休みにしたOK')
+        await expect(page, `間 ${gap}ms`).toHaveURL(/#\/week\/2026-11-08$/)
+        // 移る途中の分が後から着いても、週は替わらない
+        await page.waitForTimeout(800)
+        await expect(page, `間 ${gap}ms`).toHaveURL(/#\/week\/2026-11-08$/)
+        await expect(page.getByTestId('week-head-2026-11-12')).toBeInViewport()
+      }
+    })
+
+    test('お知らせの［元に戻す］で、［OK］まで出しているお知らせが言う操作も一緒に戻した時は、そのお知らせを消す（もう本当でないので）', async ({
+      page,
+    }) => {
+      await openWeek(page)
+      await mouseMoveMeeting(page, '2026-11-12')
+      const moved = toast(page, '11/12（木）へ移しました')
+      await expect(moved).toHaveCount(1)
+      await page.getByTestId(`done-${I.meeting}`).click()
+      await expect.poll(async () => (await itemOf(page, I.meeting))?.done).toBe(true)
+      await undoBtn(page).click()
+      await redoBtn(page).click()
+      await expect(feedback(page)).toHaveText('やり直しました：『打ち合わせ』を完了にしたOK')
+      // 動かした時のお知らせの［元に戻す］: 後の「完了にした」も一緒に戻す
+      await moved.getByRole('button', { name: '元に戻す' }).click()
+      await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+      expect((await itemOf(page, I.meeting))?.done).toBe(false)
+      await expect(feedback(page)).toHaveCount(0)
+    })
+
     test('「+n」の中に隠れた予定は、その日へ移った先で「+n」の札を目立たせる', async ({ page }) => {
       await openWeek(page)
       await recordFlashes(page)
@@ -782,6 +834,78 @@ test.describe('戻した・やり直したお知らせ（S）', { tag: ['@s'] },
     await page.getByTestId('week-add-2026-11-16-work').tap()
     await expect(page.getByTestId('quick-add-input')).toHaveValue('打ちかけ')
   })
+
+  test('すばやく足すを開いたまま［OK］を押しても、入力欄は閉じず、打っている字を足さない（フォーカスも入力欄のまま）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId(`done-${I.mail}`).tap()
+    await page.getByTestId('week-add-2026-11-10-work').tap()
+    const input = page.getByTestId('quick-add-input')
+    await input.fill('打ちかけ')
+    await undoBtn(page).tap()
+    await expect(feedback(page)).toHaveText('元に戻しました：『メールの返信』を完了にしたOK')
+    await expect(input).toHaveValue('打ちかけ')
+    await okBtn(page).tap()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    await page.waitForTimeout(500)
+    await expect(input).toHaveValue('打ちかけ')
+    await expect(input).toBeFocused()
+    expect(await page.evaluate(() => Object.values(window.__ds.getData().items).some((i) => i.title === '打ちかけ'))).toBe(false)
+  })
+
+  for (const [width, height] of [
+    [360, 640],
+    [390, 844],
+  ]) {
+    test(`幅 ${width}px: ［OK］まで出すお知らせが出ている間に開いた土曜のすばやく足すも、入力欄はお知らせに隠れない（開いた時・足した後）`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height })
+      await openWeek(page)
+      await page.getByTestId(`done-${I.mail}`).tap()
+      await undoBtn(page).tap()
+      await expect(feedback(page)).toHaveText('元に戻しました：『メールの返信』を完了にしたOK')
+      for (const kind of ['work', 'private']) {
+        const add = page.getByTestId(`week-add-2026-11-14-${kind}`)
+        await add.scrollIntoViewIfNeeded()
+        await add.tap()
+        const input = page.getByTestId('quick-add-input')
+        await expect(input).toBeFocused()
+        await notUnderToast(page, input)
+        await input.fill(`花${kind}`)
+        await input.press('Enter')
+        await expect
+          .poll(() => page.evaluate((t) => Object.values(window.__ds.getData().items).some((i) => i.title === t), `花${kind}`))
+          .toBe(true)
+        await notUnderToast(page, input)
+        await page.keyboard.press('Escape')
+        await expect(input).toHaveCount(0)
+      }
+      await expect(feedback(page)).toHaveText('元に戻しました：『メールの返信』を完了にしたOK')
+    })
+
+    test(`幅 ${width}px: 週の終わり（土曜のいちばん下）のカードを戻しても、お知らせの上まで送って目立たせる（お知らせに隠れたままにしない）`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height })
+      await openWeek(page)
+      await recordFlashes(page)
+      const done = page.getByTestId(`done-${I.cards}`)
+      await done.scrollIntoViewIfNeeded()
+      await done.tap()
+      await expect.poll(async () => (await itemOf(page, I.cards))?.done).toBe(true)
+      // 週のいちばん上（日曜）へ送る: 土曜のカードは見えない
+      await page.getByTestId('view-week').evaluate((el) => el.scrollTo({ top: 0 }))
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await clearFlashes(page)
+      await undoBtn(page).tap()
+      await expect(feedback(page)).toHaveText('元に戻しました：『年賀状の準備』を完了にしたOK')
+      await expect.poll(() => flashes(page)).toContain(`week-card-${I.cards}`)
+      await expect(card(page, I.cards)).toBeInViewport({ ratio: 1 })
+      await notUnderToast(page, card(page, I.cards))
+    })
+  }
 
   for (const [width, height] of [
     [360, 640],

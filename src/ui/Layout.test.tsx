@@ -331,4 +331,30 @@ describe('お知らせのボタン（3.9）', () => {
     expect(useToasts.getState().toasts).toEqual([])
     field.remove()
   })
+
+  it('［OK］は、開いているすばやく足すを閉じない印（data-keep-quick-add）を持ち、マウスで押してもフォーカスを動かさない（打っている入力欄のまま）', () => {
+    renderFrame()
+    act(() => void notifyUntilOk('元に戻しました：11/11（水）を休みにした', { slot: 'undo' }))
+    const ok = screen.getByRole('button', { name: 'OK' })
+    expect(ok.closest('[data-keep-quick-add]')).not.toBeNull()
+    // mousedown を止める（ブラウザがフォーカスを［OK］へ移さない）
+    expect(fireEvent.mouseDown(ok)).toBe(false)
+    // ほかのお知らせの［×］には付けない（今までどおり、外を押したとして閉じる）
+    act(() => void notify('『花』を足しました'))
+    const close = screen.getByRole('button', { name: '閉じる' })
+    expect(close.closest('[data-keep-quick-add]')).toBeNull()
+  })
+
+  it('出ているお知らせ（重ねた全部）の高さを <html> の --toasts-h に入れる（［OK］まで出すお知らせが下に出ている間、S の週・日の中の終わりに余白を足す。4.9）', () => {
+    renderFrame()
+    const box = document.querySelector('.toasts') as HTMLElement
+    let height = 0
+    box.getBoundingClientRect = () => new DOMRect(12, 600, 336, height)
+    height = 67
+    act(() => void notifyUntilOk('元に戻しました：11/11（水）を休みにした', { slot: 'undo' }))
+    expect(document.documentElement.style.getPropertyValue('--toasts-h')).toBe('67px')
+    height = 0
+    act(() => useToasts.setState({ toasts: [] }))
+    expect(document.documentElement.style.getPropertyValue('--toasts-h')).toBe('0px')
+  })
 })

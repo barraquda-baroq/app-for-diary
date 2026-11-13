@@ -376,9 +376,15 @@ describe('画面の下のお知らせの上に出す（bottomInset・toastInset�
     const left = div(document.body)
     geom(left, { rect: [0, 795, 10, 44] })
     expect(toastInset(left)).toBe(0)
-    // 小さな画面を開いている間は上に出している（下を空けない）
+    // iPhone の画面キーボードが出ている間は、キーボードの上（画面の上の半分のこともある）に出ている: その上の端から数える
+    geom(box, { rect: [12, 281, 388, 51] })
+    expect(toastInset(card)).toBe(839 - 281 + 8)
+    // 小さな画面を開いている間は上に出している（下を空けない。src/styles.css の body:has(.modal-backdrop) .toasts）
+    const backdrop = div(document.body)
+    backdrop.className = 'modal-backdrop'
     geom(box, { rect: [12, 12, 388, 51] })
     expect(toastInset(card)).toBe(0)
+    backdrop.remove()
     // 中が空（お知らせが消えた）
     geom(box, { rect: [12, 772, 388, 51] })
     box.replaceChildren()

@@ -114,4 +114,32 @@ describe('useKeyboardInset', () => {
     expect(scrollBy).not.toHaveBeenCalled()
     scroller.remove()
   })
+
+  it('キーボードの上に画面の下のお知らせ（［OK］まで出す物など）が出ていれば、欄をその上の端の 8px 上まで送る（■26・4.9）', () => {
+    fakeViewport(508)
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const scrollBy = vi.fn()
+    document.documentElement.scrollBy = scrollBy as unknown as typeof document.documentElement.scrollBy
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.documentElement })
+    // 欄はキーボードの上 16px（492）より上にある
+    vi.spyOn(input, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 400, 300, 40))
+    revealAboveKeyboard(input)
+    expect(scrollBy).not.toHaveBeenCalled()
+    // キーボードの上に出たお知らせ（425〜492）と重なる: お知らせの上の端の 8px 上（417）まで送る
+    const toasts = document.createElement('div')
+    toasts.className = 'toasts'
+    toasts.appendChild(document.createElement('div')).className = 'toast'
+    document.body.appendChild(toasts)
+    vi.spyOn(toasts, 'getBoundingClientRect').mockReturnValue(new DOMRect(12, 425, 366, 67))
+    revealAboveKeyboard(input)
+    expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ top: 440 - (425 - 8) }))
+    // 横に重ならないお知らせは見込まない
+    scrollBy.mockClear()
+    vi.spyOn(input, 'getBoundingClientRect').mockReturnValue(new DOMRect(380, 400, 10, 40))
+    revealAboveKeyboard(input)
+    expect(scrollBy).not.toHaveBeenCalled()
+    input.remove()
+    toasts.remove()
+  })
 })

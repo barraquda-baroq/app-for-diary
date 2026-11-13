@@ -1688,6 +1688,15 @@ body:has(.modal-backdrop) .toast.is-until-ok {
   display: none;
 }
 
+/* ［OK］まで出すお知らせが画面の下に出ている間は、S のウィークリー（7日を縦）・デイリーのタイムスケジュールの中の終わりに、
+   お知らせ（重ねた全部の高さ --toasts-h。src/ui/Layout.tsx が測る）とその下の間・すき間 8px の分の余白を足す。終わりの近くの物
+   （土曜のいちばん下のカード・夜の予定・土曜のすばやく足す）も、目立たせる時・入力欄を出す時に、お知らせの上まで送れるように
+   （docs/SPEC.md の 4.9・■26。お知らせは［OK］を押すまで消えない） */
+body:has(.toast.is-until-ok):not(:has(.modal-backdrop)) .wk-v,
+body:has(.toast.is-until-ok):not(:has(.modal-backdrop)) .dy.is-stacked .dy-tl-scroll {
+  padding-bottom: calc(var(--toasts-h, 0px) + 24px + var(--safe-bottom) + var(--kb, 0px));
+}
+
 /* 端末の「視差効果を減らす」では CSS の動きを全部止める（NS と同じ）。知らせの役目がある物（.flash の枠・ロックの印）は、
    動かさずに出す側（JS）が付け外しする（docs/SPEC.md の 4.9） */
 @media (prefers-reduced-motion: reduce) {

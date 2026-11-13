@@ -3,7 +3,7 @@
 // ウィークリー・デイリーだけ（年・月では visibility: hidden で消し、ほかのボタンの位置を動かさない。D23）。
 // - 読み上げとヒント（PC で載せた時）は「元に戻す（『会議』を移した）」「やり直す（『会議』を移した）」。戻す物・やり直す物が無い時は
 //   薄くして押せない（aria-disabled。フォーカスは残す）
-// - 押してもフォーカスを動かさない（開いているすばやく足すの入力欄は閉じず、打っている字も足さない。KEEP_QUICK_ADD）
+// - 押してもフォーカスを動かさない（開いているすばやく足すの入力欄は閉じず、打っている字も足さない。src/ui/keepQuickAdd.ts）
 // - キー（PC。3.10）: Ctrl+Z・⌘+Z で元に戻す、Ctrl+Shift+Z・⌘+Shift+Z・Ctrl+Y でやり直す。文字を打っている間（入力欄・メモの中。
 //   そこではブラウザの字の元に戻す）・小さな画面やメニューを開いている間・ドラッグ中は効かない
 // - 戻した・やり直した時は、何を当てたかのお知らせを［OK］を押すまで出し（src/store/undoStore.ts）、当てた予定・休みの日を
@@ -14,8 +14,8 @@ import { undoButtonLabel } from '../../../domain/itemText'
 import { useCalendarUi } from '../../../store/uiStore'
 import { redo, undo, useUndo } from '../../../store/undoStore'
 import { RedoIcon, UndoIcon } from '../../../ui/icons'
+import { keepQuickAddAttr } from '../../../ui/keepQuickAdd'
 import { IS_MAC } from '../../../ui/keys'
-import { KEEP_QUICK_ADD } from './parts/QuickAdd'
 import { testIds } from './testIds'
 import type { CalendarMode } from './types'
 import { useUndoFeedback } from './undoFeedback'
@@ -74,13 +74,12 @@ export function UndoButtons({ mode, viewed, hidden, className }: UndoButtonsProp
   useUndoFeedback(mode, viewed, !hidden)
   const undoLabel = undoButtonLabel('undo', past?.label)
   const redoLabel = undoButtonLabel('redo', future?.label)
-  const keepAttr = { [KEEP_QUICK_ADD]: '' }
   return (
     <div
       className={['cal-undo', hidden && 'cal-tool-hidden', className].filter(Boolean).join(' ')}
       role="group"
       aria-label="元に戻す・やり直す"
-      {...keepAttr}
+      {...keepQuickAddAttr}
     >
       <button
         type="button"

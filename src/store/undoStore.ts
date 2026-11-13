@@ -18,7 +18,9 @@
 //   画面に無ければ今のモードのままその日へ移るのは画面の側。src/features/calendar/common/undoFeedback.ts）。断った時の「ほかの所で
 //   直されたので戻せません」も、押した結果なので同じく［OK］まで出し、refused の番号を替える。どちらも同じ置き場所
 //   （UNDO_FEEDBACK_SLOT）に出すので、次に押すと前の物を置き換える（■26 の作者の答え）。お知らせの［元に戻す］で戻した時は
-//   「元に戻しました：…」を出さず applied にも置かない（断った時は今までどおりのエラーのお知らせ）
+//   「元に戻しました：…」を出さず applied にも置かない（断った時は今までどおりのエラーのお知らせ）。その時に、［OK］まで出している
+//   「元に戻しました：…」「やり直しました：…」が言うステップも戻した（後で同じ予定に触れた操作として一緒に戻した）時は、もう
+//   本当でないので、そのお知らせを消す（explained）
 import { create } from 'zustand'
 import { undoDoneText, undoText } from '../domain/itemText'
 import { UNDO_REFUSED } from '../domain/ops'
@@ -82,6 +84,11 @@ const detached = new Map<number, U.UndoStep>()
 /** 開いている詳細の画面（予定の id → まとめ始めた時の記録） */
 const sessions = new Map<ID, { base: Item | null }>()
 let queue: Promise<unknown> = Promise.resolve()
+/**
+ * ［OK］まで出している「元に戻しました：…」「やり直しました：…」が言うステップ（ステップの番号とお知らせの番号）。お知らせの
+ * ［元に戻す］でこのステップも戻した時は、もう本当でないので、そのお知らせを消す（3.9・■26）
+ */
+let explained: { step: number; toast: number } | null = null
 
 const stackNow = () => useUndo.getState().stack
 const setStack = (stack: U.UndoStack) => useUndo.setState({ stack })
@@ -266,8 +273,10 @@ function refuse(step: U.UndoStep, e?: unknown, pressed = false): void {
   const unexpected = e !== undefined && !(e instanceof DomainError)
   const message = unexpected ? (e instanceof Error ? e.message : String(e)) : UNDO_CONFLICT
   if (unexpected) console.error(e)
-  if (pressed) notifyUntilOk(message, { kind: 'error', slot: UNDO_FEEDBACK_SLOT })
-  else notifyError(message)
+  if (pressed) {
+    notifyUntilOk(message, { kind: 'error', slot: UNDO_FEEDBACK_SLOT })
+    explained = null
+  } else notifyError(message)
   refusals++
   dismissToast(step.id)
   detached.delete(step.id)
@@ -298,6 +307,11 @@ async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null, presse
   else if (dir === 'undo' && pushes !== at) setStack(U.dropStep(stackNow(), step.id))
   else setStack(U.settleStep(stackNow(), next, dir))
   dismissToast(step.id)
+  // お知らせの［元に戻す］で、［OK］まで出しているお知らせが言うステップを戻した（そのお知らせは、もう本当でない）
+  if (!pressed && explained?.step === step.id) {
+    useToasts.getState().dismiss(explained.toast)
+    explained = null
+  }
   // 開いている詳細の画面のまとめは、当てた後の記録から（戻した分を、閉じた時に「直した」として積まない）
   for (const id of U.itemIdsOf(step)) {
     const s = sessions.get(id)
@@ -325,7 +339,7 @@ const enqueue = (dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<b
     const before = refusals
     const step = await apply(dir, pick, true)
     if (step) {
-      notifyUntilOk(undoDoneText(dir, step), { slot: UNDO_FEEDBACK_SLOT })
+      explained = { step: step.id, toast: notifyUntilOk(undoDoneText(dir, step), { slot: UNDO_FEEDBACK_SLOT }) }
       useUndo.setState({ applied: { seq: ++appliedSeq, dir, step } })
     } else if (refusals !== before) useUndo.setState({ refused: ++appliedSeq })
     return step !== null
@@ -404,5 +418,6 @@ export function resetUndoForTests(): void {
   detached.clear()
   sessions.clear()
   queue = Promise.resolve()
+  explained = null
   useUndo.setState({ stack: U.emptyUndoStack(), applied: null, refused: 0 })
 }

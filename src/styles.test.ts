@@ -813,6 +813,14 @@ describe('動きの長さと小さな画面の題（docs/SPEC.md の 4.9・4.7�
     expect(propOf('.modal-head h2', 'font-weight')).toBeUndefined()
     expect(propOf('.modal-head h2', 'line-height')).toBeUndefined()
   })
+
+  it('［OK］まで出すお知らせ（■26）: 小さな画面を開いている間は出さない。下に出ている間は、S の週（.wk-v）・日のタイムスケジュールの終わりに、お知らせの分の余白を足す（終わりの近くの物もお知らせの上まで送れるように。4.9）', () => {
+    expect(propOf('body:has(.modal-backdrop) .toast.is-until-ok', 'display')).toBe('none')
+    const space = 'calc(var(--toasts-h, 0px) + 24px + var(--safe-bottom) + var(--kb, 0px))'
+    for (const box of ['.wk-v', '.dy.is-stacked .dy-tl-scroll']) {
+      expect(propOf(`body:has(.toast.is-until-ok):not(:has(.modal-backdrop)) ${box}`, 'padding-bottom'), box).toBe(space)
+    }
+  })
 })
 
 describe('部品の書き方', () => {

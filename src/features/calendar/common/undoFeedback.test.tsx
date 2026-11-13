@@ -355,6 +355,8 @@ describe('すばやく足す・小さな画面を開いている時', () => {
     expect(intoView).toHaveBeenCalledWith({ block: 'nearest', behavior: 'smooth' })
     expect(margins).toEqual(['60px'])
     expect(input.style.scrollMarginBottom).toBe('')
+    // 当てたカードは目立たせるが、送らない（同じ週の中を入力欄と二つの送りで動かすと、後の送りが入力欄の送りを止めるので）
+    expect(useCalendarUi.getState().flash).toMatchObject({ key: flashKey.item('a'), scroll: false })
     intoView.mockReset()
   })
 
@@ -379,6 +381,50 @@ describe('すばやく足す・小さな画面を開いている時', () => {
     expect((screen.getByTestId(testIds.quickAddInput) as HTMLInputElement).value).toBe('打ちかけ')
   })
 
+  it('すばやく足すを開いたまま［OK］を押しても、入力欄は閉じず、打っている字を足さない（フォーカスも入力欄のまま）', async () => {
+    const { user } = await open('/week/2026-11-08')
+    moveA('2026-11-12')
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-13', 'work')))
+    const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+    await user.type(input, '打ちかけ')
+    await user.click(undoBtn())
+    await settle()
+    const text = '元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'
+    expect(toastTexts()).toEqual([text])
+    await user.click(within(toastEl(text)).getByRole('button', { name: 'OK' }))
+    expect(toastTexts()).toEqual([])
+    expect(screen.getByTestId(testIds.quickAddInput)).toBe(input)
+    expect(input.value).toBe('打ちかけ')
+    expect(document.activeElement).toBe(input)
+    expect(Object.values(getData().items).some((it) => it.title === '打ちかけ')).toBe(false)
+  })
+
+  it('［OK］まで出すお知らせが出ている間に開いたすばやく足すも、入力欄をお知らせの上まで送る（開いた時・足した後）', async () => {
+    const { user } = await open('/week/2026-11-08')
+    moveA('2026-11-12')
+    await user.click(undoBtn())
+    await settle()
+    expect(toastTexts()).toEqual(['元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'])
+    // 送る時の欄の下の余白（お知らせの分）を控える
+    const margins: string[] = []
+    const intoView = vi.mocked(Element.prototype.scrollIntoView)
+    intoView.mockClear()
+    intoView.mockImplementation(function (this: Element) {
+      if (this instanceof HTMLInputElement) margins.push(this.style.scrollMarginBottom)
+    })
+    vi.mocked(toastInset).mockImplementation((el) => (el instanceof HTMLInputElement ? 60 : 0))
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-14', 'work')))
+    const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+    expect(margins).toEqual(['60px'])
+    expect(input.style.scrollMarginBottom).toBe('')
+    // 足した後も（足した予定の分だけ入力欄が下へ動く）
+    await user.type(input, '花{Enter}')
+    expect(Object.values(getData().items).some((it) => it.title === '花')).toBe(true)
+    expect(margins).toEqual(['60px', '60px'])
+    expect(input.style.scrollMarginBottom).toBe('')
+    intoView.mockReset()
+  })
+
   it('小さな画面（詳細）を開いている間に当たった時は移らない（開いている画面の履歴を置き換えない）。お知らせは出す', async () => {
     const other = mkItem({ id: 'b', title: '資料', start: '2026-11-11' })
     const { user, router } = await open('/week/2026-11-08', 'L', [other])
@@ -395,6 +441,67 @@ describe('すばやく足す・小さな画面を開いている時', () => {
     expect(router.state.location.key).toBe(at.key)
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(toastTexts()).toEqual(['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/17（火））'])
+  })
+})
+
+describe('続けて押した時（前に押した分で移る途中に、次が当たった）', () => {
+  it('前の分で別の週へ移る途中（まだ描いていない）に次が当たっても、次の所を出す（移った先で決め直し、無ければそこへ移る）', async () => {
+    const { user, router } = await open('/week/2026-11-08')
+    // この週の 11/12 と、次の週の 11/16 を休みにして、この週へ戻る
+    await user.click(screen.getByTestId(testIds.weekOff('2026-11-12')))
+    await user.click(screen.getByTestId(testIds.calNext))
+    await user.click(screen.getByTestId(testIds.weekOff('2026-11-16')))
+    await user.click(screen.getByTestId(testIds.calPrev))
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // 移るのを止めておく（移った週を描くのが、次に押した分より後になる時の代わり。キーを押したままにした時など）
+    const navigate = router.navigate.bind(router)
+    const held: Array<() => Promise<void>> = []
+    vi.spyOn(router, 'navigate').mockImplementation(
+      (...args: Parameters<typeof router.navigate>) =>
+        new Promise<void>((resolve) => held.push(async () => resolve(await navigate(...args)))),
+    )
+    const release = async () => {
+      while (held.length) await act(async () => void (await held.shift()!()))
+    }
+    // 1回目: 11/16 の休み（次の週）を戻す → 次の週へ移る途中
+    await user.click(undoBtn())
+    await settle()
+    expect(held).toHaveLength(1)
+    // 2回目: 11/12 の休み（描いている週の中）を戻す
+    act(() => useCalendarUi.setState({ flash: null }))
+    await user.click(undoBtn())
+    await settle()
+    await release()
+    expect(getData().offDays['2026-11-12']?.off ?? false).toBe(false)
+    expect(getData().offDays['2026-11-16']?.off ?? false).toBe(false)
+    // 終わりは、2回目の所（11/12 のある週）。お知らせも2回目の物
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(toastTexts()).toEqual(['元に戻しました：11/12（木）を休みにした'])
+    expect(useCalendarUi.getState().flash?.keys).toEqual([flashKey.dayHead('2026-11-12')])
+    expect(flashed(await screen.findByTestId(testIds.weekHead('2026-11-12')))).toBe(true)
+  })
+
+  it('前の分で移る途中に、次の分の所が移る先の週にあれば、移った先でそれを目立たせる（前の分の所は目立たせない）', async () => {
+    const { user, router } = await open('/week/2026-11-08')
+    // 次の週の 11/16 と 11/17 を休みにして、この週へ戻る
+    await user.click(screen.getByTestId(testIds.calNext))
+    await user.click(screen.getByTestId(testIds.weekOff('2026-11-16')))
+    await user.click(screen.getByTestId(testIds.weekOff('2026-11-17')))
+    await user.click(screen.getByTestId(testIds.calPrev))
+    const navigate = router.navigate.bind(router)
+    const held: Array<() => Promise<void>> = []
+    vi.spyOn(router, 'navigate').mockImplementation(
+      (...args: Parameters<typeof router.navigate>) =>
+        new Promise<void>((resolve) => held.push(async () => resolve(await navigate(...args)))),
+    )
+    await user.click(undoBtn())
+    await settle()
+    await user.click(undoBtn())
+    await settle()
+    while (held.length) await act(async () => void (await held.shift()!()))
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+    expect(toastTexts()).toEqual(['元に戻しました：11/16（月）を休みにした'])
+    expect(useCalendarUi.getState().flash?.keys).toEqual([flashKey.dayHead('2026-11-16')])
   })
 })
 
