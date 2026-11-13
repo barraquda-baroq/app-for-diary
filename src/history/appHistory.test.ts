@@ -2,7 +2,8 @@
 // 「戻る」「進む」の印）を押した時に作り、カレンダーの中の行き来は土台を置き換えるだけで増やさない。「戻る」「進む」が来たら、
 // iPhone（端からのフリック）はモードを回し、Android・PC（OS の戻る）は閉じるかを聞き、どちらも土台へ戻す（ルーターには渡さない）。
 // 登録・詳細の画面・ほかの画面での扱い、ルーターの戻る（閉じる・書きかけの確かめ）、読み込み直し、アプリを閉じる。
-// 押している間・ドラッグの途中は、アプリから履歴を動かさない（印の履歴は押し終えてから作る）
+// 押している間・ドラッグの途中は、アプリから履歴を動かさない（印の履歴は押し終えてから作る。その間も「戻る」「進む」から戻すのは待たない。
+// 離す出来事が来ないまま残った指は、次に指を下ろした時に捨てる）。印の履歴は、スクロールの位置を戻させない
 import type { Location } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
@@ -59,9 +60,15 @@ async function arm(s: Setup) {
   await settle(s.h)
 }
 
-/** pointer の出来事（pointerId と押しているボタン付き。マウスは 1、指は 2） */
-function pointer(type: string, pointerType: 'mouse' | 'touch', buttons = 0): Event {
-  return Object.assign(new Event(type), { pointerType, pointerId: pointerType === 'mouse' ? 1 : 2, buttons })
+/** pointer の出来事（pointerId と押しているボタン付き。番号は、決めなければマウスは 1、指は 2、ペンは 3。primary = isPrimary） */
+function pointer(
+  type: string,
+  pointerType: 'mouse' | 'touch' | 'pen',
+  buttons = 0,
+  { id, primary = false }: { id?: number; primary?: boolean } = {},
+): Event {
+  const pointerId = id ?? { mouse: 1, touch: 2, pen: 3 }[pointerType]
+  return Object.assign(new Event(type), { pointerType, pointerId, buttons, isPrimary: primary })
 }
 
 /** touch の出来事（画面に触れている指の数） */
@@ -72,6 +79,20 @@ function touch(type: string, count: number): Event {
 /** 送る */
 function fire(s: Setup, event: Event) {
   s.win.dispatch(event.type, event)
+}
+
+/**
+ * 指で軽く押して離す（本物の順: pointerdown・touchstart・pointerup・touchend・click。指は離した時に「押した」になる）。id はこの指の
+ * pointerId（ブラウザは指を下ろすたびに新しい番号を付ける）
+ */
+function tapFinger(s: Setup, id: number) {
+  s.win.navigator.userActivation.isActive = false
+  fire(s, pointer('pointerdown', 'touch', 1, { id, primary: true }))
+  fire(s, touch('touchstart', 1))
+  s.win.navigator.userActivation.isActive = true
+  fire(s, pointer('pointerup', 'touch', 0, { id, primary: true }))
+  fire(s, touch('touchend', 0))
+  fire(s, new Event('click'))
 }
 
 /** 少しだけ時間を進める（押し終えるのを待っている物は、待たせたまま） */
@@ -153,12 +174,12 @@ describe('押している間・ドラッグの途中は、アプリから履歴�
     expect(s.updates).toEqual([])
   })
 
-  it('指で長押しして掴み、掴んだまま端で週が替わっても（ルーターの置き換え）、指を離してドラッグが終わるまで作らない（WebKit は指を下ろした時から「押した」と数える）', async () => {
+  it('指で長押しして掴み、掴んだまま端で週が替わっても（ルーターの置き換え）、指を離してドラッグが終わるまで作らない（指は離した時に「押した」になる。前の作りは落とす最中に作っていた）', async () => {
     const s = setup('#/week/2026-11-08', 'edge-flick')
     let dragging = false
     s.h.handlers.dragging = () => dragging
-    s.win.navigator.userActivation.isActive = true
-    fire(s, pointer('pointerdown', 'touch', 1))
+    s.win.navigator.userActivation.isActive = false
+    fire(s, pointer('pointerdown', 'touch', 1, { primary: true }))
     fire(s, touch('touchstart', 1))
     await tick(450)
     expect(s.win.describe()).toEqual(['*/week/2026-11-08'])
@@ -167,6 +188,8 @@ describe('押している間・ドラッグの途中は、アプリから履歴�
     await tick()
     // 置き換えはその場で書く（履歴は動かさない）
     expect(s.win.describe()).toEqual(['*/week/2026-11-15'])
+    // 指を離した（ここでブラウザは「押した」と数える）。落とした後の片付けの間（ドラッグの印がある間）は作らない
+    s.win.navigator.userActivation.isActive = true
     fire(s, pointer('pointerup', 'touch'))
     await tick()
     expect(s.win.describe()).toEqual(['*/week/2026-11-15'])
@@ -313,6 +336,138 @@ describe('押している間・ドラッグの途中は、アプリから履歴�
     await tick(1000)
     expect(s.win.index).toBe(1)
     expect(s.updates.map((u) => u.delta)).toEqual([-1, -1, -1])
+  })
+
+  it('離したのが届かなかった物は、その物の最後の出来事から外す（ほかの物で押し続けても、いつまでも待たない）', async () => {
+    const s = setup('#/month/2026-11', 'os-back')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    // ペンを下ろして、離したのが届かなかった
+    fire(s, pointer('pointerdown', 'pen', 1, { primary: true }))
+    s.h.go(-1)
+    // その間もマウスで 4秒ごとに押す
+    for (let i = 0; i < 3; i++) {
+      await tick(4000)
+      fire(s, pointer('pointerdown', 'mouse', 1))
+      fire(s, pointer('pointerup', 'mouse'))
+    }
+    await tick(300)
+    expect(s.win.index).toBe(1)
+    expect(s.updates.map((u) => u.delta)).toEqual([-1])
+  })
+
+  it('iPhone: 端の身振りを端末が取って離す出来事が来なかった指は、次に指を下ろした時に捨てる（詳細の画面の後ろに「進む」の印を置き、［×］はすぐ閉じる）', async () => {
+    const s = setup('#/day/2026-11-10', 'edge-flick')
+    await arm(s)
+    // 左の端からの身振り: 指を下ろした後、端末が身振りに取って、pointerup・touchend は来ない
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 5, primary: true }))
+    fire(s, touch('touchstart', 1))
+    s.win.userGo(-1)
+    await tick()
+    expect(s.ring).toHaveBeenCalledWith(-1)
+    expect(s.win.index).toBe(1)
+    // 次に指で軽く押して、詳細の画面を開く（押し終えた後の click で開く）
+    tapFinger(s, 6)
+    s.h.push(loc('/day/2026-11-10', detail))
+    await tick()
+    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+detail', '[fwd]'])
+    expect(s.h.shape()).toMatchObject({ held: false, busy: false })
+    // ［×］を指で押す: すぐ閉じる
+    tapFinger(s, 7)
+    s.h.go(-1)
+    await tick()
+    expect(s.win.index).toBe(1)
+    expect(s.updates.map((u) => u.delta)).toEqual([-1])
+  })
+
+  it('touch の指が残ったまま（touchend が来ない）でも、次の指を離して画面に触れている指が無くなれば捨てる', async () => {
+    const s = setup('#/month/2026-11', 'os-back')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    // 番号の無い指（primary でない）が残った
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 8 }))
+    fire(s, touch('touchstart', 1))
+    s.h.go(-1)
+    await tick(300)
+    expect(s.win.index).toBe(2)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 9 }))
+    fire(s, touch('touchstart', 2))
+    fire(s, pointer('pointerup', 'touch', 0, { id: 9 }))
+    fire(s, touch('touchend', 0))
+    await tick()
+    expect(s.win.index).toBe(1)
+  })
+
+  it('押し終えるのを待っている物があっても、「戻る」が来た所から出していた所へはすぐ戻す（Android: もう一度の「戻る」でアプリを離れない）', async () => {
+    const s = setup('#/month/2026-11', 'os-back')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    // 指を画面に置いたまま、詳細の画面を閉じる（ルーターの戻る。押し終えるまで待つ）
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 4, primary: true }))
+    fire(s, touch('touchstart', 1))
+    s.h.go(-1)
+    await tick()
+    expect(s.win.index).toBe(2)
+    // OS の戻る: 詳細の画面を閉じる（ルーターに渡す）
+    s.win.userGo(-1)
+    await tick()
+    expect(s.win.index).toBe(1)
+    expect(s.updates.map((u) => u.delta)).toEqual([-1])
+    // もう一度: 閉じるかを聞き、すぐ土台へ戻す（「戻る」の印に残らない）
+    s.win.userGo(-1)
+    await tick()
+    expect(s.askExit).toHaveBeenCalledTimes(1)
+    expect(s.win.index).toBe(1)
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, held: true })
+    // 指を離す: 待っていたルーターの戻るは、もう閉じているので何もしない
+    fire(s, pointer('pointerup', 'touch', 0, { id: 4, primary: true }))
+    fire(s, touch('touchend', 0))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '/month/2026-11+detail'])
+    expect(s.updates.map((u) => u.delta)).toEqual([-1])
+  })
+})
+
+describe('印の履歴とスクロールの位置', () => {
+  it('「戻る」「進む」の印は、来た時にスクロールの位置を戻させない（manual）。土台は戻り終えた後に auto に戻す（設定などから戻った時はブラウザが戻す）', async () => {
+    const s = setup('#/day/2026-11-10', 'edge-flick')
+    expect(s.win.history.scrollRestoration).toBe('auto')
+    await arm(s)
+    expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
+    expect(s.win.scrollModes()).toBe('mam')
+    // iPhone: 詳細の画面の後ろの「進む」の印も
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/day/2026-11-10', detail))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+detail', '[fwd]'])
+    expect(s.win.scrollModes()).toBe('maam')
+  })
+
+  it('印を作った後、自分で土台へ戻るより先に次のルーターの書き込みが来ても、積む画面に manual を写さない', async () => {
+    const s = setup('#/day/2026-11-10', 'os-back')
+    s.win.press()
+    s.h.push(loc('/settings'))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/settings'])
+    expect(s.win.scrollModes()).toBe('maa')
+  })
+
+  it('土台が manual のまま残っていても（auto に戻す前に「戻る」「進む」が来た）、画面を積む時に土台と積む画面を auto にする', async () => {
+    const s = setup('#/day/2026-11-10', 'os-back')
+    await arm(s)
+    s.win.history.scrollRestoration = 'manual'
+    expect(s.win.scrollModes()).toBe('mmm')
+    s.win.press()
+    s.h.push(loc('/settings'))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/settings'])
+    expect(s.win.scrollModes()).toBe('maa')
   })
 })
 

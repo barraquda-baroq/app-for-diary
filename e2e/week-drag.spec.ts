@@ -118,7 +118,10 @@ const historyNow = (page: Page) =>
 
 /**
  * 開いて最初に押したのがドラッグだった時: 掴む前・掴んでいる間（掴むまで待ち、落とす所へ動かした所）は、アプリの履歴を動かさない
- * （履歴の数も土台も、開いた時のまま）。落とし終えた後に「戻る」「進む」の印を作る（土台は 1、履歴は2つ増える。docs/SPEC.md の 3.1）
+ * （履歴の数も土台も、開いた時のまま）。落とし終えた後に「戻る」「進む」の印を作る（土台は 1、履歴は2つ増える。docs/SPEC.md の 3.1）。
+ * Playwright の page.evaluate（ここの historyNow・合成した指）は、それだけでブラウザに「押した」と数えさせるので、この確かめの間は
+ * いつも「押した直後」になる: 確かめるのは「押した直後でも、押している間・ドラッグの途中は履歴を動かさない」こと。本物の端末と同じ
+ * なのはマウス（PC。押した時から「押した」になる）で、指は本物でも離した時からなので、前の作りでも掴む前には作っていなかった
  */
 async function firstPressDrag(page: Page, press: () => Promise<DragSession>, to: Locator, done: string) {
   const before = await historyNow(page)
@@ -1503,7 +1506,8 @@ test.describe('落とした後の［元に戻す］（指。S・M）', { tag: ['
 
 // どれも開いて最初に押すのが長押し（openWeek の arm: false）。WebKit（CI の Linux 版）は、一度本物のマウスを使うと、文書が
 // スクロールするたびにマウスの最後の位置へ本物の pointermove（pointerId 1）を送り、合成した指（同じ pointerId 1）の長押しを dnd-kit が
-// やめる（e2e/helpers.ts の armHistory。CI 48 で、掴む前の scrollIntoViewIfNeeded が文書を 5px スクロールして3つとも落ちた）
+// やめる（e2e/helpers.ts の armHistory。CI 48 で、掴む前の scrollIntoViewIfNeeded が文書を 5px スクロールする3つが落ちたのは、これと
+// 見ている。落ちた時の page-diagnostics の1行目に mouse@… と MOVE1m が出れば、これ）
 test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
   test('長押しで1日のカードと終点の●を動かせる', async ({ page }) => {
     await openWeek(page, { arm: false })

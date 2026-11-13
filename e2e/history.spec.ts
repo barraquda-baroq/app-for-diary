@@ -1,12 +1,16 @@
 // 履歴と「戻る」「進む」の E2E（docs/SPEC.md の 3.1・3.8。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・■22・■23。
 // src/history/appHistory.ts）。iPhone の画面の端からのフリックは、ブラウザの「戻る」「進む」の身振りそのもの（ページには popstate だけが
 // 来る）なので、page.goBack・page.goForward で同じ所を通す。iPhone は Chromium に iPhone の UA を付けた物（@s）と、CI の WebKit（@ios）。
-// Android は Pixel 7（mobile。UA が Android）、PC は Desktop Chrome。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
+// Android は Pixel 7（mobile。UA が Android）、PC は Desktop Chrome。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。
+// Playwright の page.evaluate・locator は、それだけでブラウザに「押した」と数えさせる（Chromium では 5秒。navigator.userActivation）ので、
+// ここの多くのテストでは、印の履歴を作る時の「押した直後か」はいつも真になる。押した物の分だけで作ることは、5秒あまり何もせずに待って
+// から指で押す1つ（Android の「開いて最初に指で軽く押した…」）と、単体テスト（src/history/appHistory.test.ts）で確かめる
 import { devices, expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
   armHistory,
   collectDiagnosticsOnFailure,
+  pressEvents,
   E2E_NOW,
   goBack,
   goForward,
@@ -89,6 +93,36 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await goForward(page)
     await showing(page, DAY)
     expect(await historyLength(page)).toBe(length + 2)
+  })
+
+  test('端の身振りで離す出来事が来なかった指が残っても、次に指で押せば、詳細の画面は［×］ですぐ閉じ、右の端からのフリックでも閉じる（残った指は捨てる）', async ({
+    page,
+  }) => {
+    await openCalendar(page, DAY, { data: demoData() })
+    // 端末が身振りに取った指（docs/SPEC.md の 3.7）: 下ろした出来事だけが来て、離した出来事は来ない
+    await page.evaluate(() => {
+      const at = { clientX: 2, clientY: 400 }
+      document.body.dispatchEvent(
+        new PointerEvent('pointerdown', { ...at, pointerId: 77, pointerType: 'touch', isPrimary: true, bubbles: true }),
+      )
+      const finger = new Touch({ ...at, identifier: 77, target: document.body })
+      document.body.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [finger], changedTouches: [finger] }))
+    })
+    expect((await historyShape(page))?.held).toBe(true)
+    await goBack(page)
+    await showing(page, WEEK)
+    await goForward(page)
+    await showing(page, DAY)
+    const sheet = page.getByTestId('item-sheet')
+    await openDetail(page, true)
+    expect((await historyShape(page))?.held).toBe(false)
+    await page.getByTestId('modal-close').tap()
+    await expect(sheet).toHaveCount(0, { timeout: 2000 })
+    await historySettled(page)
+    await openDetail(page, true)
+    await goForward(page)
+    await expect(sheet).toHaveCount(0)
+    await showing(page, DAY)
   })
 
   test('カレンダー: 左の端から（戻る）で 日→週→月→年→日、右の端から（進む）で 年→月→週→日→年。見ている日を保ち、ページはめくらず、履歴は増えない', async ({
@@ -229,14 +263,47 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
 })
 
 test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => {
-  test('開いて最初に指で軽く押した（離した）後の「戻る」は、閉じるかを聞く（印の履歴は指を離した時に作る）', async ({ page }) => {
+  test('開いて最初に指で軽く押した（離した）後の「戻る」は、閉じるかを聞く（印の履歴は、指を離した時に、ブラウザがその指で「押した」と数えている間に作る）', async ({
+    page,
+  }) => {
     await openCalendar(page, MONTH, { arm: false })
     expect(await historyShape(page)).toMatchObject({ base: null, buildPending: true })
-    await armHistory(page, { finger: true })
+    // テストの page.evaluate が付けた「押した」が切れてから押す（ファイルの初めの説明）
+    await armHistory(page, { finger: true, idleMs: 5300 })
+    // 指を下ろした時はまだ「押した」でなく（! が無い）、離した時に「押した」になって（!）、その後に印の履歴を作った
+    const events = await pressEvents(page)
+    expect(events.find((e) => / down/.test(e))).toMatch(/ down\d+t\(\d+,\d+\)h\d+\/0$/)
+    expect(events.find((e) => / up/.test(e))).toMatch(/!$/)
+    expect(events.findIndex((e) => / push/.test(e))).toBeGreaterThan(events.findIndex((e) => / up/.test(e)))
     await goBack(page)
     await expect(closeDialog(page)).toBeVisible()
     await page.getByTestId('app-close-cancel').click()
     await showing(page, MONTH)
+  })
+
+  test('開いて最初に押し終えた時に印の履歴を作っても、ページのスクロールの位置を戻さない（押し終えた時に続いているスクロールを、印を積んだ時の位置へ戻さない）', async ({
+    page,
+  }) => {
+    await openCalendar(page, YEAR, { arm: false })
+    // 押し終えた時に、まだスクロールが続いている（払った指の惰性）のを、離した後に 40px 動かして作る（印を積んだ後・土台へ戻る前）
+    await page.evaluate(() => {
+      window.scrollTo(0, 200)
+      window.addEventListener('touchend', () => window.scrollBy(0, 40), { once: true })
+    })
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(200)
+    await armHistory(page, { finger: true })
+    expect(await historyShape(page)).toMatchObject({ base: 1, cur: 1 })
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(240)
+    // 印を作った後も、設定から「戻る」で戻った時は、ブラウザが離れた時の位置へ戻す（土台は auto に戻してある）。Chromium は位置を
+    // スクロールした時に今の履歴へ控えるので、土台に着いてからもう一度スクロールする（ふつうは惰性が続いている）
+    await page.evaluate(() => window.scrollTo(0, 260))
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(260)
+    await page.getByTestId('open-settings').click()
+    await expect(page.getByTestId('app-settings')).toBeVisible()
+    await historySettled(page)
+    await goBack(page)
+    await showing(page, YEAR)
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(260)
   })
 
   test('カレンダーで「戻る」を押すと「Diary Studio を閉じますか？」。［キャンセル］で残り、もう一度押すとまた聞く。モードを替えても前のモードへは戻らない', async ({
