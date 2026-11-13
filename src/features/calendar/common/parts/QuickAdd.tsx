@@ -364,7 +364,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     input.current?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
   }, [])
 
-  // 閉じた（外した）時を知らせる: iPhone で、閉じた後すぐに小さな画面を開く時は、入力欄の消えた画面が描かれてから開く（3.1）
+  // 閉じた（外した）時を知らせる: iPhone で、閉じた後すぐに小さな画面を開く時は、入力欄の消えた画面が描かれてから開き、アプリの履歴は
+  // 消えた画面が描かれた後に、端からのフリックの間に見える絵を写し直す（Esc・キーボードの完了で閉じた時も。3.1）
   useLayoutEffect(() => overCalendarGone, [])
 
   // 押した・離した・窓を離れたを、window の捕まえる段階で見る（押した物の pointerdown・mousedown（フォーカスの移り）・click より

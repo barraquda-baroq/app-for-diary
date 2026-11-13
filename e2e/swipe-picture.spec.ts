@@ -90,7 +90,7 @@ async function showing(page: Page, path: string) {
 test.describe('iPhone の端からのフリックの間に見える絵（Chromium に iPhone の UA）', { tag: ['@s'] }, () => {
   test.use({ userAgent: devices['iPhone 14'].userAgent })
 
-  test('作者の報告の流れ（詳細を開いて右の端から閉じ、払ってモードを回す・登録の画面を［×］で閉じてすばやく足すを開いて払う・すばやく足すを開いたまま詳細を開く・登録の画面で払う）で、アプリが履歴を積む・動かす時は、画面がカレンダーだけ。閉じた画面の履歴は「進む」の印に替え、履歴は増えない', async ({
+  test('作者の報告の流れ（詳細を開いて右の端から閉じ、払ってモードを回す・登録の画面を［×］で閉じてすばやく足すを開いて払う・すばやく足すを開いたまま詳細を開く・登録の画面で払う）で、アプリが履歴を積む・動かす時は、画面がカレンダーだけ。閉じた画面の履歴は切り捨てるか「進む」の印に替え、履歴は増えない', async ({
     page,
   }) => {
     await recordHistoryCalls(page)
@@ -110,8 +110,11 @@ test.describe('iPhone の端からのフリックの間に見える絵（Chromiu
       await goForward(page)
       await showing(page, next)
     }
-    // 閉じた詳細の画面の履歴（土台の後ろ）は、閉じた後に「進む」の印に替えた
-    expect((await callsOf(page)).slice(closed).some((c) => c.op === 'replaceState' && c.mark === 'fwd')).toBe(true)
+    // 閉じた詳細の画面の履歴（土台の後ろ）は、閉じてすぐ「進む」の印を積み直して切り捨てた（押した直後。押してから時間がたっていれば、
+    // 落ち着いてから「進む」の印に替える）
+    expect(
+      (await callsOf(page)).slice(closed).some((c) => (c.op === 'pushState' || c.op === 'replaceState') && c.mark === 'fwd'),
+    ).toBe(true)
 
     // 報告2: 登録の画面を［×］で閉じ、すばやく足すを開いたまま右の端から払う
     await page.getByTestId('cal-add').tap()
@@ -154,6 +157,36 @@ test.describe('iPhone の端からのフリックの間に見える絵（Chromiu
     expect(recording(calls).filter((c) => c.op === 'go').length).toBeGreaterThan(10)
     // 履歴は増えない（閉じた登録の画面の履歴を「進む」の印に替えた所）
     expect(await historyLength(page)).toBe(length)
+  })
+
+  test('詳細を右の端から閉じてすぐすばやく足すを開き、押し終わりの無い閉じ方（Esc・キーボードの完了）で閉じても、閉じた後に土台の前後の絵を写し直す', async ({
+    page,
+  }) => {
+    await recordHistoryCalls(page)
+    await openCalendar(page, WEEK, { data: demoData() })
+    const sheet = page.getByTestId('item-sheet')
+    const input = page.getByTestId('quick-add-input')
+    for (const close of ['Escape', 'blur'] as const) {
+      await page.locator(`[data-testid="week-card-${DEMO_IDS.meeting}"]:not([data-dnd-placeholder])`).tap()
+      await expect(sheet).toBeVisible()
+      await historySettled(page)
+      const before = (await callsOf(page)).length
+      // 右の端から閉じて、すぐ（写し直す前に）すばやく足すを開く
+      await page.goForward()
+      await page.getByTestId('week-add-2026-11-12-work').tap()
+      await expect(input).toBeFocused()
+      if (close === 'Escape') await input.press('Escape')
+      else await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+      await expect(input).toHaveCount(0)
+      await historySettled(page)
+      const after = recording((await callsOf(page)).slice(before))
+      // 写し直した（土台の後ろへ・前の印へ・土台へ）。どれもカレンダーだけの画面
+      expect(after.filter((c) => c.op === 'go').length, close).toBeGreaterThanOrEqual(3)
+      expect(
+        after.filter((c) => c.over !== ''),
+        close,
+      ).toEqual([])
+    }
   })
 
   test('すばやく足すに字を打ったまま払うと、モードのボタンを押した時と同じく、足してから閉じてモードを回す（「『件名』を足しました［元に戻す］」）', async ({
