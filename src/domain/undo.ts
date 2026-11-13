@@ -209,12 +209,13 @@ export function chainConflict(steps: UndoStep[], read: UndoReader): { step: Undo
 // ---------- 戻した・やり直した後に見せる所（7.13・■26） ----------
 
 /**
- * 戻した・やり直した後に見せる所。予定（id）か休みの日。date は見に行く日（今のモードのままその日の期間へ移る）、from〜to はその日の
- * 期間のどこかが今の期間に入っていれば足りる所（日付の動いた操作は動いた端の日だけ、日付の変わらない操作は予定の期間の全部）
+ * 戻した・やり直した後に見せる所。予定（id）か休みの日。date は見に行く日（今のモードのままその日の期間へ移る）、from〜to は動いた
+ * 所（日付の動いた操作は動いた端の日だけ、日付の変わらない操作は予定の期間の全部）、span は当てた後の予定の期間の全部（6.3。休みは
+ * その日）。今の期間に span のどこかが入っていて、そこに出ている物が見えていれば、動いた端が今の期間の外でも見えているとする
  */
 export type UndoFocus =
-  | { table: 'items'; id: ID; date: string; from: string; to: string }
-  | { table: 'offDays'; date: string; from: string; to: string }
+  | { table: 'items'; id: ID; date: string; from: string; to: string; span: { from: string; to: string } }
+  | { table: 'offDays'; date: string; from: string; to: string; span: { from: string; to: string } }
 
 /** 1つの変わり方の、当てる前と当てた後（戻す時は「後」→「前」、やり直す時は「前」→「後」） */
 export function appliedSides<T extends UndoChange>(c: T, dir: UndoDirection): { from: T['before']; to: T['before'] } {
@@ -231,12 +232,14 @@ export function appliedSides<T extends UndoChange>(c: T, dir: UndoDirection): { 
 export function undoFocus(step: UndoStep, dir: UndoDirection): UndoFocus | null {
   const c = step.changes[0]
   if (!c) return null
-  if (c.table === 'offDays') return { table: 'offDays', date: c.id, from: c.id, to: c.id }
+  if (c.table === 'offDays') return { table: 'offDays', date: c.id, from: c.id, to: c.id, span: { from: c.id, to: c.id } }
   const { from: was, to: now } = appliedSides(c, dir)
   const p = now ? periodOf(now) : null
   if (!p) return null
+  const span = { from: p.from, to: p.to }
   const prev = was ? periodOf(was) : null
-  if (prev && prev.from === p.from && prev.to === p.to) return { table: 'items', id: c.id, date: p.from, from: p.from, to: p.to }
+  if (prev && prev.from === p.from && prev.to === p.to)
+    return { table: 'items', id: c.id, date: p.from, from: p.from, to: p.to, span }
   const date = prev && prev.from === p.from ? p.to : p.from
-  return { table: 'items', id: c.id, date, from: date, to: date }
+  return { table: 'items', id: c.id, date, from: date, to: date, span }
 }

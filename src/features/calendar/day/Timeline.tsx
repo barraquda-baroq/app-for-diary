@@ -20,7 +20,7 @@ import { flashMatches, useCalendarUi, type FlashTarget } from '../../../store/ui
 import { useElementWidth, useNow } from '../../../ui/hooks'
 import { KindIcon } from '../../../ui/icons'
 import { PopupMenu, type PopupMenuItem } from '../../../ui/PopupMenu'
-import { cls, displayTitle, flashKey, kindOf } from '../common/parts'
+import { cls, displayTitle, flashKey, kindOf, useFlashTarget } from '../common/parts'
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import {
@@ -136,10 +136,11 @@ export function Timeline({ date, today, timeline, onSlot }: TimelineProps) {
  * 列に入らなかった予定の「+n」の札（等幅 11px。まとまりの右の端に空けた札の所に、隠れた予定のいちばん早い時刻の高さで。
  * AMB-ITEMS-13）。押すと札の下に隠れた予定の一覧（区分のアイコン・件名・等幅の時刻）を小さく開き、一覧の予定を押すと詳細
  * （ITEMS-148）。同じ件名が並んでもそのまま出す（読み上げは件名と時刻）。一覧は外を押す・Esc・スクロールで閉じ、閉じたら札へ
- * フォーカスを戻す（PopupMenu）
+ * フォーカスを戻す（PopupMenu）。隠れた予定を目立たせる時（登録した・元に戻す・やり直すで当てた。4.9・7.13）は、札を目立たせる
  */
 function MoreChip({ chip, date }: { chip: MoreChipVM; date: string }) {
   const n = chip.ids.length
+  const flashRef = useFlashTarget<HTMLButtonElement>(chip.ids.map(flashKey.item), { scroll: true })
   const { openDetail } = useItemSheets()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const items: PopupMenuItem[] = chip.items.map((c) => {
@@ -157,6 +158,7 @@ function MoreChip({ chip, date }: { chip: MoreChipVM; date: string }) {
   return (
     <>
       <button
+        ref={flashRef}
         type="button"
         className="mono dy-more"
         style={{ top: `${chip.top}px` }}

@@ -185,15 +185,13 @@ describe('元に戻す・やり直すのお知らせ（ボタン・キーで戻�
     expect(undoDoneText('undo', undone)).toBe('元に戻しました：『打ち合わせ』の完了を外した')
   })
 
-  it('足した・登録した・複製した: 戻すと（ゴミ箱へ）、やり直すと（ゴミ箱から戻した）', () => {
+  it('足した・登録した・複製した: 名前だけ（ゴミ箱の添え書きは削除だけ。すばやく足すを戻すと字は入力欄に戻るので、字がゴミ箱へ行ったように読ませない）', () => {
     for (const label of [undoText.added('花を買う'), undoText.registered('花を買う'), undoText.duplicated('花を買う')]) {
       const s = step(label, null, meeting({ title: '花を買う' }))
-      expect(undoDoneText('undo', s)).toBe(`元に戻しました：${label}（ゴミ箱へ）`)
-      expect(undoDoneText('redo', s)).toBe(`やり直しました：${label}（ゴミ箱から戻した）`)
+      expect(undoDoneText('undo', s)).toBe(`元に戻しました：${label}`)
+      expect(undoDoneText('redo', s)).toBe(`やり直しました：${label}`)
     }
-    expect(undoDoneText('undo', step(undoText.added('花を買う'), null, meeting()))).toBe(
-      '元に戻しました：『花を買う』を足した（ゴミ箱へ）',
-    )
+    expect(undoDoneText('undo', step(undoText.added('花を買う'), null, meeting()))).toBe('元に戻しました：『花を買う』を足した')
   })
 
   it('削除した: 戻すと（ゴミ箱から戻した）、やり直すと（ゴミ箱へ）', () => {

@@ -327,7 +327,8 @@ test.describe('S（Pixel 7・指）', { tag: ['@s'] }, () => {
   }) => {
     await openWeek(page)
     await page.getByTestId(`done-${I.mail}`).tap()
-    await page.getByTestId('week-add-2026-11-12-work').tap()
+    // 週の終わり（土曜）の入力欄: 完了にした火曜のカードは週の中の見えていない所
+    await page.getByTestId('week-add-2026-11-14-work').tap()
     const input = page.getByTestId('quick-add-input')
     await input.fill('打ちかけ')
     await undoBtn(page).tap()
@@ -336,6 +337,12 @@ test.describe('S（Pixel 7・指）', { tag: ['@s'] }, () => {
     await expect(input).toHaveValue('打ちかけ')
     await expect(input).toBeFocused()
     expect(await page.evaluate(() => Object.values(window.__ds.getData().items).some((i) => i.title === '打ちかけ'))).toBe(false)
+    // 戻したお知らせは出すが、［見る］は付けない（押すと打っている字を足して閉じ、やり直すが消える）。入力欄はお知らせの上まで送る
+    await expect(page.locator('.toast')).toHaveText('元に戻しました：『メールの返信』を完了にした')
+    await expect(page.locator('.toast').getByRole('button', { name: '見る' })).toHaveCount(0)
+    await notUnderToast(page, input)
+    await expect(input).toBeInViewport()
+    await expectLabel(redoBtn(page), 'やり直す（『メールの返信』を完了にした）')
   })
 })
 
@@ -393,16 +400,16 @@ async function clearFlashes(page: Page) {
   await page.evaluate(() => void ((window as unknown as { __e2eFlashes?: string[] }).__e2eFlashes = []))
 }
 
-/** target が画面の下のお知らせと重なっていない（お知らせの下に隠れていない。4.9） */
+/** お知らせが出ている間に、target が画面の下のお知らせと重なっていない（お知らせの下に隠れていない。4.9。消えた後は数えない） */
 async function notUnderToast(page: Page, target: Locator) {
   await expect
     .poll(async () => {
       const t = await page.locator('.toasts').boundingBox()
       const r = await target.boundingBox()
-      if (!t || !r || t.height === 0) return true
-      return !(r.x < t.x + t.width && r.x + r.width > t.x && r.y < t.y + t.height && r.y + r.height > t.y)
+      if (!t || !r || t.height === 0) return 'お知らせが無い'
+      return r.x < t.x + t.width && r.x + r.width > t.x && r.y < t.y + t.height && r.y + r.height > t.y ? '重なる' : '重ならない'
     })
-    .toBe(true)
+    .toBe('重ならない')
 }
 
 /** 押す（PC はマウス、S・M は指） */
@@ -448,7 +455,8 @@ async function authorSteps(page: Page, how: 'mouse' | 'touch-h' | 'touch-v') {
     await expect(feedback(page)).toHaveText(undone)
   }
   await expect.poll(() => flashes(page)).toContain(`week-card-${I.meeting}`)
-  await notUnderToast(page, card(page, I.meeting))
+  // （［見る］を押したお知らせは消えている）
+  if (how !== 'touch-v') await notUnderToast(page, card(page, I.meeting))
   await clearFlashes(page)
   await press(redoBtn(page), touch)
   await expect(feedback(page)).toHaveText('やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））')
@@ -563,6 +571,115 @@ test.describe('戻した・やり直したお知らせ（PC）', { tag: ['@pc'] 
     expect(await flashes(page)).toEqual([])
   })
 })
+
+test.describe(
+  '戻した・やり直したお知らせ（PC。複数日・断った時・小さな画面・「+n」・目立たせの終わり）',
+  { tag: ['@pc'] },
+  () => {
+    test('複数日の予定: 日で真ん中の日（11/12）を見ている時に、動かした始点（11/11 → 11/10）を戻すと、出ている行を目立たせる（［見る］無し）', async ({
+      page,
+    }) => {
+      await openWeek(page)
+      const drag = await startMouseDrag(page, await visiblePoint(page.getByTestId(`week-start-${I.expo}`)))
+      const to = cellL(page, '2026-11-11')
+      await drag.moveTo(await visiblePoint(to))
+      await overDropDay(to)
+      await drag.drop()
+      await expect.poll(async () => (await itemOf(page, I.expo))?.start).toBe('2026-11-11')
+      await page.getByTestId('cal-mode-day').click()
+      await page.getByTestId('cal-next').click()
+      await page.getByTestId('cal-next').click()
+      await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
+      const row = page.getByTestId(`day-row-${I.expo}`)
+      await expect(row).toBeVisible()
+      await recordFlashes(page)
+      await clearFlashes(page)
+      await undoBtn(page).click()
+      await expect.poll(async () => (await itemOf(page, I.expo))?.start).toBe('2026-11-10')
+      await expect(feedback(page)).toHaveText('元に戻しました：『展示会の手配』を移した（11/11（水）→ 11/10（火））')
+      await expect(lookBtn(page)).toHaveCount(0)
+      await expect.poll(() => flashes(page)).toContain(`day-row-${I.expo}`)
+      await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
+    })
+
+    test('ドラッグで落としたカード・戻したカードの枠は 1.2秒で終わり、後の描き直し（完了にした）で付け直さない', async ({
+      page,
+    }) => {
+      await openWeek(page)
+      await mouseMoveMeeting(page, '2026-11-12')
+      await expect(page.locator('.flash')).toHaveCount(0)
+      await recordFlashes(page)
+      await page.getByTestId(`done-${I.meeting}`).click()
+      await expect.poll(async () => (await itemOf(page, I.meeting))?.done).toBe(true)
+      // 完了の描き直しの後も枠は付かない（開発の画面の StrictMode で、出し直したカードが付け直し続けていた）
+      await page.waitForTimeout(300)
+      expect(await flashes(page)).toEqual([])
+      // 戻したカード（出し直したカード）も同じ
+      await undoBtn(page).click()
+      await undoBtn(page).click()
+      await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+      await expect.poll(() => flashes(page)).toContain(`week-card-${I.meeting}`)
+      await clearFlashes(page)
+      await page.getByTestId(`done-${I.meeting}`).click()
+      await expect.poll(async () => (await itemOf(page, I.meeting))?.done).toBe(true)
+      await page.waitForTimeout(300)
+      expect(await flashes(page)).toEqual([])
+    })
+
+    test('ボタンで戻せなかった時は「ほかの所で直されたので戻せません」だけ（前の「元に戻しました：…」は消す）', async ({
+      page,
+    }) => {
+      await openWeek(page)
+      await mouseMoveMeeting(page, '2026-11-12')
+      await page.getByTestId(`done-${I.mail}`).click()
+      await undoBtn(page).click()
+      // （落とした時に段の中を送ったので、火曜のカードは見えていないことがある: ［見る］の有る無しは見ない）
+      await expect(feedback(page)).toContainText('元に戻しました：『メールの返信』を完了にした')
+      // ほかの端末で打ち合わせを直した
+      await page.evaluate((id) => window.__ds.actions.updateItem(id, { title: 'ほかの端末で直した' }), I.meeting)
+      await undoBtn(page).click()
+      await expect(toast(page, 'ほかの所で直されたので戻せません')).toHaveCount(1)
+      await expect(feedback(page)).toHaveCount(0)
+      await expect(page.locator('.toast')).toHaveCount(1)
+    })
+
+    test('［見る］付きのお知らせを出している間に詳細を開くと、［見る］を外したお知らせ（同じ文）に替える', async ({ page }) => {
+      await openWeek(page)
+      await mouseMoveMeeting(page, '2026-11-12')
+      await page.getByTestId('cal-mode-day').click()
+      await page.getByTestId('cal-next').click()
+      await expect(page).toHaveURL(/#\/day\/2026-11-11$/)
+      await undoBtn(page).click()
+      const text = '元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'
+      await expect(feedback(page)).toHaveText(`${text}見る`)
+      await page.getByTestId(`day-row-${I.expo}`).locator('.dy-row-open').click()
+      await sheetReady(page)
+      await expect(feedback(page)).toHaveText(text)
+      await expect(lookBtn(page)).toHaveCount(0)
+      await expect(page).toHaveURL(/#\/day\/2026-11-11$/)
+    })
+
+    test('「+n」の中に隠れた予定は、［見る］で移った先で「+n」の札を目立たせる', async ({ page }) => {
+      await openWeek(page)
+      await recordFlashes(page)
+      const busy5 = I.busy[4]
+      await page.getByTestId(`done-${busy5}`).first().click()
+      await expect.poll(async () => (await itemOf(page, busy5))?.done).toBe(true)
+      await page.getByTestId('cal-mode-day').click()
+      await page.getByTestId('cal-next').click()
+      await page.getByTestId('cal-next').click()
+      await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
+      await undoBtn(page).click()
+      await expect(feedback(page)).toHaveText('元に戻しました：『社内の確認』を完了にした見る')
+      await clearFlashes(page)
+      await lookBtn(page).click()
+      await expect(page).toHaveURL(/#\/day\/2026-11-13$/)
+      await expect(page.getByTestId(`day-event-${busy5}`)).toHaveCount(0)
+      await expect.poll(() => flashes(page)).toContain('day-more')
+      await expect(page.getByTestId('day-more')).toBeInViewport()
+    })
+  },
+)
 
 test.describe('戻した・やり直したお知らせ（S）', { tag: ['@s'] }, () => {
   test('作者の手順（指）: 週で長押しで動かして戻す・やり直す、日に替えてカードの無い日で戻す →［見る］', async ({ page }) => {

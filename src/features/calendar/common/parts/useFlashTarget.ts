@@ -5,7 +5,7 @@
 // - 見える所へ出す（scroll）のは flashTarget で置いた時だけ。ドラッグで落とした時は flashInPlace で置き、目立たせるだけにする
 //   （出すのは WeekDnd が、動かした物を。目立つ物が動かした物と違う時（●を動かして、始点のカード・受けた表示が目立つ）に、
 //   二つの送りがぶつからないように）
-// - キー: 'item:{id}'（登録・ドラッグで移った予定、元に戻す・やり直すで当てた予定）、'day-area:{区分}'（デイリーの区切り）、
+// - キー: 'item:{id}'（登録・ドラッグで移った予定、元に戻す・やり直すで当てた予定。デイリーの「+n」の札は、隠れた予定のキーを持つ）、'day-area:{区分}'（デイリーの区切り）、
 //   'day-events:{区分}'（タイムスケジュールのその区分の予定。マンスリーの数字から来た時は区切りと一緒に。11.2）、'day-head:{日付}'
 //   （ウィークリー・デイリーの日の見出し。元に戻す・やり直すで休みを当てた日。7.13・■26）。1つの要素に、いくつかのキーを渡せる
 // - 見える所へ出す時は、画面の下のお知らせ（元に戻した・やり直したお知らせなど）と横に重なれば、その上まで（toastInset。4.9）
@@ -171,10 +171,14 @@ export function useFlashTarget<T extends Element = HTMLElement>(
       node.current?.classList.remove('flash')
     }
   }, [joined, sync])
+  // 外した時は、目立たせた印も忘れる（StrictMode（開発の画面・E2E）は出した部品を一度外して出し直す。付け直す間だけを終わらせて
+  // 目立たせ終えた seq を残すと、出し直した時に目立たせ直さず、付け直す間も終わらないので、後の描き直しのたびに付け直していた）
   useLayoutEffect(
     () => () => {
       sync(null, '')
       window.clearTimeout(liveTimer.current)
+      live.current = false
+      done.current = 0
     },
     [sync],
   )

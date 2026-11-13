@@ -100,10 +100,24 @@ describe('戻す・やり直す', () => {
     await redo()
     expect(useUndo.getState().applied?.seq).toBe(3)
     actions.restoreItemContent('a', { ...item()!, title: 'ほかの端末で直した' })
+    expect(useUndo.getState().refused).toBe(0)
     expect(await undo()).toBe(false)
     expect(useUndo.getState().applied?.seq).toBe(3)
+    // ボタン・キーで断った時は refused の番号が替わる（前に出した「元に戻しました：…」を消す。■26）
+    expect(useUndo.getState().refused).toBe(4)
     resetUndoForTests()
     expect(useUndo.getState().applied).toBeNull()
+    expect(useUndo.getState().refused).toBe(0)
+  })
+
+  it('refused は、ボタン・キーで断った時だけ替わる（当てる物が無い時・お知らせの［元に戻す］で断った時は替えない）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    expect(await undo()).toBe(false)
+    expect(useUndo.getState().refused).toBe(0)
+    const s = moveTo('2026-11-12')
+    actions.restoreItemContent('a', { ...item()!, title: 'ほかの端末で直した' })
+    expect(await undoStep(s.id)).toBe(false)
+    expect(useUndo.getState().refused).toBe(0)
   })
 
   it('戻す物・やり直す物が無ければ何もしない。何も変わらなかった操作は積まない', async () => {

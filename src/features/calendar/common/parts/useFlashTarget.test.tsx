@@ -1,5 +1,6 @@
 // 移った先・押した区切りを目立たせる（useFlashTarget。4.9・FRAME-231・236・D32）。偽の時計で、枠（.flash）の付け外しを確かめる
-import { act, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { T0 } from '../../../../domain/testData'
 import { useCalendarUi } from '../../../../store/uiStore'
@@ -171,6 +172,45 @@ describe('描き直し・出る順', () => {
     await wait(100)
     setProps({ keys: flashKey.item('new'), show: true })
     expect(flashed()).toBe(true)
+  })
+
+  it('StrictMode（開発の画面・E2E）でも、キーを置いた後に出た要素の枠は 1.2秒で終わり、後の描き直しで付け直さない', () => {
+    // StrictMode は出した部品を一度外して出し直す（後始末を走らせる）。後始末で付け直す間の終わりを捨てると、付け直し続けていた
+    function Host({ show, className }: { show: boolean; className: string }) {
+      // 部品ごと後から出す（ドラッグで落とした日に新しく出たカードと同じ）
+      return <StrictMode>{show ? <Box keys={flashKey.item('new')} className={className} /> : null}</StrictMode>
+    }
+    const { rerender } = render(<Host show={false} className="card" />)
+    target(flashKey.item('new'))
+    act(() => vi.advanceTimersByTime(100))
+    rerender(<Host show className="card" />)
+    expect(flashed()).toBe(true)
+    act(() => vi.advanceTimersByTime(5000))
+    expect(flashed()).toBe(false)
+    rerender(<Host show className="card" />)
+    expect(flashed()).toBe(false)
+    rerender(<Host show className="card is-done" />)
+    expect(flashed()).toBe(false)
+  })
+
+  it('StrictMode でも、出ている要素の枠は 1.2秒で終わる', () => {
+    function Host({ className }: { className: string }) {
+      return (
+        <StrictMode>
+          <Box keys={flashKey.item('a')} className={className} />
+        </StrictMode>
+      )
+    }
+    const { rerender } = render(<Host className="card" />)
+    target(flashKey.item('a'))
+    expect(flashed()).toBe(true)
+    act(() => vi.advanceTimersByTime(300))
+    // 目立たせている間の描き直しでは付け直す
+    rerender(<Host className="card is-done" />)
+    expect(flashed()).toBe(true)
+    act(() => vi.advanceTimersByTime(5000))
+    rerender(<Host className="card" />)
+    expect(flashed()).toBe(false)
   })
 
   it('目立たせた 1.2秒の後はキーを消す（開き直してももう一度は目立たせない）', async () => {

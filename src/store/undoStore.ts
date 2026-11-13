@@ -14,7 +14,8 @@
 // - 戻す・やり直すは1つずつ順に当てる（続けて押した分は待って順に。ゴミ箱の出し入れは保存を待つ）。ほかの所で直されていたら
 //   当てずに「ほかの所で直されたので戻せません」と出し、そのステップを捨てる
 // - ボタン・キー（undo・redo）で当てたステップは applied に置く（何を戻した・やり直したかのお知らせと、その予定を見せるのは画面の
-//   側。src/features/calendar/common/undoFeedback.ts。■26 の今の決め方）。お知らせの［元に戻す］で戻した時は置かない
+//   側。src/features/calendar/common/undoFeedback.ts。■26 の今の決め方）。お知らせの［元に戻す］で戻した時は置かない。ボタン・キーで
+//   断った時は refused の番号を替える（画面の側が、前に出した「元に戻しました：…」を消す）
 import { create } from 'zustand'
 import { undoText } from '../domain/itemText'
 import { UNDO_REFUSED } from '../domain/ops'
@@ -42,9 +43,11 @@ export interface UndoState {
   stack: U.UndoStack
   /** 最後にボタン・キーで当てた物（無ければ null） */
   applied: UndoApplied | null
+  /** 最後にボタン・キーで断った時の番号（applied の seq と同じ数え方。無ければ 0） */
+  refused: number
 }
 
-export const useUndo = create<UndoState>(() => ({ stack: U.emptyUndoStack(), applied: null }))
+export const useUndo = create<UndoState>(() => ({ stack: U.emptyUndoStack(), applied: null, refused: 0 }))
 
 /** 戻した・やり直した後にすること（すばやく足すの、打った字を書きかけに戻す・消すなど） */
 export interface StepHooks {
@@ -55,6 +58,8 @@ export interface StepHooks {
 let seq = 0
 /** ボタン・キーで当てた回数（UndoApplied の seq） */
 let appliedSeq = 0
+/** 断った回数（ボタン・キーで当てる間に断ったかを見る） */
+let refusals = 0
 /** 新しい操作を積んだ回数（戻している間に新しい操作が来たかを見る） */
 let pushes = 0
 /** ウィークリー・デイリーを出している数（0 の間は積まない） */
@@ -251,6 +256,7 @@ function refuse(step: U.UndoStep, e?: unknown): void {
     notifyError(e instanceof Error ? e.message : String(e))
     console.error(e)
   } else notifyError(UNDO_CONFLICT)
+  refusals++
   dismissToast(step.id)
   detached.delete(step.id)
   setStack(U.dropStep(stackNow(), step.id))
@@ -298,11 +304,13 @@ function enqueueRun(op: () => Promise<boolean>): Promise<boolean> {
   return run
 }
 
-/** ボタン・キーで当てる（当てたら applied に置く） */
+/** ボタン・キーで当てる（当てたら applied に置く。断ったら refused の番号を替える） */
 const enqueue = (dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<boolean> =>
   enqueueRun(async () => {
+    const before = refusals
     const step = await apply(dir, pick)
     if (step) useUndo.setState({ applied: { seq: ++appliedSeq, dir, step } })
+    else if (refusals !== before) useUndo.setState({ refused: ++appliedSeq })
     return step !== null
   })
 
@@ -371,6 +379,7 @@ export const undoIdle = (): Promise<unknown> => queue
 export function resetUndoForTests(): void {
   seq = 0
   appliedSeq = 0
+  refusals = 0
   pushes = 0
   scope = 0
   hooks.clear()
@@ -378,5 +387,5 @@ export function resetUndoForTests(): void {
   detached.clear()
   sessions.clear()
   queue = Promise.resolve()
-  useUndo.setState({ stack: U.emptyUndoStack(), applied: null })
+  useUndo.setState({ stack: U.emptyUndoStack(), applied: null, refused: 0 })
 }
