@@ -1,8 +1,9 @@
 // ウィークリー・デイリーの元に戻す・やり直す（docs/SPEC.md の 7.13・3.7・3.9・3.10。22. の段階2の終わりの確かめ）の E2E。
 // 操作の列の右の端のボタン（週・日だけ）で、ドラッグ・完了・すばやく足す・削除・詳細で直した所（開いてから閉じるまでを1つ）を
 // 戻し・やり直す。新しい操作でやり直せる物は消え、月へ替えて戻っても並びは残る。お知らせの［元に戻す］は同じ並びの1つを使う。
-// PC は Ctrl+Z・Ctrl+Shift+Z も。ボタン・キーで戻した・やり直した時は「元に戻しました：…」のお知らせを出し、当てた予定・休みの日を
-// 目立たせる（見えていない時は［見る］。■26 の今の決め方。作者の手順のとおり、週で動かして戻し、日に替えてもう一度）。
+// PC は Ctrl+Z・Ctrl+Shift+Z も。ボタン・キーで戻した・やり直した時は「元に戻しました：…」のお知らせを［OK］を押すまで出し、当てた
+// 予定・休みの日を目立たせる（今の週・日に無ければ、今のモードのままその日へ移ってから。■26 の作者の答え。作者の手順のとおり、週で
+// 動かして戻し、日に替えてもう一度）。
 // データは作り物の e2e/fixtures/demoData.ts（今日は 2026年11月10日（火）9:00。週 11/8〜11/14）
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Item } from '../src/domain/types'
@@ -322,7 +323,7 @@ test.describe('S（Pixel 7・指）', { tag: ['@s'] }, () => {
     }
   })
 
-  test('すばやく足すを開いたまま［元に戻す］を押しても閉じず、打っている字はそのまま（戻るのはその前の操作）', async ({
+  test('すばやく足すを開いたまま［元に戻す］を押しても閉じず、打っている字はそのまま（戻るのはその前の操作）。戻した予定が週の中の見えていない所なら、週の中を送って出す', async ({
     page,
   }) => {
     await openWeek(page)
@@ -331,18 +332,37 @@ test.describe('S（Pixel 7・指）', { tag: ['@s'] }, () => {
     await page.getByTestId('week-add-2026-11-14-work').tap()
     const input = page.getByTestId('quick-add-input')
     await input.fill('打ちかけ')
+    await expect(card(page, I.mail)).not.toBeInViewport()
     await undoBtn(page).tap()
     await expect.poll(async () => (await itemOf(page, I.mail))?.done).toBe(false)
-    await expect(input).toBeVisible()
     await expect(input).toHaveValue('打ちかけ')
     await expect(input).toBeFocused()
     expect(await page.evaluate(() => Object.values(window.__ds.getData().items).some((i) => i.title === '打ちかけ'))).toBe(false)
-    // 戻したお知らせは出すが、［見る］は付けない（押すと打っている字を足して閉じ、やり直すが消える）。入力欄はお知らせの上まで送る
-    await expect(page.locator('.toast')).toHaveText('元に戻しました：『メールの返信』を完了にした')
-    await expect(page.locator('.toast').getByRole('button', { name: '見る' })).toHaveCount(0)
+    // 戻したお知らせは［OK］まで出す。戻した火曜のカードは今の週の中なので移らず、週の中を送って出す（何が起きたか見えるように。
+    // 入力欄は開いたまま）
+    await expect(page.locator('.toast')).toHaveText('元に戻しました：『メールの返信』を完了にしたOK')
+    await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
+    await expect(card(page, I.mail)).toBeInViewport({ ratio: 1 })
+    await notUnderToast(page, card(page, I.mail))
+    await expectLabel(redoBtn(page), 'やり直す（『メールの返信』を完了にした）')
+  })
+
+  test('すばやく足すを開いたまま戻し、戻した所が見えている時は、入力欄を開いたままお知らせの上まで送る', async ({ page }) => {
+    await openWeek(page)
+    // 土曜の休みを外してから、土曜の入力欄を開いて打つ（土曜の見出しは入力欄の近く）
+    await page.getByTestId('week-off-2026-11-14').tap()
+    await expect(page.getByTestId('week-off-2026-11-14')).not.toBeChecked()
+    await page.getByTestId('week-add-2026-11-14-work').tap()
+    const input = page.getByTestId('quick-add-input')
+    await input.fill('打ちかけ')
+    await undoBtn(page).tap()
+    await expect(page.getByTestId('week-off-2026-11-14')).toBeChecked()
+    await expect(page.locator('.toast')).toHaveText('元に戻しました：11/14（土）の休みを外したOK')
+    await expect(input).toHaveValue('打ちかけ')
+    await expect(input).toBeFocused()
     await notUnderToast(page, input)
     await expect(input).toBeInViewport()
-    await expectLabel(redoBtn(page), 'やり直す（『メールの返信』を完了にした）')
+    await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
   })
 })
 
@@ -369,15 +389,15 @@ test.describe('M（タブレット・指）', { tag: ['@m'] }, () => {
   })
 })
 
-// ---------- 戻した・やり直した時のお知らせと目立たせ（7.13・3.9・4.9。■26 の今の決め方） ----------
+// ---------- 戻した・やり直した時のお知らせと見せ方（7.13・3.9・4.9。■26 の作者の答え） ----------
 // 作者の手順（2026-11-13）: 「週の画面でカードを動かし、［元に戻す］と［やり直す］を押す。日の画面に替えて、もう一度押す。」
-// 作者の言葉: 「切り替え先のモードで、元に戻すとやり直すボタンはエフェクトとしては反応しているようだが、画面が何も変わらないので
-// 何が起きているかわからない」
+// 作者の答え（2026-11-13）: 「上記の通り、アンドゥ、リドゥ元のページに強制移行させ、画面下に説明のお知らせをユーザーが確認ボタンを
+// 押すまで表示し続ける。」
 
 /** 戻した・やり直したお知らせ（画面の下の aria-live の所の role="status"） */
 const feedback = (page: Page) =>
   page.locator('.toasts[aria-live="assertive"] [role="status"]', { hasText: /^(元に戻しました|やり直しました)：/ })
-const lookBtn = (page: Page) => feedback(page).getByRole('button', { name: '見る' })
+const okBtn = (page: Page) => feedback(page).getByRole('button', { name: 'OK' })
 
 /** 目立たせた（.flash を付けた）要素の data-testid を控え始める（1.2秒で外れるので、付いた時に控える） */
 async function recordFlashes(page: Page) {
@@ -400,6 +420,10 @@ async function clearFlashes(page: Page) {
   await page.evaluate(() => void ((window as unknown as { __e2eFlashes?: string[] }).__e2eFlashes = []))
 }
 
+/** 2つの箱が重なるか */
+const intersects = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+  a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+
 /** お知らせが出ている間に、target が画面の下のお知らせと重なっていない（お知らせの下に隠れていない。4.9。消えた後は数えない） */
 async function notUnderToast(page: Page, target: Locator) {
   await expect
@@ -407,7 +431,7 @@ async function notUnderToast(page: Page, target: Locator) {
       const t = await page.locator('.toasts').boundingBox()
       const r = await target.boundingBox()
       if (!t || !r || t.height === 0) return 'お知らせが無い'
-      return r.x < t.x + t.width && r.x + r.width > t.x && r.y < t.y + t.height && r.y + r.height > t.y ? '重なる' : '重ならない'
+      return intersects(r, t) ? '重なる' : '重ならない'
     })
     .toBe('重ならない')
 }
@@ -428,10 +452,11 @@ async function moveMeetingBy(page: Page, date: string, how: 'mouse' | 'touch-h' 
 }
 
 /**
- * 作者の手順: 週でカードを動かし、［元に戻す］［やり直す］（カードが見えていれば目立たせ、［見る］は無い）。日に替えてカードの無い日
- * （11/11）で［元に戻す］→「元に戻しました：…（11/12（木）→ 11/10（火））［見る］」→ 押すとその日（11/10）のデイリー（置き換える）で
- * 予定を目立たせる。S（7日を縦）は木曜へ落とす時に週を木曜まで送っているので、戻した火曜のカードは週の中の見えていない所にあり、
- * ［見る］で週の中を送って目立たせる（行き先は替えない）
+ * 作者の手順: 週でカードを動かし、［元に戻す］［やり直す］（カードは今の週にあるので移らずに目立たせる）。日に替えてカードの無い日
+ * （11/11）で［元に戻す］→ 今のモード（日）のまま、その日（11/10）のデイリーへ移って（置き換える）予定を目立たせる。［やり直す］で
+ * 11/12 のデイリーへ。お知らせは「元に戻しました：…（11/12（木）→ 11/10（火））［OK］」で、押すたびに置き換わり、モードを替えても・
+ * 移っても残り、［OK］で消える。S（7日を縦）は木曜へ落とす時に週を木曜まで送っているので、戻した火曜のカードは週の中の見えて
+ * いない所にあり、週の中を送って目立たせる（行き先は替えない）
  */
 async function authorSteps(page: Page, how: 'mouse' | 'touch-h' | 'touch-v') {
   const touch = how !== 'mouse'
@@ -439,66 +464,85 @@ async function authorSteps(page: Page, how: 'mouse' | 'touch-h' | 'touch-v') {
   await recordFlashes(page)
   await moveMeetingBy(page, '2026-11-12', how)
   await clearFlashes(page)
+  await historySettled(page)
+  const length = await page.evaluate(() => history.length)
   await press(undoBtn(page), touch)
   const undone = '元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'
-  // 動かした時の「〜へ移しました［元に戻す］」は消え、戻したお知らせだけ（［元に戻す］は無い。読み上げは role="status"）
-  await expect(feedback(page)).toContainText(undone)
+  const redone = 'やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））'
+  // 動かした時の「〜へ移しました［元に戻す］」は消え、戻したお知らせだけ（ボタンは［OK］だけ。読み上げは role="status"）
+  await expect(feedback(page)).toHaveText(`${undone}OK`)
   await expect(page.locator('.toast')).toHaveCount(1)
-  await expect(feedback(page).getByRole('button', { name: '元に戻す' })).toHaveCount(0)
-  if (how === 'touch-v') {
-    await expect(feedback(page)).toHaveText(`${undone}見る`)
-    expect(await flashes(page)).toEqual([])
-    await press(lookBtn(page), touch)
-    await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
-    await expect(card(page, I.meeting)).toBeInViewport({ ratio: 1 })
-  } else {
-    await expect(feedback(page)).toHaveText(undone)
-  }
+  await expect(feedback(page).getByRole('button')).toHaveText(['OK'])
+  // 戻した火曜のカードは今の週の中: 移らずに目立たせる（見える所まで送り、お知らせの下に隠さない）
   await expect.poll(() => flashes(page)).toContain(`week-card-${I.meeting}`)
-  // （［見る］を押したお知らせは消えている）
-  if (how !== 'touch-v') await notUnderToast(page, card(page, I.meeting))
+  await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
+  await expect(card(page, I.meeting)).toBeInViewport({ ratio: 1 })
+  await notUnderToast(page, card(page, I.meeting))
   await clearFlashes(page)
   await press(redoBtn(page), touch)
-  await expect(feedback(page)).toHaveText('やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））')
   // 前のお知らせは置き換える（重ねない）
+  await expect(feedback(page)).toHaveText(`${redone}OK`)
   await expect(page.locator('.toast')).toHaveCount(1)
   await expect.poll(() => flashes(page)).toContain(`week-card-${I.meeting}`)
-  // 見えている時も、画面の下のお知らせの下に隠さない（4.9）
+  await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
   await notUnderToast(page, card(page, I.meeting))
 
-  // 日の画面に替えて、カードの無い日（11/11）で［元に戻す］
+  // 日の画面に替えて、カードの無い日（11/11）で［元に戻す］。モードを替えてもお知らせは残る
   await press(page.getByTestId('cal-mode-day'), touch)
   await expect(page.getByTestId('view-day')).toBeVisible()
   await press(page.getByTestId('cal-next'), touch)
   await expect(page).toHaveURL(/#\/day\/2026-11-11$/)
+  await expect(feedback(page)).toHaveText(`${redone}OK`)
   await expect(page.getByTestId(`day-event-${I.meeting}`)).toHaveCount(0)
   await clearFlashes(page)
   await press(undoBtn(page), touch)
-  await expect(feedback(page)).toHaveText('元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））見る')
-  await expect(lookBtn(page)).toBeVisible()
-  expect(await flashes(page)).toEqual([])
-  await historySettled(page)
-  const length = await page.evaluate(() => history.length)
-  await press(lookBtn(page), touch)
-  // その日のデイリーへ（置き換える: 履歴は増えない）。押したお知らせは消える
+  // 今のモード（日）のまま、戻した日（11/10）のデイリーへ移る（置き換える: 履歴は増えない）。お知らせは残る
   await expect(page).toHaveURL(/#\/day\/2026-11-10$/)
-  await expect(feedback(page)).toHaveCount(0)
+  await expect(feedback(page)).toHaveText(`${undone}OK`)
   const event = page.getByTestId(`day-event-${I.meeting}`)
   await expect(event).toBeVisible()
   await expect.poll(() => flashes(page)).toContain(`day-event-${I.meeting}`)
   await expect(event).toBeInViewport({ ratio: 1 })
   await historySettled(page)
   expect(await page.evaluate(() => history.length)).toBe(length)
-  // ［やり直す］: 予定はこの日から 11/12 へ移る（見えない）ので［見る］
+  // ［やり直す］: 予定は 11/12 へ移るので、その日のデイリーへ移る
+  await clearFlashes(page)
   await press(redoBtn(page), touch)
-  await expect(feedback(page)).toHaveText('やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））見る')
+  await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
+  await expect(feedback(page)).toHaveText(`${redone}OK`)
+  await expect(page.locator('.toast')).toHaveCount(1)
+  await expect.poll(() => flashes(page)).toContain(`day-event-${I.meeting}`)
+  await historySettled(page)
+  expect(await page.evaluate(() => history.length)).toBe(length)
+  // ［OK］で消える
+  await press(okBtn(page), touch)
+  await expect(page.locator('.toast')).toHaveCount(0)
 }
 
 test.describe('戻した・やり直したお知らせ（PC）', { tag: ['@pc'] }, () => {
-  test('作者の手順: 週で動かして戻す・やり直す（目立たせる）、日に替えてカードの無い日で戻す →［見る］でその日へ移って目立たせる', async ({
+  test('作者の手順: 週で動かして戻す・やり直す（目立たせる）、日に替えてカードの無い日で戻す → その日へ移って目立たせる。お知らせは［OK］まで', async ({
     page,
   }) => {
     await authorSteps(page, 'mouse')
+  })
+
+  test('お知らせは時間では消えない（6秒を過ぎても）。Esc では消さず、［OK］はキーボードでも押せる。フォーカスはお知らせへ動かさない', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await page.getByTestId('week-off-2026-11-12').click()
+    await page.keyboard.press('Control+z')
+    await expect(feedback(page)).toHaveText('元に戻しました：11/12（木）を休みにしたOK')
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest('.toast')))).toBe(false)
+    // ほかのお知らせは長くて 6秒で消える
+    await page.waitForTimeout(6_500)
+    await expect(feedback(page)).toHaveCount(1)
+    await page.keyboard.press('Escape')
+    await expect(feedback(page)).toHaveCount(1)
+    // ［OK］は本物のボタン（キーボードで押せる）
+    await okBtn(page).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.toast')).toHaveCount(0)
   })
 
   test('キーでも同じお知らせ（Ctrl+Z・Ctrl+Shift+Z・Ctrl+Y）。休みを戻すと日の見出しを目立たせる', async ({ page }) => {
@@ -506,21 +550,19 @@ test.describe('戻した・やり直したお知らせ（PC）', { tag: ['@pc'] 
     await recordFlashes(page)
     await page.getByTestId('week-off-2026-11-12').click()
     await page.keyboard.press('Control+z')
-    await expect(feedback(page)).toHaveText('元に戻しました：11/12（木）を休みにした')
+    await expect(feedback(page)).toHaveText('元に戻しました：11/12（木）を休みにしたOK')
     await expect(page.getByTestId('week-off-2026-11-12')).not.toBeChecked()
     await expect.poll(() => flashes(page)).toContain('week-head-2026-11-12')
     await page.keyboard.press('Control+Shift+z')
-    await expect(feedback(page)).toHaveText('やり直しました：11/12（木）を休みにした')
+    await expect(feedback(page)).toHaveText('やり直しました：11/12（木）を休みにしたOK')
     await page.keyboard.press('Control+z')
     await page.keyboard.press('Control+y')
-    await expect(feedback(page)).toHaveText('やり直しました：11/12（木）を休みにした')
+    await expect(feedback(page)).toHaveText('やり直しました：11/12（木）を休みにしたOK')
     await expect(page.locator('.toast')).toHaveCount(1)
     await expect(page.getByTestId('week-off-2026-11-12')).toBeChecked()
   })
 
-  test('デイリーで休みを戻す: その日なら見出しを目立たせ、別の日なら［見る］でその日へ移って見出しを目立たせる', async ({
-    page,
-  }) => {
+  test('デイリーで休みを戻す: その日なら見出しを目立たせ、別の日ならその日へ移って見出しを目立たせる', async ({ page }) => {
     await openWeek(page)
     await recordFlashes(page)
     await page.getByTestId('week-off-2026-11-12').click()
@@ -533,24 +575,22 @@ test.describe('戻した・やり直したお知らせ（PC）', { tag: ['@pc'] 
     await expect(page.getByTestId('day-head')).toHaveAttribute('data-off', 'true')
     await clearFlashes(page)
     await undoBtn(page).click()
-    await expect(feedback(page)).toHaveText('元に戻しました：11/12（木）を休みにした')
-    await expect(lookBtn(page)).toHaveCount(0)
+    await expect(feedback(page)).toHaveText('元に戻しました：11/12（木）を休みにしたOK')
     await expect(page.getByTestId('day-head')).not.toHaveAttribute('data-off', 'true')
     await expect.poll(() => flashes(page)).toContain('day-head')
-    // 次の日（11/13）で［やり直す］:［見る］で 11/12 へ
+    await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
+    // 次の日（11/13）で［やり直す］: 11/12 へ移って見出しを目立たせる
     await page.getByTestId('cal-next').click()
     await expect(page).toHaveURL(/#\/day\/2026-11-13$/)
     await clearFlashes(page)
     await redoBtn(page).click()
-    await expect(feedback(page)).toHaveText('やり直しました：11/12（木）を休みにした見る')
-    expect(await flashes(page)).toEqual([])
-    await lookBtn(page).click()
     await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
+    await expect(feedback(page)).toHaveText('やり直しました：11/12（木）を休みにしたOK')
     await expect(page.getByTestId('day-head')).toHaveAttribute('data-off', 'true')
     await expect.poll(() => flashes(page)).toContain('day-head')
   })
 
-  test('削除をやり直すと（予定はゴミ箱へ）［見る］も目立たせも無い。戻すと（ゴミ箱から）カードを目立たせる', async ({ page }) => {
+  test('削除を戻すと、ゴミ箱から戻った予定の週へ移って目立たせる。削除をやり直すと（ゴミ箱へ）移らず文だけ', async ({ page }) => {
     await openWeek(page)
     await recordFlashes(page)
     await card(page, I.meeting).locator('.wk-open').click()
@@ -559,15 +599,23 @@ test.describe('戻した・やり直したお知らせ（PC）', { tag: ['@pc'] 
     await page.getByTestId('item-delete').click()
     await page.getByRole('dialog', { name: '『打ち合わせ』を削除しますか？' }).getByRole('button', { name: '削除' }).click()
     await expect(card(page, I.meeting)).toHaveCount(0)
+    // 次の週へ移ってから戻す
+    await page.getByTestId('cal-next').click()
+    await expect(page).toHaveURL(/#\/week\/2026-11-15$/)
     await clearFlashes(page)
     await undoBtn(page).click()
-    await expect(feedback(page)).toHaveText('元に戻しました：『打ち合わせ』を削除した（ゴミ箱から戻した）')
+    await expect(feedback(page)).toHaveText('元に戻しました：『打ち合わせ』を削除した（ゴミ箱から戻した）OK')
+    await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
     await expect.poll(() => flashes(page)).toContain(`week-card-${I.meeting}`)
+    // また次の週へ移って、やり直す（ゴミ箱へ）: 移らない
+    await page.getByTestId('cal-next').click()
+    await expect(page).toHaveURL(/#\/week\/2026-11-15$/)
     await clearFlashes(page)
     await redoBtn(page).click()
-    await expect(feedback(page)).toHaveText('やり直しました：『打ち合わせ』を削除した（ゴミ箱へ）')
-    await expect(lookBtn(page)).toHaveCount(0)
-    await expect(card(page, I.meeting)).toHaveCount(0)
+    await expect(feedback(page)).toHaveText('やり直しました：『打ち合わせ』を削除した（ゴミ箱へ）OK')
+    await expect.poll(async () => await itemOf(page, I.meeting)).toBeNull()
+    await page.waitForTimeout(300)
+    await expect(page).toHaveURL(/#\/week\/2026-11-15$/)
     expect(await flashes(page)).toEqual([])
   })
 })
@@ -576,7 +624,7 @@ test.describe(
   '戻した・やり直したお知らせ（PC。複数日・断った時・小さな画面・「+n」・目立たせの終わり）',
   { tag: ['@pc'] },
   () => {
-    test('複数日の予定: 日で真ん中の日（11/12）を見ている時に、動かした始点（11/11 → 11/10）を戻すと、出ている行を目立たせる（［見る］無し）', async ({
+    test('複数日の予定: 日で真ん中の日（11/12）を見ている時に、動かした始点（11/11 → 11/10）を戻すと、移らずに出ている行を目立たせる', async ({
       page,
     }) => {
       await openWeek(page)
@@ -596,8 +644,7 @@ test.describe(
       await clearFlashes(page)
       await undoBtn(page).click()
       await expect.poll(async () => (await itemOf(page, I.expo))?.start).toBe('2026-11-10')
-      await expect(feedback(page)).toHaveText('元に戻しました：『展示会の手配』を移した（11/11（水）→ 11/10（火））')
-      await expect(lookBtn(page)).toHaveCount(0)
+      await expect(feedback(page)).toHaveText('元に戻しました：『展示会の手配』を移した（11/11（水）→ 11/10（火））OK')
       await expect.poll(() => flashes(page)).toContain(`day-row-${I.expo}`)
       await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
     })
@@ -626,40 +673,47 @@ test.describe(
       expect(await flashes(page)).toEqual([])
     })
 
-    test('ボタンで戻せなかった時は「ほかの所で直されたので戻せません」だけ（前の「元に戻しました：…」は消す）', async ({
+    test('ボタンで戻せなかった時は「ほかの所で直されたので戻せません」を［OK］まで出す（前の「元に戻しました：…」と置き換える）', async ({
       page,
     }) => {
       await openWeek(page)
       await mouseMoveMeeting(page, '2026-11-12')
       await page.getByTestId(`done-${I.mail}`).click()
       await undoBtn(page).click()
-      // （落とした時に段の中を送ったので、火曜のカードは見えていないことがある: ［見る］の有る無しは見ない）
-      await expect(feedback(page)).toContainText('元に戻しました：『メールの返信』を完了にした')
+      await expect(feedback(page)).toHaveText('元に戻しました：『メールの返信』を完了にしたOK')
       // ほかの端末で打ち合わせを直した
       await page.evaluate((id) => window.__ds.actions.updateItem(id, { title: 'ほかの端末で直した' }), I.meeting)
       await undoBtn(page).click()
-      await expect(toast(page, 'ほかの所で直されたので戻せません')).toHaveCount(1)
+      const refused = toast(page, 'ほかの所で直されたので戻せません')
+      await expect(refused).toHaveCount(1)
+      await expect(refused).toHaveAttribute('role', 'alert')
       await expect(feedback(page)).toHaveCount(0)
       await expect(page.locator('.toast')).toHaveCount(1)
+      await page.waitForTimeout(6_500)
+      await expect(refused).toHaveCount(1)
+      await refused.getByRole('button', { name: 'OK' }).click()
+      await expect(page.locator('.toast')).toHaveCount(0)
     })
 
-    test('［見る］付きのお知らせを出している間に詳細を開くと、［見る］を外したお知らせ（同じ文）に替える', async ({ page }) => {
+    test('［OK］まで出すお知らせは、小さな画面（詳細）を開いている間は出さず、閉じるとまた出る（［OK］を押すまで）', async ({
+      page,
+    }) => {
       await openWeek(page)
-      await mouseMoveMeeting(page, '2026-11-12')
-      await page.getByTestId('cal-mode-day').click()
-      await page.getByTestId('cal-next').click()
-      await expect(page).toHaveURL(/#\/day\/2026-11-11$/)
+      await page.getByTestId('week-off-2026-11-12').click()
       await undoBtn(page).click()
-      const text = '元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'
-      await expect(feedback(page)).toHaveText(`${text}見る`)
-      await page.getByTestId(`day-row-${I.expo}`).locator('.dy-row-open').click()
-      await sheetReady(page)
+      const text = '元に戻しました：11/12（木）を休みにしたOK'
       await expect(feedback(page)).toHaveText(text)
-      await expect(lookBtn(page)).toHaveCount(0)
-      await expect(page).toHaveURL(/#\/day\/2026-11-11$/)
+      await card(page, I.meeting).locator('.wk-open').click()
+      await sheetReady(page)
+      await expect(feedback(page)).toBeHidden()
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+      await expect(feedback(page)).toBeVisible()
+      await expect(feedback(page)).toHaveText(text)
+      await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
     })
 
-    test('「+n」の中に隠れた予定は、［見る］で移った先で「+n」の札を目立たせる', async ({ page }) => {
+    test('「+n」の中に隠れた予定は、その日へ移った先で「+n」の札を目立たせる', async ({ page }) => {
       await openWeek(page)
       await recordFlashes(page)
       const busy5 = I.busy[4]
@@ -669,10 +723,9 @@ test.describe(
       await page.getByTestId('cal-next').click()
       await page.getByTestId('cal-next').click()
       await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
-      await undoBtn(page).click()
-      await expect(feedback(page)).toHaveText('元に戻しました：『社内の確認』を完了にした見る')
       await clearFlashes(page)
-      await lookBtn(page).click()
+      await undoBtn(page).click()
+      await expect(feedback(page)).toHaveText('元に戻しました：『社内の確認』を完了にしたOK')
       await expect(page).toHaveURL(/#\/day\/2026-11-13$/)
       await expect(page.getByTestId(`day-event-${busy5}`)).toHaveCount(0)
       await expect.poll(() => flashes(page)).toContain('day-more')
@@ -682,11 +735,13 @@ test.describe(
 )
 
 test.describe('戻した・やり直したお知らせ（S）', { tag: ['@s'] }, () => {
-  test('作者の手順（指）: 週で長押しで動かして戻す・やり直す、日に替えてカードの無い日で戻す →［見る］', async ({ page }) => {
+  test('作者の手順（指）: 週で長押しで動かして戻す・やり直す、日に替えてカードの無い日で戻す → その日へ移る。お知らせは［OK］まで', async ({
+    page,
+  }) => {
     await authorSteps(page, 'touch-v')
   })
 
-  test('週の中の見えていない所（スクロールの外）で戻した時は［見る］。押すと週の中を送って目立たせる（お知らせの下に隠さない）', async ({
+  test('週の中の見えていない所（スクロールの外）で戻した時は、移らずに週の中を送って目立たせる（お知らせの下に隠さない）', async ({
     page,
   }) => {
     await openWeek(page)
@@ -697,17 +752,66 @@ test.describe('戻した・やり直したお知らせ（S）', { tag: ['@s'] },
     await expect(page.getByTestId('week-head-2026-11-13')).not.toBeInViewport()
     await clearFlashes(page)
     await undoBtn(page).tap()
-    await expect(feedback(page)).toHaveText('元に戻しました：11/13（金）を休みにした見る')
-    expect(await flashes(page)).toEqual([])
-    await lookBtn(page).tap()
+    await expect(feedback(page)).toHaveText('元に戻しました：11/13（金）を休みにしたOK')
     await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
     await expect.poll(() => flashes(page)).toContain('week-head-2026-11-13')
     await expect(page.getByTestId('week-head-2026-11-13')).toBeInViewport({ ratio: 1 })
+    await notUnderToast(page, page.getByTestId('week-head-2026-11-13'))
   })
+
+  test('すばやく足すに字を打ったまま戻して別の週へ移る時は、字を足さずに閉じる（書きかけに残り、開き直すと出る）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await moveMeetingBy(page, '2026-11-12', 'touch-v')
+    // 次の週へ移ってから、すばやく足すを開いて字を打つ
+    await page.getByTestId('cal-next').tap()
+    await expect(page).toHaveURL(/#\/week\/2026-11-15$/)
+    await page.getByTestId('week-add-2026-11-16-work').tap()
+    const input = page.getByTestId('quick-add-input')
+    await input.fill('打ちかけ')
+    await undoBtn(page).tap()
+    // 戻した予定（11/10）の週へ移る。打っていた字は足さない（「『打ちかけ』を足しました」も出ない）
+    await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
+    await expect(feedback(page)).toHaveText('元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））OK')
+    await expect(input).toHaveCount(0)
+    await expect(page.locator('.toast')).toHaveCount(1)
+    expect(await page.evaluate(() => Object.values(window.__ds.getData().items).some((i) => i.title === '打ちかけ'))).toBe(false)
+    // 元の週へ戻って同じ所を開くと、書きかけが出る
+    await page.getByTestId('cal-next').tap()
+    await page.getByTestId('week-add-2026-11-16-work').tap()
+    await expect(page.getByTestId('quick-add-input')).toHaveValue('打ちかけ')
+  })
+
+  for (const [width, height] of [
+    [360, 640],
+    [390, 844],
+  ]) {
+    test(`幅 ${width}px: お知らせは［元に戻す］［やり直す］のボタンを隠さず、続けて押せる`, async ({ page }) => {
+      await page.setViewportSize({ width, height })
+      await openWeek(page)
+      await page.getByTestId(`done-${I.mail}`).tap()
+      await undoBtn(page).tap()
+      await expect(feedback(page)).toHaveText('元に戻しました：『メールの返信』を完了にしたOK')
+      const box = await page.locator('.toasts').boundingBox()
+      for (const btn of [undoBtn(page), redoBtn(page)]) expect(intersects((await btn.boundingBox())!, box!)).toBe(false)
+      await noHorizontalScroll(page)
+      // そのまま続けて押せる（お知らせは置き換わる）
+      await redoBtn(page).tap()
+      await expect(feedback(page)).toHaveText('やり直しました：『メールの返信』を完了にしたOK')
+      await undoBtn(page).tap()
+      await expect(feedback(page)).toHaveText('元に戻しました：『メールの返信』を完了にしたOK')
+      await expect(page.locator('.toast')).toHaveCount(1)
+      // ［OK］は指で押せる大きさ
+      await tapSize(okBtn(page), 'OK')
+    })
+  }
 })
 
 test.describe('戻した・やり直したお知らせ（M）', { tag: ['@m'] }, () => {
-  test('作者の手順（指）: 週で長押しで動かして戻す・やり直す、日に替えてカードの無い日で戻す →［見る］', async ({ page }) => {
+  test('作者の手順（指）: 週で長押しで動かして戻す・やり直す、日に替えてカードの無い日で戻す → その日へ移る。お知らせは［OK］まで', async ({
+    page,
+  }) => {
     await authorSteps(page, 'touch-h')
   })
 })

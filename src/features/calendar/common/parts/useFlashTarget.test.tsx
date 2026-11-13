@@ -48,7 +48,7 @@ describe('キー', () => {
   })
 })
 
-describe('今出ている目立たせる所（flashTargetsOf。戻した・やり直した予定が見えているかを見る。7.13・■26）', () => {
+describe('今出ている目立たせる所（flashTargetsOf。戻した・やり直した予定が今の週・日に出ているかを見る。7.13・■26）', () => {
   /** 2つのフックを1つの要素に付ける（デイリーのタイムスケジュールの予定の枠と同じ形） */
   function Two({ show = true, second = flashKey.dayEvents('work') }: { show?: boolean; second?: string }) {
     const a = useFlashTarget<HTMLDivElement>(flashKey.item('a'), { scroll: true })

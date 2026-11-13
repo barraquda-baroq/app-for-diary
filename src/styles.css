@@ -1682,6 +1682,12 @@ body:has(.modal-backdrop) .toasts {
   bottom: auto;
 }
 
+/* ［OK］まで出すお知らせ（元に戻す・やり直すのボタン・キーで当てた・断った時。docs/SPEC.md の 3.9・■26）は、小さな画面を開いている
+   間は出さない（上に出し続けると、シートの上の［×］・件名を隠したままになる）。閉じるとまた出る（［OK］を押すまで消さない） */
+body:has(.modal-backdrop) .toast.is-until-ok {
+  display: none;
+}
+
 /* 端末の「視差効果を減らす」では CSS の動きを全部止める（NS と同じ）。知らせの役目がある物（.flash の枠・ロックの印）は、
    動かさずに出す側（JS）が付け外しする（docs/SPEC.md の 4.9） */
 @media (prefers-reduced-motion: reduce) {

@@ -1,6 +1,8 @@
-// 操作の列の元に戻す・やり直す（ボタン・キー）で戻した・やり直した時のお知らせと目立たせ（docs/SPEC.md の 7.13・3.9・4.9。■26 の
-// 今の決め方。common/undoFeedback.ts）: 何を戻したかの文（ボタンの名前と同じ言葉）、前のお知らせを置き換えること、見えていない時
-// だけ［見る］（今のモードのままその日の期間へ。履歴は置き換える）、見えている時はすぐ目立たせること、読み上げ（お知らせの aria-live）
+// 操作の列の元に戻す・やり直す（ボタン・キー）で戻した・やり直した時のお知らせと見せ方（docs/SPEC.md の 7.13・3.9・4.9。■26 の
+// 作者の答え「アンドゥ、リドゥ元のページに強制移行させ、画面下に説明のお知らせをユーザーが確認ボタンを押すまで表示し続ける」。
+// common/undoFeedback.ts・src/store/undoStore.ts）: 何を戻したかの文（ボタンの名前と同じ言葉）、お知らせは［OK］を押すまで出して
+// 次に戻すと置き換えること、当てた予定・休みの日が今の画面に無ければ今のモードのままその日へ移る（履歴は置き換える）こと、
+// あれば移らずに目立たせること、読み上げ（お知らせの aria-live）
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,13 +12,14 @@ import type { Item } from '../../../domain/types'
 import type { UndoStep } from '../../../domain/undo'
 import { actions } from '../../../store/actions'
 import { getData, useApp } from '../../../store/appStore'
-import { TOAST_MS, useCalendarUi, useToasts } from '../../../store/uiStore'
-import { itemChange, recordStep, undoIdle } from '../../../store/undoStore'
+import { quickDraftKey, readLocal } from '../../../store/localDrafts'
+import { useCalendarUi, useToasts } from '../../../store/uiStore'
+import { itemChange, recordStep, redo, UNDO_FEEDBACK_SLOT, undoIdle } from '../../../store/undoStore'
 import { renderAt, setupCalendarTests } from '../../../test/renderCalendar'
 import { toastInset } from '../../../ui/scrollWithin'
 import { flashKey } from './parts'
 import { testIds } from './testIds'
-import { planUndoFeedback } from './undoFeedback'
+import { planUndoReveal } from './undoFeedback'
 
 // お知らせの上の高さは src/ui/scrollWithin.ts（中身はそのまま動かし、呼ばれた物を見る）
 vi.mock('../../../ui/scrollWithin', { spy: true })
@@ -33,6 +36,8 @@ const redoBtn = () => screen.getByTestId(testIds.calRedo)
 const settle = () => act(async () => void (await undoIdle()))
 /** 出ているお知らせの文 */
 const toastTexts = () => useToasts.getState().toasts.map((t) => t.message)
+/** 出ているお知らせ（文・［OK］まで出すか・ボタン） */
+const toastShapes = () => useToasts.getState().toasts.map((t) => [t.message, t.untilOk ?? false, t.action?.label ?? null])
 /** その文のお知らせ（画面の物） */
 const toastEl = (text: string) => screen.getByText(text).closest('.toast') as HTMLElement
 const flashed = (el: HTMLElement) => el.classList.contains('flash')
@@ -62,21 +67,44 @@ function change(id: string, label: string, patch: Partial<Item>) {
   })
 }
 
-/** ほかの端末で直した（並びの外） */
-const elsewhere = (id: string, patch: Partial<Item>) =>
-  act(() => actions.restoreItemContent(id, { ...getData().items[id], ...patch }))
+/**
+ * ゴミ箱へ移す・戻すの代わり（この保存先は何も書かないので、表示のデータだけを動かす。DetailSheet.test.tsx と同じ）。予定 a を
+ * ゴミ箱へ移して、削除の操作として積む
+ */
+async function deleteA() {
+  let kept: Item | null = null
+  vi.spyOn(actions, 'trashItem').mockImplementation(async (id) => {
+    act(() =>
+      useApp.setState((st) => {
+        const { [id]: gone, ...items } = st.data.items
+        kept = gone
+        return { data: { ...st.data, items, trashEntries: { ...st.data.trashEntries, e1: { id: 'e1' } as never } } }
+      }),
+    )
+    return 'e1'
+  })
+  vi.spyOn(actions, 'restoreTrashEntry').mockImplementation(async () => {
+    act(() => useApp.setState((st) => ({ data: { ...st.data, items: { ...st.data.items, a: kept! }, trashEntries: {} } })))
+    return { restored: 1 } as never
+  })
+  await act(async () => {
+    const before = getData().items.a
+    const entry = await actions.trashItem('a')
+    recordStep(undoText.deleted('打ち合わせ'), [itemChange('a', before, null, entry)])
+  })
+}
 
 describe('文（ボタンの名前と同じ言葉）', () => {
-  it('移したのを戻す・やり直す: 「元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））」と逆向き', async () => {
+  it('移したのを戻す・やり直す: 「元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））」と逆向き。前の物は置き換える', async () => {
     const { user } = await open('/week/2026-11-08')
     moveA('2026-11-12')
     await user.click(undoBtn())
     await settle()
-    expect(toastTexts()).toEqual(['元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'])
+    expect(toastShapes()).toEqual([['元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））', true, null]])
     await user.click(redoBtn())
     await settle()
     // 前のお知らせは置き換える（重ねない）
-    expect(toastTexts()).toEqual(['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））'])
+    expect(toastShapes()).toEqual([['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））', true, null]])
   })
 
   it('休み・完了も、ボタンの名前の言葉で。キー（Ctrl+Z・Ctrl+Y）でも出す', async () => {
@@ -89,14 +117,15 @@ describe('文（ボタンの名前と同じ言葉）', () => {
     await settle()
     expect(toastTexts()).toEqual(['やり直しました：11/11（水）を休みにした'])
     await user.click(screen.getByTestId(testIds.done('a')))
-    expect(toastTexts()).toContain('『打ち合わせ』を完了にしました')
+    // ほかの操作のお知らせとは重ねる（［OK］まで出す物は残る）
+    expect(toastTexts()).toEqual(['やり直しました：11/11（水）を休みにした', '『打ち合わせ』を完了にしました'])
     await user.click(undoBtn())
     await settle()
-    // 戻した操作のお知らせ（［元に戻す］付き）は消え、戻したお知らせだけ
+    // 戻した操作のお知らせ（［元に戻す］付き）は消え、前の「やり直しました：…」は置き換える
     expect(toastTexts()).toEqual(['元に戻しました：『打ち合わせ』を完了にした'])
   })
 
-  it('お知らせの［元に戻す］で戻した時は出さない（押したお知らせの操作なので分かる）。断った時は今までどおり', async () => {
+  it('お知らせの［元に戻す］で戻した時は出さない（押したお知らせの操作なので分かる）。ボタンで断った時は「戻せません」を［OK］まで出す', async () => {
     const { user } = await open('/week/2026-11-08')
     await user.click(screen.getByTestId(testIds.done('a')))
     await user.click(within(toastEl('『打ち合わせ』を完了にしました')).getByRole('button', { name: '元に戻す' }))
@@ -108,53 +137,58 @@ describe('文（ボタンの名前と同じ言葉）', () => {
     act(() => actions.restoreItemContent('a', { ...getData().items.a, title: 'ほかの端末で直した' }))
     await user.click(undoBtn())
     await settle()
-    // 前に出した「やり直しました：…」は消す（「戻せません」と並べない）
-    expect(toastTexts()).toEqual(['ほかの所で直されたので戻せません'])
+    // 前に出した「やり直しました：…」は置き換える（「戻せません」と並べない）。押した結果なので、これも［OK］まで
+    expect(useToasts.getState().toasts.map((t) => [t.kind, t.message, t.untilOk, t.slot])).toEqual([
+      ['error', 'ほかの所で直されたので戻せません', true, UNDO_FEEDBACK_SLOT],
+    ])
+    const el = toastEl('ほかの所で直されたので戻せません')
+    expect(el.getAttribute('role')).toBe('alert')
+    expect(within(el).getByRole('button', { name: 'OK' })).toBeTruthy()
   })
 
-  it('読み上げ: お知らせは画面の下の aria-live の所に、role="status" で出す（ほかのお知らせと同じ）', async () => {
+  it('読み上げ: お知らせは画面の下の aria-live の所に、role="status" で出す（ほかのお知らせと同じ）。フォーカスはお知らせへ動かさない', async () => {
     const { user } = await open('/week/2026-11-08')
     await user.click(screen.getByTestId(testIds.weekOff('2026-11-11')))
-    await user.click(undoBtn())
+    const before = document.activeElement
+    fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true })
     await settle()
     const el = toastEl('元に戻しました：11/11（水）を休みにした')
     expect(el.getAttribute('role')).toBe('status')
     expect(el.closest('[aria-live]')?.getAttribute('aria-live')).toBe('assertive')
+    expect(document.activeElement).toBe(before)
+    expect(el.contains(document.activeElement)).toBe(false)
   })
 })
 
-describe('見えている時は目立たせ、見えていない時は［見る］', () => {
-  it('ウィークリー: 戻したカードが今の週にあれば、［見る］を付けずにカードを目立たせる（4秒で消える）', async () => {
-    const { user } = await open('/week/2026-11-08')
+describe('今の画面に無ければ今のモードのままその日へ移り、あれば移らずに目立たせる（■26 の答え）', () => {
+  it('ウィークリー: 戻したカードが今の週にあれば、移らずにカードを目立たせる（［見る］は無い）', async () => {
+    const { user, router } = await open('/week/2026-11-08')
     moveA('2026-11-12')
     await user.click(undoBtn())
     await settle()
     expect(flashed(screen.getByTestId(testIds.weekCard('a')))).toBe(true)
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
     const t = toastEl('元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））')
     expect(within(t).queryByRole('button', { name: '見る' })).toBeNull()
-    expect(useToasts.getState().toasts[0].action).toBeUndefined()
   })
 
-  it('ウィークリー: 別の週へ移った時は［見る］。押すと今のモード（週）のままその週へ（置き換える）、カードを目立たせる', async () => {
+  it('ウィークリー: 別の週へ移った時は、今のモード（週）のままその週へ移り（置き換える）、カードを目立たせる。お知らせは残る', async () => {
     const { user, router } = await open('/week/2026-11-08')
     moveA('2026-11-17')
     await user.click(undoBtn())
     await settle()
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
     expect(flashed(screen.getByTestId(testIds.weekCard('a')))).toBe(true)
+    act(() => useCalendarUi.setState({ flash: null }))
     await user.click(redoBtn())
-    await settle()
-    expect(screen.queryByTestId(testIds.weekCard('a'))).toBeNull()
-    const t = toastEl('やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/17（火））')
-    await user.click(within(t).getByRole('button', { name: '見る' }))
     await settle()
     expect(router.state.location.pathname).toBe('/week/2026-11-15')
     expect(router.state.historyAction).toBe('REPLACE')
-    // 押したお知らせは消える
-    expect(toastTexts()).toEqual([])
     expect(flashed(await screen.findByTestId(testIds.weekCard('a')))).toBe(true)
+    expect(toastShapes()).toEqual([['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/17（火））', true, null]])
   })
 
-  it('デイリー（作者の手順）: カードの無い日で戻すと［見る］。押すとその日のデイリーへ（置き換える）、行を目立たせる', async () => {
+  it('デイリー（作者の手順）: カードの無い日で戻すと、その日のデイリーへ移って（置き換える）行を目立たせる。やり直すと、移した日へ', async () => {
     const { user, router } = await open('/week/2026-11-08')
     moveA('2026-11-12')
     await user.click(undoBtn())
@@ -167,67 +201,54 @@ describe('見えている時は目立たせ、見えていない時は［見る�
     expect(router.state.location.pathname).toBe('/day/2026-11-11')
     await user.click(undoBtn())
     await settle()
-    const t = toastEl('元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））')
-    await user.click(within(t).getByRole('button', { name: '見る' }))
-    await settle()
     expect(router.state.location.pathname).toBe('/day/2026-11-10')
     expect(router.state.historyAction).toBe('REPLACE')
     expect(flashed(await screen.findByTestId(testIds.dayRow('a')))).toBe(true)
+    expect(toastShapes()).toEqual([['元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））', true, null]])
+    act(() => useCalendarUi.setState({ flash: null }))
+    await user.click(redoBtn())
+    await settle()
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
+    expect(flashed(await screen.findByTestId(testIds.dayRow('a')))).toBe(true)
+    expect(toastTexts()).toEqual(['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））'])
   })
 
-  it('デイリー: 戻した予定がその日にあれば［見る］を付けずに目立たせる', async () => {
-    const { user } = await open('/day/2026-11-10')
+  it('デイリー: 戻した予定がその日にあれば、移らずに目立たせる', async () => {
+    const { user, router } = await open('/day/2026-11-10')
     moveA('2026-11-12')
     await user.click(undoBtn())
     await settle()
     expect(flashed(screen.getByTestId(testIds.dayRow('a')))).toBe(true)
-    expect(useToasts.getState().toasts.map((t) => t.action)).toEqual([undefined])
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
   })
 
-  it('予定が無くなった（削除をやり直した・足したのを戻した）時は［見る］も目立たせも無い', async () => {
-    // ゴミ箱へ移す・戻すの代わり（この保存先は何も書かないので、表示のデータだけを動かす。DetailSheet.test.tsx と同じ）
-    let kept: Item | null = null
-    vi.spyOn(actions, 'trashItem').mockImplementation(async (id) => {
-      act(() =>
-        useApp.setState((st) => {
-          const { [id]: gone, ...items } = st.data.items
-          kept = gone
-          return { data: { ...st.data, items, trashEntries: { ...st.data.trashEntries, e1: { id: 'e1' } as never } } }
-        }),
-      )
-      return 'e1'
-    })
-    vi.spyOn(actions, 'restoreTrashEntry').mockImplementation(async () => {
-      act(() => useApp.setState((st) => ({ data: { ...st.data, items: { ...st.data.items, a: kept! }, trashEntries: {} } })))
-      return { restored: 1 } as never
-    })
-    const { user } = await open('/week/2026-11-15')
-    await act(async () => {
-      const before = getData().items.a
-      const entry = await actions.trashItem('a')
-      recordStep(undoText.deleted('打ち合わせ'), [itemChange('a', before, null, entry)])
-    })
+  it('削除を戻すと（ゴミ箱から戻った予定のある週へ）移って目立たせる。削除をやり直すと（ゴミ箱へ）移らずに文だけ', async () => {
+    const { user, router } = await open('/week/2026-11-15')
+    await deleteA()
     await user.click(undoBtn())
     await settle()
-    // 戻った予定は前の週（見えていない）: ［見る］
-    const back = useToasts.getState().toasts
-    expect(back.map((t) => t.message)).toEqual(['元に戻しました：『打ち合わせ』を削除した（ゴミ箱から戻した）'])
-    expect(back[0].action?.label).toBe('見る')
+    expect(toastTexts()).toEqual(['元に戻しました：『打ち合わせ』を削除した（ゴミ箱から戻した）'])
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(flashed(await screen.findByTestId(testIds.weekCard('a')))).toBe(true)
+    // 前の週へ移ってから、やり直す（ゴミ箱へ）: 移らない
+    await user.click(screen.getByTestId(testIds.calPrev))
+    expect(router.state.location.pathname).toBe('/week/2026-11-01')
+    act(() => useCalendarUi.setState({ flash: null }))
     await user.click(redoBtn())
     await settle()
-    const gone = useToasts.getState().toasts
-    expect(gone.map((t) => t.message)).toEqual(['やり直しました：『打ち合わせ』を削除した（ゴミ箱へ）'])
-    expect(gone[0].action).toBeUndefined()
+    expect(toastShapes()).toEqual([['やり直しました：『打ち合わせ』を削除した（ゴミ箱へ）', true, null]])
+    expect(router.state.location.pathname).toBe('/week/2026-11-01')
+    expect(useCalendarUi.getState().flash).toBeNull()
   })
 
-  it('休み: 見えていれば日の見出しを目立たせる。デイリーで別の日なら［見る］で、その日の見出しを目立たせる', async () => {
+  it('休み: 見えていれば日の見出しを目立たせる。デイリーで別の日なら、その日へ移って見出しを目立たせる', async () => {
     const { user, router } = await open('/week/2026-11-08')
     await user.click(screen.getByTestId(testIds.weekOff('2026-11-12')))
     await user.click(undoBtn())
     await settle()
     expect(flashed(screen.getByTestId(testIds.weekHead('2026-11-12')))).toBe(true)
-    expect(useToasts.getState().toasts[0].action).toBeUndefined()
-    // デイリーのその日: 見出しを目立たせる
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    // デイリーのその日: 見出しを目立たせる（移らない）
     await user.click(screen.getByTestId(testIds.calMode('day')))
     await user.click(screen.getByTestId(testIds.calNext))
     await user.click(screen.getByTestId(testIds.calNext))
@@ -237,50 +258,49 @@ describe('見えている時は目立たせ、見えていない時は［見る�
     await settle()
     expect(getData().offDays['2026-11-12']?.off).toBe(true)
     expect(toastTexts()).toEqual(['やり直しました：11/12（木）を休みにした'])
-    expect(useToasts.getState().toasts[0].action).toBeUndefined()
     expect(flashed(screen.getByTestId(testIds.dayHead))).toBe(true)
-    // 別の日（11/13）で戻す: ［見る］で 11/12 へ
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
+    // 別の日（11/13）で戻す: 11/12 へ移って見出しを目立たせる（11/13 の見出しは目立たせない）
     await user.click(screen.getByTestId(testIds.calNext))
+    act(() => useCalendarUi.setState({ flash: null }))
     await user.click(undoBtn())
     await settle()
-    // 11/13 の見出しには目立たせない（見せる日は 11/12）
-    expect(useCalendarUi.getState().flash?.keys ?? []).not.toContain(flashKey.dayHead('2026-11-13'))
-    act(() => useCalendarUi.setState({ flash: null }))
-    await user.click(within(toastEl('元に戻しました：11/12（木）を休みにした')).getByRole('button', { name: '見る' }))
-    await settle()
     expect(router.state.location.pathname).toBe('/day/2026-11-12')
+    expect(router.state.historyAction).toBe('REPLACE')
     expect(useCalendarUi.getState().flash?.keys).toEqual([flashKey.dayHead('2026-11-12')])
     expect(flashed(await screen.findByTestId(testIds.dayHead))).toBe(true)
   })
 
-  it('年・月へ替えると、戻したお知らせは消す（［見る］の行き先は週・日の物）', async () => {
+  it('年・月へ替えても、お知らせは消さない（［OK］を押すまで出す）', async () => {
     const { user } = await open('/week/2026-11-08')
-    moveA('2026-11-17')
+    moveA('2026-11-12')
     await user.click(undoBtn())
     await settle()
-    await user.click(redoBtn())
-    await settle()
-    expect(toastTexts()).toHaveLength(1)
+    const text = '元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'
     await user.click(screen.getByTestId(testIds.calMode('month')))
+    expect(toastTexts()).toEqual([text])
+    await user.click(screen.getByTestId(testIds.calMode('year')))
+    expect(toastTexts()).toEqual([text])
+    await user.click(within(toastEl(text)).getByRole('button', { name: 'OK' }))
     expect(toastTexts()).toEqual([])
   })
 })
 
-describe('複数日の予定・「+n」の中・［見る］を押す時の予定', () => {
+describe('複数日の予定・「+n」の中', () => {
   const expo = mkItem({ id: 'x', title: '展示会の手配', start: '2026-11-11', due: '2026-11-13' })
 
-  it('デイリー: 複数日の予定の始点を戻すと、動いた端の日（11/10）が見ている日（11/12）の外でも、出ている行を目立たせる（［見る］無し）', async () => {
-    const { user } = await open('/day/2026-11-12', 'L', [{ ...expo, start: '2026-11-10', due: '2026-11-12' }])
+  it('デイリー: 複数日の予定の始点を戻すと、動いた端の日（11/10）が見ている日（11/12）の外でも、出ている行を目立たせる（移らない）', async () => {
+    const { user, router } = await open('/day/2026-11-12', 'L', [{ ...expo, start: '2026-11-10', due: '2026-11-12' }])
     change('x', undoText.moved('展示会の手配'), { start: '2026-11-11', due: '2026-11-13' })
     await user.click(undoBtn())
     await settle()
     expect(getData().items.x.start).toBe('2026-11-10')
     expect(toastTexts()).toEqual(['元に戻しました：『展示会の手配』を移した（11/11（水）→ 11/10（火））'])
-    expect(useToasts.getState().toasts[0].action).toBeUndefined()
     expect(flashed(screen.getByTestId(testIds.dayRow('x')))).toBe(true)
+    expect(router.state.location.pathname).toBe('/day/2026-11-12')
   })
 
-  it('デイリー: タイムスケジュールの「+n」の中に隠れた予定は、「+n」の札を目立たせる（その日なら［見る］無し、別の日なら［見る］の後）', async () => {
+  it('デイリー: タイムスケジュールの「+n」の中に隠れた予定は、「+n」の札を目立たせる（その日なら移らず、別の日ならその日へ移って）', async () => {
     const timed = (id: string, startTime: string) => mkItem({ id, title: id, start: '2026-11-10', startTime, endTime: '15:30' })
     const { user, router } = await open('/day/2026-11-10', 'L', [
       timed('p', '14:00'),
@@ -293,62 +313,25 @@ describe('複数日の予定・「+n」の中・［見る］を押す時の予�
     change('t', undoText.done('t', true), { done: true })
     await user.click(undoBtn())
     await settle()
-    expect(useToasts.getState().toasts.map((t) => [t.message, t.action])).toEqual([
-      ['元に戻しました：『t』を完了にした', undefined],
-    ])
+    expect(toastTexts()).toEqual(['元に戻しました：『t』を完了にした'])
     expect(flashed(screen.getByTestId(testIds.dayMore))).toBe(true)
-    // 別の日で［やり直す］→［見る］でその日へ移って札を目立たせる
+    // 別の日で［やり直す］: その日へ移って札を目立たせる
     await user.click(screen.getByTestId(testIds.calNext))
     act(() => useCalendarUi.setState({ flash: null }))
     await user.click(redoBtn())
     await settle()
-    await user.click(within(toastEl('やり直しました：『t』を完了にした')).getByRole('button', { name: '見る' }))
-    await settle()
     expect(router.state.location.pathname).toBe('/day/2026-11-10')
     expect(flashed(await screen.findByTestId(testIds.dayMore))).toBe(true)
-  })
-
-  it('［見る］を押す前に、ほかの所で予定の日が替わった時は、今の日へ行く。無くなっていれば移らない', async () => {
-    const { user, router } = await open('/day/2026-11-11')
-    moveA('2026-11-12')
-    await user.click(undoBtn())
-    await settle()
-    expect(useToasts.getState().toasts[0].action?.label).toBe('見る')
-    // ほかの端末で 11/20 へ
-    elsewhere('a', { start: '2026-11-20' })
-    await user.click(
-      within(toastEl('元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））')).getByRole('button', { name: '見る' }),
-    )
-    await settle()
-    expect(router.state.location.pathname).toBe('/day/2026-11-20')
-    expect(flashed(await screen.findByTestId(testIds.dayRow('a')))).toBe(true)
-    // 戻す・やり直すの後に、ほかの所でゴミ箱へ移した（data.items から無くなった）
-    await user.click(screen.getByTestId(testIds.calNext))
-    moveA('2026-11-22')
-    await user.click(undoBtn())
-    await settle()
-    const look = useToasts.getState().toasts[0].action
-    expect(look?.label).toBe('見る')
-    act(() =>
-      useApp.setState((st) => {
-        const { a: gone, ...items } = st.data.items
-        void gone
-        return { data: { ...st.data, items } }
-      }),
-    )
-    act(() => look?.run())
-    await settle()
-    expect(router.state.location.pathname).toBe('/day/2026-11-21')
   })
 })
 
 describe('すばやく足す・小さな画面を開いている時', () => {
-  it('すばやく足すを開いたまま戻す・やり直すと、［見る］を付けず（押すと打っている字を足して閉じるため）、入力欄をお知らせの上まで送る', async () => {
-    const { user } = await open('/week/2026-11-08')
-    moveA('2026-11-17')
+  it('すばやく足すを開いたまま戻す・やり直して移らない時は、入力欄をお知らせの上まで送る（打っている字・フォーカスはそのまま）', async () => {
+    const { user, router } = await open('/week/2026-11-08')
+    moveA('2026-11-12')
     await user.click(undoBtn())
     await settle()
-    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-13', 'work')))
     const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
     await user.type(input, '打ちかけ')
     // 送る時の欄の下の余白（お知らせの分）を控える
@@ -361,10 +344,9 @@ describe('すばやく足す・小さな画面を開いている時', () => {
     vi.mocked(toastInset).mockImplementation((el) => (el === input ? 60 : 0))
     await user.click(redoBtn())
     await settle()
-    expect(getData().items.a.start).toBe('2026-11-17')
-    expect(useToasts.getState().toasts.map((t) => [t.message, t.action])).toEqual([
-      ['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/17（火））', undefined],
-    ])
+    expect(getData().items.a.start).toBe('2026-11-12')
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(toastShapes()).toEqual([['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））', true, null]])
     expect(screen.getByTestId(testIds.quickAddInput)).toBe(input)
     expect(input.value).toBe('打ちかけ')
     expect(document.activeElement).toBe(input)
@@ -376,45 +358,69 @@ describe('すばやく足す・小さな画面を開いている時', () => {
     intoView.mockReset()
   })
 
-  it('［見る］付きのお知らせを出している間に小さな画面（詳細）を開くと、［見る］を外す（開いている間は移れない）', async () => {
-    const other = mkItem({ id: 'b', title: '資料', start: '2026-11-11' })
-    const { user } = await open('/week/2026-11-08', 'L', [other])
+  it('すばやく足すを開いたまま戻す・やり直して別の週へ移る時は、打っている字を足さずに閉じる（書きかけに残り、開き直すと出る）', async () => {
+    const { user, router } = await open('/week/2026-11-08')
     moveA('2026-11-17')
     await user.click(undoBtn())
     await settle()
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    await user.type(screen.getByTestId(testIds.quickAddInput), '打ちかけ')
     await user.click(redoBtn())
     await settle()
-    const text = 'やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/17（火））'
-    expect(useToasts.getState().toasts.map((t) => [t.message, t.action?.label])).toEqual([[text, '見る']])
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(Object.values(getData().items).some((it) => it.title === '打ちかけ')).toBe(false)
+    // 「『打ちかけ』を足しました［元に戻す］」は出ない
+    expect(toastTexts()).toEqual(['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/17（火））'])
+    expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('打ちかけ')
+    // 元の週へ戻って同じ所を開くと、書きかけが出る
+    await user.click(screen.getByTestId(testIds.calPrev))
+    await user.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
+    expect((screen.getByTestId(testIds.quickAddInput) as HTMLInputElement).value).toBe('打ちかけ')
+  })
+
+  it('小さな画面（詳細）を開いている間に当たった時は移らない（開いている画面の履歴を置き換えない）。お知らせは出す', async () => {
+    const other = mkItem({ id: 'b', title: '資料', start: '2026-11-11' })
+    const { user, router } = await open('/week/2026-11-08', 'L', [other])
+    moveA('2026-11-17')
+    await user.click(undoBtn())
+    await settle()
     await user.click(screen.getByTestId(testIds.weekCard('b')).querySelector('.wk-open') as HTMLElement)
     expect(await screen.findByRole('dialog')).toBeTruthy()
-    expect(useToasts.getState().toasts.map((t) => [t.message, t.action])).toEqual([[text, undefined]])
+    const at = router.state.location
+    // （開いている間はボタン・キーは効かないが、押した分の当てるのが後から終わった時と同じ）
+    await act(async () => void (await redo()))
+    expect(getData().items.a.start).toBe('2026-11-17')
+    expect(router.state.location.pathname).toBe(at.pathname)
+    expect(router.state.location.key).toBe(at.key)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(toastTexts()).toEqual(['やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/17（火））'])
   })
 })
 
-describe('お知らせの長さ（3.9）', () => {
-  it('［見る］の無い物は 4秒、［見る］付きは 6秒（ボタン付きのお知らせと同じ）', async () => {
+describe('お知らせは［OK］を押すまで出す（■26 の答え）', () => {
+  it('時間では消えない。［OK］で消える。次に戻す・やり直すと新しい文に置き換わる', async () => {
     await open('/week/2026-11-08')
-    moveA('2026-11-17')
+    moveA('2026-11-12')
     vi.useFakeTimers({ now: Date.now(), toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     fireEvent.click(undoBtn())
     await settle()
-    expect(toastTexts()).toHaveLength(1)
-    act(() => vi.advanceTimersByTime(TOAST_MS.info - 1))
-    expect(toastTexts()).toHaveLength(1)
-    act(() => vi.advanceTimersByTime(1))
-    expect(toastTexts()).toEqual([])
+    const undone = '元に戻しました：『打ち合わせ』を移した（11/12（木）→ 11/10（火））'
+    expect(toastTexts()).toEqual([undone])
+    act(() => vi.advanceTimersByTime(60_000))
+    expect(toastTexts()).toEqual([undone])
     fireEvent.click(redoBtn())
     await settle()
-    expect(useToasts.getState().toasts[0].action?.label).toBe('見る')
-    act(() => vi.advanceTimersByTime(TOAST_MS.long - 1))
-    expect(toastTexts()).toHaveLength(1)
-    act(() => vi.advanceTimersByTime(1))
+    const redone = 'やり直しました：『打ち合わせ』を移した（11/10（火）→ 11/12（木））'
+    expect(toastTexts()).toEqual([redone])
+    act(() => vi.advanceTimersByTime(60_000))
+    expect(toastTexts()).toEqual([redone])
+    fireEvent.click(within(toastEl(redone)).getByRole('button', { name: 'OK' }))
     expect(toastTexts()).toEqual([])
   })
 })
 
-describe('planUndoFeedback（見えているかの決め方）', () => {
+describe('planUndoReveal（移るか・目立たせるかの決め方）', () => {
   const step: UndoStep = {
     id: 1,
     label: undoText.moved('打ち合わせ'),
@@ -431,55 +437,40 @@ describe('planUndoFeedback（見えているかの決め方）', () => {
   const week = { from: '2026-11-08', to: '2026-11-14' }
   const el = document.createElement('div')
 
-  it('今の期間の中で、目立たせる所が見えていれば［見る］無しですぐ目立たせる', () => {
-    const plan = planUndoFeedback(
-      { dir: 'undo', step },
-      week,
-      () => [el],
-      () => true,
-    )
-    expect(plan).toMatchObject({ key: flashKey.item('a'), look: false, flashNow: true })
-    expect(plan.text).toBe('元に戻しました：『打ち合わせ』を移した（11/14（土）→ 11/12（木））')
-  })
-
-  it('今の期間の中でも、スクロールの外（見えていない）なら［見る］', () => {
-    expect(
-      planUndoFeedback(
-        { dir: 'undo', step },
-        week,
-        () => [el],
-        () => false,
-      ),
-    ).toMatchObject({
-      look: true,
-      flashNow: false,
+  it('今の期間の中に目立たせる所が出ていれば、移らずに目立たせる（スクロールの外でも。見える所まで送るのは目立たせる側）', () => {
+    const find = vi.fn(() => [el])
+    expect(planUndoReveal({ dir: 'undo', step }, week, find, () => true)).toEqual({
+      key: flashKey.item('a'),
+      goTo: null,
+      lift: true,
+    })
+    expect(find).toHaveBeenCalledWith(flashKey.item('a'))
+    // スクロールの外: 目立たせる側がそこまで送るので、すばやく足すの入力欄は送らない
+    expect(planUndoReveal({ dir: 'undo', step }, week, find, () => false)).toEqual({
+      key: flashKey.item('a'),
+      goTo: null,
+      lift: false,
     })
   })
 
-  it('今の期間の外なら［見る］（目立たせる所を探さない）。見に行くのは、戻した・やり直した後の日', () => {
+  it('今の期間の外なら、目立たせる所を探さずに、戻した・やり直した後の日へ移る', () => {
     const find = vi.fn(() => [el])
     const next = { from: '2026-11-15', to: '2026-11-21' }
-    expect(planUndoFeedback({ dir: 'undo', step }, next, find, () => true)).toMatchObject({
-      look: true,
-      flashNow: false,
-      focus: { date: '2026-11-12' },
+    expect(planUndoReveal({ dir: 'undo', step }, next, find)).toEqual({
+      key: flashKey.item('a'),
+      goTo: '2026-11-12',
+      lift: false,
     })
-    expect(planUndoFeedback({ dir: 'redo', step }, next, find, () => true)).toMatchObject({
-      look: true,
-      focus: { date: '2026-11-14' },
+    expect(planUndoReveal({ dir: 'redo', step }, next, find)).toEqual({
+      key: flashKey.item('a'),
+      goTo: '2026-11-14',
+      lift: false,
     })
     expect(find).not.toHaveBeenCalled()
   })
 
-  it('今の期間の中なのに目立たせる所が出ていない時は、［見る］も目立たせも無い', () => {
-    expect(
-      planUndoFeedback(
-        { dir: 'undo', step },
-        week,
-        () => [],
-        () => true,
-      ),
-    ).toMatchObject({ look: false, flashNow: false })
+  it('今の期間の中なのに目立たせる所が出ていない時は、移らず目立たせもしない（文だけ）', () => {
+    expect(planUndoReveal({ dir: 'undo', step }, week, () => [])).toEqual({ key: null, goTo: null, lift: true })
   })
 
   /** 3日の予定（11/10〜11/12）の始点を 11/11 へ動かした（11/11〜11/13） */
@@ -498,71 +489,69 @@ describe('planUndoFeedback（見えているかの決め方）', () => {
   }
   const day12 = { from: '2026-11-12', to: '2026-11-12' }
 
-  it('複数日の予定: 動いた端（始点の日）が今の期間の外でも、予定の期間が今の期間に掛かり、出ている物が見えていればすぐ目立たせる', () => {
-    const find = vi.fn(() => [el])
-    expect(planUndoFeedback({ dir: 'undo', step: multi }, day12, find, () => true)).toMatchObject({
-      text: '元に戻しました：『展示会の手配』を移した（11/11（水）→ 11/10（火））',
+  it('複数日の予定: 動いた端（始点の日）が今の期間の外でも、予定の期間が今の期間に掛かって出ている物があれば、移らずに目立たせる', () => {
+    expect(
+      planUndoReveal(
+        { dir: 'undo', step: multi },
+        day12,
+        () => [el],
+        () => true,
+      ),
+    ).toEqual({
       key: flashKey.item('x'),
-      look: false,
-      flashNow: true,
-      focus: { date: '2026-11-10', span: { from: '2026-11-10', to: '2026-11-12' } },
+      goTo: null,
+      lift: true,
     })
-    expect(find).toHaveBeenCalledWith(flashKey.item('x'))
   })
 
-  it('複数日の予定: 今の期間に掛かっても、出ている物が見えていない・出ていない時は［見る］（動いた端の日へ）', () => {
-    expect(
-      planUndoFeedback(
-        { dir: 'undo', step: multi },
-        day12,
-        () => [el],
-        () => false,
-      ),
-    ).toMatchObject({
-      look: true,
-      flashNow: false,
+  it('複数日の予定: 今の期間に掛かっても出ている物が無い時・掛からない時は、動いた端の日へ移る', () => {
+    expect(planUndoReveal({ dir: 'undo', step: multi }, day12, () => [])).toEqual({
+      key: flashKey.item('x'),
+      goTo: '2026-11-10',
+      lift: false,
+    })
+    expect(planUndoReveal({ dir: 'undo', step: multi }, { from: '2026-11-14', to: '2026-11-14' }, () => [el])).toEqual({
+      key: flashKey.item('x'),
+      goTo: '2026-11-10',
+      lift: false,
+    })
+  })
+
+  it('休み: その日の見出し。今の期間の外ならその日へ移る', () => {
+    const off: UndoStep = {
+      id: 3,
+      label: undoText.off('2026-11-20', true),
+      changes: [{ table: 'offDays', id: '2026-11-20', before: false, after: true }],
+    }
+    expect(planUndoReveal({ dir: 'undo', step: off }, week, () => [el])).toEqual({
+      key: flashKey.dayHead('2026-11-20'),
+      goTo: '2026-11-20',
+      lift: false,
     })
     expect(
-      planUndoFeedback(
-        { dir: 'undo', step: multi },
-        day12,
-        () => [],
-        () => true,
-      ),
-    ).toMatchObject({
-      look: true,
-      flashNow: false,
-    })
-    // 予定の期間が今の期間に掛からない（11/14 の日）
-    expect(
-      planUndoFeedback(
-        { dir: 'undo', step: multi },
-        { from: '2026-11-14', to: '2026-11-14' },
+      planUndoReveal(
+        { dir: 'redo', step: off },
+        { from: '2026-11-15', to: '2026-11-21' },
         () => [el],
         () => true,
       ),
-    ).toMatchObject({ look: true, flashNow: false })
+    ).toEqual({
+      key: flashKey.dayHead('2026-11-20'),
+      goTo: null,
+      lift: true,
+    })
   })
 
-  it('予定が無くなった時は文だけ', () => {
+  it('当てた後に予定が無い（足したのを戻した・削除をやり直した）時は、移らず目立たせもしない（文だけ）', () => {
     const add: UndoStep = {
       ...step,
       label: undoText.added('花'),
       changes: [{ table: 'items', id: 'a', before: null, after: { ...meeting, title: '花' }, entry: 'e' }],
     }
-    expect(
-      planUndoFeedback(
-        { dir: 'undo', step: add },
-        week,
-        () => [el],
-        () => true,
-      ),
-    ).toEqual({
-      text: '元に戻しました：『花』を足した',
+    expect(planUndoReveal({ dir: 'undo', step: add }, { from: '2026-12-01', to: '2026-12-07' }, () => [el])).toEqual({
       key: null,
-      focus: null,
-      look: false,
-      flashNow: false,
+      goTo: null,
+      lift: true,
     })
   })
 })

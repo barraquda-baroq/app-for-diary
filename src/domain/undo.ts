@@ -8,7 +8,8 @@
 //   直されていたら、そのステップは当てずに捨てる（「ほかの所で直されたので戻せません」）。比べるのは記録の内容の指紋（revOf。直した
 //   日時と並びの数は見ない。形2）
 // - 詳細の画面を開いてから閉じるまでに直した所は、1つのステップにまとめる（sessionStep）
-// - ボタン・キーで戻した・やり直した後に見せる所（undoFocus。予定とその日、休みの日。■26 の今の決め方）
+// - ボタン・キーで戻した・やり直した後に見せる所（undoFocus。予定とその日、休みの日。今の週・日に無ければ、今のモードのまま
+//   その日へ移る。■26）
 import { revOf } from './hash'
 import { periodOf } from './items'
 import type { ID, Item } from './types'
@@ -211,7 +212,7 @@ export function chainConflict(steps: UndoStep[], read: UndoReader): { step: Undo
 /**
  * 戻した・やり直した後に見せる所。予定（id）か休みの日。date は見に行く日（今のモードのままその日の期間へ移る）、from〜to は動いた
  * 所（日付の動いた操作は動いた端の日だけ、日付の変わらない操作は予定の期間の全部）、span は当てた後の予定の期間の全部（6.3。休みは
- * その日）。今の期間に span のどこかが入っていて、そこに出ている物が見えていれば、動いた端が今の期間の外でも見えているとする
+ * その日）。今の期間に span のどこかが入っていて、そこに出ている物があれば、動いた端が今の期間の外でも移らずにそこを見せる
  */
 export type UndoFocus =
   | { table: 'items'; id: ID; date: string; from: string; to: string; span: { from: string; to: string } }

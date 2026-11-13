@@ -386,8 +386,8 @@ describe('画面の下のお知らせの上に出す（bottomInset・toastInset�
   })
 })
 
-// 戻した・やり直した予定が見えているか（［見る］を付けるか。7.13・■26）。scrollIntoViewWithin が動かさない（もう見える所に入っている）
-// 時を「見えている」とする
+// 戻した・やり直した予定が見えているか（見えている時だけ、すばやく足すの入力欄をお知らせの上へ送る。7.13・■26）。
+// scrollIntoViewWithin が動かさない（もう見える所に入っている）時を「見えている」とする
 describe('isShownWithin（見えているか）', () => {
   /** S の週（画面 412×839 の 214〜844。下の 5px は画面の外）> カード */
   function weekWith(card: [number, number, number, number], at = 0) {
@@ -402,7 +402,7 @@ describe('isShownWithin（見えているか）', () => {
     expect(isShownWithin(weekWith([20, 300, 170, 44]))).toBe(true)
   })
 
-  it('箱のスクロールの外（下・上）は見えていない。少しでも切れていれば見えていない（［見る］で全部出す）', () => {
+  it('箱のスクロールの外（下・上）は見えていない。少しでも切れていれば見えていない（目立たせる時に全部出す）', () => {
     expect(isShownWithin(weekWith([20, 900, 170, 44]))).toBe(false)
     expect(isShownWithin(weekWith([20, 150, 170, 44]))).toBe(false)
     expect(isShownWithin(weekWith([20, 820, 170, 44]))).toBe(false)

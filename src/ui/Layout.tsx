@@ -11,6 +11,7 @@ import { calendarModeOf, isCalendarPath, isMimPath, paths } from '../routes'
 import { saveBeforeLeave } from '../store/lifecycle'
 import {
   notifyError,
+  OK_LABEL,
   resolveAppearance,
   THEME_COLORS,
   useAppUpdate,
@@ -144,7 +145,9 @@ function Toasts() {
 /**
  * お知らせ1つ。［元に戻す］などのボタンと［×］は、指で押した時は指を離した時に効く（ブラウザが click を作るのを待たない。
  * iPhone でウィークリーのカードを動かした後に［元に戻す］が効かなかったことへの手当て。iPhone が click を作らなかった見込みで、
- * 原因は確かめられていない。src/ui/fingerTap.ts・docs/SPEC.md の 3.9）
+ * 原因は確かめられていない。src/ui/fingerTap.ts・docs/SPEC.md の 3.9）。
+ * ［OK］まで出すお知らせ（untilOk。元に戻す・やり直すのボタン・キーで当てた・断った時。■26）は、［×］の代わりに［OK］を出す（同じく
+ * 指を離した時に効く。出してもフォーカスは取らない。キーボードでは Tab で届く）。小さな画面を開いている間は出さない（styles.css）
  */
 function ToastView({ toast: t }: { toast: Toast }) {
   const dismiss = useToasts((s) => s.dismiss)
@@ -154,16 +157,22 @@ function ToastView({ toast: t }: { toast: Toast }) {
   })
   const close = useFingerTap(() => dismiss(t.id))
   return (
-    <div className={`toast ${t.kind}`} role={t.kind === 'error' ? 'alert' : 'status'}>
+    <div className={`toast ${t.kind}${t.untilOk ? ' is-until-ok' : ''}`} role={t.kind === 'error' ? 'alert' : 'status'}>
       <p>{t.message}</p>
       {t.action ? (
         <button type="button" className="toast-action" {...action}>
           {t.action.label}
         </button>
       ) : null}
-      <button type="button" {...close} aria-label="閉じる">
-        <XIcon />
-      </button>
+      {t.untilOk ? (
+        <button type="button" className="toast-action" {...close}>
+          {OK_LABEL}
+        </button>
+      ) : (
+        <button type="button" {...close} aria-label="閉じる">
+          <XIcon />
+        </button>
+      )}
     </div>
   )
 }

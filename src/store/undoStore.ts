@@ -13,23 +13,31 @@
 //   laterDependents））
 // - 戻す・やり直すは1つずつ順に当てる（続けて押した分は待って順に。ゴミ箱の出し入れは保存を待つ）。ほかの所で直されていたら
 //   当てずに「ほかの所で直されたので戻せません」と出し、そのステップを捨てる
-// - ボタン・キー（undo・redo）で当てたステップは applied に置く（何を戻した・やり直したかのお知らせと、その予定を見せるのは画面の
-//   側。src/features/calendar/common/undoFeedback.ts。■26 の今の決め方）。お知らせの［元に戻す］で戻した時は置かない。ボタン・キーで
-//   断った時は refused の番号を替える（画面の側が、前に出した「元に戻しました：…」を消す）
+// - ボタン・キー（undo・redo）で当てた時は、何を戻した・やり直したかのお知らせ（「元に戻しました：…」。文は src/domain/itemText.ts の
+//   undoDoneText）を、時間では消さずに［OK］を押すまで出し（notifyUntilOk）、当てたステップを applied に置く（その予定を見せる・今の
+//   画面に無ければ今のモードのままその日へ移るのは画面の側。src/features/calendar/common/undoFeedback.ts）。断った時の「ほかの所で
+//   直されたので戻せません」も、押した結果なので同じく［OK］まで出し、refused の番号を替える。どちらも同じ置き場所
+//   （UNDO_FEEDBACK_SLOT）に出すので、次に押すと前の物を置き換える（■26 の作者の答え）。お知らせの［元に戻す］で戻した時は
+//   「元に戻しました：…」を出さず applied にも置かない（断った時は今までどおりのエラーのお知らせ）
 import { create } from 'zustand'
-import { undoText } from '../domain/itemText'
+import { undoDoneText, undoText } from '../domain/itemText'
 import { UNDO_REFUSED } from '../domain/ops'
 import * as U from '../domain/undo'
 import { DomainError, type ID, type Item } from '../domain/types'
 import { actions } from './actions'
 import { getData } from './appStore'
-import { notify, notifyError, useToasts } from './uiStore'
+import { notify, notifyError, notifyUntilOk, useToasts } from './uiStore'
 
 /** お知らせの［元に戻す］の字（3.9） */
 export const UNDO_LABEL = '元に戻す'
 
 /** ほかの所で直されていて戻せない・やり直せない時の文（7.13） */
 export const UNDO_CONFLICT = 'ほかの所で直されたので戻せません'
+
+/**
+ * ボタン・キーで当てた・断った時のお知らせの置き場所（［OK］を押すまで出し、次に押した時の物で置き換える。3.9・7.13・■26）
+ */
+export const UNDO_FEEDBACK_SLOT = 'undo-feedback'
 
 /** ボタン・キーで当てたステップ（seq は当てるたびに増える番号。同じステップをまた当てた時も替わる） */
 export interface UndoApplied {
@@ -250,12 +258,16 @@ function dismissToast(stepId: number): void {
   toastOf.delete(stepId)
 }
 
-/** 戻せない・やり直せない: 知らせて、そのステップを捨てる */
-function refuse(step: U.UndoStep, e?: unknown): void {
-  if (e !== undefined && !(e instanceof DomainError)) {
-    notifyError(e instanceof Error ? e.message : String(e))
-    console.error(e)
-  } else notifyError(UNDO_CONFLICT)
+/**
+ * 戻せない・やり直せない: 知らせて、そのステップを捨てる。ボタン・キーで押した時（pressed）は、押した結果のお知らせとして［OK］まで
+ * 出す（前に出した「元に戻しました：…」を置き換える。■26）
+ */
+function refuse(step: U.UndoStep, e?: unknown, pressed = false): void {
+  const unexpected = e !== undefined && !(e instanceof DomainError)
+  const message = unexpected ? (e instanceof Error ? e.message : String(e)) : UNDO_CONFLICT
+  if (unexpected) console.error(e)
+  if (pressed) notifyUntilOk(message, { kind: 'error', slot: UNDO_FEEDBACK_SLOT })
+  else notifyError(message)
   refusals++
   dismissToast(step.id)
   detached.delete(step.id)
@@ -263,13 +275,13 @@ function refuse(step: U.UndoStep, e?: unknown): void {
   forget(step.id)
 }
 
-/** 1つ当てる（当てた後のステップを返す。当てる物が無い・断った時は null） */
-async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<U.UndoStep | null> {
+/** 1つ当てる（当てた後のステップを返す。当てる物が無い・断った時は null。pressed はボタン・キーで押した時） */
+async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null, pressed = false): Promise<U.UndoStep | null> {
   const step = pick()
   if (!step) return null
   const at = pushes
   if (U.conflictOf(step, dir, reader()) !== null) {
-    refuse(step)
+    refuse(step, undefined, pressed)
     return null
   }
   let next: U.UndoStep
@@ -279,7 +291,7 @@ async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promi
     for (const c of order) done.push(await applyChange(c, dir))
     next = { ...step, changes: dir === 'undo' ? done.reverse() : done }
   } catch (e) {
-    refuse(step, e)
+    refuse(step, e, pressed)
     return null
   }
   if (detached.has(step.id)) detached.delete(step.id)
@@ -304,13 +316,18 @@ function enqueueRun(op: () => Promise<boolean>): Promise<boolean> {
   return run
 }
 
-/** ボタン・キーで当てる（当てたら applied に置く。断ったら refused の番号を替える） */
+/**
+ * ボタン・キーで当てる（当てたら、何を当てたかのお知らせを［OK］まで出してから applied に置く。画面の側は、置いた時にはお知らせが
+ * 描かれているとして、入力欄・目立たせる物をその上まで送る。断ったら refused の番号を替える）
+ */
 const enqueue = (dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<boolean> =>
   enqueueRun(async () => {
     const before = refusals
-    const step = await apply(dir, pick)
-    if (step) useUndo.setState({ applied: { seq: ++appliedSeq, dir, step } })
-    else if (refusals !== before) useUndo.setState({ refused: ++appliedSeq })
+    const step = await apply(dir, pick, true)
+    if (step) {
+      notifyUntilOk(undoDoneText(dir, step), { slot: UNDO_FEEDBACK_SLOT })
+      useUndo.setState({ applied: { seq: ++appliedSeq, dir, step } })
+    } else if (refusals !== before) useUndo.setState({ refused: ++appliedSeq })
     return step !== null
   })
 

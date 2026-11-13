@@ -198,17 +198,38 @@ export interface Toast {
   message: string
   /** ［元に戻す］などのボタン */
   action?: ToastAction
+  /**
+   * 時間では消さず、［OK］を押すまで出す（［×］の代わりに［OK］。元に戻す・やり直すのボタン・キーで当てた・断った時のお知らせ。
+   * 3.9・7.13・■26 の作者の答え「画面下に説明のお知らせをユーザーが確認ボタンを押すまで表示し続ける」）
+   */
+  untilOk?: boolean
+  /** 置き場所（同じ置き場所のお知らせは、新しい物で置き換える。重ねない） */
+  slot?: string
 }
+
+/** ［OK］まで出すお知らせのボタンの字（作者の「確認ボタン」。3.9） */
+export const OK_LABEL = 'OK'
 
 /** 消えるまで: ふつうは4秒、ボタン付き・エラーは6秒（出す所が長さを決めた物は、その長さ。3.9） */
 export const TOAST_MS = { info: 4000, long: 6000 }
 /** 重ねて出す数 */
 const TOAST_MAX = 3
 
+export interface ToastOptions {
+  /** ［元に戻す］などのボタン */
+  action?: ToastAction
+  /** 消えるまでの長さ（無ければ TOAST_MS） */
+  ms?: number
+  /** 時間では消さず、［OK］を押すまで出す（Toast の untilOk） */
+  untilOk?: boolean
+  /** 置き場所（同じ置き場所の前のお知らせを置き換える） */
+  slot?: string
+}
+
 interface ToastState {
   toasts: Toast[]
-  /** 出す（戻り値はお知らせの番号。dismiss で消せる。ms は消えるまでの長さ（無ければ TOAST_MS）） */
-  push: (kind: Toast['kind'], message: string, action?: ToastAction, ms?: number) => number
+  /** 出す（戻り値はお知らせの番号。dismiss で消せる） */
+  push: (kind: Toast['kind'], message: string, opts?: ToastOptions) => number
   dismiss: (id: number) => void
 }
 
@@ -216,10 +237,20 @@ let toastSeq = 0
 
 export const useToasts = create<ToastState>((set, get) => ({
   toasts: [],
-  push: (kind, message, action, ms) => {
+  push: (kind, message, { action, ms, untilOk, slot } = {}) => {
     const id = ++toastSeq
-    set({ toasts: [...get().toasts.slice(-(TOAST_MAX - 1)), { id, kind, message, action }] })
-    setTimeout(() => get().dismiss(id), ms ?? (kind === 'error' || action ? TOAST_MS.long : TOAST_MS.info))
+    // 同じ置き場所の前の物は外す（置き換える）。重ねるのは TOAST_MAX まで（古い物から外す。［OK］まで出す物も同じ）
+    const rest = get().toasts.filter((t) => slot === undefined || t.slot !== slot)
+    const toast: Toast = {
+      id,
+      kind,
+      message,
+      ...(action && { action }),
+      ...(untilOk && { untilOk }),
+      ...(slot !== undefined && { slot }),
+    }
+    set({ toasts: [...rest.slice(-(TOAST_MAX - 1)), toast] })
+    if (!untilOk) setTimeout(() => get().dismiss(id), ms ?? (kind === 'error' || action ? TOAST_MS.long : TOAST_MS.info))
     return id
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
@@ -230,7 +261,15 @@ export const useToasts = create<ToastState>((set, get) => ({
  * 長さ（無ければ TOAST_MS。「もう一度［戻る］を押すと閉じます」は、その所にしている長さと同じにする）
  */
 export function notify(message: string, action?: ToastAction, ms?: number): number {
-  return useToasts.getState().push('info', message, action, ms)
+  return useToasts.getState().push('info', message, { action, ms })
+}
+
+/**
+ * 時間では消さず、［OK］を押すまで出すお知らせ（戻り値はお知らせの番号）。slot が同じ前のお知らせは置き換える（元に戻す・やり直すの
+ * ボタン・キーで当てた・断った時。3.9・7.13・■26）
+ */
+export function notifyUntilOk(message: string, { kind = 'info', slot }: { kind?: Toast['kind']; slot?: string } = {}): number {
+  return useToasts.getState().push(kind, message, { untilOk: true, slot })
 }
 
 export function notifyError(message: string): void {

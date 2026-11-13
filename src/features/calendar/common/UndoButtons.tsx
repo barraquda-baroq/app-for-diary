@@ -6,8 +6,8 @@
 // - 押してもフォーカスを動かさない（開いているすばやく足すの入力欄は閉じず、打っている字も足さない。KEEP_QUICK_ADD）
 // - キー（PC。3.10）: Ctrl+Z・⌘+Z で元に戻す、Ctrl+Shift+Z・⌘+Shift+Z・Ctrl+Y でやり直す。文字を打っている間（入力欄・メモの中。
 //   そこではブラウザの字の元に戻す）・小さな画面やメニューを開いている間・ドラッグ中は効かない
-// - 戻した・やり直した時は、何を当てたかのお知らせを出し、当てた予定・休みの日を目立たせる（見えていなければ［見る］。■26 の今の
-//   決め方。undoFeedback.ts）
+// - 戻した・やり直した時は、何を当てたかのお知らせを［OK］を押すまで出し（src/store/undoStore.ts）、当てた予定・休みの日を
+//   目立たせる。今の週・日に無ければ、今のモードのままその日へ移ってから（■26 の作者の答え。undoFeedback.ts）
 import { useEffect } from 'react'
 import { nextRedo, nextUndo } from '../../../domain/undo'
 import { undoButtonLabel } from '../../../domain/itemText'
@@ -59,7 +59,7 @@ function useUndoShortcuts(enabled: boolean): void {
 }
 
 export interface UndoButtonsProps {
-  /** 今のモードと見ている日（戻した予定が今の期間に見えているか・［見る］の行き先） */
+  /** 今のモードと見ている日（戻した予定が今の期間に出ているか・無ければ今のモードのまま移る） */
   mode: CalendarMode
   viewed: string
   /** そのモードでは出さない（年・月。場所は残す） */

@@ -21,6 +21,7 @@ import {
   resetUndoForTests,
   undo,
   UNDO_CONFLICT,
+  UNDO_FEEDBACK_SLOT,
   undoScopeActive,
   undoStep,
   useUndo,
@@ -103,11 +104,35 @@ describe('戻す・やり直す', () => {
     expect(useUndo.getState().refused).toBe(0)
     expect(await undo()).toBe(false)
     expect(useUndo.getState().applied?.seq).toBe(3)
-    // ボタン・キーで断った時は refused の番号が替わる（前に出した「元に戻しました：…」を消す。■26）
+    // ボタン・キーで断った時は refused の番号が替わる（「戻せません」も［OK］まで出すので、画面の側がすばやく足すの入力欄をその上へ送る。■26）
     expect(useUndo.getState().refused).toBe(4)
     resetUndoForTests()
     expect(useUndo.getState().applied).toBeNull()
     expect(useUndo.getState().refused).toBe(0)
+  })
+
+  it('ボタン・キーで当てた・断った時のお知らせは［OK］まで出し、同じ置き場所で置き換える（■26 の答え）。お知らせの［元に戻す］の時は今までどおり', async () => {
+    await start(dataWith({ items: [meeting] }))
+    moveTo('2026-11-12')
+    const shown = () => useToasts.getState().toasts.map((t) => [t.kind, t.message, t.untilOk ?? false, t.slot ?? null])
+    await undo()
+    expect(shown()).toEqual([['info', '元に戻しました：移した（11/12（木）→ 11/10（火））', true, UNDO_FEEDBACK_SLOT]])
+    await redo()
+    // 前の物は置き換える（重ねない）
+    expect(shown()).toEqual([['info', 'やり直しました：移した（11/10（火）→ 11/12（木））', true, UNDO_FEEDBACK_SLOT]])
+    // ボタン・キーで断った時も［OK］まで出し、前の「やり直しました：…」と置き換える
+    actions.restoreItemContent('a', { ...item()!, title: 'ほかの端末で直した' })
+    expect(await undo()).toBe(false)
+    expect(shown()).toEqual([['error', UNDO_CONFLICT, true, UNDO_FEEDBACK_SLOT]])
+    // お知らせの［元に戻す］で戻した時は「元に戻しました：…」を出さず、断った時はふつうのエラー（6秒）
+    useToasts.setState({ toasts: [] })
+    const t = moveTo('2026-11-13')
+    await undoStep(t.id)
+    expect(shown()).toEqual([])
+    moveTo('2026-11-14')
+    actions.restoreItemContent('a', { ...item()!, memo: 'ほかの端末' })
+    expect(await undoStep(useUndo.getState().stack.past.at(-1)!.id)).toBe(false)
+    expect(shown()).toEqual([['error', UNDO_CONFLICT, false, null]])
   })
 
   it('refused は、ボタン・キーで断った時だけ替わる（当てる物が無い時・お知らせの［元に戻す］で断った時は替えない）', async () => {
@@ -324,13 +349,13 @@ describe('お知らせの［元に戻す］も同じ並び', () => {
     expect(labels()).toEqual([])
   })
 
-  it('ボタンで戻したら、その操作のお知らせを消す（もう一度押しても何もしない）', async () => {
+  it('ボタンで戻したら、その操作のお知らせを消す（もう一度押しても何もしない。戻したお知らせだけが残る）', async () => {
     await start(dataWith({ items: [meeting] }))
     const s = moveTo('2026-11-12')
     notifyUndoable('11/12（木）へ移しました', s)
     expect(toastTexts()).toEqual(['11/12（木）へ移しました'])
     await undo()
-    expect(toastTexts()).toEqual([])
+    expect(toastTexts()).toEqual(['元に戻しました：移した（11/12（木）→ 11/10（火））'])
     expect(await undoStep(s.id)).toBe(false)
   })
 

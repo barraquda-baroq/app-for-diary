@@ -13,7 +13,8 @@
 // - 要素の scroll-margin と箱の scroll-padding は scrollIntoView と同じく見込む
 // - bottomInset を渡すと、画面の下の端からその高さは見える所に数えない（下に重なるお知らせ。toastInset）。箱の中で送れる所までなので、
 //   箱の終わりの近くの物はお知らせの下に残ることがある（docs/SPEC.md の 4.9）
-// - isShownWithin は、同じ決め方で、もう見える所に入っているか（送らなくてよいか）を見る（元に戻す・やり直すの［見る］。7.13・■26）
+// - isShownWithin は、同じ決め方で、もう見える所に入っているか（送らなくてよいか）を見る（元に戻す・やり直すで当てた所が見えている
+//   時だけ、開いているすばやく足すの入力欄をお知らせの上へ送る。7.13・■26）
 import { scrollBehavior } from './motion'
 
 export interface ScrollWithinOptions {

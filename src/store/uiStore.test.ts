@@ -177,6 +177,31 @@ describe('お知らせ（トースト）', () => {
     for (const m of ['1', '2', '3', '4']) notify(m)
     expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['2', '3', '4'])
   })
+
+  it('［OK］まで出すお知らせ（notifyUntilOk）: 時間では消えない。同じ置き場所の物は置き換え、ほかのお知らせとは重ねる（■26）', async () => {
+    vi.useFakeTimers()
+    vi.resetModules()
+    const { notify, notifyUntilOk, useToasts } = await import('./uiStore')
+    const first = notifyUntilOk('元に戻しました：ひとつめ', { slot: 'undo' })
+    notify('ふつう')
+    expect(useToasts.getState().toasts.map((t) => [t.message, t.untilOk ?? false])).toEqual([
+      ['元に戻しました：ひとつめ', true],
+      ['ふつう', false],
+    ])
+    vi.advanceTimersByTime(60_000)
+    expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['元に戻しました：ひとつめ'])
+    // 同じ置き場所（slot）の次の物は、前の物を置き換える（重ねない）。エラーの形でも同じ置き場所
+    const second = notifyUntilOk('ほかの所で直されたので戻せません', { kind: 'error', slot: 'undo' })
+    expect(second).not.toBe(first)
+    expect(useToasts.getState().toasts.map((t) => [t.kind, t.message, t.untilOk])).toEqual([
+      ['error', 'ほかの所で直されたので戻せません', true],
+    ])
+    vi.advanceTimersByTime(60_000)
+    expect(useToasts.getState().toasts).toHaveLength(1)
+    // ［OK］（dismiss）で消える
+    useToasts.getState().dismiss(second)
+    expect(useToasts.getState().toasts).toEqual([])
+  })
 })
 
 describe('操作の失敗の知らせ（attempt・attemptAsync）', () => {

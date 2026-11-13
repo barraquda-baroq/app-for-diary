@@ -9,7 +9,16 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { markDraftClean, markDraftDirty } from '../store/draftRegistry'
-import { DEFAULT_PREFS, initialCalendarUi, notify, useAppUpdate, useCalendarUi, usePrefs, useToasts } from '../store/uiStore'
+import {
+  DEFAULT_PREFS,
+  initialCalendarUi,
+  notify,
+  notifyUntilOk,
+  useAppUpdate,
+  useCalendarUi,
+  usePrefs,
+  useToasts,
+} from '../store/uiStore'
 import { AppFrame, AppHeader, brandReplaces, scrollsToTop, useMim } from './Layout'
 
 function renderFrame() {
@@ -293,5 +302,33 @@ describe('お知らせのボタン（3.9）', () => {
     })
     expect(run).toHaveBeenCalledTimes(1)
     expect(useToasts.getState().toasts).toEqual([])
+  })
+
+  it('［OK］まで出すお知らせ（■26）: ［×］の代わりに［OK］のボタン（キーボードで届く本物のボタン）。押すと消える。フォーカスは動かさない', () => {
+    renderFrame()
+    const field = document.createElement('input')
+    document.body.append(field)
+    field.focus()
+    act(() => void notifyUntilOk('元に戻しました：11/11（水）を休みにした', { slot: 'undo' }))
+    const toast = screen.getByText('元に戻しました：11/11（水）を休みにした').closest('.toast') as HTMLElement
+    expect(toast.getAttribute('role')).toBe('status')
+    expect(toast.closest('[aria-live]')?.getAttribute('aria-live')).toBe('assertive')
+    expect(within(toast).queryByRole('button', { name: '閉じる' })).toBeNull()
+    const ok = within(toast).getByRole('button', { name: 'OK' })
+    expect(ok.tagName).toBe('BUTTON')
+    expect(ok.getAttribute('type')).toBe('button')
+    // 出しただけではフォーカスを取らない（打っていた所のまま）
+    expect(document.activeElement).toBe(field)
+    // 指で押しても（離した時に）、マウス・キーボードの click でも消える
+    act(() => {
+      fingerTap(ok)
+    })
+    expect(useToasts.getState().toasts).toEqual([])
+    act(() => void notifyUntilOk('やり直しました：11/11（水）を休みにした', { slot: 'undo' }))
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+    })
+    expect(useToasts.getState().toasts).toEqual([])
+    field.remove()
   })
 })
