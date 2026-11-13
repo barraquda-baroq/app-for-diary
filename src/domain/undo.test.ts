@@ -14,6 +14,7 @@ import {
   nextRedo,
   nextUndo,
   placeOf,
+  touchedAfter,
   pushStep,
   sessionStep,
   settleStep,
@@ -215,6 +216,25 @@ describe('お知らせの［元に戻す］で、いちばん新しくないス�
     }
     const off: UndoStep = { id: 4, label: '4', changes: [{ table: 'offDays', id: '2026-11-14', before: true, after: false }] }
     expect(laterDependents([s1, both, doneB, off], s1).map((s) => s.id)).toEqual([4, 2])
+  })
+
+  it('後かどうかは番号ではなく並びの順（後ろの物が後に当てた物）。並びに無いステップ（積まなかった物）には後の物を付けない', () => {
+    const s1 = moveA(1, '2026-11-10', '2026-11-12')
+    const s2 = moveA(2, '2026-11-12', '2026-11-13')
+    // 番号の小さい s1 が後ろ（後に当てた）
+    expect(laterDependents([s2, s1], s2).map((s) => s.id)).toEqual([1])
+    expect(laterDependents([s2, s1], s1)).toEqual([])
+    expect(laterDependents([s2], s1)).toEqual([])
+  })
+
+  it('並びに無いステップより後に積んだ（番号の大きい）、同じ記録に触れるステップが、戻せる物かやり直せる物にあるか（touchedAfter）', () => {
+    const detached = moveA(2, '2026-11-10', '2026-11-12')
+    const before1 = moveA(1, '2026-11-08', '2026-11-10')
+    const later = moveA(4, '2026-11-12', '2026-11-13')
+    expect(touchedAfter({ past: [before1, doneB], future: [] }, detached)).toBe(false)
+    expect(touchedAfter({ past: [before1, later], future: [] }, detached)).toBe(true)
+    expect(touchedAfter({ past: [before1], future: [later] }, detached)).toBe(true)
+    expect(touchedAfter(emptyUndoStack(), detached)).toBe(false)
   })
 
   it('後のステップを戻した後の記録と比べる: 2回動かした予定の1回目は、2回目を戻せば戻せる', () => {

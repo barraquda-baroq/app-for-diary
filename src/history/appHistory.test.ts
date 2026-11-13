@@ -829,4 +829,111 @@ describe('アプリを閉じる', () => {
     expect(await leave(s)).toBe('stayed')
     expect(s.win.index).toBe(1)
   })
+
+  it('土台で読み込み直した後（土台の後ろの数は分からない）は、前が無いと決めずに前へ戻る: アドレス欄で # を書き換えて土台が最後の履歴でも離れる', async () => {
+    const first = setup('#/month/2026-11', 'os-back', { before: 1 })
+    await arm(first)
+    // アドレス欄の書き換えで、新しい土台が最後の履歴になる（後ろの「進む」の印は消える）。押さずに読み込み直す
+    first.win.typeHash('#/month/2026-12')
+    await settle(first.h)
+    first.h.dispose()
+    const s = setup('', 'os-back', { win: first.win })
+    await settle(s.h)
+    expect(s.win.history.length).toBe(4)
+    expect(await leave(s)).toBe('left')
+    expect(s.win.left).toBe(true)
+  })
+
+  it('土台で読み込み直した後に前が無い時（ホーム画面から開いた Android のアプリ）も、前へ戻ってから「もう一度［戻る］で閉じる」所にする', async () => {
+    const first = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(first)
+    first.h.dispose()
+    const s = setup('', 'os-back', { armOnLeaveFail: true, win: first.win })
+    await settle(s.h)
+    expect(await leave(s)).toBe('armed')
+    expect(s.win.index).toBe(0)
+    expect(s.h.shape().exitArmed).toBe(true)
+  })
+
+  it('読み込み直した後でも、アプリが積んだ後は数が分かる（前が無ければ待たずに「もう一度［戻る］で閉じる」所にする）', async () => {
+    const first = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(first)
+    first.h.dispose()
+    const s = setup('', 'os-back', { armOnLeaveFail: true, win: first.win })
+    await settle(s.h)
+    // 詳細の画面を開いて閉じる（積んだので、後ろの数が分かる）
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    s.h.go(-1)
+    await settle(s.h)
+    let result: LeaveResult | null = null
+    void s.h.leave().then((r) => (result = r))
+    await vi.advanceTimersByTimeAsync(50)
+    expect(result).toBe('armed')
+    expect(s.win.index).toBe(0)
+  })
+
+  /** 押して印を作ってから、押さずに読み込み直す（同じ window で作り直す） */
+  async function reloaded(win: FakeWindow, armOnLeaveFail: boolean): Promise<Setup> {
+    const first = setup('', 'os-back', { armOnLeaveFail, win })
+    await arm(first)
+    first.h.dispose()
+    const s = setup('', 'os-back', { armOnLeaveFail, win })
+    await settle(s.h)
+    return s
+  }
+
+  it('読み込み直した後でも、タブの履歴がどれもアプリの物で前が無いと分かる時（Navigation API）は、待たずに「もう一度［戻る］で閉じる」所にする', async () => {
+    const s = await reloaded(new FakeWindow('#/month/2026-11', { navigationApi: true }), true)
+    let result: LeaveResult | null = null
+    void s.h.leave().then((r) => (result = r))
+    await vi.advanceTimersByTimeAsync(50)
+    expect(result).toBe('armed')
+    expect(s.win.closeCalls).toBe(1)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true })
+  })
+
+  it('Navigation API でも、アプリの前にほかのページがあれば前へ戻る（読み込み直した後・アドレス欄で # を書き換えて土台が最後の履歴の時も）', async () => {
+    const s = await reloaded(new FakeWindow('#/month/2026-11', { before: 1, navigationApi: true }), true)
+    expect(await leave(s)).toBe('left')
+    const win = new FakeWindow('#/month/2026-11', { before: 1, navigationApi: true })
+    const first = setup('', 'os-back', { win })
+    await arm(first)
+    win.typeHash('#/month/2026-12')
+    await settle(first.h)
+    first.h.dispose()
+    const t = setup('', 'os-back', { win })
+    await settle(t.h)
+    expect(await leave(t)).toBe('left')
+    expect(win.left).toBe(true)
+  })
+
+  // 前へ戻って待つ 0.7秒（LEAVE_WAIT_MS）の間と、window.close() を試して待つ 0.3秒（CLOSE_WAIT_MS）の間
+  for (const ms of [300, 850]) {
+    it(`前が分からず前へ戻って待つ間（${ms}ms 後）に「戻る」が来た時（前へは戻れなかった）は、前が無いとみなす: Android は「もう一度［戻る］で閉じる」所にし、閉じるかを聞き直さない`, async () => {
+      const s = await reloaded(new FakeWindow('#/month/2026-11'), true)
+      let result: LeaveResult | null = null
+      void s.h.leave().then((r) => (result = r))
+      await vi.advanceTimersByTimeAsync(ms)
+      expect(result).toBeNull()
+      s.win.userGo(-1)
+      await settle(s.h)
+      expect(result).toBe('armed')
+      expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true })
+      expect(s.askExit).not.toHaveBeenCalled()
+    })
+
+    it(`PC でも、待つ間（${ms}ms 後）の「戻る」で閉じるかを聞き直さず、出していた所へ戻る（離れられなかった）`, async () => {
+      const s = await reloaded(new FakeWindow('#/month/2026-11'), false)
+      let result: LeaveResult | null = null
+      void s.h.leave().then((r) => (result = r))
+      await vi.advanceTimersByTimeAsync(ms)
+      s.win.userGo(-1)
+      await settle(s.h)
+      expect(result).toBe('stayed')
+      expect(s.win.index).toBe(1)
+      expect(s.askExit).not.toHaveBeenCalled()
+    })
+  }
 })

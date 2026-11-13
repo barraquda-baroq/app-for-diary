@@ -148,18 +148,30 @@ export const itemIdsOf = (step: UndoStep): ID[] =>
 const keyOf = (c: UndoChange): string => `${c.table}:${c.id}`
 
 /**
- * お知らせの［元に戻す］で、いちばん新しくないステップを戻す時に、先に戻す物: そのステップより後に積んだ（番号が大きい）past の
- * ステップのうち、同じ記録に触れる物（それが触れた記録に、さらに後で触れた物も）。新しい順（戻す順）
+ * お知らせの［元に戻す］で、いちばん新しくないステップを戻す時に、先に戻す物: past の中でそのステップより後ろ（後に当てた物。
+ * 番号ではなく並びの順で見る。お知らせで戻してやり直した物は後ろへ移る）のステップのうち、同じ記録に触れる物（それが触れた記録に、
+ * さらに後で触れた物も）。新しい順（戻す順）。そのステップが past に無い（積まなかった物）時は無し（並びの中の物は一緒に戻さない）
  */
 export function laterDependents(past: UndoStep[], step: UndoStep): UndoStep[] {
+  const at = past.findIndex((s) => s.id === step.id)
+  if (at < 0) return []
   const keys = new Set(step.changes.map(keyOf))
   const out: UndoStep[] = []
-  for (const s of [...past].sort((a, b) => a.id - b.id)) {
-    if (s.id <= step.id || !s.changes.some((c) => keys.has(keyOf(c)))) continue
+  for (const s of past.slice(at + 1)) {
+    if (!s.changes.some((c) => keys.has(keyOf(c)))) continue
     out.push(s)
     for (const c of s.changes) keys.add(keyOf(c))
   }
   return out.reverse()
+}
+
+/**
+ * 並びに無いステップ（積まなかった物。年・月の画面でした操作など）より後に積んだステップ（番号が大きい。番号は積んだ順に振る）のうち、
+ * 同じ記録に触れる物が並び（戻せる物・やり直せる物）にあるか（お知らせの［元に戻す］で、それを一緒に戻さないので断る）
+ */
+export function touchedAfter(stack: UndoStack, step: UndoStep): boolean {
+  const keys = new Set(step.changes.map(keyOf))
+  return [...stack.past, ...stack.future].some((s) => s.id > step.id && s.changes.some((c) => keys.has(keyOf(c))))
 }
 
 /**

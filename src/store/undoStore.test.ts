@@ -13,6 +13,7 @@ import { useToasts } from './uiStore'
 import {
   beginItemSession,
   enterUndoScope,
+  holdItemSession,
   itemChange,
   notifyUndoable,
   recordStep,
@@ -317,6 +318,111 @@ describe('お知らせの［元に戻す］も同じ並び', () => {
     expect(labels()).toEqual(['移した'])
     expect(await undo()).toBe(true)
   })
+
+  it('積まなかった操作のお知らせは、並びの中の後の操作を一緒に戻さない: 後で同じ予定に触れていれば断り、並びはそのまま（やり直すも効く）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    notifyUndoable('完了にしました', d)
+    leave = enterUndoScope()
+    moveTo('2026-11-12', '移した')
+    expect(await undoStep(d.id)).toBe(false)
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(item()).toMatchObject({ start: '2026-11-12', done: true })
+    expect(labels()).toEqual(['移した'])
+    expect(futureLabels()).toEqual([])
+    expect(await undo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: true })
+    expect(await redo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-12', done: true })
+  })
+
+  it('積まなかった操作のお知らせでも、並びの中の後の操作がほかの予定だけなら戻す', async () => {
+    await start(dataWith({ items: [meeting, mkItem({ id: 'b', title: '昼食', start: '2026-11-10' })] }))
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    leave = enterUndoScope()
+    const bb = item('b')
+    actions.setItemDone('b', true)
+    recordStep('昼食', [itemChange('b', bb, item('b'))])
+    expect(await undoStep(d.id)).toBe(true)
+    expect(item()?.done).toBe(false)
+    expect(item('b')?.done).toBe(true)
+    expect(labels()).toEqual(['昼食'])
+    expect(futureLabels()).toEqual([])
+  })
+
+  it('積まなかった操作のお知らせは、後で同じ予定に触れた操作がやり直せる物（ボタンで戻した物）でも断る（中身が合っても。そのやり直すも効く）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    leave = enterUndoScope()
+    moveTo('2026-11-12', '移した')
+    expect(await undo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: true })
+    expect(await undoStep(d.id)).toBe(false)
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: true })
+    expect(futureLabels()).toEqual(['移した'])
+    expect(await redo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-12', done: true })
+  })
+
+  it('積まなかった操作のお知らせは、後の操作が同じ予定を動かして戻した（中身が合う）時も断る（後の操作はボタンで戻せる）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    leave = enterUndoScope()
+    moveTo('2026-11-12', '移した1')
+    moveTo('2026-11-10', '移した2')
+    expect(await undoStep(d.id)).toBe(false)
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: true })
+    expect(labels()).toEqual(['移した1', '移した2'])
+    expect(await undo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-12', done: true })
+    expect(await undo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: true })
+  })
+
+  it('積まなかった操作のお知らせは、それより前に積んだ同じ予定の操作があっても戻す（前の操作も戻せるまま）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    moveTo('2026-11-12', '移した')
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    leave = enterUndoScope()
+    expect(await undoStep(d.id)).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-12', done: false })
+    expect(await undo()).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: false })
+  })
+
+  it('積まなかった操作のお知らせは、開いている詳細の画面で同じ予定を直していれば断り、直した所を分けない（閉じた時に1つ）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    leave()
+    const b0 = item()
+    actions.setItemDone('a', true)
+    const d = recordStep('完了にした', [itemChange('a', b0, item())])!
+    leave = enterUndoScope()
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    expect(await undoStep(d.id)).toBe(false)
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(labels()).toEqual([])
+    actions.updateItem('a', { memo: 'あとで' })
+    end()
+    expect(labels()).toEqual(['『定例会議』を直した'])
+  })
 })
 
 describe('詳細の画面は開いてから閉じるまでを1つに', () => {
@@ -365,6 +471,76 @@ describe('詳細の画面は開いてから閉じるまでを1つに', () => {
     expect(item()?.title).toBe('定例会議')
     await undo()
     expect(item()?.title).toBe('会議')
+  })
+
+  it('まとめて先に積んだ直した所は、後の操作より前の番号（番号は積んだ順）。消したお知らせの［元に戻す］で戻せる', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    const b = item()
+    const entry = await actions.trashItem('a')
+    const del = recordStep('削除した', [itemChange('a', b, null, entry)])!
+    notifyUndoable('『定例会議』を削除しました', del)
+    end()
+    const past = useUndo.getState().stack.past
+    expect(past.map((s) => s.label)).toEqual(['『定例会議』を直した', '削除した'])
+    expect(past[0].id).toBeLessThan(past[1].id)
+    expect(await undoStep(del.id)).toBe(true)
+    expect(toastTexts()).not.toContain(UNDO_CONFLICT)
+    expect(item()?.title).toBe('定例会議')
+    expect(labels()).toEqual(['『定例会議』を直した'])
+  })
+
+  it('消す前に holdItemSession でまとめを取っておき、移せた時に削除の前に積む（画面と同じく、積む前に詳細の画面が閉じても直した所は残る）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    const edited = holdItemSession('a')
+    expect(labels()).toEqual([])
+    const b = item()
+    const entry = await actions.trashItem('a')
+    // 詳細の画面は、消して予定が無くなるとすぐ閉じる（削除のステップを積む前に）
+    end()
+    edited()
+    recordStep('削除した', [itemChange('a', b, null, entry)])
+    expect(labels()).toEqual(['『定例会議』を直した', '削除した'])
+    expect(await undo()).toBe(true)
+    expect(item()?.title).toBe('定例会議')
+    expect(await undo()).toBe(true)
+    expect(item()?.title).toBe('会議')
+    expect(await redo()).toBe(true)
+    expect(item()?.title).toBe('定例会議')
+    expect(await redo()).toBe(true)
+    expect(item()).toBeUndefined()
+  })
+
+  it('holdItemSession の後、詳細の画面がまだ開いていても同じ所を2回積まない（閉じるのが削除のステップの後）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    const edited = holdItemSession('a')
+    const b = item()
+    const entry = await actions.trashItem('a')
+    edited()
+    recordStep('削除した', [itemChange('a', b, null, entry)])
+    end()
+    expect(labels()).toEqual(['『定例会議』を直した', '削除した'])
+  })
+
+  it('holdItemSession の返す関数を呼ばなければ（消せなかった）積まず、まとめは分けずに閉じた時に1つ。開いていない・直していなければ何もしない', async () => {
+    await start(dataWith({ items: [meeting] }))
+    holdItemSession('a')()
+    expect(labels()).toEqual([])
+    const end = beginItemSession('a')
+    holdItemSession('a')()
+    expect(labels()).toEqual([])
+    actions.updateItem('a', { title: '定例会議' })
+    holdItemSession('a')
+    actions.updateItem('a', { memo: 'あとで' })
+    end()
+    expect(labels()).toEqual(['『定例会議』を直した'])
+    expect(await undo()).toBe(true)
+    expect(item()).toMatchObject({ title: '会議', memo: meeting.memo })
   })
 
   it('ウィークリー・デイリーを出していない時に開いた詳細は積まない', async () => {

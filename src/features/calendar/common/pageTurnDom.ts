@@ -19,7 +19,11 @@ export function turnDirection(before: string, after: string): TurnDirection | nu
   return after > before ? 'next' : 'prev'
 }
 
-/** ドラッグ中か（dnd-kit が掴んだ物に付ける印。docs/SPEC.md の 7.11。week/dnd/dnd.css も同じ印を見る） */
+/**
+ * ドラッグ中か（dnd-kit が掴んだ物に付ける印。docs/SPEC.md の 7.11。week/dnd/dnd.css も同じ印を見る）。印は、離した後の浮いた物が
+ * 元の所へ戻る動きの間も残る（これを見る所（なぞり・めくりなど）は、その間もドラッグ中とみなす。3.7）。掴んでいる間（掴んでから
+ * 離すまで）だけを見る時は useCalendarUi の dragging（「戻る」「進む」を何もしないのはこちら。features/top/closeApp.ts・3.1）
+ */
 export function dragActive(): boolean {
   return typeof document !== 'undefined' && document.querySelector('[data-dnd-dragging]') !== null
 }

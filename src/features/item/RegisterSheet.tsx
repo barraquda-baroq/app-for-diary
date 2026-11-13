@@ -162,7 +162,9 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
   useEffect(() => {
     if (blocker.state !== 'blocked') return
     if (asking.current === 'back') return
-    // ［×］などの確かめを出している間の「戻る」は、何もしない
+    // ［×］などの確かめを出している間に来た移る動き（複製のお知らせの［開く］で詳細へ）は、止めるだけ（確かめはそのまま）。確かめを
+    // 出している間の「戻る」（OS の戻る・端からのフリック）は、ふつうはここへ来ない: アプリの履歴が先にその確かめだけを閉じる（［戻る］
+    // と同じ。シートは開いたまま。src/history/appHistory.ts の consumePop・3.1 の「先に片付ける物」）
     if (asking.current === 'close') {
       blocker.reset()
       return
