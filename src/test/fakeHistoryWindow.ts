@@ -57,6 +57,8 @@ export class FakeWindow implements HistoryWindow {
   /** 着いてから身振りの絵を外すまでの長さ */
   readonly overlayEnds: number[] = []
   private readonly handlers = new Map<string, Set<Handler>>()
+  /** typeHash の数（その前に呼んだ go を取り消す） */
+  private typed = 0
 
   /** userGo を iPhone の端からの身振りとしてまねる（絵を出す・出している間は次の身振りが始まらない） */
   private readonly swipes: boolean
@@ -170,10 +172,11 @@ export class FakeWindow implements HistoryWindow {
     return this.entries.map((e) => e.picture?.screen ?? '-')
   }
 
-  /** ページの go（次の処理で、離れる履歴の絵を控えてから動いて popstate。範囲の外なら何もしない） */
+  /** ページの go（次の処理で、離れる履歴の絵を控えてから動いて popstate。範囲の外なら何もしない。その前に typeHash が来たら動かない） */
   move(delta: number): void {
+    const typed = this.typed
     setTimeout(() => {
-      if (this.left) return
+      if (this.left || typed !== this.typed) return
       const target = this.index + delta
       if (target < 0 || target >= this.entries.length) return
       this.record()
@@ -237,8 +240,12 @@ export class FakeWindow implements HistoryWindow {
     }, 0)
   }
 
-  /** アドレス欄で # の後ろを書き換えた（ブラウザが state の無い履歴を積んで popstate） */
+  /**
+   * アドレス欄で # の後ろを書き換えた（ブラウザが state の無い履歴を積んで popstate）。その前に呼んで、まだ動いていないページの go は
+   * 取り消す（新しく積んだ時に消える。Chromium では、積んだ後に、積んだ所から動くこともある: 書き換えた後に go を呼んでまねる）
+   */
   typeHash(hash: string): void {
+    this.typed += 1
     this.entries = this.entries.slice(0, this.index + 1)
     this.entries.push({ state: null, url: `https://app.example/${hash}` })
     this.index += 1

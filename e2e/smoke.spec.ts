@@ -3,7 +3,7 @@
 // 書体（Roboto Mono）が読み込まれていること、スマホの縦の積みと3つのリストが畳んで始まること。
 // 細かい決まりは e2e/launch.spec.ts（起動アニメーション）と e2e/frame.spec.ts（ログインの画面・画面の枠）で確かめる
 import { expect, test, type Page } from '@playwright/test'
-import { collectDiagnosticsOnFailure, luminance, noHorizontalScroll } from './helpers'
+import { collectDiagnosticsOnFailure, historySettled, luminance, noHorizontalScroll } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -117,7 +117,10 @@ test(
       0.05,
     )
 
-    // 「端末の設定に合わせる」に戻すと、端末のライト／ダークに付いていく
+    // 「端末の設定に合わせる」に戻すと、端末のライト／ダークに付いていく。# を書き換えて開くのは、アプリの履歴が落ち着いてから（iPhone は
+    // ［‹ 戻る］の後に、土台の前後の履歴の絵を自分で動いて写し直す。その途中に書き換えると、ブラウザが待っていた動きを書き換えた所から
+    // 行い、設定から戻ったのと同じになることがある。docs/SPEC.md の 3.1）
+    await historySettled(page)
     await page.goto('/#/settings')
     await page.getByTestId('appearance-system').click()
     await expect.poll(() => themeOf(page)).toEqual(THEMES.white)

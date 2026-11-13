@@ -356,6 +356,8 @@ export class AppHistory implements RouterHistory {
   private ballastCount = 0
   /** 自分で始めた戻る・進むの popstate を待っている物（expect は着くはずの idx） */
   private waiting: { finish: (came: boolean) => void; expect: number } | null = null
+  /** アプリが作っていない履歴へ来た数（来たら、自分で動いている途中の物はやめる: travelTo・写し直す・閉じる） */
+  private outsideGen = 0
   private readonly queue: Op[] = []
   private running = false
   private readonly idleWaiters: (() => void)[] = []
@@ -782,9 +784,13 @@ export class AppHistory implements RouterHistory {
       })
   }
 
-  /** その idx の履歴へ移る（来た popstate はルーターに渡さない。思った所と違えば、もう2回まで移り直す） */
+  /**
+   * その idx の履歴へ移る（来た popstate はルーターに渡さない。思った所と違えば、もう2回まで移り直す。アプリが作っていない履歴が来たら
+   * （利用者の行き先として描いた）、そこで止める）
+   */
   private async travelTo(target: number): Promise<void> {
-    for (let attempt = 0; attempt < 3 && this.cur !== target; attempt++) {
+    const outside = this.outsideGen
+    for (let attempt = 0; attempt < 3 && this.cur !== target && outside === this.outsideGen; attempt++) {
       if (!(await this.traverse(target - this.cur, TRAVEL_TIMEOUT_MS))) break
     }
     // 「もう一度［戻る］で閉じる」所は、最初の履歴にいる間だけ（自分で土台へ戻った時（今日へ戻すなど）も、押した時と同じく外す）
@@ -1177,10 +1183,14 @@ export class AppHistory implements RouterHistory {
     if (!this.stale || !this.readyToRecord()) return
     const base = this.base as number
     const restore = this.manualScroll()
+    // 途中でアプリが作っていない履歴が来た（アドレス欄・ページの location.hash で # を書き換えた。利用者の行き先として描いた）: やめる
+    const outside = this.outsideGen
+    const away = () => outside !== this.outsideGen
     let result: 'done' | 'stopped' | 'failed' = 'stopped'
     try {
       if (this.top > base && (!this.topGuessed || this.forwardSeen === base)) {
         await this.travelTo(base + 1)
+        if (away()) return
         if (this.cur === base && this.idx() === base) {
           // 後ろに履歴が無かった
           this.top = base
@@ -1193,15 +1203,17 @@ export class AppHistory implements RouterHistory {
         }
       }
       await this.travelTo(base - 1)
+      if (away()) return
       if (this.cur !== base - 1) {
         result = 'failed'
         return
       }
       if (!this.readyToRecord(false)) return
       await this.travelTo(base)
+      if (away()) return
       result = this.cur === base ? 'done' : 'failed'
     } finally {
-      if (this.base === base && this.cur !== base && this.shownIdx === base) await this.travelTo(base)
+      if (!away() && this.base === base && this.cur !== base && this.shownIdx === base) await this.travelTo(base)
       await restore(base)
       // 途中で利用者のフリックが来た（思った所と違う所へ着いた）時は、その身振りの絵を出している間に動いたので、写っていない
       if (result !== 'stopped' && !this.afterSwipe) this.stale = false
@@ -1285,6 +1297,7 @@ export class AppHistory implements RouterHistory {
   private async doLeave(): Promise<LeaveResult> {
     await this.untilFree()
     const gen = ++this.leaveGen
+    const outside = this.outsideGen
     this.pageHidden = false
     // アプリの最初の履歴（idx 0）より前に、ほかのページの履歴が無いと分かる時（knownNothingBefore。ほかのアプリから開いたブラウザの
     // タブなど。ホーム画面から開いた Android のアプリもいつもこれだが、そこでは聞かずに armExit にするので、ここへは来ない）は、前へ
@@ -1309,7 +1322,8 @@ export class AppHistory implements RouterHistory {
       this.closing = false
       if (gen !== this.leaveGen || this.pageHidden) return 'left'
     }
-    if (this.opts.armOnLeaveFail) {
+    // 待つ間にアプリが作っていない履歴が来た（利用者の行き先として描いた）時は、そこに残る
+    if (this.opts.armOnLeaveFail && outside === this.outsideGen) {
       await this.travelTo(0)
       this.exitArmed = this.cur === 0 && this.cur !== this.shownIdx
       if (this.exitArmed) return 'armed'
@@ -1342,12 +1356,21 @@ export class AppHistory implements RouterHistory {
     const idx = typeof st?.idx === 'number' ? st.idx : null
     const waiting = this.waiting
     if (waiting) {
+      if (idx === null) {
+        // 自分で始めた戻る・進むを待つ間に、アプリが作っていない履歴が来た（アドレス欄・ページの location.hash で # を書き換えた。
+        // ブラウザは新しく積み、待っていた動きは来ないか、書き換えた所から後で来る: その時は利用者の「戻る」「進む」と同じに扱う）:
+        // 待っていた動きでなく利用者の行き先なので、外から来た物として描き（自分で動いている途中の物はやめる）、待つのを終える
+        this.arriveFromOutside(st)
+        waiting.finish(true)
+        if (!this.running) for (const resolve of this.idleWaiters.splice(0)) resolve()
+        return
+      }
       // 自分で始めた戻る・進む。思った所と違っても（すばやく続けた「戻る」「進む」が先に来た）、今いる所から続ける
       const from = this.cur
-      this.cur = idx ?? this.adoptOutside(st)
+      this.cur = idx
       // iPhone: 思った所と違う所へ着いた（利用者の端からのフリックが先に来た。その払いは何もしない）: その身振りの絵を出している間と
       // みなす（絵を写し直している途中なら、やめて後でもう一度）
-      if (idx !== null && idx !== waiting.expect) this.noteSwipe(from)
+      if (idx !== waiting.expect) this.noteSwipe(from)
       waiting.finish(true)
       if (!this.running) for (const resolve of this.idleWaiters.splice(0)) resolve()
       return
@@ -1440,6 +1463,7 @@ export class AppHistory implements RouterHistory {
 
   /** アプリが作っていない履歴へ来た: 今の次に積まれた物として番号を付けて描く（カレンダーなら、そこを新しい土台にする） */
   private arriveFromOutside(st: EntryState | null): void {
+    this.outsideGen += 1
     const location = this.readLocation()
     if (this.base !== null && this.screen(location) === 'calendar') this.base = this.cur + 1
     this.cur = this.adoptOutside(st)

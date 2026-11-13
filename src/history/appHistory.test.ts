@@ -1091,6 +1091,68 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     const mode = modeOf(s.win.screen)
     expect(aroundBase(s)).toEqual([mode, mode, mode])
   })
+
+  it.each([
+    [1, '/settings'],
+    [2, '/settings'],
+    [3, '/settings'],
+    [2, '/year/2026'],
+  ])(
+    '写し直すのに自分で動いている間（%i つ目の動きの直後）に # を書き換えた（%s。アドレス欄・ページの location.hash など、アプリが作っていない履歴が来た）時は、待っていた動きでなく利用者の行き先として描き（# と画面が合う）、「進む」の印に替えず、そこから動かない',
+    async (at, path) => {
+      const s = setupSwipes('month')
+      await arm(s)
+      // 右の端から払って回した: 絵が古くなり、身振りの絵が消えた後に写し直す
+      s.win.userGo(1)
+      await vi.advanceTimersByTimeAsync(1)
+      const go = vi.spyOn(s.win.history, 'go')
+      let n = 0
+      go.mockImplementation((d: number) => {
+        n++
+        s.win.move(d)
+        if (n === at) s.win.typeHash(`#${path}`)
+      })
+      await vi.advanceTimersByTimeAsync(6000)
+      await settle(s.h)
+      go.mockRestore()
+      expect(n).toBeGreaterThanOrEqual(at)
+      expect(s.win.hashPath()).toBe(path)
+      expect(s.updates.map((u) => u.location.pathname)).toEqual([path])
+      const shape = s.h.shape()
+      expect(shape.cur).toBe(shape.shownIdx)
+      expect(s.win.index).toBe(shape.cur)
+      expect(s.win.describe()[s.win.index]).toBe(`*${path}`)
+      // カレンダーでない画面へ来た時は、写し直すのもやめた（カレンダーの時は、そこを新しい土台にして写し直す）
+      if (path === '/settings') expect(n).toBe(at)
+      else expect(shape.base).toBe(shape.cur)
+    },
+  )
+
+  it.each([1, 2, 3])(
+    '写し直すのに自分で動いている間（%i つ目の動きの直後）に # を書き換え、ブラウザが待っていた動きを書き換えた所から後で行った時も、# と出している画面は合う（書き換えた所は「進む」の印に替えない）',
+    async (at) => {
+      const s = setupSwipes('month')
+      await arm(s)
+      s.win.userGo(1)
+      await vi.advanceTimersByTimeAsync(1)
+      const go = vi.spyOn(s.win.history, 'go')
+      let n = 0
+      go.mockImplementation((d: number) => {
+        n++
+        if (n === at) s.win.typeHash('#/settings')
+        s.win.move(d)
+      })
+      await vi.advanceTimersByTimeAsync(6000)
+      await settle(s.h)
+      go.mockRestore()
+      expect(s.updates[0]?.location.pathname).toBe('/settings')
+      expect(s.updates.at(-1)?.location.pathname).toBe(s.win.hashPath())
+      const shape = s.h.shape()
+      expect(shape.cur).toBe(shape.shownIdx)
+      expect(s.win.index).toBe(shape.cur)
+      expect(s.win.describe().filter((e) => e.endsWith('/settings'))).toHaveLength(1)
+    },
+  )
 })
 
 describe('Android・PC（OS の戻る）', () => {
