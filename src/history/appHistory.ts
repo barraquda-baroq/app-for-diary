@@ -11,9 +11,23 @@
 //   Android・PC では閉じるかを聞く（handlers.askExit）。登録の画面の iPhone のフリックは何もしない（開いたまま戻す）。ほかは1つ戻る
 // - 自分で戻る・進む（history.go）間に来た popstate は、ルーターに渡さない。書き込み・戻る・進むは1つずつ順に行い、動いている間に
 //   来たものは待たせる。すばやく続けた「戻る」「進む」のうち、戻している間に来た物は捨てる（積み上がらず、行ったり来たりしない）
-// - 印の履歴を作るのは、押した・キーを打った直後だけ（開いた直後はまだ作らず、最初に押した時に作る）。iPhone（WebKit）は、押してから
-//   10秒より後に積まれた履歴を身振りの行き先から外し、Chromium は、押していないのに積んだページの履歴を「戻る」ボタンの行き先から外す
-//   （history manipulation intervention）。外されると、iPhone のフリックは効かず、Android の戻るボタンは聞かずにアプリを閉じる
+// - 印の履歴を作るのは、押し終えた・キーを打った直後だけ（開いた直後はまだ作らず、最初に押し終えた時（指・マウスを離した時。ドラッグ
+//   なら落とし終えた時）に作る）。iPhone（WebKit）は、押してから 10秒より後に積まれた履歴を身振りの行き先から外し、Chromium は、
+//   押していないのに積んだページの履歴を「戻る」ボタンの行き先から外す（history manipulation intervention）。外されると、iPhone の
+//   フリックは効かず、Android の戻るボタンは聞かずにアプリを閉じる
+// - 押している間（指・マウス・ペンが1つでも下りている）・ドラッグの途中（handlers.dragging）は、アプリが自分から履歴を動かさない: 印の
+//   履歴を作る・「進む」の印を置く・カレンダーの履歴へ戻る・ルーターの戻る・進む・閉じるは、押し終えてドラッグも終わるまで待つ
+//   （指の動き（長押しで掴む・動かす・落とす）の途中で履歴を動かさないため。PC のマウスは押した時（mousedown）から「押した」と数える
+//   ので、前は開いて最初にマウスで掴むと、掴む前に印を作っていた。指は離した時（pointerup・touchend）に数えるので、指の長押しでは落とす
+//   最中（離した時）に作っていた）。ルーターの置き換え（カレンダーの中の行き来。押している間の週の替わりなど）は、履歴を動かさない
+//   （今の物を書き換えるだけ）のでその場で書く。「戻る」「進む」が来た所から出していた所へ戻すのは待たない（押し終えるのを待っている
+//   物があっても、その前に行う。待つ間に、もう一度の「戻る」でアプリを離れないように）
+// - 離す出来事が来ないまま残った指（画面の端の身振りを端末が取った時など。src/ui/useSwipe.ts と同じ）は、次に指を下ろした時・画面に
+//   触れている指が無くなった時（touchend）に捨てる。ほかの物も、その物の出来事が PRESS_STALE_MS 来なければ離したとみなす
+// - history.scrollRestoration は auto のまま: 設定・MIM から「戻る」でカレンダーへ戻った時のページのスクロールの位置は、ブラウザが
+//   戻す（src/ui/Layout.tsx の scrollsToTop は「戻る」「進む」では動かさない）。ただし「戻る」「進む」の印の履歴（と、印を作る・置く時に
+//   自分で戻る間の土台）だけは manual にする（押し終えた時に続いているスクロール（払った指の惰性）を、印を積んだ時の位置へ戻さない・
+//   フリックで印の履歴へ移った時に、前の位置へ跳ばない）。土台に着いたら auto に戻す
 // - 読み込み直した時は、今の履歴の state（idx・ds）をそのまま使う（履歴を増やさない。印の履歴で読み込み直した時は土台へ戻る）
 // - アプリを閉じる（leave）: アプリの最初の履歴（idx 0）より前へ戻る。前が無い時（ホーム画面から開いた Android のアプリなど）は
 //   window.close() を試し、それも効かなければ、最初の履歴へ戻って「もう一度［戻る］で閉じる」所にする（Android）か、そのまま（PC）
@@ -32,6 +46,8 @@ export interface HistoryWindow {
     readonly state: unknown
     /** このタブの履歴の数（ほかのページの分も。無ければ数えない） */
     readonly length?: number
+    /** 今の履歴へ「戻る」「進む」で来た時に、ブラウザがスクロールの位置を戻すか（この後に積む履歴も同じになる。無ければ変えない） */
+    scrollRestoration?: 'auto' | 'manual'
     pushState(data: unknown, unused: string, url?: string | null): void
     replaceState(data: unknown, unused: string, url?: string | null): void
     go(delta: number): void
@@ -57,6 +73,8 @@ export interface HistoryHandlers {
    * ダイアログを閉じる（その下の詳細の画面などは閉じない）・ドラッグの途中は何もしない
    */
   consumePop?: () => boolean
+  /** ドラッグの途中か（押し終えても、落とし終えるまで履歴を動かさない。src/App.tsx が dragActive を置く） */
+  dragging?: () => boolean
 }
 
 export interface AppHistoryOptions {
@@ -67,7 +85,7 @@ export interface AppHistoryOptions {
   armOnLeaveFail: boolean
   /** 行き先の画面の種類 */
   screenOf: (location: { pathname: string; state: unknown }) => ScreenKind
-  /** 今（ミリ秒。テスト用） */
+  /** 今（ミリ秒。テスト用。既定は performance.now: 時計を合わせても・E2E で Date を止めても進む） */
   now?: () => number
 }
 
@@ -89,6 +107,8 @@ export interface HistoryShape {
   buildPending: boolean
   /** 閉じられずに最初の履歴へ戻った所（もう一度「戻る」で閉じる） */
   exitArmed: boolean
+  /** 押している間・ドラッグの途中（アプリから履歴を動かすのを待っている） */
+  held: boolean
 }
 
 /** アプリを閉じた結果: left = 離れた、armed = 最初の履歴へ戻った（もう一度［戻る］で閉じる）、stayed = 離れられなかった */
@@ -102,8 +122,29 @@ export const LEAVE_WAIT_MS = 700
 export const CLOSE_WAIT_MS = 300
 /** 押した・キーを打った直後とみなす長さ（navigator.userActivation が無いブラウザだけ。WebKit の 10秒・Chromium の 5秒より短く） */
 const ACTIVATION_FALLBACK_MS = 4000
-/** 聞く出来事（押した・キーを打った。capture で、アプリの部品より先に聞く） */
-const ACTIVATION_EVENTS = ['pointerdown', 'mousedown', 'pointerup', 'touchend', 'keydown', 'click'] as const
+/** 押し終えたのにドラッグが続いている（落とした後の片付けの間）時に、もう一度見るまでの長さ */
+export const FREE_POLL_MS = 50
+/**
+ * 押している物（1つずつ）が、これより長くその物の出来事を送ってこなければ、離したのを見落としたとみなす（いつまでも履歴を動かせなく
+ * ならないように）
+ */
+export const PRESS_STALE_MS = 10_000
+/** 聞く出来事（押す・離す・キーを打つ。capture で、アプリの部品より先に聞く） */
+const INPUT_EVENTS = [
+  'pointerdown',
+  'pointermove',
+  'pointerup',
+  'pointercancel',
+  'mousedown',
+  'touchstart',
+  'touchend',
+  'touchcancel',
+  'keydown',
+  'keyup',
+  'click',
+] as const
+/** 押し終えた出来事（ここで、待っていた物を進め、最初に押し終えた時なら印の履歴を作る） */
+const PRESS_END_EVENTS = new Set(['pointerup', 'pointercancel', 'touchend', 'touchcancel', 'keyup', 'click'])
 
 /** 履歴の state の DS の印 */
 interface Meta {
@@ -171,6 +212,26 @@ export class AppHistory implements RouterHistory {
   private leaveGen = 0
   private pageHidden = false
   private lastActivation = -Infinity
+  /**
+   * 下りている指・マウス・ペン（pointerId → 押し方の種類と、その物の最後の出来事の時刻。離したのを見落とした物は、PRESS_STALE_MS で
+   * 外す）
+   */
+  private readonly pointers = new Map<number | string, { type: string; at: number }>()
+  /** 画面に触れている指の数（touch の出来事。WebKit はスクロールに取った指を pointer では離す）と、その最後の出来事の時刻 */
+  private touches = 0
+  private touchAt = -Infinity
+  /** 押し終えてドラッグも終わるのを待っている物 */
+  private readonly freeWaiters: (() => void)[] = []
+  /**
+   * 「戻る」「進む」が来た所から出していた所へ戻す動き（rush）。順番を待っている物より先に行い、押し終えるのを待っている物があれば、
+   * その待つ間に行う
+   */
+  private readonly urgent: Op[] = []
+  private freeTimer: number | null = null
+  /** iPhone の詳細の画面などの後ろに置く「進む」の印を、押している間だったので後に回した */
+  private forwardPending = false
+  /** 押し終えた時の印の履歴を作る（置く）動きを、もう順番に入れた */
+  private markQueued = false
   private waiting: { finish: (came: boolean) => void } | null = null
   private readonly queue: Op[] = []
   private running = false
@@ -196,7 +257,8 @@ export class AppHistory implements RouterHistory {
     win.addEventListener('popstate', this.onPop)
     win.addEventListener('pagehide', this.onPageHide)
     win.addEventListener('pageshow', this.onPageShow)
-    for (const type of ACTIVATION_EVENTS) win.addEventListener(type, this.onActivation, true)
+    win.addEventListener('blur', this.onBlur)
+    for (const type of INPUT_EVENTS) win.addEventListener(type, this.onInput, true)
   }
 
   get action(): NavigationType {
@@ -236,6 +298,7 @@ export class AppHistory implements RouterHistory {
       this.startOnMarker = false
       const base = this.base
       this.run(async () => {
+        await this.untilFree()
         await this.travelTo(base)
         this.deliver()
       })
@@ -262,6 +325,9 @@ export class AppHistory implements RouterHistory {
   go(delta: number): void {
     const target = this.shownIdx + delta
     this.run(async () => {
+      await this.untilFree()
+      // 押し終えるのを待つ間に、利用者の「戻る」「進む」でもうそこを出していた（押している間に［×］と OS の戻るの両方で閉じた時など）
+      if (delta !== 0 && this.shownIdx === target && this.cur === target) return
       await this.travelTo(target)
       this.deliver()
     })
@@ -289,6 +355,7 @@ export class AppHistory implements RouterHistory {
       top: this.top,
       buildPending: this.buildPending,
       exitArmed: this.exitArmed,
+      held: !this.free(),
     }
   }
 
@@ -297,13 +364,15 @@ export class AppHistory implements RouterHistory {
     this.win.removeEventListener('popstate', this.onPop)
     this.win.removeEventListener('pagehide', this.onPageHide)
     this.win.removeEventListener('pageshow', this.onPageShow)
-    for (const type of ACTIVATION_EVENTS) this.win.removeEventListener(type, this.onActivation, true)
+    this.win.removeEventListener('blur', this.onBlur)
+    for (const type of INPUT_EVENTS) this.win.removeEventListener(type, this.onInput, true)
+    this.stopFreeTimer()
   }
 
   // ---------- 中身 ----------
 
   private now(): number {
-    return this.opts.now?.() ?? Date.now()
+    return this.opts.now?.() ?? performance.now()
   }
 
   private screen(location: { pathname: string; state: unknown }): ScreenKind {
@@ -336,11 +405,21 @@ export class AppHistory implements RouterHistory {
     if (!this.running) void this.drain()
   }
 
+  /**
+   * 「戻る」「進む」が来た所から出していた所へ戻す: 順番を待っている物より先に行い、押し終えるのを待っている物（untilFree）があれば、
+   * その待つ間に行う（押している間に来た「戻る」で印の履歴に残ったままにして、もう一度の「戻る」でアプリを離れないように）
+   */
+  private rush(op: Op): void {
+    this.urgent.push(op)
+    if (!this.running) void this.drain()
+    else for (const resolve of this.freeWaiters.splice(0)) resolve()
+  }
+
   private async drain(): Promise<void> {
     this.running = true
     try {
-      while (this.queue.length > 0) {
-        const op = this.queue.shift()!
+      while (this.urgent.length > 0 || this.queue.length > 0) {
+        const op = (this.urgent.length > 0 ? this.urgent : this.queue).shift()!
         try {
           const result = op()
           if (result) await result
@@ -372,6 +451,16 @@ export class AppHistory implements RouterHistory {
   private pushHere(location: Location): void {
     const idx = this.cur + 1
     const url = this.createHref(location)
+    // 積む画面と、今の履歴（土台など。戻った時にブラウザが位置を戻す）は auto にする（印を作る・置く時に manual にした所を、土台へ
+    // 戻り終える前に利用者の「戻る」「進む」が来て auto に戻せなかった時の念のため。印の履歴は替えない）
+    const h = this.win.history
+    if (h.scrollRestoration === 'manual' && !metaOf(h.state)?.mark) {
+      try {
+        h.scrollRestoration = 'auto'
+      } catch {
+        // 変えられない
+      }
+    }
     try {
       this.win.history.pushState({ usr: location.state, key: location.key, idx, ...this.meta() }, '', url)
     } catch (error) {
@@ -400,14 +489,17 @@ export class AppHistory implements RouterHistory {
       this.top <= this.cur &&
       this.activated()
     ) {
-      return this.addForward()
+      // 押している間（長押しで開いた時など）は、押し終えてから置く
+      if (this.free()) return this.addForward()
+      this.forwardPending = true
     }
   }
 
   /** カレンダーの行き先は、いつも土台に置く（積まずに置き換える。積んだ画面から移る時は土台まで戻ってから） */
   private writeCalendar(location: Location): void | Promise<void> {
     if (this.base === null) {
-      if (this.activated()) return this.build(location)
+      // 押している間（掴んだまま端で週が替わった時など）は今の履歴を置き換え、押し終えた時に作る
+      if (this.activated() && this.free()) return this.build(location)
       this.replaceHere(location)
       this.buildPending = true
       return
@@ -417,16 +509,18 @@ export class AppHistory implements RouterHistory {
       return
     }
     const base = this.base
-    return this.travelTo(base).then(() => {
-      // 戻れなかった時は、今いる所を土台にする
-      if (this.cur !== base) this.base = this.cur
-      this.replaceHere(location)
-    })
+    return this.untilFree()
+      .then(() => this.travelTo(base))
+      .then(() => {
+        // 戻れなかった時は、今いる所を土台にする
+        if (this.cur !== base) this.base = this.cur
+        this.replaceHere(location)
+      })
   }
 
   /**
    * 土台と印の履歴を作る: 今の履歴を「戻る」の印に替え、その後ろに土台（この行き先）と「進む」の印を積んで、土台へ1つ戻る。
-   * 押した・キーを打った直後だけ（ブラウザに外されないように）
+   * 押し終えた・キーを打った直後で、押している物もドラッグも無い時だけ（ブラウザに外されないように・指の動きを邪魔しないように）
    */
   private build(location: Location): Promise<void> | void {
     if (this.base !== null) return
@@ -435,6 +529,8 @@ export class AppHistory implements RouterHistory {
     const base = at + 1
     const href = this.createHref(location)
     const h = this.win.history
+    // 「戻る」の印・土台・「進む」の印は、スクロールの位置を戻させない（この後に積む物も同じになる）。土台へ戻り終えたら、土台だけ戻す
+    const restore = this.manualScroll()
     h.replaceState({ usr: location.state, key: location.key, idx: at, ds: { base, mark: 'back' } }, '', href)
     h.pushState({ usr: location.state, key: location.key, idx: base, ds: { base } }, '', href)
     h.pushState({ usr: null, key: makeKey(), idx: base + 1, ds: { base, mark: 'fwd' } }, '', href)
@@ -442,19 +538,46 @@ export class AppHistory implements RouterHistory {
     this.cur = this.top = base + 1
     this.shown = location
     this.shownIdx = base
-    return this.travelTo(base)
+    return this.travelTo(base).then(() => restore(base))
   }
 
-  /** 今の履歴の後ろに「進む」の印を積んで、1つ戻る */
+  /** 今の履歴の後ろに「進む」の印を積んで、1つ戻る（印は、スクロールの位置を戻させない。build と同じ） */
   private addForward(): Promise<void> {
     const back = this.cur
+    const restore = this.manualScroll()
     this.win.history.pushState(
       { usr: null, key: makeKey(), idx: back + 1, ds: { base: this.base ?? back, mark: 'fwd' } },
       '',
       this.win.location.href,
     )
     this.cur = this.top = back + 1
-    return this.travelTo(back)
+    return this.travelTo(back).then(() => restore(back))
+  }
+
+  /**
+   * 今の履歴（とこの後に積む履歴）を、「戻る」「進む」で来た時にスクロールの位置を戻させない（manual）にする。返す関数は、戻り終えた
+   * 履歴（idx が target の物）を元（auto）に戻す: ブラウザは戻る・進むを終えた後（popstate を送った後）に位置を戻すので、次の処理まで
+   * 待ってから（その間に来たルーターの書き込みは順番を待つ。積んだ履歴に manual を写さないように）。その間に利用者の「戻る」「進む」で
+   * ほかの履歴へ移っていたら、そこ（印の履歴）は替えない
+   */
+  private manualScroll(): (target: number) => Promise<void> | void {
+    const h = this.win.history
+    const before = h.scrollRestoration
+    if (before === undefined || before === 'manual') return () => {}
+    try {
+      h.scrollRestoration = 'manual'
+    } catch {
+      return () => {}
+    }
+    return (target) =>
+      this.wait(0).then(() => {
+        if (this.idx() !== target) return
+        try {
+          h.scrollRestoration = before
+        } catch {
+          // 変えられない
+        }
+      })
   }
 
   /** その idx の履歴へ移る（来た popstate はルーターに渡さない。思った所と違えば、もう2回まで移り直す） */
@@ -490,6 +613,115 @@ export class AppHistory implements RouterHistory {
     return new Promise((resolve) => this.win.setTimeout(resolve, ms))
   }
 
+  /**
+   * 押している物（指・マウス・ペン）があるか（離したのを見落とした物は、その物の最後の出来事から PRESS_STALE_MS で外す。ほかの物を
+   * 押し続けても、外す時は延びない）
+   */
+  private pressing(): boolean {
+    if (this.pointers.size === 0 && this.touches === 0) return false
+    const now = this.now()
+    for (const [id, p] of this.pointers) if (now - p.at > PRESS_STALE_MS) this.pointers.delete(id)
+    if (this.touches > 0 && now - this.touchAt > PRESS_STALE_MS) this.touches = 0
+    return this.pointers.size > 0 || this.touches > 0
+  }
+
+  /** 押している物もドラッグも無い（アプリから履歴を動かしてよい） */
+  private free(): boolean {
+    return !this.pressing() && !this.handlers.dragging?.()
+  }
+
+  /**
+   * 押し終えてドラッグも終わるまで待つ（今そうなら、すぐ）。順番の中の動き（run）からだけ呼ぶ: 待つ間に来た「戻る」「進む」から戻す
+   * 動き（rush）は、待ったままにせず、ここで先に行う
+   */
+  private async untilFree(): Promise<void> {
+    for (;;) {
+      while (this.urgent.length > 0) {
+        const op = this.urgent.shift()!
+        try {
+          const result = op()
+          if (result) await result
+        } catch (error) {
+          console.error('履歴の書き込みに失敗しました', error)
+        }
+      }
+      if (this.free()) return
+      await new Promise<void>((resolve) => {
+        this.freeWaiters.push(resolve)
+        this.watchFree()
+      })
+    }
+  }
+
+  /** 指の pointer で残っている物を捨てる（離す出来事が来ないまま残った物。画面に触れている指が無い・新しく下ろした指が最初の1本） */
+  private dropTouchPointers(): void {
+    for (const [id, p] of this.pointers) if (p.type === 'touch') this.pointers.delete(id)
+  }
+
+  /** touch の出来事の、画面に触れている指の数（touchend・touchcancel で 0 になったら、指の pointer の残りも捨てる） */
+  private countTouches(event: Event, ended: boolean): void {
+    this.touches = (event as TouchEvent).touches?.length ?? 0
+    this.touchAt = this.now()
+    if (ended && this.touches === 0) this.dropTouchPointers()
+  }
+
+  /** 待っている物がある間、押し終えるのを見落とさないように、少しずつ見直す（落とした後の片付け・離したのを見落とした物） */
+  private watchFree(): void {
+    if (this.freeTimer !== null) return
+    this.freeTimer = this.win.setTimeout(() => {
+      this.freeTimer = null
+      this.afterPress()
+    }, FREE_POLL_MS)
+  }
+
+  private stopFreeTimer(): void {
+    if (this.freeTimer === null) return
+    this.win.clearTimeout(this.freeTimer)
+    this.freeTimer = null
+  }
+
+  /**
+   * 押し終えた（離した・キーを離した・押した物の click）時と、その後に見直す時: 押している物もドラッグも無くなっていれば、待っていた物を
+   * 進め、押し終えた直後なら印の履歴を作る・「進む」の印を置く。まだなら少し後に見直す
+   */
+  private afterPress(): void {
+    if (!this.free()) {
+      if (this.freeWaiters.length > 0 || this.buildPending || this.forwardPending) this.watchFree()
+      return
+    }
+    this.stopFreeTimer()
+    for (const resolve of this.freeWaiters.splice(0)) resolve()
+    if (this.markQueued || !this.activated()) return
+    const atBase = this.base !== null && this.cur === this.base && this.shownIdx === this.base && this.top <= this.base
+    if (!this.buildPending && !this.forwardPending && !(atBase && !this.running)) return
+    this.markQueued = true
+    this.run(() => this.markAfterPress())
+  }
+
+  /**
+   * 押し終えた後の印: まだ土台が無ければ土台と印の履歴を作り、土台（や iPhone の詳細の画面など）の後ろに履歴が無ければ「進む」の印を
+   * 置く。順番が来た時に、もう一度確かめる（その間にまた押した・ブラウザが「押した直後」と数えなくなった時は、次に押し終えた時に）
+   */
+  private markAfterPress(): void | Promise<void> {
+    this.markQueued = false
+    if (!this.free() || !this.activated()) return
+    if (this.buildPending) {
+      if (this.base !== null || this.cur !== this.shownIdx || this.screen(this.shown) !== 'calendar') return
+      return this.build(this.shown)
+    }
+    const pending = this.forwardPending
+    this.forwardPending = false
+    if (this.base === null || this.cur !== this.shownIdx || this.top > this.cur) return
+    // 土台の後ろに履歴が無い（アドレス欄から来た所を土台にした時など）。iPhone の詳細の画面などで、開いた時に押していて置かなかった
+    const screen = this.screen(this.shown)
+    if (
+      this.cur === this.base ||
+      (pending && this.opts.source === 'edge-flick' && screen !== 'register' && screen !== 'calendar')
+    ) {
+      return this.addForward()
+    }
+  }
+
   /** 押した・キーを打った直後か（この後に積む履歴を、ブラウザが行き先から外さないか） */
   private activated(): boolean {
     const ua = this.win.navigator?.userActivation
@@ -511,6 +743,7 @@ export class AppHistory implements RouterHistory {
   }
 
   private async doLeave(): Promise<LeaveResult> {
+    await this.untilFree()
     const gen = ++this.leaveGen
     this.pageHidden = false
     // アプリの最初の履歴（idx 0）より前に、ほかのページの履歴が無いと分かる時（タブの履歴の数が、アプリの分だけ。ホーム画面から
@@ -567,7 +800,7 @@ export class AppHistory implements RouterHistory {
       if (from === 0) {
         // 閉じられずに最初の履歴へ戻っていた所から動いた: 何もせず、出していた所へ戻る
         const shownIdx = this.shownIdx
-        this.run(() => this.travelTo(shownIdx))
+        this.rush(() => this.travelTo(shownIdx))
         return
       }
     }
@@ -579,21 +812,22 @@ export class AppHistory implements RouterHistory {
     if (this.handlers.consumePop?.()) {
       // 確かめのダイアログを閉じた・ドラッグの途中: 画面は動かさず、出していた所へ戻す
       const shownIdx = this.shownIdx
-      this.run(() => this.travelTo(shownIdx))
+      this.rush(() => this.travelTo(shownIdx))
       return
     }
     const action = decidePop(this.opts.source, this.screen(this.shown), idx < this.shownIdx ? 'back' : 'forward')
     const shownIdx = this.shownIdx
+    // 出していた所へ戻す（rush: 押し終えるのを待っている物があっても、待たない）
     switch (action.kind) {
       case 'stay':
-        this.run(() => this.travelTo(shownIdx))
+        this.rush(() => this.travelTo(shownIdx))
         return
       case 'ring':
-        this.run(() => this.travelTo(shownIdx))
+        this.rush(() => this.travelTo(shownIdx))
         this.handlers.ring?.(action.dir)
         return
       case 'ask-exit':
-        this.run(() => this.travelTo(shownIdx))
+        this.rush(() => this.travelTo(shownIdx))
         this.handlers.askExit?.()
         return
       case 'back-one': {
@@ -602,7 +836,7 @@ export class AppHistory implements RouterHistory {
           this.deliver()
           return
         }
-        this.run(async () => {
+        this.rush(async () => {
           await this.travelTo(target)
           this.deliver()
         })
@@ -626,9 +860,10 @@ export class AppHistory implements RouterHistory {
     this.deliver()
   }
 
-  private readonly onActivation = (event: Event): void => {
+  private readonly onInput = (event: Event): void => {
     const type = event.type
-    const pointerType = (event as PointerEvent).pointerType
+    const pointer = event as PointerEvent
+    const pointerType = pointer.pointerType
     // ブラウザが「押した」と数える出来事（navigator.userActivation が無いブラウザだけ使う）
     if (
       type === 'keydown' ||
@@ -640,27 +875,81 @@ export class AppHistory implements RouterHistory {
     ) {
       this.lastActivation = this.now()
     }
+    // 押している物を数える（pointerId の無い出来事は、押し方の種類で数える）
+    const id = typeof pointer.pointerId === 'number' ? pointer.pointerId : (pointerType ?? 'pointer')
+    switch (type) {
+      case 'pointerdown':
+        // 最初の1本の指（isPrimary）を下ろした: 前の指で、離す出来事が来ないまま残った物（画面の端の身振りを端末が取った時など。
+        // src/ui/useSwipe.ts と同じ）は捨てる
+        if (pointerType === 'touch' && pointer.isPrimary) this.dropTouchPointers()
+        this.pointers.set(id, { type: pointerType ?? '', at: this.now() })
+        break
+      case 'pointermove': {
+        const pressed = this.pointers.get(id)
+        if (pressed === undefined) return
+        // マウスで押していて、マウスのボタンが離れている（離した pointerup を見落とした: ウインドウの外で離したなど）。同じ番号の、
+        // マウスでない押し方の物（テストの合成した指）は、マウスの動きでは離さない
+        if (pressed.type === 'mouse' && pointerType === 'mouse' && pointer.buttons === 0) {
+          this.pointers.delete(id)
+          this.afterPress()
+        } else {
+          pressed.at = this.now()
+          // 動いている指は、画面に触れている指の数も新しい（touchmove は聞かない）
+          if (pressed.type === 'touch') this.touchAt = pressed.at
+        }
+        return
+      }
+      case 'pointerup':
+      case 'pointercancel':
+        this.pointers.delete(id)
+        break
+      case 'touchstart': {
+        this.countTouches(event, false)
+        // touch の出来事は、いつも押した所の要素へ送られ、その要素が描き直しで外れると window まで来ない（掴んで動かしたカードなど）。
+        // 離したのを見落とさないように、押した要素でも聞く
+        const target = event.target as EventTarget | null
+        if (target && target !== (this.win as unknown as EventTarget) && typeof target.addEventListener === 'function') {
+          target.addEventListener('touchend', this.onTouchEnd, { once: true })
+          target.addEventListener('touchcancel', this.onTouchEnd, { once: true })
+        }
+        break
+      }
+      case 'touchend':
+      case 'touchcancel':
+        this.countTouches(event, true)
+        break
+    }
     if (this.exitArmed && (type === 'pointerdown' || type === 'keydown')) {
-      // 閉じられずに最初の履歴へ戻っていた所で押した: 出していた所へ戻ってから、押した物を動かす
+      // 閉じられずに最初の履歴へ戻っていた所で押した: 押し終えたら出していた所へ戻り、それから押した物を動かす（押した物の行き先の
+      // 書き込みは、戻り終えるまで順番を待つ）
       this.exitArmed = false
       const shownIdx = this.shownIdx
-      this.run(() => this.travelTo(shownIdx))
+      this.run(async () => {
+        await this.untilFree()
+        await this.travelTo(shownIdx)
+      })
       return
     }
-    if (!this.activated()) return
-    if (this.buildPending) {
-      if (this.base !== null || this.cur !== this.shownIdx || this.screen(this.shown) !== 'calendar') return
-      this.run(() => this.build(this.shown))
-      return
-    }
-    // 土台の後ろに履歴が無い（アドレス欄から来た所を土台にした時など）: 「進む」の印を置く
-    if (this.base !== null && this.cur === this.base && this.shownIdx === this.base && this.top <= this.base && !this.running) {
-      this.run(() => this.addForward())
-    }
+    if (PRESS_END_EVENTS.has(type)) this.afterPress()
+  }
+
+  /** 押した要素で聞いた touchend・touchcancel（外れた要素から window まで来なかった物。来た物と同じ数え方なので、2回来てもよい） */
+  private readonly onTouchEnd = (event: Event): void => {
+    this.countTouches(event, true)
+    this.afterPress()
+  }
+
+  /** ウインドウから離れた（ほかのアプリへ移った）: 押している物は無い（離したのが届かないことがある） */
+  private readonly onBlur = (): void => {
+    this.pointers.clear()
+    this.touches = 0
+    this.afterPress()
   }
 
   private readonly onPageHide = (): void => {
     this.pageHidden = true
+    this.pointers.clear()
+    this.touches = 0
   }
 
   private readonly onPageShow = (event: Event): void => {
@@ -673,7 +962,10 @@ export class AppHistory implements RouterHistory {
     this.cur = this.idx() ?? this.cur
     if (this.cur !== this.shownIdx) {
       const shownIdx = this.shownIdx
-      this.run(() => this.travelTo(shownIdx))
+      this.run(async () => {
+        await this.untilFree()
+        await this.travelTo(shownIdx)
+      })
     }
   }
 }

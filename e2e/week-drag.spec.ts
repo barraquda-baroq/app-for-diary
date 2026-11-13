@@ -11,6 +11,7 @@ import type { Item } from '../src/domain/types'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
   collectDiagnosticsOnFailure,
+  historySettled,
   openCalendar,
   rawItem,
   recordTurns,
@@ -105,9 +106,37 @@ async function reachWeek(page: Page, sunday: string) {
 const itemOf = (page: Page, id: string) =>
   page.evaluate((i) => window.__ds.getData().items[i] ?? null, id) as Promise<Item | null>
 
-async function openWeek(page: Page, opts: { appearance?: 'white' | 'deep-dark'; data?: DemoData } = {}) {
-  await openCalendar(page, WEEK, { data: opts.data ?? demoData(), appearance: opts.appearance })
+/** いつもの週を開く。arm: false なら、開いた後に何も押さない（アプリの履歴の印はまだ無い。openCalendar の arm） */
+async function openWeek(page: Page, opts: { appearance?: 'white' | 'deep-dark'; data?: DemoData; arm?: boolean } = {}) {
+  await openCalendar(page, WEEK, { data: opts.data ?? demoData(), appearance: opts.appearance, arm: opts.arm })
   await expect(page.getByTestId('view-week')).toBeVisible()
+}
+
+/** タブの履歴の数と、アプリの履歴の土台の番号（まだ印を作っていなければ null） */
+const historyNow = (page: Page) =>
+  page.evaluate(() => ({ length: history.length, base: window.__ds.historyShape()?.base ?? null }))
+
+/**
+ * 開いて最初に押したのがドラッグだった時: 掴む前・掴んでいる間（掴むまで待ち、落とす所へ動かした所）は、アプリの履歴を動かさない
+ * （履歴の数も土台も、開いた時のまま）。落とし終えた後に「戻る」「進む」の印を作る（土台は 1、履歴は2つ増える。docs/SPEC.md の 3.1）。
+ * Playwright の page.evaluate（ここの historyNow・合成した指）は、それだけでブラウザに「押した」と数えさせるので、この確かめの間は
+ * いつも「押した直後」になる: 確かめるのは「押した直後でも、押している間・ドラッグの途中は履歴を動かさない」こと。本物の端末と同じ
+ * なのはマウス（PC。押した時から「押した」になる）で、指は本物でも離した時からなので、前の作りでも掴む前には作っていなかった
+ */
+async function firstPressDrag(page: Page, press: () => Promise<DragSession>, to: Locator, done: string) {
+  const before = await historyNow(page)
+  expect(before.base).toBeNull()
+  const drag = await press()
+  await lifted(page)
+  expect(await historyNow(page)).toEqual(before)
+  await drag.moveTo(await visiblePoint(to))
+  await overDropDay(to)
+  expect(await historyNow(page)).toEqual(before)
+  await drag.drop()
+  await expect(toast(page, done)).toBeVisible()
+  await expect.poll(async () => (await historyNow(page)).base).toBe(1)
+  await historySettled(page)
+  expect(await historyNow(page)).toEqual({ length: before.length + 2, base: 1 })
 }
 
 /**
@@ -267,6 +296,15 @@ async function noToast(page: Page) {
 }
 
 test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
+  test('開いて最初に押したのがマウスのドラッグでも掴んで落とせ、掴んでいる間はアプリの履歴を動かさず、落とし終えてから印を作る', async ({
+    page,
+  }) => {
+    await openWeek(page, { arm: false })
+    const grab = await grabPoint(card(page, I.meeting))
+    await firstPressDrag(page, () => startMouseDrag(page, grab), cellL(page, 'work', '2026-11-12'), '11/12（木）へ移しました')
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-12')
+  })
+
   test('1日のカードを別の日へ: 落とせる日の印・浮いた見た目、「11/12（木）へ移しました」と［元に戻す］、移った先のカードを目立たせる', async ({
     page,
   }) => {
@@ -922,6 +960,22 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
   })
   const vibrations = (page: Page) => page.evaluate(() => (window as unknown as { __vibrate: unknown[] }).__vibrate)
 
+  for (const via of ['cdp', 'synthetic'] as const) {
+    test(`開いて最初に押したのが長押しのドラッグ（${via === 'cdp' ? '本物の指' : '合成した指'}）でも掴んで落とせ、掴んでいる間はアプリの履歴を動かさず、落とし終えてから印を作る`, async ({
+      page,
+    }) => {
+      await openWeek(page, { arm: false })
+      const grab = await grabPoint(card(page, I.meeting))
+      await firstPressDrag(
+        page,
+        () => startLongPress(page, grab, { via }),
+        halfS(page, 'work', '2026-11-09'),
+        '11/9（月）へ移しました',
+      )
+      expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-09')
+    })
+  }
+
   test('0.45秒押してから動かすと掴んで動かせる（15ms 振動）。落とせるのは同じ半分（仕事）だけ', async ({ page }) => {
     await openWeek(page)
     const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)))
@@ -1450,9 +1504,13 @@ test.describe('落とした後の［元に戻す］（指。S・M）', { tag: ['
   })
 })
 
+// どれも開いて最初に押すのが長押し（openWeek の arm: false）。WebKit（CI の Linux 版）は、一度本物のマウスを使うと、文書が
+// スクロールするたびにマウスの最後の位置へ本物の pointermove（pointerId 1）を送り、合成した指（同じ pointerId 1）の長押しを dnd-kit が
+// やめる（e2e/helpers.ts の armHistory。CI 48 で、掴む前の scrollIntoViewIfNeeded が文書を 5px スクロールする3つが落ちたのは、これと
+// 見ている。落ちた時の page-diagnostics の1行目に mouse@… と MOVE1m が出れば、これ）
 test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
   test('長押しで1日のカードと終点の●を動かせる', async ({ page }) => {
-    await openWeek(page)
+    await openWeek(page, { arm: false })
     let drag = await startLongPress(page, await grabPoint(card(page, I.meeting)), { via: 'synthetic' })
     await lifted(page)
     await drag.moveTo(await visiblePoint(halfS(page, 'work', '2026-11-09')))
@@ -1472,7 +1530,7 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
   })
 
   test('ロック中のカードは長押しで揺れるだけ。カードは文字の選択と長押しのメニューを止めている', async ({ page }) => {
-    await openWeek(page)
+    await openWeek(page, { arm: false })
     await recordPulses(page)
     const gym = card(page, I.gym)
     const css = await gym.evaluate((e) => {
@@ -1500,7 +1558,7 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
   })
 
   test('長押しで掴んだまま画面の右の端に留まると次の週へ移り、その週の日へ落とせる', async ({ page }) => {
-    await openWeek(page)
+    await openWeek(page, { arm: false })
     const grab = await grabPoint(card(page, I.meeting))
     const drag = await startLongPress(page, grab, { via: 'synthetic' })
     await lifted(page)
@@ -1524,7 +1582,7 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
   test('長押しで動かした後、画面の下の［元に戻す］を指で1回押すと元の日へ戻る。指を離した時に効き、ブラウザの click は作らない（作者の iPhone のホーム画面のアプリで効かなかった）', async ({
     page,
   }) => {
-    await openWeek(page)
+    await openWeek(page, { arm: false })
     const drag = await startLongPress(page, await grabPoint(card(page, I.meeting)), { via: 'synthetic' })
     await lifted(page)
     const to = halfS(page, 'work', '2026-11-09')

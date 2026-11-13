@@ -1,5 +1,6 @@
 // アプリの履歴（src/history/appHistory.ts）の単体テスト用の作り物の window。ブラウザの履歴（同じページの中の履歴の並びと今いる所）をまねる:
 // pushState は今より後ろを捨てて積み、replaceState は今の物を替え、go は次の処理で動いて popstate を送る（範囲の外へは動かない）。
+// history.scrollRestoration は今の履歴の物で、pushState で積んだ履歴にも写る（ブラウザと同じ）。
 // foreign の履歴（ほかのページ）へ動いた時は、popstate の代わりに pagehide を送る（ページが離れた）。
 // 利用者の「戻る」「進む」は userGo（ブラウザの go と同じ動き）、アドレス欄で # を書き換えた時は typeHash
 import type { HistoryWindow } from '../history/appHistory'
@@ -9,6 +10,8 @@ interface Entry {
   url: string
   /** ほかのページの履歴（アプリより前） */
   foreign?: boolean
+  /** 「戻る」「進む」で来た時にスクロールの位置を戻すか（history.scrollRestoration） */
+  scroll?: 'auto' | 'manual'
 }
 
 type Handler = (event: Event) => void
@@ -40,6 +43,12 @@ export class FakeWindow implements HistoryWindow {
       get length(): number {
         return win.entries.length
       },
+      get scrollRestoration(): 'auto' | 'manual' {
+        return win.entries[win.index].scroll ?? 'auto'
+      },
+      set scrollRestoration(mode: 'auto' | 'manual') {
+        win.entries[win.index].scroll = mode
+      },
       pushState: (data: unknown, _unused: string, url?: string | null) => win.pushState(data, url),
       replaceState: (data: unknown, _unused: string, url?: string | null) => win.replaceState(data, url),
       go: (delta: number) => win.userGo(delta),
@@ -65,13 +74,19 @@ export class FakeWindow implements HistoryWindow {
   })()
 
   private pushState(data: unknown, url?: string | null): void {
+    const scroll = this.entries[this.index].scroll
     this.entries = this.entries.slice(0, this.index + 1)
-    this.entries.push({ state: structuredClone(data), url: this.resolve(url) })
+    this.entries.push({ state: structuredClone(data), url: this.resolve(url), scroll })
     this.index += 1
   }
 
   private replaceState(data: unknown, url?: string | null): void {
-    this.entries[this.index] = { state: structuredClone(data), url: this.resolve(url) }
+    this.entries[this.index] = { state: structuredClone(data), url: this.resolve(url), scroll: this.entries[this.index].scroll }
+  }
+
+  /** 履歴ごとのスクロールの戻し方（manual の物だけ m、ほかは a） */
+  scrollModes(): string {
+    return this.entries.map((e) => (e.scroll === 'manual' ? 'm' : 'a')).join('')
   }
 
   /** ブラウザの「戻る」「進む」（次の処理で動いて popstate。範囲の外なら何もしない） */

@@ -8,8 +8,9 @@ import type { Prefs } from '../src/store/uiStore'
 
 /**
  * 落ちた時の手がかりを残す（CI の WebKit でだけ時々ログインの画面が出ないことがあり、その時に何が起きていたかを見るため）。
- * テストの間、ブラウザの console・ページのエラー・失敗した通信・終わっていない通信を集め、落ちた時だけ
- * 「page-diagnostics」として添付する（line reporter はこの文を CI のログにそのまま出す）。ファイルの先頭で1回呼ぶ
+ * テストの間、ブラウザの console・ページのエラー・失敗した通信・終わっていない通信と、最後に押した所の前後の出来事（pressLog）を集め、
+ * 落ちた時だけ「page-diagnostics」として添付する（line reporter はこの文を CI のログにそのまま出す。ただし初めの 300字だけなので、
+ * 押した所の前後の出来事を1行目に置く）。ファイルの先頭で1回呼ぶ
  */
 export function collectDiagnosticsOnFailure(): void {
   interface Rec {
@@ -58,6 +59,7 @@ export function collectDiagnosticsOnFailure(): void {
       if (f === page.mainFrame()) rec.nav.push(`navigated${at()}: ${f.url()}`)
     })
     page.on('load', () => rec.nav.push(`load${at()}`))
+    await page.addInitScript(recordInput)
     // テストが時間切れで終わるとページが閉じられ、後から様子を読めないので、2秒ごとにページの様子を console に残す
     await page.addInitScript(() => {
       const beat = () => {
@@ -75,6 +77,7 @@ export function collectDiagnosticsOnFailure(): void {
     const rec = logs.get(page)
     if (!rec) return
     const pending = [...rec.pending].map(([url, since]) => `pending(since @${since}): ${url}`)
+    const press = await page.evaluate(pressLog).catch(() => '')
     const state = await page
       .evaluate(() => {
         const overlay = document.getElementById('ds-launch')
@@ -85,11 +88,158 @@ export function collectDiagnosticsOnFailure(): void {
       .catch((e: unknown) => `（ページは閉じられていた: ${String(e).slice(0, 60)}）`)
     // CI のログは長い添付の後ろを切るので、手がかりの大きい物から並べる
     await testInfo.attach('page-diagnostics', {
-      body: [state, ...rec.nav, ...rec.errors, ...pending, ...rec.beats.slice(-5).map((b) => `beat ${b}`), ...rec.other].join(
-        '\n',
-      ),
+      body: [press, state, ...rec.nav, ...rec.errors, ...pending, ...rec.beats.slice(-5).map((b) => `beat ${b}`), ...rec.other]
+        .filter(Boolean)
+        .join('\n'),
       contentType: 'text/plain',
     })
+  })
+}
+
+/** ページの中に置く、押した所の前後の出来事の控え（recordInput が書き、pressLog・pressEvents が読む） */
+interface InputRecord {
+  /** [時刻（ms）, 出来事] */
+  log: [number, string][]
+  /** 最後に来た本物のマウスの出来事（いつでも）の [時刻, 位置]。CI の WebKit は、これがあるとスクロールの後にマウスの pointermove を送る */
+  mouse?: [number, string]
+}
+
+/**
+ * 押した所の前後の出来事を控え始める（page.addInitScript に渡す。ページの中で動く）。長押しで掴めなかった時などに、なぜかを残すため:
+ * pointerdown・pointerup・pointercancel・lostpointercapture・gotpointercapture・押した物と違う pointer の pointermove（WebKit が
+ * スクロールの後に送る、マウスの今の位置の pointermove など）・popstate・スクロール（文書か、どの要素か）・visibilitychange・
+ * pagehide・アプリが履歴に書いた・動かした所（pushState・replaceState・go）・掴んだ印（data-dnd-dragging）の付き外し。どれも
+ * 時刻と history.length・今の履歴の idx 付き
+ */
+function recordInput(): void {
+  const rec: InputRecord = { log: [] }
+  ;(window as unknown as { __e2eInput: InputRecord }).__e2eInput = rec
+  const add = (text: string) => {
+    rec.log.push([Math.round(performance.now()), text])
+    if (rec.log.length > 400) rec.log.splice(0, 100)
+  }
+  const idx = () => (history.state as { idx?: number } | null)?.idx ?? '-'
+  // h4/1 = history.length 4・今の履歴の idx 1。! = ブラウザが「押した直後」と数えている（navigator.userActivation.isActive）。
+  // ! は Playwright の page.evaluate（合成した指も、その中で送る）でも付く（Chromium・WebKit とも、evaluate を押した物として流す）
+  const hist = () =>
+    `h${history.length}/${idx()}${(navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive ? '!' : ''}`
+  // 1t* = pointerId 1・touch・合成した出来事（isTrusted でない）
+  const who = (e: PointerEvent) => `${e.pointerId}${(e.pointerType || '?')[0]}${e.isTrusted ? '' : '*'}`
+  const at = (e: PointerEvent) => `(${Math.round(e.clientX)},${Math.round(e.clientY)})`
+  let press = { id: NaN, type: '', trusted: false }
+  const mouse = (e: PointerEvent) => {
+    if (e.isTrusted && e.pointerType === 'mouse') rec.mouse = [Math.round(performance.now()), at(e)]
+  }
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      press = { id: e.pointerId, type: e.pointerType, trusted: e.isTrusted }
+      add(`down${who(e)}${at(e)}${hist()}`)
+      mouse(e)
+    },
+    true,
+  )
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      if (e.pointerType !== press.type || e.isTrusted !== press.trusted) add(`MOVE${who(e)}${at(e)}`)
+      mouse(e)
+    },
+    true,
+  )
+  window.addEventListener('pointerup', mouse, true)
+  for (const [type, name] of [
+    ['pointerup', 'up'],
+    ['pointercancel', 'CANCEL'],
+    ['lostpointercapture', 'lost'],
+    ['gotpointercapture', 'got'],
+  ] as const) {
+    window.addEventListener(type, (e) => add(`${name}${who(e as PointerEvent)}${hist()}`), true)
+  }
+  for (const type of ['touchstart', 'touchend', 'touchcancel'] as const) {
+    // テストが送る touch の出来事には touches の無い物もある
+    window.addEventListener(
+      type,
+      (e) => add(`${type.slice(5)}${(e as Partial<TouchEvent>).touches?.length ?? '?'}${hist()}`),
+      true,
+    )
+  }
+  window.addEventListener('popstate', () => add(`pop${hist()}`), true)
+  window.addEventListener('pagehide', () => add('pagehide'), true)
+  document.addEventListener('visibilitychange', () => add(`vis:${document.visibilityState}`), true)
+  const lastScroll = new Map<EventTarget, number>()
+  document.addEventListener(
+    'scroll',
+    (e) => {
+      const t = e.target
+      const now = performance.now()
+      if (!t || now - (lastScroll.get(t) ?? -1e9) < 200) return
+      lastScroll.set(t, now)
+      add(`scroll:${t instanceof Element ? (t.classList[0] ?? t.tagName.toLowerCase()) : 'doc'}`)
+    },
+    true,
+  )
+  for (const name of ['pushState', 'replaceState', 'go'] as const) {
+    const original = history[name].bind(history) as (...args: unknown[]) => void
+    Object.defineProperty(history, name, {
+      configurable: true,
+      value: (...args: unknown[]) => {
+        add(name === 'go' ? `go(${String(args[0])})` : name === 'pushState' ? 'push' : 'repl')
+        return original(...args)
+      },
+    })
+  }
+  let dragging = 0
+  new MutationObserver(() => {
+    const n = document.querySelectorAll('[data-dnd-dragging]').length
+    if (n !== dragging) add(n ? 'lift' : 'unlift')
+    dragging = n
+  }).observe(document, { subtree: true, attributes: true, attributeFilter: ['data-dnd-dragging'] })
+}
+
+/**
+ * recordInput の控えのうち、最後に押した所（pointerdown）の 0.6秒前からの出来事を1行で（時刻は押した時からの ms。page.evaluate に
+ * 渡す。押していなければ空）。例: 「press mouse@-2345(210,26) | -13 scroll:doc | 0 down1t*(125,642)h4/1 | 112 MOVE1m(210,26)」
+ * （2.3秒前に本物のマウスをヘッダーで使っていて、押した後に、合成した指と同じ pointerId 1 のマウスの pointermove がそこから来た）。
+ * CI のログは添付の初めの 300字だけなので、長い時は目立つ出来事の数と、押す直前の1つから押した後の2つまでと、終わりの6つだけにする
+ */
+function pressLog(): string {
+  const rec = (window as unknown as { __e2eInput?: InputRecord }).__e2eInput
+  if (!rec) return ''
+  const downs = rec.log.filter(([, text]) => text.startsWith('down'))
+  const last = downs[downs.length - 1]
+  if (!last) return ''
+  const t0 = last[0]
+  const mouse = rec.mouse ? `mouse@${rec.mouse[0] - t0}${rec.mouse[1]} | ` : ''
+  const lines = rec.log.filter(([t]) => t >= t0 - 600).map(([t, text]) => `${t - t0} ${text}`)
+  let body = lines.join(' | ')
+  if (mouse.length + body.length > 250) {
+    const counts = ['CANCEL', 'lost', 'MOVE', 'pop', 'go(', 'push', 'repl']
+      .map((name) => [name, lines.filter((l) => l.includes(` ${name}`)).length] as const)
+      .filter(([, n]) => n > 0)
+      .map(([name, n]) => `${name.replace('(', '')}×${n}`)
+      .join(' ')
+    // 押す直前の1つ・押した所・その後の2つと、終わりの6つ
+    const d = lines.findLastIndex((l) => / down/.test(l))
+    const from = Math.max(d + 3, lines.length - 6)
+    const gap = from > d + 3 ? ['…'] : []
+    body = [`[${lines.length}: ${counts}]`, ...lines.slice(Math.max(0, d - 1), d + 3), ...gap, ...lines.slice(from)].join(' | ')
+  }
+  return `press ${mouse}${body}`
+}
+
+/**
+ * 最後に押した所（pointerdown）からの出来事（recordInput の控え。「0 down2t(201,25)h2/0」の形。collectDiagnosticsOnFailure を
+ * 呼んだテストだけ）
+ */
+export function pressEvents(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const rec = (window as unknown as { __e2eInput?: InputRecord }).__e2eInput
+    if (!rec) return []
+    const downs = rec.log.filter(([, text]) => text.startsWith('down'))
+    const t0 = downs[downs.length - 1]?.[0]
+    if (t0 === undefined) return []
+    return rec.log.filter(([t]) => t >= t0).map(([t, text]) => `${t - t0} ${text}`)
   })
 }
 
@@ -137,6 +287,8 @@ export interface HistoryShape {
   top: number
   buildPending: boolean
   exitArmed: boolean
+  /** 押している間・ドラッグの途中（アプリから履歴を動かすのを待っている） */
+  held: boolean
 }
 
 declare global {
@@ -256,7 +408,8 @@ export interface OpenCalendarOptions {
   data?: Partial<AppData>
   /**
    * 開いた後に、何も無い所（ヘッダーの真ん中）を1回押して、アプリの履歴の形（土台と「戻る」「進む」の印）を作らせるか（既定 true。
-   * アプリは押す前には履歴に積まない。src/history/appHistory.ts）。押す前の形を確かめる時は false
+   * アプリは押し終える前には履歴に積まない。src/history/appHistory.ts）。押す前の形を確かめる時・最初の押し方を確かめる時は false。
+   * WebKit で合成した指（startLongPress・longPressDrag の synthetic）を押したまま待つテストも false（armHistory の説明）
    */
   arm?: boolean
 }
@@ -321,17 +474,35 @@ export async function historySettled(page: Page): Promise<void> {
 }
 
 /**
- * 何も無い所（ヘッダーの、左のアイコンと右のボタンの間の真ん中）を押して、アプリの履歴の形を作らせる（押した直後だけ作る。
- * openCalendar が開いた後に呼ぶ）
+ * 何も無い所（ヘッダーの、左のアイコンと右のボタンの間の真ん中）をマウス（finger なら指）で押して、アプリの履歴の形を作らせる（押し
+ * 終えた直後だけ作る。openCalendar が開いた後に呼ぶ）。
+ * WebKit（CI の Linux 版。iPhone の WebKit には無い）は、一度マウスを動かす・押すと、その後は文書がスクロールするたびに、少し後
+ * （0.1〜0.25秒）でマウスの最後の位置（ここではヘッダー）へ本物の pointermove（pointerId 1・mouse）を送る（EventHandler の
+ * dispatchFakeMouseMoveEventSoon）。合成した指も pointerId 1 なので、dnd-kit・useSwipe はそれを同じ指が遠くへ動いたと見る（WebKit の
+ * ソースと Chromium でのまねから、CI 48 の長押しの3つが落ちたのはこれと見ている: 掴む前の scrollIntoViewIfNeeded が文書を 5px
+ * スクロールする。CI の WebKit ではまだ見ていない）。なので WebKit では、マウスでなく Shift のキーを打って作らせる（キーはマウスの
+ * 位置を残さない。WebKit はキーを押した時から「押した」と数える）。合成した指を押したまま待つ WebKit の長押しのテストは、開いて最初に
+ * 押すのが長押しになるように、これを呼ばない（openCalendar の arm: false）
  */
-export async function armHistory(page: Page): Promise<void> {
+export async function armHistory(
+  page: Page,
+  { finger = false, idleMs = 0 }: { finger?: boolean; idleMs?: number } = {},
+): Promise<void> {
   const brand = await page.getByTestId('brand').boundingBox()
   const gear = await page.getByTestId('open-settings').boundingBox()
   if (!brand || !gear) throw new Error('ヘッダーが見えていません')
   // 右のボタンの左の端（同期の表示があればそこ）
   const sync = (await page.getByTestId('sync-indicator').count()) ? await page.getByTestId('sync-indicator').boundingBox() : null
   const right = Math.min(gear.x, sync?.x ?? Infinity)
-  await page.mouse.click((brand.x + brand.width + right) / 2, brand.y + brand.height / 2)
+  const x = (brand.x + brand.width + right) / 2
+  const y = brand.y + brand.height / 2
+  // idleMs: 押す前に、ページに何もせずに待つ。Playwright の page.evaluate・locator は、それだけでブラウザに「押した」と数えさせる
+  // （Chromium・WebKit とも。Chromium では 5秒）ので、押した物の分だけで印の履歴を作ることを確かめる時は、それが切れるまで待つ
+  if (idleMs) await page.waitForTimeout(idleMs)
+  // finger: 指で軽く押す（Chromium は CDP の本物のタッチ。指は離した時に「押した」になる）
+  if (finger) await page.touchscreen.tap(x, y)
+  else if (page.context().browser()?.browserType().name() === 'webkit') await page.keyboard.press('Shift')
+  else await page.mouse.click(x, y)
   await expect.poll(async () => (await historyShape(page))?.base ?? null).not.toBeNull()
   await historySettled(page)
 }
@@ -711,7 +882,8 @@ async function syntheticFire(page: Page, type: 'pointerdown' | 'pointermove' | '
 
 /**
  * 指で押して holdMs（初めは 450ms。掴むのは 400ms・8px 以内）待ち、掴んだ所で止める。Chromium は CDP の本物のタッチ、WebKit は
- * 合成した PointerEvent（longPressDrag と同じ）。page.clock.install（タイマーも偽物）と一緒には使わない
+ * 合成した PointerEvent（longPressDrag と同じ）。page.clock.install（タイマーも偽物）と一緒には使わない。WebKit で合成した指を
+ * 使う時は、その前に本物のマウスを使わない（armHistory の説明。WebKit の armHistory はマウスでなくキーを打つ）
  */
 export async function startLongPress(
   page: Page,
