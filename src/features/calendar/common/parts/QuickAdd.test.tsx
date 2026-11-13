@@ -5,12 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { calendarItems, weekSingles } from '../../../../domain/calendar'
 import { mkItem, T0 } from '../../../../domain/testData'
 import type { ItemKind } from '../../../../domain/types'
+import { setSwipeLogEnabled, swipeLogText } from '../../../../history/swipeLog'
 import { actions } from '../../../../store/actions'
 import { getData } from '../../../../store/appStore'
 import { quickDraftKey, readLocal } from '../../../../store/localDrafts'
 import { useToasts } from '../../../../store/uiStore'
 import { undoIdle } from '../../../../store/undoStore'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
+import * as device from '../../../../ui/device'
 import { testIds } from '../testIds'
 import {
   BLUR_SETTLE_MS,
@@ -1162,40 +1164,152 @@ describe('書きかけ（ITEMS-159・FRAME-264・D44）', () => {
   })
 })
 
+/** 画面の端（左から 5px。iPhone の端からのフリックが始まる所）を指で押す。target は入力欄の外の物 */
+const edgeDown = (target: Element, x = 5, y = 300) =>
+  fireEvent.pointerDown(target, { pointerType: 'touch', pointerId: 11, isPrimary: true, clientX: x, clientY: y })
+const edgeUp = (target: Element, x = 5, y = 300) =>
+  fireEvent.pointerUp(target, { pointerType: 'touch', pointerId: 11, isPrimary: true, clientX: x, clientY: y })
+
+/** iPhone・iPad（ブラウザの「戻る」「進む」は画面の端からのフリック） */
+const onIPhone = () => vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
+
 describe('iPhone の端からのフリックでモードが替わる時（quickAddModeChanging。docs/SPEC.md の 3.1・12.1）', () => {
-  it('モードのボタンを押した時と同じく、字があれば足して閉じ（press）、「『件名』を足しました［元に戻す］」を出す', async () => {
+  afterEach(() => {
+    setSwipeLogEnabled(false)
+  })
+
+  it('字があっても足さずに閉じる（flick）。打った字は Esc の時と同じく書きかけに残り、同じ日・同じ区分で開き直すと出る（作者「入力確定前の内容で払ったものは登録しない」）', async () => {
     const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'work' })
     typeText(input, '資料の確認')
     act(() => quickAddModeChanging())
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(onClose).toHaveBeenCalledWith('press')
-    expect(items()).toHaveLength(1)
-    expect(items()[0]).toMatchObject({ title: '資料の確認', start: '2026-11-12', kind: 'work' })
-    expect(toasts()[0].message).toBe('『資料の確認』を足しました')
-    expect(localStorage.getItem(quickDraftKey('2026-11-12', 'work'))).toBeNull()
-    // 閉じた後にモードの画面ごと外れても、もう一度は足さない
+    expect(onClose).toHaveBeenCalledWith('flick')
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
+    expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('資料の確認')
+    // 閉じた後にモードの画面ごと外れても足さない
     unmount()
+    expect(items()).toHaveLength(0)
+    const again = await open({ date: '2026-11-12', kind: 'work' })
+    expect(again.input.value).toBe('資料の確認')
+  })
+
+  it('(a) 画面の端を押した指（身振りの指。離す出来事は来ない）の後にモードが替わっても、足さずに閉じる。端を押しただけでは閉じない', async () => {
+    onIPhone()
+    setSwipeLogEnabled(true)
+    const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'private' })
+    typeText(input, 'abc')
+    edgeDown(screen.getByTestId('outside'))
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => quickAddModeChanging())
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('flick')
+    expect(items()).toHaveLength(0)
+    expect(readLocal(quickDraftKey('2026-11-12', 'private'))).toBe('abc')
+    unmount()
+    fireEvent.click(document.body)
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
+    // 設定で記録を取っている時は、閉じたきっかけを控える
+    expect(swipeLogText()).toMatch(/ quick-close \{"reason":"flick"\}/)
+  })
+
+  it('(b) 画面の端を押して動かさずに離した（端を押しただけ）時は、今までどおり入力欄の外を押した時と同じく、押し終わってから足して閉じる', async () => {
+    onIPhone()
+    const { input, onClose } = await open()
+    typeText(input, '端を押した')
+    const outside = screen.getByTestId('outside')
+    edgeDown(outside)
+    edgeUp(outside, 7, 302)
+    fireEvent.click(outside)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
+    expect(items().map((i) => i.title)).toEqual(['端を押した'])
+  })
+
+  it('(c) 画面の端から払って離したが、モードは替わらなかった（回らない向き・短い）時は、閉じず足さない', async () => {
+    onIPhone()
+    const { input, onClose } = await open()
+    fakeTimers()
+    typeText(input, '払っただけ')
+    const outside = screen.getByTestId('outside')
+    edgeDown(outside)
+    edgeUp(outside, 85, 300)
+    advance(CLICK_WAIT_MS * 2)
+    fireEvent.click(outside)
+    advance(CLICK_WAIT_MS * 2)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(items()).toHaveLength(0)
+    expect(input.value).toBe('払っただけ')
+  })
+
+  it('(d) 身振りの始まりに入力欄と窓からフォーカスが外れた（iPhone はページのフォーカスを外す）後にモードが替わっても、足さない', async () => {
+    onIPhone()
+    const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
+    fakeTimers()
+    typeText(input, '外れた後')
+    edgeDown(screen.getByTestId('outside'))
+    pageFocused(false)
+    act(() => input.blur())
+    act(() => {
+      window.dispatchEvent(new Event('blur'))
+    })
+    advance(BLUR_SETTLE_MS * 2)
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => quickAddModeChanging())
+    expect(onClose).toHaveBeenCalledWith('flick')
+    advance(CLICK_WAIT_MS * 2)
+    expect(items()).toHaveLength(0)
+    expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('外れた後')
+  })
+
+  it('(e) Android・PC は今までどおり: 画面の端を押しても入力欄の外を押した時と同じく、押し終わってから足して閉じる', async () => {
+    const { input, onClose } = await open()
+    typeText(input, 'アンドロイド')
+    const outside = screen.getByTestId('outside')
+    edgeDown(outside)
+    edgeUp(outside, 85, 300)
+    fireEvent.click(outside)
+    expect(onClose).toHaveBeenCalledWith('press')
+    expect(items().map((i) => i.title)).toEqual(['アンドロイド'])
+  })
+
+  it('(f) 変換を決める前に［足す］で押し終えた分（変換の終わりを待っている間）は、その後にモードが替わっても1回だけ足す（押した時に決めた分）。ほかは足さない', async () => {
+    onIPhone()
+    const { input, onClose } = await open({ date: '2026-11-12', kind: 'private' })
+    fakeTimers()
+    pageFocused(true)
+    fireEvent.compositionStart(input)
+    typeText(input, 'かいぎ')
+    touchAdd()
+    expect(items()).toHaveLength(0)
+    act(() => quickAddModeChanging())
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('flick')
+    expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    advance(COMMIT_WAIT_MS * 2)
+    advance(CLICK_WAIT_MS * 2)
     expect(items()).toHaveLength(1)
   })
 
-  it('身振りの指が入力欄の外に下りていた（離す出来事は来ない）時も、押し終わりを待たずに1回だけ足して閉じる', async () => {
+  it('押し終わりを待っている（入力欄の外を押した）間にモードが替わっても、足さずに閉じる（後から来る click でも足さない）', async () => {
     const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'private' })
     typeText(input, '買い物')
     fireEvent.pointerDown(screen.getByTestId('outside'))
     expect(onClose).not.toHaveBeenCalled()
     act(() => quickAddModeChanging())
     expect(onClose).toHaveBeenCalledTimes(1)
-    expect(onClose).toHaveBeenCalledWith('press')
+    expect(onClose).toHaveBeenCalledWith('flick')
     unmount()
     fireEvent.click(document.body)
-    expect(items()).toHaveLength(1)
-    expect(toasts()).toHaveLength(1)
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
   })
 
-  it('空の時は足さずに閉じる。Esc で閉じた後は何もしない', async () => {
+  it('空の時も閉じる（flick）。Esc で閉じた後は何もしない', async () => {
     const empty = await open()
     act(() => quickAddModeChanging())
-    expect(empty.onClose).toHaveBeenCalledWith('press')
+    expect(empty.onClose).toHaveBeenCalledWith('flick')
     expect(items()).toHaveLength(0)
     expect(toasts()).toHaveLength(0)
     empty.unmount()

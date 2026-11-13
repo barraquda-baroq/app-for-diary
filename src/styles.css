@@ -1497,6 +1497,16 @@ h4 {
   color: var(--text-muted);
 }
 
+/* 開発の記録をコピーできなかった時に、字を選ぶ欄（src/features/appSettings/DevSettings.tsx。行の幅いっぱい） */
+.aset-log {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.aset-log .textarea {
+  font-family: var(--font-mono);
+}
+
 /* ===== 動き（docs/SPEC.md の 4.9） ===== */
 @keyframes fade-in {
   from {

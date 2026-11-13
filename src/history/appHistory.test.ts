@@ -1374,7 +1374,7 @@ describe('端からのフリックの記録（src/history/swipeLog.ts。設定�
   })
 })
 
-describe('利用者の「戻る」「進む」が来たか（userPopSince。src/ui/useSwipe.ts が使う）', () => {
+describe('利用者の「戻る」「進む」が来たか（userPopSince。src/features/calendar/common/useSwipe.ts が使う）', () => {
   it('その時刻より後に利用者の「戻る」「進む」（端からのフリック）が来たら true。アプリが自分で動いた分は数えない', async () => {
     const win = new FakeWindow('#/week/2026-11-08', { swipes: true })
     const h = createAppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf, now: () => Date.now() })

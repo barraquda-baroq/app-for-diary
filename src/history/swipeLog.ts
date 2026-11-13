@@ -1,8 +1,9 @@
 // iPhone の端からのフリックの記録（docs/SPEC.md の 3.1・18.1 の「開発」）。うまくいかなかった払いの後に、作者が設定の［記録をコピー］で
 // 送れるようにする（iPhone が途中で戻したのか、アプリの側で何かしたのかを分ける）。設定で「端からのフリックの記録を取る」を入れた時
 // だけ控え、新しい物から SWIPE_LOG_MAX 件だけ残す（ページを読み込み直すと消える）。控えるのは、時刻・種類・番号や位置だけ（予定の中身は
-// 控えない）。何を控えるかは呼ぶ所が決める（src/history/appHistory.ts の popstate・履歴を書く・動く・指、src/ui/useSwipe.ts の払い、
-// めくる動き、すばやく足すの閉じ方）
+// 控えない）。何を控えるかは呼ぶ所が決める（src/history/appHistory.ts の popstate・履歴を書く・動く・指、
+// src/features/calendar/common/useSwipe.ts の払い、PageTurn.tsx のめくる動き、QuickAdd.tsx のすばやく足すの閉じ方）。設定の「開発」
+// （src/features/appSettings/DevSettings.tsx。iPhone・iPad だけ）で取る・コピーする・消す
 const STORAGE_KEY = 'diary-studio:swipe-log'
 
 /** 残す件数 */

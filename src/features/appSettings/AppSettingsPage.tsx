@@ -1,13 +1,16 @@
 // 設定の画面（#/settings。別のページで、右の列は出さない。docs/SPEC.md の 18.1）。NS の src/features/appSettings/AppSettingsPage.tsx から。
 // 上に［‹ 戻る］。区切りは「表示」（外観4つ・起動アニメーション。src/features/appSettings/DisplaySettings.tsx）と
-// 「同期」（アカウント・同期の状態・最後に揃った時刻・［今すぐ同期］・［ログアウト］。18.1・18.4）。ラベルの色・Claude・
+// 「同期」（アカウント・同期の状態・最後に揃った時刻・［今すぐ同期］・［ログアウト］。18.1・18.4）。iPhone・iPad だけ、いちばん下に
+// 「開発」（端からのフリックの記録を取る・コピーする・消す。src/features/appSettings/DevSettings.tsx。3.1）。ラベルの色・Claude・
 // ホーム画面に追加・データ・この端末・このアプリについては後の段階（段階2・5）で足す
 import { useId, useState } from 'react'
 import { signOut, syncNow, useSync } from '../../sync/controller'
 import { useSyncView } from '../../sync/syncView'
+import { currentPopSource } from '../../ui/device'
 import { useDocumentTitle } from '../../ui/hooks'
 import { AppHeader, useGoBack } from '../../ui/Layout'
 import { syncDetail } from '../../ui/SyncIndicator'
+import { DevSettings } from './DevSettings'
 import { DisplaySettings } from './DisplaySettings'
 
 /** 最後に揃った時刻の表記（「11/10 14:05」） */
@@ -81,6 +84,8 @@ function SyncSection() {
 export function AppSettingsPage() {
   useDocumentTitle('設定')
   const goBack = useGoBack()
+  /** 「開発」を出すか（iPhone・iPad。ブラウザの「戻る」「進む」が画面の端からのフリックの端末） */
+  const [dev] = useState(() => currentPopSource() === 'edge-flick')
   return (
     <>
       <AppHeader />
@@ -93,6 +98,7 @@ export function AppSettingsPage() {
         <h1 className="visually-hidden">設定</h1>
         <DisplaySettings />
         <SyncSection />
+        {dev ? <DevSettings /> : null}
       </main>
     </>
   )

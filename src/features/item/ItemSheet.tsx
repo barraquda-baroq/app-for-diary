@@ -26,12 +26,10 @@ export interface ItemSheetProps {
   footer?: ReactNode
   /** 開いた時にフォーカスする要素のセレクタ */
   initialFocus?: string
-  /** 背景（小さな画面の全体を包む .modal-backdrop）に足すクラス（登録の画面の iPhone・iPad の it-edge-guard） */
-  backdropClassName?: string
   children: ReactNode
 }
 
-export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, backdropClassName, children }: ItemSheetProps) {
+export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, children }: ItemSheetProps) {
   const attrs = itemAttrs({ kind, label })
   return (
     <Modal
@@ -44,7 +42,6 @@ export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, b
       dataKind={attrs['data-kind']}
       dataLabel={attrs['data-label'] ?? null}
       titleIcon={<KindIcon kind={attrs['data-kind']} />}
-      backdropClassName={backdropClassName}
     >
       {children}
     </Modal>

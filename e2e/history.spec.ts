@@ -312,7 +312,7 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     expect(await added()).toBe(0)
   })
 
-  test('登録の画面の全体（背景を含む）は touch-action: pan-y pinch-zoom（左の端からの身振りを止める試し。3.1・■27）。中で押す・字を打つ・縦のスクロール・登録はそのまま。詳細の画面には付けない', async ({
+  test('登録の画面で押す・字を打つ・縦のスクロール・登録はいつもどおり。左の端からの身振りを止める touch-action の試しは外した（どの小さな画面にも付けない。ダブルタップの拡大も戻る。3.1・■27）', async ({
     page,
   }) => {
     // 中で縦にスクロールするように、背を低くする
@@ -321,33 +321,23 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await page.getByTestId('cal-add').tap()
     const sheet = page.getByTestId('item-sheet')
     await expect(sheet).toBeVisible()
-    const guard = page.locator('.modal-backdrop.it-edge-guard')
-    await expect(guard).toHaveCount(1)
-    await expect(guard.getByTestId('item-sheet')).toHaveCount(1)
+    // 試しの印（it-edge-guard）は無く、背景も中の物も touch-action は初めのまま（auto）
+    await expect(page.locator('.modal-backdrop')).toHaveCount(1)
+    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
     const touchAction = (testId: string | null, selector = '') =>
       page.evaluate(
         ({ testId, selector }) => {
           const el = testId
             ? document.querySelector(`[data-testid="${testId}"]`)
-            : document.querySelector(`.modal-backdrop.it-edge-guard${selector}`)
+            : document.querySelector(`.modal-backdrop${selector}`)
           return el ? getComputedStyle(el).touchAction : null
         },
         { testId, selector },
       )
-    expect(await touchAction(null)).toBe('pan-y pinch-zoom')
+    expect(await touchAction(null)).toBe('auto')
     for (const id of ['item-sheet', 'item-title', 'item-requester', 'item-memo', 'item-register'])
-      expect(await touchAction(id), id).toBe('pan-y pinch-zoom')
-    expect(await touchAction(null, ' .modal-body')).toBe('pan-y pinch-zoom')
-    // 中に横になぞって動かす物が無い（横にスクロールする所・はみ出した中身が無い）
-    const sideways = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>('.modal-backdrop.it-edge-guard *')]
-        .filter((el) => {
-          const x = getComputedStyle(el).overflowX
-          return (x === 'auto' || x === 'scroll') && el.scrollWidth > el.clientWidth + 1
-        })
-        .map((el) => el.dataset.testid ?? el.className),
-    )
-    expect(sideways).toEqual([])
+      expect(await touchAction(id), id).toBe('auto')
+    expect(await touchAction(null, ' .modal-body')).toBe('auto')
     // 押す・字を打つ
     const title = page.getByTestId('item-title')
     await title.tap()
@@ -389,13 +379,12 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     // 登録できる（閉じる）
     await page.getByTestId('item-register').tap()
     await expect(sheet).toHaveCount(0)
-    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
     expect(
       await page.evaluate(() =>
         Object.values(window.__ds.getData().items).some((i) => i.title === '試しの予定' && i.requester === '総務'),
       ),
     ).toBe(true)
-    // 詳細の画面には付けない（端からのフリックで閉じる。■23）
+    // 詳細の画面も同じ
     await historySettled(page)
     await openDetail(page, true)
     await expect(page.locator('.modal-backdrop')).toHaveCount(1)
@@ -615,17 +604,6 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     expect(await historyShape(page)).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false })
     await goBack(page)
     await expect(closeDialog(page)).toBeVisible()
-  })
-
-  test('登録の画面の左の端からの身振りを止める試し（touch-action。3.1・■27）は iPhone・iPad だけ: Android の登録の画面には付けない', async ({
-    page,
-  }) => {
-    await openCalendar(page, DAY)
-    await page.getByTestId('cal-add').tap()
-    await expect(page.getByTestId('item-sheet')).toBeVisible()
-    await expect(page.locator('.modal-backdrop')).toHaveCount(1)
-    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
-    expect(await page.getByTestId('item-sheet').evaluate((el) => getComputedStyle(el).touchAction)).toBe('auto')
   })
 
   test('前に履歴が無いタブの［閉じる］の後の「もう一度［戻る］を押すと閉じます」の所で予定を長押しで掴むと、掴む前に元の所へ戻り（■25 の所と同じ）、掴んでいる間の「戻る」は何もしない', async ({

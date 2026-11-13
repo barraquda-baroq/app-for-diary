@@ -15,7 +15,10 @@
 //   時間がかかり、動きが始まるのが遅れる。置いた時から数えると途中で切れる）
 // 前の期間の絵は、描き直しで画面が替わる前に写す（クラスの部品の getSnapshotBeforeUpdate。関数の部品には、DOM を替える直前に呼ばれる
 // 所が無い）。モードの画面を包まない（.cal-body の横に置く）ので、モードの画面の並べ方・高さの決まりには触らない
+// めくり始めた時と、途中で終えた時（何で終えたか）は、設定で端からのフリックの記録を取る時だけ控える（src/history/swipeLog.ts。iPhone で
+// 「めくりきらずに戻る」が、このめくりか、ブラウザの身振りかを分ける）
 import { Component, type RefObject } from 'react'
+import { swipeLog } from '../../../history/swipeLog'
 import { useCalendarUi } from '../../../store/uiStore'
 import { TURN_MS } from '../../../ui/motion'
 import {
@@ -122,7 +125,7 @@ export class PageTurn extends Component<PageTurnProps> {
     const { mode, from, to, body } = this.props
     if (prev.mode === mode && prev.from === from) return null
     // めくっている間にまた替わった（モードを替えた時も）: 今のめくりはすぐ終える
-    this.finish()
+    this.cut('change')
     // skipTurnTo の控えは、替わるたびに使い切る（モードを替えた時も）
     const skipped = takeSkip(from, to)
     if (prev.mode !== mode || skipped) return null
@@ -138,7 +141,7 @@ export class PageTurn extends Component<PageTurnProps> {
   }
 
   componentWillUnmount(): void {
-    this.finish()
+    this.cut('unmount')
   }
 
   render() {
@@ -174,6 +177,7 @@ export class PageTurn extends Component<PageTurnProps> {
     const running: Running = { layer, host, timer: 0 }
     this.running = running
     host.dataset.turning = dir
+    swipeLog('turn', { dir })
 
     if (dir === 'next') {
       // 前の期間のページが、本物の新しい期間の上でめくれていく
@@ -192,11 +196,11 @@ export class PageTurn extends Component<PageTurnProps> {
     }
     // 動きが始まらない時の片付け（始まったら、そこから数え直す。turnPage）
     running.timer = window.setTimeout(this.expire, TURN_START_GUARD_MS)
-    document.addEventListener('pointerdown', this.finish, true)
-    document.addEventListener('keydown', this.finish, true)
-    document.addEventListener('wheel', this.finish, { capture: true, passive: true })
-    document.addEventListener('visibilitychange', this.finish)
-    window.addEventListener('resize', this.finish)
+    document.addEventListener('pointerdown', this.onCut, true)
+    document.addEventListener('keydown', this.onCut, true)
+    document.addEventListener('wheel', this.onCut, { capture: true, passive: true })
+    document.addEventListener('visibilitychange', this.onCut)
+    window.addEventListener('resize', this.onCut)
   }
 
   /** めくるページを置いて動かし、動きが終わったら片付ける */
@@ -233,6 +237,18 @@ export class PageTurn extends Component<PageTurnProps> {
     if (!turnsHeld()) this.finish()
   }
 
+  /** 押す・キー・ホイール・裏へ回る・窓の大きさが替わった: 今のめくりをすぐ終える */
+  private onCut = (e: Event): void => {
+    this.cut(e.type)
+  }
+
+  /** 動きが終わる前に、めくりを終える（何で終えたかを控える）。めくっていない時は何もしない */
+  private cut(by: string): void {
+    if (!this.running) return
+    swipeLog('turn-cut', { by })
+    this.finish()
+  }
+
   /** めくりを終える（すぐ）。めくっていない時は何もしない */
   private finish = (): void => {
     const running = this.running
@@ -241,10 +257,10 @@ export class PageTurn extends Component<PageTurnProps> {
     window.clearTimeout(running.timer)
     running.layer.remove()
     delete running.host.dataset.turning
-    document.removeEventListener('pointerdown', this.finish, true)
-    document.removeEventListener('keydown', this.finish, true)
-    document.removeEventListener('wheel', this.finish, true)
-    document.removeEventListener('visibilitychange', this.finish)
-    window.removeEventListener('resize', this.finish)
+    document.removeEventListener('pointerdown', this.onCut, true)
+    document.removeEventListener('keydown', this.onCut, true)
+    document.removeEventListener('wheel', this.onCut, true)
+    document.removeEventListener('visibilitychange', this.onCut)
+    window.removeEventListener('resize', this.onCut)
   }
 }

@@ -6,8 +6,10 @@ import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { HOUR, T0 } from '../../../domain/testData'
+import * as appHistory from '../../../history/appHistory'
 import { useCalendarUi } from '../../../store/uiStore'
 import { renderAt, resizeObserved, setupCalendarTests } from '../../../test/renderCalendar'
+import * as device from '../../../ui/device'
 import type { ViewProps } from './types'
 
 // モードの画面は、受け取った物をそのまま字にして出す（中身は各モードの担当。ここでは渡し方だけを見る）
@@ -369,6 +371,27 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
       expect(router.state.location.pathname).toBe('/day/2026-11-17')
     } finally {
       now.mockRestore()
+    }
+  })
+
+  it('iPhone・iPad で画面の端（20px の中）から内へ払うと、期間へは移らず端からのフリックと同じくモードを回す（ブラウザが身振りを始めなかった時。3.1）。内側からは前後へ', async () => {
+    vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
+    const topUp = vi.spyOn(appHistory, 'afterInPageRing')
+    try {
+      const { router } = await renderAt('/month/2026-11', { width: 'S' })
+      // 左の端から右へ: 日→週→月→年の向き（月 → 年）
+      drag(screen.getByTestId('calendar-body'), [4, 400], [140, 400])
+      expect(router.state.location.pathname).toBe('/year/2026')
+      expect(topUp).toHaveBeenCalledTimes(1)
+      // 右の端から左へ: 年 → 月
+      drag(screen.getByTestId('calendar-body'), [window.innerWidth - 4, 400], [window.innerWidth - 150, 400])
+      expect(router.state.location.pathname).toBe('/month/2026-11')
+      // 端から 20px より内側からは、今までどおり前後の月へ
+      drag(screen.getByTestId('calendar-body'), [40, 400], [200, 400])
+      expect(router.state.location.pathname).toBe('/month/2026-10')
+      expect(topUp).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.restoreAllMocks()
     }
   })
 

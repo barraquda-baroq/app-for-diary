@@ -14,15 +14,27 @@
 // なぞって移った後 300ms の間にカレンダーの中へ来た click は打ち消す（払った指で、離した所のボタンを押さない）。
 // なぞったとみなさない時（ウィークリーでなぞれるようにした時に足した。22. の段階2の終わりの確かめ。どのモードでも同じ）:
 // - ドラッグ中・ドラッグした指（掴んだ物に dnd-kit が付ける data-dnd-dragging。指を離した後の動きも数えない）
-// - 文字を打っている間（すばやく足すの入力欄などにフォーカスがある。押した所が入力欄の時も）
+// - 文字を打っている間（すばやく足すの入力欄などにフォーカスがある。押した所が入力欄の時も。iPhone・iPad の画面の端の指は、押した所が
+//   入力欄でなければ数える。下）
 // - 横に動かす物の上から押した時（入力欄・横にスクロールできる所。今の S・M の並べ方には、カレンダーの中に横にスクロールする所は
 //   無いが、並べ方を替えた時のために入れておく）
 // - ほかの指が触れた時（拡大・縮小）・端末が指を取った時（touchcancel。アプリの切り替え・通知を引き出す時など）。iPhone の画面の
 //   端からの「戻る」「進む」の身振りは、ページの指の出来事より先に端末が取る（指の出来事が途中で来なくなるか touchcancel が来る。
 //   どちらでも数えない。離す出来事が来ないまま残った指は、次に指が触れた時に捨てる）
+// iPhone・iPad の画面の端の指（3.1 の「ブラウザが身振りを始めない時」。onEdge を渡した所だけ。CalendarView）: 画面の左右の端から
+// EDGE_ZONE_PX（20px）の中で押して、内へ払って離した指は、期間へは移らず onEdge（端からのフリックと同じくモードを回す）。ブラウザが
+// 端からの身振りにした指は、ページに押した出来事と初めの動きだけが来て、離す出来事は来ない（WebKit の WKTouchEventsGestureRecognizer の
+// reset は、自分で取り消した時しか取り消しを送らない）ので、ここでは回さない（その時はアプリの履歴に「戻る」「進む」が来て回す）。前の
+// 払いの絵が消える前（iOS 26 から）・その向きに履歴が無い時は、ブラウザは身振りを始めず（ViewGestureControllerIOS.mm の
+// shouldBeginInteractiveTransition）、ページに離す出来事まで来るので、ここで回す（絵は動かず、離した時に替わる）。外へ払った指と、
+// 押した後に利用者の「戻る」「進む」が来た指（ブラウザが身振りにした。src/history/appHistory.ts の userPopSince）では何もしない。
+// 文字を打っている間も回す（すばやく足すは足さずに閉じる。12.1）。払いの結果は、設定で記録を取る時だけ控える（src/history/swipeLog.ts）
 import { useEffect, useRef, type RefObject } from 'react'
+import { userPopSince } from '../../../history/appHistory'
+import { swipeLog } from '../../../history/swipeLog'
+import { currentPopSource } from '../../../ui/device'
 import { dragActive } from './pageTurnDom'
-import { endSwipe, moveSwipe, startSwipe, SWIPE_CLICK_GUARD_MS, takeSwipe, type SwipeTrack } from './swipe'
+import { edgeSide, endSwipe, moveSwipe, startSwipe, SWIPE_CLICK_GUARD_MS, takeSwipe, type SwipeTrack } from './swipe'
 
 /** 文字・値を打つ・選ぶ欄でない input の種類（押すだけの物。この上から押してもなぞれる） */
 const PRESS_ONLY_INPUTS = new Set(['button', 'checkbox', 'radio', 'submit', 'reset', 'image', 'color', 'file', 'hidden'])
@@ -47,16 +59,29 @@ export function needsSideways(target: EventTarget | null, root: HTMLElement): bo
   return false
 }
 
-/** 要素の中で指を左右になぞったら onSwipe（左へなぞる＝1（次）、右へなぞる＝-1（前））。enabled が false の間は何もしない */
-export function useSwipe(ref: RefObject<HTMLElement | null>, enabled: boolean, onSwipe: (dir: 1 | -1) => void): void {
+/**
+ * 要素の中で指を左右になぞったら onSwipe（左へなぞる＝1（次）、右へなぞる＝-1（前））。enabled が false の間は何もしない。onEdge を
+ * 渡すと、iPhone・iPad で画面の端から内へ払った指は onSwipe でなく onEdge（-1 = 左の端から右へ・1 = 右の端から左へ。上）
+ */
+export function useSwipe(
+  ref: RefObject<HTMLElement | null>,
+  enabled: boolean,
+  onSwipe: (dir: 1 | -1) => void,
+  onEdge?: (dir: 1 | -1) => void,
+): void {
   const handler = useRef(onSwipe)
   handler.current = onSwipe
+  const edgeHandler = useRef(onEdge)
+  edgeHandler.current = onEdge
   useEffect(() => {
     const el = ref.current
     if (!el || !enabled) return
     /** 追っている指（無ければ null）と、その pointerId */
     let track: SwipeTrack | null = null
     let id = -1
+    /** 追っている指を押した所が画面の端か（iPhone・iPad で onEdge がある時だけ。-1 左・1 右・null）と、押した時刻（performance.now） */
+    let edge: -1 | 1 | null = null
+    let at = 0
     /** この時刻（performance.now()）までにカレンダーの中へ来た click は打ち消す（なぞって移った直後） */
     let guardUntil = 0
     /**
@@ -75,23 +100,44 @@ export function useSwipe(ref: RefObject<HTMLElement | null>, enabled: boolean, o
       pressed?.addEventListener('touchcancel', touchCancel)
     }
 
-    /** 離した所で決める（移るなら移って、続く click を打ち消す） */
+    /** 離した所で決める（移る・回すなら、そうして続く click を打ち消す） */
     const finish = (x: number, y: number) => {
       const s = track
       track = null
       if (!s) return
       const dir = endSwipe(s, x, y)
-      if (!dir || dragActive()) return
+      const result = decide(dir, edge)
+      swipeLog('swipe', { x0: Math.round(s.x0), edge, dir, result })
+      if (!dir || (result !== 'ring' && result !== 'shift')) return
       guardUntil = performance.now() + SWIPE_CLICK_GUARD_MS
-      handler.current(dir)
+      if (result === 'ring') edgeHandler.current?.(dir)
+      else handler.current(dir)
+    }
+    /**
+     * 離した指をどうするか（記録にもそのまま書く）: 画面の端の指は、内へ払った時だけ回す（ring。外へ払った・押した後にブラウザが
+     * 身振りにした時は何もしない）。ほかは前後の期間へ（shift）
+     */
+    const decide = (dir: 1 | -1 | null, side: -1 | 1 | null) => {
+      if (!dir) return 'none'
+      if (side !== null && dir !== side) return 'outward'
+      if (side !== null && userPopSince(at)) return 'native'
+      if (dragActive()) return 'drag'
+      return side !== null ? 'ring' : 'shift'
     }
     const down = (e: PointerEvent) => {
       track = null
       // 2本目の指（拡大・縮小）が触れたらやめる
       if (e.pointerType !== 'touch' || !e.isPrimary) return
-      // 文字を打っている間・横に動かす物の上・ドラッグ中は数えない
-      if (isTextEntry(document.activeElement) || needsSideways(e.target, el) || dragActive()) return
+      // iPhone・iPad の画面の端の指（onEdge を渡した所だけ）。文字を打っている間も数える
+      const side = edgeHandler.current && currentPopSource() === 'edge-flick' ? edgeSide(e.clientX, window.innerWidth) : null
+      // 文字を打っている間（端の指は除く）・横に動かす物の上・ドラッグ中は数えない
+      if ((side === null && isTextEntry(document.activeElement)) || needsSideways(e.target, el) || dragActive()) {
+        if (side !== null) swipeLog('swipe-skip', { x0: Math.round(e.clientX), edge: side })
+        return
+      }
       id = e.pointerId
+      edge = side
+      at = performance.now()
       track = startSwipe(e.clientX, e.clientY, e.timeStamp)
       listenPressed(e.target)
     }

@@ -3,6 +3,8 @@
 // ブラウザに取られた後も追う。22. の段階2の終わりの確かめ）
 import { describe, expect, it } from 'vitest'
 import {
+  EDGE_ZONE_PX,
+  edgeSide,
   endSwipe,
   isHold,
   moveSwipe,
@@ -197,5 +199,31 @@ describe('swipeEnabled（S・M のどのモードでも。ウィークリーも 
     ['week', 'L', false],
   ] as const)('%s・%s → %s', (mode, width, on) => {
     expect(swipeEnabled(mode, width)).toBe(on)
+  })
+})
+
+describe('edgeSide（iPhone・iPad で画面の左右の端から EDGE_ZONE_PX の中で押した指。3.1 の「ブラウザが身振りを始めない時」）', () => {
+  it('端の幅は 20px（カレンダーの区切りの外の帯 17px と、その内側の少し）', () => {
+    expect(EDGE_ZONE_PX).toBe(20)
+  })
+
+  it.each([
+    [0, -1],
+    [5, -1],
+    [19.9, -1],
+    [20, null],
+    [195, null],
+    [370, null],
+    [370.1, 1],
+    [385, 1],
+    [390, 1],
+  ] as const)('幅 390px の %spx → %s（左の端 -1・右の端 1・ほか null）', (x, side) => {
+    expect(edgeSide(x, 390)).toBe(side)
+  })
+
+  it('数でない時・幅が無い時は null', () => {
+    expect(edgeSide(Number.NaN, 390)).toBeNull()
+    expect(edgeSide(5, Number.NaN)).toBeNull()
+    expect(edgeSide(5, 0)).toBeNull()
   })
 })

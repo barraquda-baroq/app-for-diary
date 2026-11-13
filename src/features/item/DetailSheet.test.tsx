@@ -969,22 +969,3 @@ describe('元に戻す・やり直す（7.13）: 開いてから閉じるまで�
     leave()
   })
 })
-
-describe('iPhone・iPad の左の端からの身振りを止める試し（3.1・■27）', () => {
-  it('詳細の画面には it-edge-guard を付けない（iPhone でも。詳細の画面は端からのフリックで閉じる。■23）', async () => {
-    const original = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent')
-    Object.defineProperty(window.navigator, 'userAgent', {
-      value:
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1',
-      configurable: true,
-    })
-    try {
-      await open([materials])
-      expect(sheet().closest('.modal-backdrop')).not.toBeNull()
-      expect(document.querySelectorAll('.it-edge-guard')).toHaveLength(0)
-    } finally {
-      if (original) Object.defineProperty(window.navigator, 'userAgent', original)
-      else delete (window.navigator as { userAgent?: string }).userAgent
-    }
-  })
-})

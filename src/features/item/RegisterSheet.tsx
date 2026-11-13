@@ -17,11 +17,6 @@
 //   捨てて閉じる（■27。3.1）: アプリの履歴（src/history/appHistory.ts）が、ルーターに渡す前に flickDiscard を呼ぶので、止めない。
 //   閉じる（onClose = common/sheets.ts の closeSheet）のは確かめが終わってから。書きかけの間に、この画面を別の小さな
 //   画面に替える時（複製のお知らせの［開く］で詳細を開く）も、同じく止めて確かめる（［戻る］なら登録の画面と書きかけはそのまま。開発）
-// - iPhone・iPad では、登録の画面の全体（背景を含む）に it-edge-guard を付け、横のなぞりを止める（item.css の touch-action:
-//   pan-y pinch-zoom。縦のスクロール・二本指の拡大・押す・字を打つ・字を選ぶはそのまま）。左の端からの身振り（ブラウザの「戻る」。
-//   ページが動く絵が出るが画面は変わらない）を止められるかの試し: WebKit は、iOS 26 の1つの道筋でだけ、指を下ろした所の touch-action に
-//   auto・pan-x・manipulation が無ければ身振りを始めない。ふつうの端の身振りには効かない見込みで、効くかは作者の iPhone で確かめる
-//   （docs/SPEC.md の 3.1・22. の ■27。開発）
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, type BlockerFunction } from 'react-router-dom'
 import { editDates, editTimes } from '../../domain/itemInput'
@@ -31,7 +26,6 @@ import { actions } from '../../store/actions'
 import { getData, useApp } from '../../store/appStore'
 import { attempt, notifyError, useCalendarUi } from '../../store/uiStore'
 import { itemChange, recordStep } from '../../store/undoStore'
-import { currentPlatform } from '../../ui/device'
 import { choiceDialog } from '../../ui/dialogs'
 import { isSubmitShortcut, submitShortcutLabel } from '../../ui/keys'
 import { flashKey } from '../calendar/common/parts/useFlashTarget'
@@ -41,9 +35,6 @@ import type { RegisterSheetProps } from '../calendar/common/types'
 import { DetailForm } from './DetailForm'
 import { hasDraftText, registerForm, type DatePatch, type ItemForm, type TimePatch } from './itemForm'
 import { ItemSheet } from './ItemSheet'
-
-/** iPhone・iPad の登録の画面の全体に付けるクラス（item.css で touch-action: pan-y pinch-zoom。左の端からの身振りを止める試し） */
-export const EDGE_GUARD_CLASS = 'it-edge-guard'
 
 /** 書きかけを捨てるかの確かめのボタンの data-testid */
 export const DISCARD_TEST_IDS = { discard: 'item-discard', keep: 'item-discard-keep' } as const
@@ -66,8 +57,6 @@ async function confirmDiscard(): Promise<boolean> {
 
 export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
   const [form, setForm] = useState<ItemForm>(() => registerForm(init))
-  /** iPhone・iPad: 左の端からの身振りを止める試し（上。開いている間は替えない） */
-  const [edgeGuard] = useState(() => currentPlatform() === 'ios')
   /**
    * 今の欄の値。描き直しを待たずに持つ（Ctrl/⌘+Enter で、打ちかけの時刻を決めた直後に、その値で登録する。閉じる時の書きかけの確かめも
    * これを見る）
@@ -208,7 +197,6 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
       label={form.label}
       onClose={requestClose}
       initialFocus={`[data-testid="${testIds.itemTitle}"]`}
-      backdropClassName={edgeGuard ? EDGE_GUARD_CLASS : undefined}
       footer={
         <>
           <span className="it-hint hide-mobile hint-keyboard">{submitShortcutLabel()} でも登録</span>

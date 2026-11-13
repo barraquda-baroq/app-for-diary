@@ -24,8 +24,9 @@
 //   最中（離した時）に作っていた）。ルーターの置き換え（カレンダーの中の行き来。押している間の週の替わりなど）は、履歴を動かさない
 //   （今の物を書き換えるだけ）のでその場で書く。「戻る」「進む」が来た所から出していた所へ戻すのは待たない（押し終えるのを待っている
 //   物があっても、その前に行う。待つ間に、もう一度の「戻る」でアプリを離れないように）
-// - 離す出来事が来ないまま残った指（画面の端の身振りを端末が取った時など。src/ui/useSwipe.ts と同じ）は、次に指を下ろした時・画面に
-//   触れている指が無くなった時（touchend）に捨てる。ほかの物も、その物の出来事が PRESS_STALE_MS 来なければ離したとみなす
+// - 離す出来事が来ないまま残った指（画面の端の身振りを端末が取った時など。src/features/calendar/common/useSwipe.ts と同じ）は、次に
+//   指を下ろした時・画面に触れている指が無くなった時（touchend）に捨てる。ほかの物も、その物の出来事が PRESS_STALE_MS 来なければ
+//   離したとみなす
 // - history.scrollRestoration は auto のまま: 設定・MIM から「戻る」でカレンダーへ戻った時のページのスクロールの位置は、ブラウザが
 //   戻す（src/ui/Layout.tsx の scrollsToTop は「戻る」「進む」では動かさない）。ただし「戻る」「進む」の印の履歴（と、印を作る・置く時に
 //   自分で戻る間の土台）だけは manual にする（押し終えた時に続いているスクロール（払った指の惰性）を、印を積んだ時の位置へ戻さない・
@@ -1131,8 +1132,9 @@ export class AppHistory implements RouterHistory {
   }
 
   /**
-   * iPhone: 身振りの絵を出している間に、アプリの中でモードを回した（続けて払った分を画面の端で受け取った。src/ui/useSwipe.ts）: 新しい
-   * モードの描く物が、前に回した時の行き先の絵の半分に届かなくなっていれば、見えない描く物を足し直す（React が描いた後に数える）
+   * iPhone: 身振りの絵を出している間に、アプリの中でモードを回した（続けて払った分を画面の端で受け取った。
+   * src/features/calendar/common/useSwipe.ts）: 新しいモードの描く物が、前に回した時の行き先の絵の半分に届かなくなっていれば、見えない
+   * 描く物を足し直す（React が描いた後に数える）
    */
   topUpBallast(): void {
     if (!this.flicks || !this.afterSwipe) return
@@ -1612,7 +1614,7 @@ export class AppHistory implements RouterHistory {
     switch (type) {
       case 'pointerdown':
         // 最初の1本の指（isPrimary）を下ろした: 前の指で、離す出来事が来ないまま残った物（画面の端の身振りを端末が取った時など。
-        // src/ui/useSwipe.ts と同じ）は捨てる
+        // src/features/calendar/common/useSwipe.ts と同じ）は捨てる
         if (pointerType === 'touch' && pointer.isPrimary) this.dropTouchPointers()
         this.pointers.set(id, { type: pointerType ?? '', at: this.now() })
         break
@@ -1782,8 +1784,8 @@ export function historyShape(): HistoryShape | null {
 }
 
 /**
- * その時刻（performance.now）より後に、利用者の「戻る」「進む」（iPhone の端からのフリック）が来たか（src/ui/useSwipe.ts: 画面の端から
- * 払った指を、ブラウザが身振りにした時はアプリでは回さない）
+ * その時刻（performance.now）より後に、利用者の「戻る」「進む」（iPhone の端からのフリック）が来たか
+ * （src/features/calendar/common/useSwipe.ts: 画面の端から払った指を、ブラウザが身振りにした時はアプリでは回さない）
  */
 export function userPopSince(t: number): boolean {
   return current?.userPopSince(t) ?? false

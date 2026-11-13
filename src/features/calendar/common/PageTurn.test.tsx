@@ -6,6 +6,7 @@
 import { act, cleanup, render } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setSwipeLogEnabled, swipeLogText } from '../../../history/swipeLog'
 import { useCalendarUi } from '../../../store/uiStore'
 import { setTestMedia } from '../../../test/renderCalendar'
 import { PageTurn, TURN_CLEANUP_MS, TURN_START_GUARD_MS, turnPerspective } from './PageTurn'
@@ -252,6 +253,38 @@ describe('片付け', () => {
       expect(layer()).not.toBeNull()
       act(fire)
       expect(layer()).toBeNull()
+    }
+  })
+
+  it('設定で端からのフリックの記録を取る時は、めくり始めた時と、途中で終えた時（何で終えたか）を控える。動きの終わりで外した時は控えない', () => {
+    setSwipeLogEnabled(true)
+    try {
+      const r = render(<Frame from="2026-11-01" />)
+      r.rerender(<Frame from="2026-12-01" />)
+      act(() => {
+        document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      })
+      r.rerender(<Frame from="2027-01-01" />)
+      r.rerender(<Frame from="2026-12-01" />)
+      endAnimation(layer()!.querySelector('.cal-turn-page.is-under')!, 'cal-turn-out')
+      expect(layer()).not.toBeNull()
+      r.rerender(<Frame from="2027-01-01" />)
+      endAnimation(layer()!.querySelector('.cal-turn-page.is-out')!, 'cal-turn-out')
+      expect(layer()).toBeNull()
+      const lines = swipeLogText()
+        .split('\n')
+        .map((l) => l.replace(/^\d+ /, ''))
+      expect(lines).toEqual([
+        'turn {"dir":"next"}',
+        'turn-cut {"by":"pointerdown"}',
+        'turn {"dir":"next"}',
+        'turn-cut {"by":"change"}',
+        'turn {"dir":"prev"}',
+        'turn-cut {"by":"change"}',
+        'turn {"dir":"next"}',
+      ])
+    } finally {
+      setSwipeLogEnabled(false)
     }
   })
 

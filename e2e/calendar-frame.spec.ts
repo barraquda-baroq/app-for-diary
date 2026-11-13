@@ -782,7 +782,7 @@ test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
     await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
   })
 
-  test('ウィークリーで画面の右の端（カレンダーの区切りの外の余白）から左の端まで大きく払うと次の週へ、左の端から払うと前の週へ。途中で pointercancel が来て touch の出来事だけになった親指の弧でも次の週へ（22. の段階2の終わりの確かめ）', async ({
+  test('ウィークリーで画面の端（20px の中）から払うと、端からのフリックと同じくモードを回す（ブラウザが身振りを始めなかった時。3.1）。端の 30px 内側から左の端まで大きく払うと次の週へ。途中で pointercancel が来て touch の出来事だけになった親指の弧でも次の週へ（22. の段階2の終わりの確かめ）', async ({
     page,
   }) => {
     await openCalendar(page, '/week/2026-11-08', { data: demoData() })
@@ -790,15 +790,18 @@ test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
     const box = await page.getByTestId('calendar-body').boundingBox()
     if (!box) throw new Error('カレンダーが見えていません')
     const y = Math.round(box.y + Math.min(box.height / 2, 200))
+    // 右の画面の端（3px。区切りの外の余白）から左へ: 週 → 日（期間へは移らない）。左の端から右へ: 日 → 週
     await touchPath(page, thumbArc({ x: vw - 3, y }, { x: 3, y: y - 120 }, 12))
-    await at(page, '/week/2026-11-15')
-    await turnDone(page)
+    await at(page, '/day/2026-11-10')
     await touchPath(page, thumbArc({ x: 3, y }, { x: vw - 3, y: y - 120 }, 12))
     await at(page, '/week/2026-11-08')
+    // 端の 30px 内側から左の端まで大きく払うと、今までどおり次の週へ
+    await touchPath(page, thumbArc({ x: vw - 30, y }, { x: 3, y: y - 120 }, 12))
+    await at(page, '/week/2026-11-15')
     await turnDone(page)
     // iPhone の本物の指のように、12px 動いた所で pointercancel が来て、その後は touch の出来事だけが来る払い（親指の弧。34°）
     await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: vw - 330, y: y - 200 }, 25))
-    await at(page, '/week/2026-11-15')
+    await at(page, '/week/2026-11-22')
   })
 })
 

@@ -6,7 +6,16 @@
 // 同じ popstate）。iPhone は Chromium に iPhone の UA を付けた物。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
 import { devices, expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
-import { armHistory, collectDiagnosticsOnFailure, goBack, goForward, historySettled, historyShape, openCalendar } from './helpers'
+import {
+  armHistory,
+  collectDiagnosticsOnFailure,
+  goBack,
+  goForward,
+  historySettled,
+  historyShape,
+  openCalendar,
+  touchPath,
+} from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -197,7 +206,7 @@ test.describe('iPhone の端からのフリックの間に見える絵（Chromiu
     expect(recording(after).filter((c) => c.over !== '')).toEqual([])
   })
 
-  test('すばやく足すに字を打ったまま払うと、モードのボタンを押した時と同じく、足してから閉じてモードを回す（「『件名』を足しました［元に戻す］」）', async ({
+  test('すばやく足すに字を打ったまま払うと、足さずに閉じてモードを回す（作者「入力確定前の内容で払ったものは登録しない」）。打った字は書きかけに残り、同じ＋を開き直すと出る', async ({
     page,
   }) => {
     await openCalendar(page, WEEK, { data: demoData() })
@@ -208,17 +217,21 @@ test.describe('iPhone の端からのフリックの間に見える絵（Chromiu
     await goForward(page)
     await showing(page, DAY)
     await expect(input).toHaveCount(0)
-    await expect(page.locator('.toast', { hasText: '『資料の確認』を足しました' })).toBeVisible()
-    const added = await page.evaluate(() =>
-      Object.values(window.__ds.getData().items).filter((i) => i.title === '資料の確認' && i.start === '2026-11-12'),
-    )
-    expect(added).toHaveLength(1)
-    // 空の時は足さずに閉じる（左の端から: 日→週）
-    await page.getByTestId('day-add-work').tap()
-    await expect(input).toBeFocused()
+    await page.waitForTimeout(400)
+    await expect(page.locator('.toast')).toHaveCount(0)
+    const added = await page.evaluate(() => Object.values(window.__ds.getData().items).filter((i) => i.title === '資料の確認'))
+    expect(added).toEqual([])
+    // 書きかけは残る: 週へ戻って同じ日・同じ区分の＋を開き直すと出る
     await historySettled(page)
     await goBack(page)
     await showing(page, WEEK)
+    await page.getByTestId('week-add-2026-11-12-work').tap()
+    await expect(input).toHaveValue('資料の確認')
+    // 空の時も同じく閉じる（左の端から: 週→月）
+    await input.fill('')
+    await historySettled(page)
+    await goBack(page)
+    await showing(page, MONTH)
     await expect(input).toHaveCount(0)
   })
 
@@ -259,5 +272,40 @@ test.describe('iPhone の端からのフリックの間に見える絵（Chromiu
     expect(Math.max(...more)).toBeGreaterThan(year / 2 - week)
     expect(more.at(-1)).toBe(0)
     await expect(page.locator('#ds-ballast')).toHaveCount(0)
+  })
+
+  test('ブラウザが身振りを始めない時（前の払いの絵が消える前など）に画面の端（20px の中）から内へ払った指は、アプリが受け取ってモードを回す（履歴は積まず動かさない・期間はそのまま）。すばやく足すに字を打っていても回し、足さない。内側からの払いは今までどおり前後の期間へ（3.1・12.1）', async ({
+    page,
+  }) => {
+    await recordHistoryCalls(page)
+    await openCalendar(page, WEEK, { data: demoData() })
+    // 印の履歴を作らせてから（開いて最初に押し終えた時）
+    await page.getByTestId('app-header').tap()
+    await historySettled(page)
+    const vw = page.viewportSize()?.width ?? 412
+    const box = await page.getByTestId('calendar-body').boundingBox()
+    if (!box) throw new Error('カレンダーが見えていません')
+    const y = Math.round(box.y + Math.min(box.height / 2, 200))
+    const line = (x0: number, x1: number) => Array.from({ length: 9 }, (_, i) => ({ x: x0 + ((x1 - x0) * i) / 8, y }))
+    await page.getByTestId('week-add-2026-11-12-work').tap()
+    const input = page.getByTestId('quick-add-input')
+    await input.fill('端から払う前')
+    await expect(input).toBeFocused()
+    const before = (await callsOf(page)).length
+    // 右の端（4px 内側）から左へ: 週 → 日（右の端からのフリックと同じ向き）。すばやく足すは足さずに閉じる
+    await touchPath(page, line(vw - 4, vw - 140))
+    await showing(page, DAY)
+    await expect(input).toHaveCount(0)
+    // 左の端から右へ: 日 → 週
+    await touchPath(page, line(4, 140))
+    await showing(page, WEEK)
+    // 履歴は積まず動かさない（ルーターの置き換えだけ）
+    expect((await callsOf(page)).slice(before).filter((c) => c.op !== 'replaceState')).toEqual([])
+    expect(
+      await page.evaluate(() => Object.values(window.__ds.getData().items).filter((i) => i.title === '端から払う前').length),
+    ).toBe(0)
+    // 端から 20px より内側（60px）からは、今までどおり前の週へ
+    await touchPath(page, line(60, 220))
+    await showing(page, '/week/2026-11-01')
   })
 })

@@ -9,6 +9,8 @@
 //   追い（touch の出来事）、取られていない時と同じ決まり（60px 以上。払い始めが横なら全体で 45° まで）で移る（縦のスクロールは
 //   取らない）。iPhone（WebKit）は touch-action: pan-y の所で指が少しでも縦に動くと縦のスクロールを始めて指を取る（10〜15px ほど
 //   動いた所）ので、iPhone の払いはほとんどがこの道を通る。Chromium は初めの動きが縦寄りの時だけ取る
+// iPhone・iPad の画面の端の指（3.1 の「ブラウザが身振りを始めない時」）: 画面の左右の端から EDGE_ZONE_PX の中で押して内へ払った指は、
+// 期間へは移らず、端からのフリックと同じくモードを回す（edgeSide。ブラウザが身振りにした指は、ページに離す出来事が来ないので数えない）
 // React・ストアを読まない（純粋な関数。src/features/calendar/purity.test.ts）。指の出来事を拾うのは useSwipe.ts
 import type { CalendarMode, WidthClass } from './types'
 
@@ -32,6 +34,13 @@ export const SWIPE_ARC_MAX_DEG = 45
  */
 export const SWIPE_CLICK_GUARD_MS = 300
 
+/**
+ * iPhone・iPad の画面の端の幅（px）。ここで押した指は、ブラウザの端からの身振りの指（3.1）。カレンダーの区切りの外の帯（frame.css の
+ * .cal.is-swipe::before・::after。S・M の 16px と枠の 1px）と、その内側の少し。iPhone で端の指がどこで押されるかは、設定の
+ * 「開発」の記録（src/history/swipeLog.ts）で見て直す
+ */
+export const EDGE_ZONE_PX = 20
+
 /** 水平からの角度（度。0〜90。上下・左右は問わない） */
 function angleOf(dx: number, dy: number): number {
   return (Math.atan2(Math.abs(dy), Math.abs(dx)) * 180) / Math.PI
@@ -53,6 +62,18 @@ export function swipeDirection(dx: number, dy: number, maxDeg: number = SWIPE_MA
  */
 export function isHold(heldMs: number): boolean {
   return heldMs >= SWIPE_HOLD_MS
+}
+
+/**
+ * 押した所（x。画面の左からの px）が画面の端か: 左の端 -1、右の端 1、ほか null（width は画面の幅。左右とも EDGE_ZONE_PX より内側は
+ * null）。内へ払った向き（endSwipe の向き）がこれと同じ時に、端からのフリック（-1 = 左の端から右へ・「戻る」、1 = 右の端から左へ・
+ * 「進む」）
+ */
+export function edgeSide(x: number, width: number): -1 | 1 | null {
+  if (!Number.isFinite(x) || !Number.isFinite(width) || width <= 0) return null
+  if (x < EDGE_ZONE_PX) return -1
+  if (x > width - EDGE_ZONE_PX) return 1
+  return null
 }
 
 /** 押してから離すまでの1本の指の控え（useSwipe が持つ。座標は画面の px、時刻は ms） */

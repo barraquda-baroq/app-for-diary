@@ -26,7 +26,8 @@
 //   （pointercancel）時は、キーボードを閉じた時と同じ。押した出来事の無い click（読み上げの操作など）は、その中で外して戻す
 //   （iPhone ではキーボードへ伝わらないことがある。できるだけの扱い）
 // - 足さずに閉じるのは Esc と、キーボード（Tab）でフォーカスを外の物へ移した時（書きかけは残り、次に開くと出る。［足す］へは Tab で
-//   移れ、その次の Tab で外へ出ると閉じる）と、外を押してそのままカードをドラッグした時（WeekDnd が quickAddDragStarted で伝える。
+//   移れ、その次の Tab で外へ出ると閉じる）と、iPhone の端からのフリックでモードが替わった時（下）と、外を押してそのままカードを
+//   ドラッグした時（WeekDnd が quickAddDragStarted で伝える。
 //   離した後に、ドラッグのお知らせと重ねて足さない。ドラッグを Esc でやめた時も足さない）。窓・アプリの切り替えで外れただけの時と、
 //   ドラッグを始めて画面がフォーカスを外した時（押している間なので、押した方で決める）は、足さず閉じない
 // - 外を押した指でなぞってスクロール・拡大した時（ブラウザが指を受け取った pointercancel）は、外を押したとは扱わない。フォーカスが
@@ -42,8 +43,13 @@
 //   見えなくなる出来事が来ることがある。来たら決めるのをやめる。その間に押した時は、押した方で決める）
 // - 書きかけは diary-studio:draft:quick:{日付}:{区分} に控え（閉じても残し、同じ日・同じ区分で開き直すと戻る）、足したら消す。
 //   ［元に戻す］で戻した字は、同じ日・同じ区分の入力欄が空で開いていれば、そこにも出す
-// - iPhone の端からのフリックでモードが替わる時（quickAddModeChanging。CalendarView）は、モードのボタンを押した時（外を押した時）と
-//   同じく、字があれば足してから閉じ、「『件名』を足しました［元に戻す］」を出す（press。身振りの指は、離す出来事が来ないので待たない）
+// - iPhone の端からのフリックでモードが替わる時（quickAddModeChanging。CalendarView。ブラウザが身振りを始めず、画面の端から払った指を
+//   アプリが受け取った時も）は、字があっても足さずに閉じる（flick。書きかけは Esc の時と同じく残り、同じ日・同じ区分で開き直すと出る。
+//   作者「入力確定前の内容で払ったものは登録しない」。22. の a228a81 を試した答え）。身振りの指は離す出来事が来ないので待たない。
+//   外を押して押し終わりを待っていた分も足さない。変換を決める前に［足す］で押し終えた分（変換の終わりを待っている間）は、押した時に
+//   決めたので足す。iPhone・iPad で画面の端（左右 EDGE_ZONE_PX。swipe.ts）を指で押した時は、外を押したとはまだ扱わない（身振りの
+//   指。身振りが外れて離す出来事が来た時に決める: 動かさずに離せば外を押した時と同じく押し終わってから足して閉じ、払って離せば
+//   閉じず足さない）。身振りの始まりに入力欄と窓からフォーカスが外れても、窓の切り替えと同じく足さず閉じない
 // - ツールバーの元に戻す・やり直す（7.13）を押しても、開いている入力欄は閉じない（外を押したとは扱わない。フォーカスも入力欄に
 //   残る。押した時に字を足してから戻すと、戻るのが今足した物になるため）。戻した・やり直したお知らせの［OK］（3.9・■26）も同じ
 //   （閉じず、字も足さない。［OK］を押すのはお知らせを読み終えた時で、打っている字を決めた時ではないため）。どちらも KEEP_QUICK_ADD の
@@ -67,14 +73,16 @@ import type { ID, ItemKind } from '../../../../domain/types'
 import { actions } from '../../../../store/actions'
 import { getData } from '../../../../store/appStore'
 import { quickDraftKey, readLocal, writeLocal } from '../../../../store/localDrafts'
+import { swipeLog } from '../../../../history/swipeLog'
 import { overCalendarGone } from '../../../../history/swipePicture'
 import { attempt } from '../../../../store/uiStore'
 import { itemChange, notifyUndoable, recordStep } from '../../../../store/undoStore'
+import { currentPopSource } from '../../../../ui/device'
 import { CheckIcon } from '../../../../ui/icons'
 import { KEEP_QUICK_ADD } from '../../../../ui/keepQuickAdd'
 import { scrollBehavior } from '../../../../ui/motion'
 import { toastInset } from '../../../../ui/scrollWithin'
-import { SWIPE_SLOP_PX } from '../swipe'
+import { edgeSide, SWIPE_SLOP_PX } from '../swipe'
 import { testIds } from '../testIds'
 import { cls } from './itemLook'
 import './parts.css'
@@ -97,9 +105,10 @@ export const COMMIT_WAIT_MS = 150
 
 /**
  * 閉じたきっかけ: Esc・入力欄の外を押し終えた・キーボード（Tab）でフォーカスを外の物へ移した・押さずにフォーカスが外れた
- * （iPhone のキーボードの上の✓など）・外を押してそのままドラッグした（離した後。足さない）
+ * （iPhone のキーボードの上の✓など）・外を押してそのままドラッグした（離した後。足さない）・iPhone の端からのフリックでモードが
+ * 替わった（足さない）
  */
-export type QuickAddCloseReason = 'escape' | 'press' | 'focus' | 'blur' | 'drag'
+export type QuickAddCloseReason = 'escape' | 'press' | 'focus' | 'blur' | 'drag' | 'flick'
 
 /** 閉じる時に、字があれば足すきっかけ（外を押した・キーボードを閉じた） */
 const ADDS_ON_CLOSE: ReadonlySet<QuickAddCloseReason> = new Set(['press', 'blur'])
@@ -129,9 +138,8 @@ export function quickAddDragStarted(): void {
 const modeListeners = new Set<() => void>()
 
 /**
- * iPhone の端からのフリックでモードが替わる（CalendarView の ring。docs/SPEC.md の 3.1・12.1）: 開いているすばやく足すを、モードの
- * ボタンを押した時（外を押した時）と同じく閉じる（字があれば足して［元に戻す］付きで知らせる）。身振りが取った指は離す出来事が
- * 来ないので、押し終わりを待たない
+ * iPhone の端からのフリックでモードが替わる（CalendarView の ring。docs/SPEC.md の 3.1・12.1）: 開いているすばやく足すを、字があっても
+ * 足さずに閉じる（flick。書きかけは残る）。身振りが取った指は離す出来事が来ないので、押し終わりを待たない
  */
 export function quickAddModeChanging(): void {
   for (const fn of [...modeListeners]) fn()
@@ -233,6 +241,11 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
    */
   const addPress = useRef<{ id: number; up: boolean } | null>(null)
   const addButton = useRef<HTMLButtonElement>(null)
+  /**
+   * iPhone・iPad で画面の端を指で押した分（端からのフリックの指。id は押した指、x・y は押した所）。外を押したとはまだ扱わず、離した時に
+   * 決める（ブラウザが身振りにした指は離す出来事が来ないので、次に押すまで残る）
+   */
+  const edge = useRef<{ id: number; x: number; y: number } | null>(null)
 
   /** 字があれば足して、［元に戻す］付きで知らせる（閉じる時）。足せなかった（決まりに合わない件名）時は false */
   const addOnClose = (): boolean => {
@@ -343,6 +356,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       closing.current = false
       return
     }
+    swipeLog('quick-close', { reason })
     latest.current.onClose(reason)
   }
 
@@ -366,6 +380,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     window.clearTimeout(settleTimer.current)
     // 先に押し終えた［足す］の分（変換の終わりを待っている間）は足す
     flushCommit()
+    swipeLog('quick-close', { reason: 'escape' })
     latest.current.onClose('escape')
   }
 
@@ -377,8 +392,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     if (input.current) revealQuickAddInput(input.current)
   }, [])
 
-  // 閉じた（外した）時を知らせる: iPhone で、閉じた後すぐに小さな画面を開く時は、入力欄の消えた画面が描かれてから開き、アプリの履歴は
-  // 消えた画面が描かれた後に、端からのフリックの間に見える絵を写し直す（Esc・キーボードの完了で閉じた時も。3.1）
+  // 閉じた（外した）時を知らせる: iPhone で、閉じた後すぐに小さな画面を開く時・アプリの履歴が印の履歴を作る・印の絵を写す時は、
+  // 入力欄の消えた画面が描かれるのを待つ（Esc・キーボードの完了で閉じた時も。3.1）
   useLayoutEffect(() => overCalendarGone, [])
 
   // 押した・離した・窓を離れたを、window の捕まえる段階で見る（押した物の pointerdown・mousedown（フォーカスの移り）・click より
@@ -404,7 +419,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     // ブラウザが指を受け取った（なぞってスクロール・拡大した）: 外を押したとは扱わない。フォーカスが入力欄に残っていれば（指で
     // なぞってもフォーカスは動かない）、閉じるのをやめて開いたまま（足さない）。外れていれば（ドラッグした・マウスで押した物へ
     // フォーカスが移った）、押し終わった時と同じ
-    const cancelPress = () => {
+    const cancelPress = (e: PointerEvent) => {
+      // 画面の端を押した指をブラウザが受け取った（縦のスクロール）: 外を押したとは扱わない
+      if (edge.current?.id === e.pointerId) edge.current = null
       const p = press.current
       if (!p) return
       const active = document.activeElement
@@ -418,16 +435,42 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       endPress()
     }
     const onDown = (e: PointerEvent) => {
+      // 元に戻す・やり直すのボタン（KEEP_QUICK_ADD）の上では閉じない
+      const keep = e.target instanceof Element && e.target.closest(`[${KEEP_QUICK_ADD}]`) !== null
+      const outside = !!box.current && e.target instanceof Node && !box.current.contains(e.target) && !keep
+      // iPhone・iPad で画面の端を指で押した（端からのフリックの指）: 外を押したとはまだ扱わない（離した時に決める。前に外を押して
+      // 押し終わりを待っている分は、そのまま待つ）
+      if (
+        outside &&
+        e.pointerType === 'touch' &&
+        currentPopSource() === 'edge-flick' &&
+        edgeSide(e.clientX, window.innerWidth) !== null
+      ) {
+        edge.current = { id: e.pointerId, x: e.clientX, y: e.clientY }
+        swipeLog('quick-edge', { x: Math.round(e.clientX) })
+        return
+      }
+      edge.current = null
       if (press.current) window.clearTimeout(press.current.timer)
       else dragged.current = false
       // 前に変換中に押した［足す］の click は来なかった（待つのをやめる。次に押した物の click は捨てない）
       if (addPress.current?.up) addPress.current = null
       press.current = {}
-      // 元に戻す・やり直すのボタン（KEEP_QUICK_ADD）の上では閉じない
-      const keep = e.target instanceof Element && e.target.closest(`[${KEEP_QUICK_ADD}]`) !== null
-      if (box.current && e.target instanceof Node && !box.current.contains(e.target) && !keep) close('press')
+      if (outside) close('press')
     }
     const onUp = (e: PointerEvent) => {
+      const g = edge.current
+      if (g && g.id === e.pointerId) {
+        edge.current = null
+        // 画面の端を押して払った（モードが替わらなかった）: 閉じず足さない
+        if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > SWIPE_SLOP_PX) return
+        // 動かさずに離した（端を押しただけ）: 外を押した時と同じく、押し終わってから足して閉じる
+        if (!press.current) {
+          dragged.current = false
+          press.current = {}
+        }
+        close('press')
+      }
       const a = addPress.current
       if (a && !a.up && e.pointerId === a.id) {
         // 変換中に押した［足す］を離した。指は押した［足す］に捕まえられているので、離した出来事は［足す］に来る（外したので
@@ -502,15 +545,18 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       if (press.current) dragged.current = true
     }
     dragListeners.add(onDrag)
-    // モードが替わる（端からのフリック）: 押し終わりを待たずに、外を押した時と同じく閉じる（Esc で閉じた後なら何もしない）
+    // モードが替わる（端からのフリック）: 押し終わりを待たずに、字があっても足さずに閉じる（作者「入力確定前の内容で払ったものは
+    // 登録しない」。書きかけは Esc の時と同じく残る。外を押して押し終わりを待っていた分も足さない。［足す］で押し終えた分は finish が
+    // 足す）。Esc で閉じた後なら何もしない
     const onModeChange = () => {
       if (press.current) window.clearTimeout(press.current.timer)
       press.current = null
       addPress.current = null
+      edge.current = null
       if (closing.current && !pending.current) return
       closing.current = true
       window.clearTimeout(settleTimer.current)
-      finish(pending.current ?? 'press')
+      finish('flick')
     }
     modeListeners.add(onModeChange)
     return () => {
