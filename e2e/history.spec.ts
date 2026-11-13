@@ -1,6 +1,7 @@
 // 履歴と「戻る」「進む」の E2E（docs/SPEC.md の 3.1・3.8。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・■22・■23・■25。
 // src/history/appHistory.ts）。iPhone の画面の端からのフリックは、ブラウザの「戻る」「進む」の身振りそのもの（ページには popstate だけが
-// 来る）なので、page.goBack・page.goForward で同じ所を通す。iPhone は Chromium に iPhone の UA を付けた物（@s）と、CI の WebKit（@ios）。
+// 来る）なので、page.goBack・page.goForward で同じ所を通す。iPhone は Chromium に iPhone の UA を付けた物（@s）。CI の WebKit（@ios）では、
+// 同じ払い（モードを回す・登録・詳細の画面・設定・MIM を閉じる）を e2e/swipe-order.spec.ts で、履歴を書く・動かす順番と一緒に流す。
 // Android は Pixel 7（mobile。UA が Android）、PC は Desktop Chrome。ホーム画面から開いた Android のアプリは、Pixel 7 の表示の形を
 // standalone にして（openAlone の standalone）まねる。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。
 // Playwright の page.evaluate・locator は、それだけでブラウザに「押した」と数えさせる（Chromium では 5秒。navigator.userActivation）ので、
@@ -936,42 +937,5 @@ test.describe('PC のブラウザの戻る・進む（■22）', { tag: ['@pc'] 
     await at(page, '/month/2026-12')
     await historySettled(page)
     expect(await historyLength(page)).toBe(length + 2)
-  })
-})
-
-test.describe('iPhone（WebKit）', { tag: ['@ios'] }, () => {
-  test('カレンダー: 左の端から（戻る）で 日→週→月→年→日、右の端から（進む）で 年→月→週→日→年（iPhone と見分ける）。履歴は増えない', async ({
-    page,
-  }) => {
-    await openCalendar(page, DAY)
-    expect((await historyShape(page))?.source).toBe('edge-flick')
-    const length = await historyLength(page)
-    for (const next of [WEEK, MONTH, YEAR, DAY]) {
-      await goBack(page)
-      await showing(page, next)
-    }
-    for (const next of [YEAR, MONTH, WEEK, DAY]) {
-      await goForward(page)
-      await showing(page, next)
-    }
-    expect(await historyLength(page)).toBe(length)
-  })
-
-  test('登録・詳細の画面は、左右どちらのフリックでも閉じる（■23・■27）', async ({ page }) => {
-    await openCalendar(page, DAY, { data: demoData() })
-    const sheet = page.getByTestId('item-sheet')
-    await page.getByTestId('cal-add').click()
-    await expect(sheet).toBeVisible()
-    await historySettled(page)
-    await goBack(page)
-    await expect(sheet).toHaveCount(0)
-    await showing(page, DAY)
-    await openDetail(page, true)
-    await goBack(page)
-    await expect(sheet).toHaveCount(0)
-    await openDetail(page, true)
-    await goForward(page)
-    await expect(sheet).toHaveCount(0)
-    await showing(page, DAY)
   })
 })

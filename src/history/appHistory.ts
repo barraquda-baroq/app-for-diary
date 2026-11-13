@@ -379,7 +379,7 @@ export class AppHistory implements RouterHistory {
   private ballastCount = 0
   /** 自分で始めた戻る・進むの popstate を待っている物（expect は着くはずの idx） */
   private waiting: { finish: (came: boolean) => void; expect: number } | null = null
-  /** アプリが作っていない履歴へ来た数（来たら、自分で動いている途中の物はやめる: travelTo・写し直す・閉じる） */
+  /** アプリが作っていない履歴へ来た数（来たら、自分で動いている途中の物はやめる: travelTo・「進む」の印の絵を写す・閉じる） */
   private outsideGen = 0
   private readonly queue: Op[] = []
   private running = false
@@ -1472,7 +1472,7 @@ export class AppHistory implements RouterHistory {
       const from = this.cur
       this.cur = idx
       // iPhone: 思った所と違う所へ着いた（利用者の端からのフリックが先に来た。その払いは何もしない）: その身振りの絵を出している間と
-      // みなす（絵を写し直している途中なら、やめて後でもう一度）
+      // みなす（「進む」の印の絵を写しに行った途中なら、土台へ戻り、身振りの絵が消えた頃にもう一度）
       if (idx !== waiting.expect) this.noteSwipe(from)
       waiting.finish(true)
       if (!this.running) for (const resolve of this.idleWaiters.splice(0)) resolve()
