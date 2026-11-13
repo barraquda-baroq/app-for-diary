@@ -8,8 +8,10 @@ import {
   CUE_LABEL_GAP,
   CUE_LABEL_ROOM,
   cueLabel,
+  dropHit,
   EDGE_SCROLL_MAX,
   edgeSpeed,
+  inDropArea,
   insideBand,
   NOT_MOVED,
   noteMove,
@@ -115,6 +117,60 @@ describe('左右の帯（どの端末でも。週の端の内側と、その外�
       place: 'below',
       edge: 300 - 142 + CUE_LABEL_GAP,
     })
+  })
+})
+
+describe('落とす所の当たり（離した時の指の所で決める。7.11・CALENDAR-178。CI 46: 右の列で離したのに土曜へ落ちた）', () => {
+  // L 1400px（CI 46 の時の形）: 週は 41〜1035・142〜867、カレンダーの領域の右の端は 1051、右の列の「Routine List」は 1093〜1308・75〜91。
+  // 仕事の段の見えている所は 218〜526、土曜の仕事の列は 893〜1035（段の中で 66px 送ると、列の箱は 152〜653 まで。見えているのは
+  // 218〜526 だけ）
+  const week = box(41, 142, 1035, 867)
+  const L = { ...TO_SCREEN, right: 1051 }
+  const satVisible = box(893, 218, 1035, 526)
+
+  it('落とす所を探すのは、見えている週の中と左右の帯（週の外の余白も）だけ。右の列・週の上のヘッダー・週の下の外は探さない', () => {
+    expect(inDropArea({ x: 600, y: 500 }, week, 35, L)).toBe(true)
+    // 日の見出しの上（週の中）
+    expect(inDropArea({ x: 961, y: 186 }, week, 35, L)).toBe(true)
+    // 週の右の端とカレンダーの領域の右の端の間の余白（帯）・画面の左の端（帯）
+    expect(inDropArea({ x: 1043, y: 500 }, week, 35, L)).toBe(true)
+    expect(inDropArea({ x: 5, y: 500 }, week, 35, L)).toBe(true)
+    // 右の列（週と同じ高さでも）・「Routine List」の上
+    expect(inDropArea({ x: 1071, y: 372 }, week, 35, L)).toBe(false)
+    expect(inDropArea({ x: 1200, y: 83 }, week, 35, L)).toBe(false)
+    // 週の上（カレンダーの見出し・アプリのヘッダー）と下の外。余白の所でも週の高さの外
+    expect(inDropArea({ x: 600, y: 100 }, week, 35, L)).toBe(false)
+    expect(inDropArea({ x: 600, y: 880 }, week, 35, L)).toBe(false)
+    expect(inDropArea({ x: 1043, y: 129 }, week, 35, L)).toBe(false)
+    // S・M は画面の端まで帯
+    expect(inDropArea({ x: 410, y: 500 }, box(25, 216, 387, 839), 28)).toBe(true)
+  })
+
+  it('指が落とす所の見えている所の上なら pointer（真ん中に近いほど強い）', () => {
+    expect(dropHit({ x: 964, y: 372 }, satVisible, box(896, 349, 1033, 395))).toEqual({ by: 'pointer', value: Infinity })
+    const near = dropHit({ x: 964, y: 380 }, satVisible, null)!
+    const far = dropHit({ x: 964, y: 500 }, satVisible, null)!
+    expect(near.by).toBe('pointer')
+    expect(near.value).toBeGreaterThan(far.value)
+  })
+
+  it('指が上に無ければ、浮いたカードとの重なり（割合が大きく、真ん中が指に近いほど強い）。重ならなければ当たらない', () => {
+    // 週の外の余白（1043）で、浮いたカードの左の所（967〜1035）が土曜の列に掛かる
+    const hit = dropHit({ x: 1043, y: 372 }, satVisible, box(967, 349, 1104, 395))!
+    expect(hit.by).toBe('overlap')
+    expect(hit.value).toBeGreaterThan(0)
+    const less = dropHit({ x: 1043, y: 372 }, satVisible, box(1000, 349, 1137, 395))!
+    expect(less.value).toBeLessThan(hit.value)
+    expect(dropHit({ x: 1043, y: 372 }, satVisible, box(1036, 349, 1173, 395))).toBeNull()
+    expect(dropHit({ x: 1043, y: 372 }, satVisible, null)).toBeNull()
+  })
+
+  it('見えていない落とす所（null）には当たらない。段の中で送って隠れた所は、見えている所に入れないので当たらない', () => {
+    expect(dropHit({ x: 964, y: 372 }, null, box(896, 349, 1033, 395))).toBeNull()
+    // 日の見出しの上の指（186）は、送った列の箱（152〜）には入るが、見えている所（218〜）には入らない。浮いたカード（163〜209）も
+    // 見えている所に掛からない
+    expect(dropHit({ x: 961, y: 186 }, satVisible, box(893, 163, 1030, 209))).toBeNull()
+    expect(dropHit({ x: 961, y: 186 }, box(893, 152, 1035, 653), box(893, 163, 1030, 209))?.by).toBe('pointer')
   })
 })
 

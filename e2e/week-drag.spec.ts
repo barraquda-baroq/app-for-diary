@@ -374,6 +374,8 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     await expect(cellL(page, 'private', '2026-11-12')).toHaveAttribute('data-drop', 'none')
     expect(await markedDates(page, 'private')).toEqual([])
     await drag.drop()
+    // ここでも確かめる（落ちた時に、どちらで離した時か分かるように。CI 46 は次の noToast で、どちらで落ちたか分からなかった）
+    await noToast(page)
     // カレンダーの外（右の列のリスト）へ（CALENDAR-178）
     drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
     await drag.moveTo(await visiblePoint(page.getByText('Routine List')))
@@ -401,6 +403,114 @@ test.describe('PC（マウス）', { tag: ['@pc'] }, () => {
     expect(await markedDates(page, 'work')).toEqual([])
     await drag.drop()
     expect(await recordedPulses(page)).toEqual([])
+  })
+
+  test('落とす先は指の所で決める: カレンダーの外（右の列）で離すと、浮いたカードが土曜の段に重なっていても落とさない。週の右の端とカレンダーの領域の端の間の余白（帯）で離すと、重なっている土曜へ（7.11・CALENDAR-178）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const sat = cellL(page, 'work', '2026-11-14')
+    const y = (await visiblePoint(sat)).y
+    const calRight = await page.locator('.cal').evaluate((e) => e.getBoundingClientRect().right)
+    const satRight = await sat.evaluate((e) => e.getBoundingClientRect().right)
+    // 右の列の上（カレンダーの領域の右の端から 20px）。浮いたカード（幅 137px ほど）の左の所は土曜の列に掛かる
+    let drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    await drag.moveTo({ x: calRight + 20, y })
+    expect((await card(page, I.meeting).boundingBox())!.x).toBeLessThan(satRight - 20)
+    // 当たりを数え直して描くまで待ってから、出ていないことを確かめる（すぐ見ると、描く前で 0 のことがある）
+    await page.waitForTimeout(300)
+    expect(await page.locator('[data-drop="hover"]').count()).toBe(0)
+    await drag.drop()
+    await noToast(page)
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(cellL(page, 'work', '2026-11-10').getByTestId(`week-card-${I.meeting}`)).toBeVisible()
+
+    // 週の外の余白（帯。0.6秒たつ前に離す）: 指の下に日は無いが、浮いたカードが重なっている土曜へ落ちる
+    drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    const weekRight = await liveWeek(page).evaluate((e) => e.getBoundingClientRect().right)
+    await drag.moveTo({ x: (weekRight + calRight) / 2, y })
+    await overDropDay(sat)
+    await drag.drop()
+    await expect(toast(page, '11/14（土）へ移しました')).toBeVisible()
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-14')
+    await expect(sat.getByTestId(`week-card-${I.meeting}`)).toBeVisible()
+  })
+
+  test('離す直前に動かした分も数える: 土曜の上から右の列へ動かしてすぐ離すと（dnd-kit が指の動きを数える次のコマより前）、通った土曜へ落とさない（7.11）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const sat = cellL(page, 'work', '2026-11-14')
+    const drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    await drag.moveTo(await visiblePoint(sat))
+    await overDropDay(sat)
+    // 右の列へ動かして離すのを、ページの中の1つの処理の中で続けて送る。dnd-kit は指の動きを次のコマにまとめて数えるので、数える
+    // 前に離したことになる（重い時に、右の列で離したのに通った日へ落ちた形）。マウスの指は Chromium では pointerId 1
+    const out = await visiblePoint(page.getByText('Routine List'))
+    await page.evaluate((p) => {
+      for (const type of ['pointermove', 'pointerup'])
+        document.body.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerId: 1,
+            pointerType: 'mouse',
+            isPrimary: true,
+            clientX: p.x,
+            clientY: p.y,
+            button: 0,
+            buttons: type === 'pointerup' ? 0 : 1,
+          }),
+        )
+    }, out)
+    // 本物のマウスも同じ所で離す（ドラッグはもう終わっている）
+    await drag.moveTo(out, { steps: 1 })
+    await drag.drop()
+    await noToast(page)
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(cellL(page, 'work', '2026-11-10').getByTestId(`week-card-${I.meeting}`)).toBeVisible()
+  })
+
+  test('段の中で送って隠れた日の所には落とさない: 仕事の段の下（プライベートの段の上）・日の見出しの上（L の日の見出しの上では落とせない。7.11）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    const body = page.locator('[data-tier="work"] .wk-tier-body')
+    const fri = cellL(page, 'work', '2026-11-13')
+    const x = (await visiblePoint(fri)).x
+    const unmoved = async () => {
+      // 当たりを数え直して描くまで待ってから、出ていないことを確かめる
+      await page.waitForTimeout(300)
+      expect(await page.locator('[data-drop="hover"]').count()).toBe(0)
+    }
+    // 混んだ 11/13 の仕事の列は、段の見えている所より下まで続き、プライベートの段の上に隠れている。その所（浮いたカードは仕事の段に
+    // 掛からない高さ）で離す。指は一度で動かす（途中で段の端の自動のスクロールに入らないように）
+    const bodyBottom = await body.evaluate((e) => e.getBoundingClientRect().bottom)
+    const yBelow = bodyBottom + 40
+    let drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    await drag.moveTo({ x, y: yBelow }, { steps: 1 })
+    expect(await fri.evaluate((e) => e.getBoundingClientRect().bottom)).toBeGreaterThan(yBelow + 20)
+    expect((await card(page, I.meeting).boundingBox())!.y).toBeGreaterThan(bodyBottom)
+    await unmoved()
+    await drag.drop()
+    await noToast(page)
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+
+    // 段を送ると、列の上の所は日の見出しの下に隠れる。日の見出しの上（11/13 の列。帯ではない所）で離す
+    await body.evaluate((e) => (e.scrollTop = 120))
+    const top = (await liveWeek(page).boundingBox())!.y
+    drag = await startMouseDrag(page, await grabPoint(card(page, I.meeting)))
+    await drag.moveTo({ x, y: top + 15 }, { steps: 1 })
+    expect(await fri.evaluate((e) => e.getBoundingClientRect().top)).toBeLessThan(top + 15)
+    // 浮いたカードは段（見えている所）に掛からない
+    const liftedBox = (await card(page, I.meeting).boundingBox())!
+    expect(liftedBox.y + liftedBox.height).toBeLessThan(await body.evaluate((e) => e.getBoundingClientRect().top))
+    await unmoved()
+    await drag.drop()
+    await noToast(page)
+    expect((await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    await expect(cellL(page, 'work', '2026-11-10').getByTestId(`week-card-${I.meeting}`)).toBeVisible()
   })
 
   test('ロック中のカードは掴めない: 揺れて、掴もうとしている間だけカーソルが not-allowed。知らせは出さず、詳細も開かない', async ({

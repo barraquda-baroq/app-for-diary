@@ -17,6 +17,10 @@
 // - 掴んだまま別の週へ移った間も、掴んだ物（dnd-kit が浮かせている元のカード）を外さないように、掴んだ週を見えないまま残す
 //   （WeekSlot の is-frozen。落とす所は止める）。今の週は別の入れ物に描く。落とすと今の週に残り、落とさずにやめると（Esc・落とせない
 //   所で離す・指を取られた）掴んだ週へ戻って、浮いたカードが元の所へ戻る
+// - 落とす所の当たり（DropJudge。dnd-kit の初めの決め方は使わない）: 指が見えている週の中か左右の端の帯にある時だけ、指の下の日
+//   （無ければ浮いたカードが重なっている日）。日は見えている所だけで数える。掴んでいる間は毎コマ数え直し、離した時は離した所の指で
+//   決め直す（dnd-kit は指の動きを次のコマにまとめて数えるので、離す直前の動きを数えていないことがある。CI で、落とせない所で
+//   離したのに日へ落ちた。プライベートの段の上で離して隠れた仕事の日へか、右の列で離して通った日へかは、CI の記録から決められない）
 // - 落とした時は drop.ts（動かす・お知らせ・目立たせる・収める）。動かさなかった時は、浮いたカードが元の場所へ 160ms で戻る
 import {
   Accessibility,
@@ -29,8 +33,9 @@ import {
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
+  type Droppable,
 } from '@dnd-kit/dom'
-import { DragDropProvider, useDraggable, useDroppable } from '@dnd-kit/react'
+import { DragDropProvider, useDraggable, useDroppable, type UseDroppableInput } from '@dnd-kit/react'
 import {
   createContext,
   useCallback,
@@ -59,8 +64,8 @@ import type { WidthClass } from '../../common/types'
 import { useCalendarNav } from '../../common/useCalendarRoute'
 import { useWeekScroller } from '../weekScroller'
 import { applyDrop, settle, SETTLE_BACK } from './drop'
-import { EdgeDriver, type EdgeCue } from './edgeDriver'
-import { insideBand, TO_SCREEN, type Outer, type Side } from './edges'
+import { EdgeDriver, type DropArea, type EdgeCue } from './edgeDriver'
+import { dropHit, inDropArea, insideBand, intersect, TO_SCREEN, type Box, type Outer, type Point, type Side } from './edges'
 import { activationOf, pointerKind } from './gesture'
 import { useLockGesture } from './lockGesture'
 import {
@@ -148,6 +153,158 @@ function activeOf(data: DragData, shown: WeekCtx): ActiveDrag {
   return { kind: data.item.kind, days: new Set(dropDays(data.item, data.handle, data.week, shown).keys()) }
 }
 
+// ---------- 落とす所の当たり（dnd-kit の初めの決め方は使わない。7.11） ----------
+
+/** 落とす所の当たりの決め方（dnd-kit の useDroppable の collisionDetector） */
+type DayDetector = NonNullable<UseDroppableInput['collisionDetector']>
+type Collision = NonNullable<ReturnType<DayDetector>>
+
+/**
+ * 当たりの種類と強さ（dnd-kit 0.5.3 の初めの決め方 pointerIntersection・shapeIntersection と同じ値: @dnd-kit/abstract の
+ * CollisionType.PointerIntersection・ShapeIntersection と CollisionPriority.High・Normal）。指の下の日が、浮いたカードが重なっている日より先
+ */
+const HIT_KIND = {
+  pointer: { type: 2 as Collision['type'], priority: 3 },
+  overlap: { type: 1 as Collision['type'], priority: 2 },
+} as const
+
+const boxOf = (r: { left: number; top: number; right: number; bottom: number }): Box => ({
+  left: r.left,
+  top: r.top,
+  right: r.right,
+  bottom: r.bottom,
+})
+
+/** 1回の数え方（落とす所を順に数える間は同じ。指が落とす所を探す範囲の外なら box は null） */
+interface Pass {
+  p: Point
+  lifted: Box | null
+  box: Box | null
+  /** 切り取る祖先の箱（その回の間だけ控える） */
+  clips: Map<Element, Box>
+}
+
+/**
+ * 落とす所の当たりを決める（WeekDnd に1つ。docs/SPEC.md の 7.11）。dnd-kit の初めの決め方（指の下の落とす所、無ければ浮いた物が
+ * 重なっている落とす所）は、指が画面のどこにあっても重なりで落とし（L の右の列で離しても、浮いたカードが土曜に掛かっていれば土曜へ）、
+ * 落とす所の箱を段の中で送った所まで丸ごと数える（日の見出しの上や、下の段の上の指が、送って隠れた日の所に入る）。ここでは:
+ * - 指が落とす所を探す範囲（見えている週の中と左右の帯。edges.ts の inDropArea）の外では、どこにも当たらない
+ * - 落とす所は、見えている所（段・週の中のスクロールと見えている週で切り取った所）だけで数える（edges.ts の dropHit）
+ * - 離した時は、離した所の指で数え直す（targetAt）
+ */
+class DropJudge {
+  private readonly area: () => DropArea | null
+  /** 要素を切り取って見せる祖先（overflow が visible でない物）。掴むたびに控え直す（幅の区分で決まりが替わることがある） */
+  private readonly clippers = new Map<Element, Element[]>()
+  private pass: Pass | null = null
+  /** 離した時に数え直す間の、指と浮いたカードの箱 */
+  private at: { p: Point; lifted: Box | null } | null = null
+
+  constructor(area: () => DropArea | null) {
+    this.area = area
+  }
+
+  /** 掴んだ */
+  begin(): void {
+    this.clippers.clear()
+  }
+
+  /** dnd-kit の当たりの決め方（その日・その区分の落とす所 1つ） */
+  readonly detect: DayDetector = ({ droppable, dragOperation }) => {
+    // 落とす所は @dnd-kit/dom の Droppable（要素を持つ。useDroppable が作る）
+    const el = (droppable as unknown as Droppable).element
+    if (!el) return null
+    const pass = this.passOf(dragOperation.position.current, dragOperation.shape?.current.boundingRectangle ?? null)
+    if (!pass.box) return null
+    const hit = dropHit(pass.p, this.visibleOf(el, pass), pass.lifted)
+    return hit && { id: droppable.id, value: hit.value, ...HIT_KIND[hit.by] }
+  }
+
+  /**
+   * 離した所 p で落とす先を数え直す（dnd-kit は指の動きを次のコマにまとめて数えるので、離す直前に動いた分を数えていないことがある。
+   * 数えた結果を、落とす先を替えた後の描き終えるまでの間は捨てるので、通った日が落とす先のまま残ることもある）。浮いたカードの箱は、
+   * 最後に数えた所から p まで動かした所。どこにも当たらなければ null
+   */
+  targetAt(m: DragDropManager, p: Point) {
+    const op = m.dragOperation
+    const now = op.position.current
+    const shape = op.shape?.current.boundingRectangle
+    const dx = p.x - now.x
+    const dy = p.y - now.y
+    const lifted = shape
+      ? { left: shape.left + dx, top: shape.top + dy, right: shape.right + dx, bottom: shape.bottom + dy }
+      : null
+    this.at = { p, lifted }
+    this.pass = null
+    try {
+      const [first] = m.collisionObserver.computeCollisions()
+      return first ? (m.registry.droppables.get(first.id) ?? null) : null
+    } finally {
+      this.at = null
+      this.pass = null
+    }
+  }
+
+  /** その回の数え方（dnd-kit が落とす所を順に数える間は同じ物。次のマイクロタスクで捨てる） */
+  private passOf(position: Point, shape: Box | null): Pass {
+    const p = this.at?.p ?? position
+    if (this.pass && this.pass.p === p) return this.pass
+    const a = this.area()
+    const pass: Pass = {
+      p,
+      lifted: this.at ? this.at.lifted : shape && boxOf(shape),
+      box: a && inDropArea(p, a.box, a.inside, a.outer) ? a.box : null,
+      clips: new Map(),
+    }
+    this.pass = pass
+    if (!this.at) queueMicrotask(() => this.pass === pass && (this.pass = null))
+    return pass
+  }
+
+  /** 落とす所の要素の見えている所（見えている週と、切り取る祖先の中）。見えていなければ null */
+  private visibleOf(el: Element, pass: Pass): Box | null {
+    let box = pass.box && intersect(boxOf(el.getBoundingClientRect()), pass.box)
+    for (const c of this.clippersOf(el)) {
+      if (!box) return null
+      let clip = pass.clips.get(c)
+      if (!clip) pass.clips.set(c, (clip = boxOf(c.getBoundingClientRect())))
+      box = intersect(box, clip)
+    }
+    return box
+  }
+
+  private clippersOf(el: Element): Element[] {
+    let list = this.clippers.get(el)
+    if (!list) {
+      list = []
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const cs = getComputedStyle(p)
+        if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') list.push(p)
+      }
+      this.clippers.set(el, list)
+    }
+    return list
+  }
+}
+
+const DropJudgeContext = createContext<DropJudge | null>(null)
+
+/**
+ * 掴んでいる間、毎コマ落とす所を数え直す（dnd-kit は指が動いた時だけ数えるので、指を止めたまま週が替わった・段や週が自動で
+ * スクロールした時は、前の所の日が「上にある日」のまま残る。落とす先を替えた後の描き終えるまでの間に数えた結果は捨てるので、指が
+ * 止まった時に通った日の線の枠が残ることもある）。止める関数を返す
+ */
+function recountEachFrame(m: DragDropManager): () => void {
+  let id = 0
+  const frame = () => {
+    if (!m.dragOperation.status.dragging) return
+    m.collisionObserver.forceUpdate(true)
+    id = requestAnimationFrame(frame)
+  }
+  id = requestAnimationFrame(frame)
+  return () => cancelAnimationFrame(id)
+}
+
 // ---------- 入力欄のフォーカス ----------
 
 /**
@@ -176,9 +333,6 @@ function WeekSlot({ frozen, children }: { frozen: boolean; children: ReactNode }
     </FrozenWeekContext.Provider>
   )
 }
-
-/** 掴んだまま週が替わった後、落とす所を数え直すコマ数（今の週の落とす所の大きさが測られるまで。0.3秒ほど） */
-const RECOUNT_FRAMES = 20
 
 /** 掴んだ週と、その時に見ていた日 */
 interface Origin {
@@ -234,6 +388,12 @@ function EdgeCueView({ cue }: { cue: Signal<EdgeCue | null> }) {
   )
 }
 
+/** 離した所の指（マウス・指を離した出来事の所。無ければ最後に数えた所） */
+function releasePoint(event: DragEndEvent): Point {
+  const e = event.nativeEvent
+  return e instanceof MouseEvent ? { x: e.clientX, y: e.clientY } : event.operation.position.current
+}
+
 // ---------- WeekDnd ----------
 
 export interface WeekDndProps {
@@ -265,7 +425,6 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
   const origin = useRef<Origin | null>(null)
   /** 別の週へ落とした後、入れ物を片付けるのを待っている */
   const rekey = useRef(false)
-  const manager = useRef<DragDropManager | null>(null)
   // 描くたびに新しい値を置く（掴んでいる間の出来事は、その時の週・見ている日・行き来で決める）
   const latest = useRef({ week, viewed, nav, width })
   latest.current = { week, viewed, nav, width }
@@ -296,6 +455,11 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
       }),
   )
 
+  // 落とす所の当たり（指が見えている週の中か左右の帯にある時だけ。離した時は離した所で決め直す）
+  const [judge] = useState(() => new DropJudge(() => driver.area()))
+  /** 毎コマ落とす所を数え直すのを止める（掴んでいる間だけ） */
+  const stopRecount = useRef<(() => void) | null>(null)
+
   // S で、掴んだまま前の週へ移った時は、その週をいちばん下（土曜）まで送って出し、次の週へ移った時はいちばん上（日曜）から出す
   // （移った週の、元の週にいちばん近い日が見えるように。描いた後すぐ、見える前に。掴んだ週へ戻ってきた時は、掴んだ時の所のまま）（開発）
   useLayoutEffect(() => {
@@ -307,34 +471,24 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
     el.scrollTop = side < 0 ? el.scrollHeight : 0
   }, [week, scroller])
 
-  // 週が替わった: 掴んでいる間なら、落とせる日の印を今の週で付け直し、指を止めたままでも落とす所を数え直す（dnd-kit は指の位置が
-  // 変わらない間は数え直さないので、前の週の日（見えないまま残した掴んだ週の日）が「上にある日」のまま残り、そのまま離すとその日へ
-  // 落ちる。今の週の落とす所の大きさは少し後に測られるので、数コマの間数え直す）。やめて掴んだ週へ戻ってきたら、残していた掴んだ週を
-  // 今の週に戻す
+  // 週が替わった: 掴んでいる間なら、落とせる日の印を今の週で付け直す（指を止めたままでも、指の下の日は今の週の日として数え直す。
+  // 毎コマ数え直すので（recountEachFrame）、前の週の日（見えないまま残した掴んだ週の日）が「上にある日」のまま残らない）。やめて
+  // 掴んだ週へ戻ってきたら、残していた掴んだ週を今の週に戻す
   useEffect(() => {
     const data = dragging.current
     if (data) {
       store.set(activeOf(data, week))
       driver.remeasure()
-      const m = manager.current
-      let frames = 0
-      let id = 0
-      const recount = () => {
-        if (!dragging.current || !m) return
-        m.collisionObserver.forceUpdate(true)
-        if (++frames < RECOUNT_FRAMES) id = requestAnimationFrame(recount)
-      }
-      recount()
-      return () => cancelAnimationFrame(id)
+      return
     }
     if (!rekey.current && origin.current?.week.from === week.from) origin.current = null
-    return undefined
   }, [week, store, driver])
 
   // 描き終えずに外れた時（掴んだままモードを替えたなど）は止める
   useEffect(
     () => () => {
       driver.stop()
+      stopRecount.current?.()
       if (dragging.current) useCalendarUi.getState().setDragging(false)
     },
     [driver],
@@ -353,19 +507,21 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
       const data = asDragData(event.operation.source?.data)
       if (!data) return
       settleStage()
-      manager.current = m
       dragging.current = data
       const { week: shown, viewed: day } = latest.current
       origin.current = { week: data.week, viewed: day }
       useCalendarUi.getState().setDragging(true)
       store.set(activeOf(data, shown))
+      judge.begin()
+      stopRecount.current?.()
+      stopRecount.current = recountEachFrame(m)
       blurTextField()
       quickAddDragStarted()
       const activator = event.operation.activatorEvent
       if (activator instanceof PointerEvent && pointerKind(activator.pointerType) === 'touch') vibrate15()
       driver.start(event.operation.position.current)
     },
-    [store, driver, settleStage],
+    [store, driver, judge, settleStage],
   )
 
   const onDragMove = useCallback(
@@ -377,13 +533,18 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
 
   const onDragEnd = useCallback(
     (event: DragEndEvent, m: DragDropManager) => {
+      // 落とす先は、離した所の指で決め直す（dnd-kit の落とす先は、離す直前に動いた分を数えていないことがある。範囲の外（L の右の列・
+      // ヘッダーなど）で離した時は、浮いたカードが日に重なっていても落とさない。DropJudge）。見えないまま残した掴んだ週の日（止めて
+      // ある）には落とさない
+      const target = event.canceled ? null : judge.targetAt(m, releasePoint(event))
       driver.stop()
+      stopRecount.current?.()
+      stopRecount.current = null
       store.set(null)
       dragging.current = null
       useCalendarUi.getState().setDragging(false)
-      const { source, target } = event.operation
+      const { source } = event.operation
       const data = asDragData(source?.data)
-      // 見えないまま残した掴んだ週の日（止めてある）には落とさない（週が替わった直後に数え直す前に離した時）
       const drop = target && !target.disabled ? asDropData(target.data) : null
       const moved = !event.canceled && data !== null && drop !== null && applyDrop(data, drop)
       const feedback = m.registry.plugins.get(Feedback)
@@ -418,7 +579,7 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
         })
       }
     },
-    [store, driver, settleStage],
+    [store, driver, judge, settleStage],
   )
 
   const live = week
@@ -429,19 +590,21 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
   return (
     <DragDropProvider sensors={SENSORS} plugins={PLUGINS} onDragStart={onDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd}>
       <ActiveDragContext.Provider value={store}>
-        <div ref={stageEl} className="wk-stage">
-          {/* 掴んだ週（掴んだまま別の週へ移った間だけ。見えないまま残す）。入れ物の key は、掴んだ時の今の週の入れ物と同じにして、
-              掴んだカードを外さない */}
-          {frozen ? (
-            <WeekSlot key={`w${liveKey}`} frozen>
-              {renderWeek(frozen, true)}
+        <DropJudgeContext.Provider value={judge}>
+          <div ref={stageEl} className="wk-stage">
+            {/* 掴んだ週（掴んだまま別の週へ移った間だけ。見えないまま残す）。入れ物の key は、掴んだ時の今の週の入れ物と同じにして、
+                掴んだカードを外さない */}
+            {frozen ? (
+              <WeekSlot key={`w${liveKey}`} frozen>
+                {renderWeek(frozen, true)}
+              </WeekSlot>
+            ) : null}
+            <WeekSlot key={`w${frozen ? liveKey + 1 : liveKey}`} frozen={false}>
+              {renderWeek(live, false)}
             </WeekSlot>
-          ) : null}
-          <WeekSlot key={`w${frozen ? liveKey + 1 : liveKey}`} frozen={false}>
-            {renderWeek(live, false)}
-          </WeekSlot>
-          <EdgeCueView key="cue" cue={cue} />
-        </div>
+            <EdgeCueView key="cue" cue={cue} />
+          </div>
+        </DropJudgeContext.Provider>
       </ActiveDragContext.Provider>
     </DragDropProvider>
   )
@@ -475,6 +638,7 @@ export function useItemDrag({ item, handle, week }: { item: Item; handle: DragHa
  */
 export function useDayDrop({ date, kind }: { date: string; kind: ItemKind }): DayDrop {
   const store = useContext(ActiveDragContext)
+  const judge = useContext(DropJudgeContext)
   const frozen = useContext(FrozenWeekContext)
   const marked = useSyncExternalStore(
     store?.subscribe ?? noSubscribe,
@@ -489,7 +653,13 @@ export function useDayDrop({ date, kind }: { date: string; kind: ItemKind }): Da
     },
     [date, kind],
   )
-  const droppable = useDroppable({ id: dropId(date, kind), data, accept, disabled: frozen })
+  const droppable = useDroppable({
+    id: dropId(date, kind),
+    data,
+    accept,
+    disabled: frozen,
+    collisionDetector: judge?.detect,
+  })
   const hover = droppable.isDropTarget
   const ref = droppable.ref
   const state: DropState = !marked || frozen ? 'none' : hover ? 'hover' : 'ok'

@@ -10,6 +10,8 @@
 //   寄せた時に、週の外の余白（S は 25px ほど）で何も起きないことが無いように。掴んだ時から帯の中にいた時は、一度帯の外へ出てから
 //   入った時だけ数える（端の近くの物を掴んだだけで週が替わらないように）。週が横・縦にスクロールする時は、その向きにまだスクロール
 //   できる間はスクロールし、端まで来てから留まった時間を数える
+// - 落とす所の当たり: 指が見えている週の中か左右の帯にある時だけ、指の下の日（無ければ浮いたカードが重なっている日）。どちらも
+//   落とす所の見えている所だけで数える（段の中で送って隠れた所は数えない）
 // 「見えている所」は、要素の箱を画面（表示されている所）と、上に重なっている物（S・M でページを送った時のヘッダーと切り替えの列）の
 // 下で狭めた所。要素の箱のままだと、ページを送って週の上の端がヘッダーの下に入った時に上の端の 60px が指の届かない所になり、
 // 下の端は画面の下に出た分だけ狭くなる（作者が iPhone で「週が動かない」と書いた時の原因の1つ）
@@ -104,6 +106,43 @@ export function bandRect(side: Exclude<Side, 0>, box: Box, inside: number, outer
   return side < 0
     ? { left: Math.max(outer.left, screen.left), top: box.top, right: box.left + w, bottom: box.bottom }
     : { left: box.right - w, top: box.top, right: Math.min(outer.right, screen.right), bottom: box.bottom }
+}
+
+// ---------- 落とす所の当たり（離した時の指の所で決める。7.11） ----------
+
+const contains = (b: Box, p: Point): boolean => p.x >= b.left && p.x <= b.right && p.y >= b.top && p.y <= b.bottom
+const area = (b: Box): number => (b.right - b.left) * (b.bottom - b.top)
+const distance = (b: Box, p: Point): number => Math.hypot((b.left + b.right) / 2 - p.x, (b.top + b.bottom) / 2 - p.y)
+
+/**
+ * 指が、落とす所を探す範囲（見えている週の箱 box の中か、左右の帯）にあるか。帯は sideOf と同じ（週の外の余白は、縦は週の見えて
+ * いる所の高さだけ。L の右はカレンダーの領域の右の端まで）。範囲の外（L の右の列・週の上のヘッダー・週の上下の外）では、浮いた
+ * カードがどの日に重なっていても落とさない（CALENDAR-178）
+ */
+export function inDropArea(p: Point, box: Box, inside: number, outer: Outer = TO_SCREEN): boolean {
+  return contains(box, p) || sideOf(p, box, inside, outer) !== 0
+}
+
+/** 落とす所 1つへの当たり: pointer = 指がその上、overlap = 浮いたカードが重なっている。value は大きいほど強い */
+export interface DropHit {
+  by: 'pointer' | 'overlap'
+  value: number
+}
+
+/**
+ * 落とす所 1つ（その日・その区分）への当たり（指 p が落とす所を探す範囲の中の時に使う。inDropArea）。rect はその落とす所の見えて
+ * いる所（段・週の中のスクロールと、見えている週で狭めた所。見えていなければ null）で、隠れた所（段の中で送って、日の見出しの下や
+ * 下の段の所へ出ている所）は数えない。lifted は浮いたカードの箱（測れない時は null）。
+ * 指が rect の上なら pointer（真ん中に近いほど強い）、そうでなければ浮いたカードとの重なり（重なりの割合が大きく、真ん中が指に
+ * 近いほど強い）。dnd-kit の初めの決め方（pointerIntersection・shapeIntersection）と同じ強さ
+ */
+export function dropHit(p: Point, rect: Box | null, lifted: Box | null): DropHit | null {
+  if (!rect) return null
+  if (contains(rect, p)) return { by: 'pointer', value: 1 / distance(rect, p) }
+  const shared = lifted && intersect(lifted, rect)
+  if (!lifted || !shared) return null
+  const overlap = area(shared)
+  return { by: 'overlap', value: overlap / (area(lifted) + area(rect) - overlap) / distance(rect, p) }
 }
 
 /** 目印の帯の字の所: 浮いたカードのすぐ上（字の入る所が上に無い時はすぐ下）。指とカードで隠れないように */
