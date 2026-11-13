@@ -1,12 +1,13 @@
 // 移った先・押した区切りを目立たせる（useFlashTarget。4.9・FRAME-231・236・D32）。偽の時計で、枠（.flash）の付け外しを確かめる
-import { act, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { T0 } from '../../../../domain/testData'
 import { useCalendarUi } from '../../../../store/uiStore'
 import { FLASH_MS } from '../../../../ui/motion'
-import { scrollIntoViewWithin } from '../../../../ui/scrollWithin'
+import { scrollIntoViewWithin, toastInset } from '../../../../ui/scrollWithin'
 import { renderView, setupCalendarTests } from '../../../../test/renderCalendar'
-import { FLASH_STALE_MS, flashKey, useFlashTarget } from './useFlashTarget'
+import { FLASH_STALE_MS, flashKey, flashTargetsOf, useFlashTarget } from './useFlashTarget'
 
 // 見える所まで動かすのは src/ui/scrollWithin.ts（中身はそのまま動かし、呼ばれた物を見る）
 vi.mock('../../../../ui/scrollWithin', { spy: true })
@@ -43,6 +44,53 @@ describe('キー', () => {
     expect(flashKey.item('a1')).toBe('item:a1')
     expect(flashKey.dayArea('work')).toBe('day-area:work')
     expect(flashKey.dayEvents('private')).toBe('day-events:private')
+    expect(flashKey.dayHead('2026-11-12')).toBe('day-head:2026-11-12')
+  })
+})
+
+describe('今出ている目立たせる所（flashTargetsOf。戻した・やり直した予定が見えているかを見る。7.13・■26）', () => {
+  /** 2つのフックを1つの要素に付ける（デイリーのタイムスケジュールの予定の枠と同じ形） */
+  function Two({ show = true, second = flashKey.dayEvents('work') }: { show?: boolean; second?: string }) {
+    const a = useFlashTarget<HTMLDivElement>(flashKey.item('a'), { scroll: true })
+    const b = useFlashTarget<HTMLDivElement>(second)
+    const ref = (el: HTMLDivElement | null) => {
+      a(el)
+      b(el)
+    }
+    return show ? <div ref={ref} data-testid="box" /> : null
+  }
+
+  it('キーごとに、今出ている要素を返す（1つの要素に2つのキーでも）。外れると返さない', async () => {
+    const { setProps } = await renderView(Two, {})
+    expect(flashTargetsOf(flashKey.item('a'))).toEqual([box()])
+    expect(flashTargetsOf(flashKey.dayEvents('work'))).toEqual([box()])
+    expect(flashTargetsOf(flashKey.item('b'))).toEqual([])
+    // キーが替わった
+    setProps({ second: flashKey.dayEvents('private') })
+    expect(flashTargetsOf(flashKey.dayEvents('work'))).toEqual([])
+    expect(flashTargetsOf(flashKey.dayEvents('private'))).toEqual([box()])
+    setProps({ show: false })
+    expect(flashTargetsOf(flashKey.item('a'))).toEqual([])
+    expect(flashTargetsOf(flashKey.dayEvents('private'))).toEqual([])
+  })
+
+  it('目立たせている間にキーが替わって合わなくなった時（デイリーの見出しが次の日になった）は、枠をすぐ外し、付け直さない', async () => {
+    const { setProps } = await renderView<BoxProps>(Box, { keys: flashKey.dayHead('2026-11-12') })
+    target(flashKey.dayHead('2026-11-12'))
+    expect(flashed()).toBe(true)
+    setProps({ keys: flashKey.dayHead('2026-11-13') })
+    expect(flashed()).toBe(false)
+    setProps({ keys: flashKey.dayHead('2026-11-13'), className: 'card is-done' })
+    expect(flashed()).toBe(false)
+    // 合ったままのキー（同じキーを含む）なら外さない
+    target(flashKey.dayHead('2026-11-13'))
+    setProps({ keys: [flashKey.dayHead('2026-11-13'), flashKey.item('a')] })
+    expect(flashed()).toBe(true)
+  })
+
+  it('キーが無い（null）要素は数えない', async () => {
+    await renderView<BoxProps>(Box, { keys: null })
+    expect(flashTargetsOf(flashKey.item('a'))).toEqual([])
   })
 })
 
@@ -126,6 +174,45 @@ describe('描き直し・出る順', () => {
     expect(flashed()).toBe(true)
   })
 
+  it('StrictMode（開発の画面・E2E）でも、キーを置いた後に出た要素の枠は 1.2秒で終わり、後の描き直しで付け直さない', () => {
+    // StrictMode は出した部品を一度外して出し直す（後始末を走らせる）。後始末で付け直す間の終わりを捨てると、付け直し続けていた
+    function Host({ show, className }: { show: boolean; className: string }) {
+      // 部品ごと後から出す（ドラッグで落とした日に新しく出たカードと同じ）
+      return <StrictMode>{show ? <Box keys={flashKey.item('new')} className={className} /> : null}</StrictMode>
+    }
+    const { rerender } = render(<Host show={false} className="card" />)
+    target(flashKey.item('new'))
+    act(() => vi.advanceTimersByTime(100))
+    rerender(<Host show className="card" />)
+    expect(flashed()).toBe(true)
+    act(() => vi.advanceTimersByTime(5000))
+    expect(flashed()).toBe(false)
+    rerender(<Host show className="card" />)
+    expect(flashed()).toBe(false)
+    rerender(<Host show className="card is-done" />)
+    expect(flashed()).toBe(false)
+  })
+
+  it('StrictMode でも、出ている要素の枠は 1.2秒で終わる', () => {
+    function Host({ className }: { className: string }) {
+      return (
+        <StrictMode>
+          <Box keys={flashKey.item('a')} className={className} />
+        </StrictMode>
+      )
+    }
+    const { rerender } = render(<Host className="card" />)
+    target(flashKey.item('a'))
+    expect(flashed()).toBe(true)
+    act(() => vi.advanceTimersByTime(300))
+    // 目立たせている間の描き直しでは付け直す
+    rerender(<Host className="card is-done" />)
+    expect(flashed()).toBe(true)
+    act(() => vi.advanceTimersByTime(5000))
+    rerender(<Host className="card" />)
+    expect(flashed()).toBe(false)
+  })
+
   it('目立たせた 1.2秒の後はキーを消す（開き直してももう一度は目立たせない）', async () => {
     const { setProps } = await renderView<BoxProps>(Box, { keys: flashKey.item('a') })
     target(flashKey.item('a'))
@@ -164,6 +251,15 @@ describe('見える所まで動かす（scroll）', () => {
     vi.mocked(scrollIntoViewWithin).mockClear()
     target(flashKey.item('a'))
     expect(scrollIntoViewWithin).toHaveBeenCalledWith(box(), { behavior })
+  })
+
+  it('画面の下のお知らせと横に重なる時は、その上の端から 8px 上まで出す（toastInset。戻した・やり直したお知らせ・登録。4.9）', async () => {
+    await renderView<BoxProps>(Box, { keys: flashKey.item('a'), scroll: true })
+    vi.mocked(scrollIntoViewWithin).mockClear()
+    vi.mocked(toastInset).mockReturnValueOnce(75)
+    target(flashKey.item('a'))
+    expect(toastInset).toHaveBeenCalledWith(box())
+    expect(scrollIntoViewWithin).toHaveBeenCalledWith(box(), { behavior: 'smooth', bottomInset: 75 })
   })
 
   it('動かすのはカレンダーの中のスクロールだけで、ページ（window）と scrollIntoView は使わない（S・M でページが動かないように。G4）', async () => {

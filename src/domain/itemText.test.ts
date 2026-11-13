@@ -2,9 +2,20 @@
 // デイリーのリストの右の端、list 生まれの4つの文、お知らせの文、マスと丸の読み上げ
 import { describe, expect, it } from 'vitest'
 import { calendarItems, type CalItem } from './calendar'
-import { doneLabel, listStatusLine, listTail, monthCellLabel, monthCountLabel, timeLabel, toastText } from './itemText'
+import {
+  doneLabel,
+  listStatusLine,
+  listTail,
+  monthCellLabel,
+  monthCountLabel,
+  timeLabel,
+  toastText,
+  undoDoneText,
+  undoText,
+} from './itemText'
 import { mkItem, mkTask } from './testData'
 import type { Item } from './types'
+import type { UndoStep } from './undo'
 
 /** 1件のカレンダーの項目 */
 const one = (p: Partial<Item>): CalItem => {
@@ -133,6 +144,79 @@ describe('お知らせの文（3.9・7.11・12.1・12.5・12.7・12.8・6.3）',
     expect(toastText.duplicated(null)).toBe('Task List に複製しました')
     expect(toastText.deleted('見積書を出す')).toBe('『見積書を出す』を削除しました')
     expect(toastText.relisted).toBe('カレンダーから外れたので Task List に戻しました')
+  })
+})
+
+describe('元に戻す・やり直すのお知らせ（ボタン・キーで戻した時。7.13・■26）', () => {
+  const meeting = (p: Partial<Item> = {}) => mkItem({ id: 'a', title: '打ち合わせ', ...p })
+  const step = (label: string, before: Item | null, after: Item | null): UndoStep => ({
+    id: 1,
+    label,
+    changes: [{ table: 'items', id: 'a', before, after, entry: before && after ? null : 'e1' }],
+  })
+
+  it('移した: 戻すと「元に戻しました：『打ち合わせ』を移した（11/14（土）→ 11/12（木））」。やり直すは逆向き', () => {
+    // 11/12 → 11/14 へ動かした操作
+    const s = step(undoText.moved('打ち合わせ'), meeting({ start: '2026-11-12' }), meeting({ start: '2026-11-14' }))
+    expect(undoDoneText('undo', s)).toBe('元に戻しました：『打ち合わせ』を移した（11/14（土）→ 11/12（木））')
+    expect(undoDoneText('redo', s)).toBe('やり直しました：『打ち合わせ』を移した（11/12（木）→ 11/14（土））')
+  })
+
+  it('複数日の始点・終点を動かした時は、動いた方の日', () => {
+    const start = step(
+      undoText.moved('出張'),
+      meeting({ title: '出張', start: '2026-11-10', due: '2026-11-14' }),
+      meeting({ title: '出張', start: '2026-11-12', due: '2026-11-14' }),
+    )
+    expect(undoDoneText('undo', start)).toBe('元に戻しました：『出張』を移した（11/12（木）→ 11/10（火））')
+    const end = step(
+      undoText.moved('出張'),
+      meeting({ title: '出張', start: '2026-11-10', due: '2026-11-14' }),
+      meeting({ title: '出張', start: '2026-11-10', due: '2026-11-17' }),
+    )
+    expect(undoDoneText('redo', end)).toBe('やり直しました：『出張』を移した（11/14（土）→ 11/17（火））')
+  })
+
+  it('完了にした・完了を外した（日付は添えない）', () => {
+    const done = step(undoText.done('打ち合わせ', true), meeting(), meeting({ done: true }))
+    expect(undoDoneText('undo', done)).toBe('元に戻しました：『打ち合わせ』を完了にした')
+    expect(undoDoneText('redo', done)).toBe('やり直しました：『打ち合わせ』を完了にした')
+    const undone = step(undoText.done('打ち合わせ', false), meeting({ done: true }), meeting())
+    expect(undoDoneText('undo', undone)).toBe('元に戻しました：『打ち合わせ』の完了を外した')
+  })
+
+  it('足した・登録した・複製した: 名前だけ（ゴミ箱の添え書きは削除だけ。すばやく足すを戻すと字は入力欄に戻るので、字がゴミ箱へ行ったように読ませない）', () => {
+    for (const label of [undoText.added('花を買う'), undoText.registered('花を買う'), undoText.duplicated('花を買う')]) {
+      const s = step(label, null, meeting({ title: '花を買う' }))
+      expect(undoDoneText('undo', s)).toBe(`元に戻しました：${label}`)
+      expect(undoDoneText('redo', s)).toBe(`やり直しました：${label}`)
+    }
+    expect(undoDoneText('undo', step(undoText.added('花を買う'), null, meeting()))).toBe('元に戻しました：『花を買う』を足した')
+  })
+
+  it('削除した: 戻すと（ゴミ箱から戻した）、やり直すと（ゴミ箱へ）', () => {
+    const s = step(undoText.deleted('打ち合わせ'), meeting(), null)
+    expect(undoDoneText('undo', s)).toBe('元に戻しました：『打ち合わせ』を削除した（ゴミ箱から戻した）')
+    expect(undoDoneText('redo', s)).toBe('やり直しました：『打ち合わせ』を削除した（ゴミ箱へ）')
+  })
+
+  it('休みを付けた・外した（日付はボタンの名前に入っている）', () => {
+    const on: UndoStep = {
+      id: 1,
+      label: undoText.off('2026-11-12', true),
+      changes: [{ table: 'offDays', id: '2026-11-12', before: false, after: true }],
+    }
+    expect(undoDoneText('undo', on)).toBe('元に戻しました：11/12（木）を休みにした')
+    expect(undoDoneText('redo', on)).toBe('やり直しました：11/12（木）を休みにした')
+    const off: UndoStep = { ...on, label: undoText.off('2026-11-12', false) }
+    expect(undoDoneText('undo', off)).toBe('元に戻しました：11/12（木）の休みを外した')
+  })
+
+  it('詳細で直した: 日付が変わった時はその日も添え、変わらない時は添えない', () => {
+    const moved = step(undoText.edited('打ち合わせ'), meeting({ start: '2026-11-10' }), meeting({ start: '2026-11-11' }))
+    expect(undoDoneText('undo', moved)).toBe('元に戻しました：『打ち合わせ』を直した（11/11（水）→ 11/10（火））')
+    const titled = step(undoText.edited('打ち合わせ（本社）'), meeting(), meeting({ title: '打ち合わせ（本社）' }))
+    expect(undoDoneText('redo', titled)).toBe('やり直しました：『打ち合わせ（本社）』を直した')
   })
 })
 

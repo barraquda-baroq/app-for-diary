@@ -1342,6 +1342,9 @@ h4 {
 
 /* 文の中の改行は行を分ける（「もう一度［戻る］を押すと閉じます」に添える同期していない変更の1行。docs/SPEC.md の 3.1） */
 .toast p {
+  /* 長い文の終わりの1〜2字だけを次の行に送らない（日本語は文節の切れ目で折り返す。対応していない端末はふつうの折り返し。3.9） */
+  text-wrap: pretty;
+  word-break: auto-phrase;
   margin: 0;
   flex: 1;
   white-space: pre-line;

@@ -1,7 +1,7 @@
 // 要素を、それを入れたスクロールする所の中だけで見える所まで出す（scrollIntoViewWithin。ページは動かさない。WP11s の G4・7.11・
 // CALENDAR-181）。jsdom は大きさを測らないので、箱の位置・大きさ・スクロールの量を決めて確かめる
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nearestDelta, scrollIntoViewWithin, toastInset } from './scrollWithin'
+import { isShownWithin, nearestDelta, scrollIntoViewWithin, toastInset } from './scrollWithin'
 
 /** 箱の位置と大きさ（rect は [left, top, width, height]。client・scroll は [幅, 高さ]。無ければ rect と同じ） */
 interface Geom {
@@ -383,5 +383,53 @@ describe('画面の下のお知らせの上に出す（bottomInset・toastInset�
     geom(box, { rect: [12, 772, 388, 51] })
     box.replaceChildren()
     expect(toastInset(card)).toBe(0)
+  })
+})
+
+// 戻した・やり直した予定が見えているか（［見る］を付けるか。7.13・■26）。scrollIntoViewWithin が動かさない（もう見える所に入っている）
+// 時を「見えている」とする
+describe('isShownWithin（見えているか）', () => {
+  /** S の週（画面 412×839 の 214〜844。下の 5px は画面の外）> カード */
+  function weekWith(card: [number, number, number, number], at = 0) {
+    const week = div(document.body, { overflowY: 'auto' })
+    geom(week, { rect: [16, 214, 380, 630], scroll: [380, 1460], at: { top: at } })
+    const el = div(week)
+    geom(el, { rect: card })
+    return el
+  }
+
+  it('箱の見える所に全部入っていれば見えている', () => {
+    expect(isShownWithin(weekWith([20, 300, 170, 44]))).toBe(true)
+  })
+
+  it('箱のスクロールの外（下・上）は見えていない。少しでも切れていれば見えていない（［見る］で全部出す）', () => {
+    expect(isShownWithin(weekWith([20, 900, 170, 44]))).toBe(false)
+    expect(isShownWithin(weekWith([20, 150, 170, 44]))).toBe(false)
+    expect(isShownWithin(weekWith([20, 820, 170, 44]))).toBe(false)
+  })
+
+  it('画面の外に出た所は見えていない（週の下の端が画面の下に出ている時）', () => {
+    expect(isShownWithin(weekWith([20, 800, 170, 44]))).toBe(false)
+    expect(isShownWithin(weekWith([20, 790, 170, 44]))).toBe(true)
+  })
+
+  it('見える所より大きくて両側にはみ出している物は見えている（送っても変わらない）', () => {
+    expect(isShownWithin(weekWith([20, 200, 170, 700]))).toBe(true)
+  })
+
+  it('スクロールしない箱の中でも、画面の外にあれば見えていない（S・M でページを下のリストまで送っている時）', () => {
+    const el = div(document.body)
+    geom(el, { rect: [20, 900, 170, 44] })
+    expect(isShownWithin(el)).toBe(false)
+    geom(el, { rect: [20, -60, 170, 44] })
+    expect(isShownWithin(el)).toBe(false)
+    geom(el, { rect: [20, 100, 170, 44] })
+    expect(isShownWithin(el)).toBe(true)
+  })
+
+  it('外れている要素は見えていない', () => {
+    const el = document.createElement('div')
+    expect(isShownWithin(el)).toBe(false)
+    expect(isShownWithin(null)).toBe(false)
   })
 })

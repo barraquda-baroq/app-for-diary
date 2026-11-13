@@ -319,8 +319,8 @@ describe('予定の枠の中の並び（11.3。狭い枠は dayModel.ts の fitB
 })
 
 describe('目立たせる所（4.9・useFlashTarget）', () => {
-  it('区切り・行・予定の枠・開始のカードには outline・animation を付けない（.flash の枠が隠れる）', () => {
-    const targets = ['.dy-area', '.dy-row', '.dy-event', '.dy-start', '.dy-box', '.dy-piece']
+  it('区切り・行・予定の枠・開始のカード・「+n」の札には outline・animation を付けない（.flash の枠が隠れる）', () => {
+    const targets = ['.dy-area', '.dy-row', '.dy-event', '.dy-start', '.dy-box', '.dy-piece', '.dy-more']
     for (const r of DAY_RULES) {
       if (/:focus|::after|::before/.test(r.selector)) continue
       const hits = r.selector.split(',').some((s) => targets.some((t) => s.trim().split(/\s+/).at(-1)?.startsWith(t)))

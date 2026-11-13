@@ -153,7 +153,7 @@ export function CalendarToolbar({
             <ListCheckIcon />
             <span className="hide-mobile">Task View</span>
           </button>
-          <UndoButtons hidden={!SHOWN.undo.includes(mode)} />
+          <UndoButtons mode={mode} viewed={viewed} hidden={!SHOWN.undo.includes(mode)} />
         </div>
       </div>
     </div>
