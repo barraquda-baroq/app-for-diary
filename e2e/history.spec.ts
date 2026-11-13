@@ -600,6 +600,13 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     await expect(armedToast(page)).toBeVisible({ timeout: 800 })
     await historySettled(page)
     expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
+    // 押すと（指を離すと）元の所へ戻り、お知らせも消える（■25 の所と同じ。お知らせの 4秒より前に）。次の「戻る」はまた聞く
+    await page.getByTestId('app-header').tap()
+    await expect(armedToast(page)).toHaveCount(0, { timeout: 1000 })
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false })
+    await goBack(page)
+    await expect(closeDialog(page)).toBeVisible()
   })
 
   test('登録の画面の左の端からの身振りを止める試し（touch-action。3.1・■27）は iPhone・iPad だけ: Android の登録の画面には付けない', async ({

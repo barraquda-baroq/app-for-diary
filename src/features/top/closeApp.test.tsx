@@ -11,12 +11,12 @@ import { useSync } from '../../sync/controller'
 import type { SyncStatus } from '../../sync/engine'
 import { confirmDialog, DialogHost, hasOpenDialog } from '../../ui/dialogs'
 
-const leaveApp = vi.fn<() => Promise<'left' | 'armed' | 'stayed'>>()
+const leaveApp = vi.fn<(onArmEnd?: () => void) => Promise<'left' | 'armed' | 'stayed'>>()
 const armExitApp = vi.fn<(ms: number, onEnd: () => void) => Promise<boolean>>()
 const saveBeforeLeave = vi.fn<() => Promise<boolean>>()
 
 vi.mock('../../history/appHistory', () => ({
-  leaveApp: () => leaveApp(),
+  leaveApp: (onArmEnd?: () => void) => leaveApp(onArmEnd),
   armExitApp: (ms: number, onEnd: () => void) => armExitApp(ms, onEnd),
 }))
 vi.mock('../../store/lifecycle', () => ({ saveBeforeLeave: () => saveBeforeLeave() }))
@@ -123,6 +123,29 @@ describe('閉じるかの確かめ', () => {
     expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['もう一度［戻る］を押すと閉じます'])
     expect(leaveNotice('stayed')).toContain('タブ・ウインドウを閉じてください')
     expect(leaveNotice('left')).toBeNull()
+  })
+
+  it('前が無いタブで閉じられず「もう一度［戻る］を押すと閉じます」にした時は、その所が終わった時（押した・長押しした・時間ではない）にお知らせも消す。出す前に終わっていたら出さない', async () => {
+    let end: (() => void) | undefined
+    leaveApp.mockImplementation(async (onArmEnd) => {
+      end = onArmEnd
+      return 'armed'
+    })
+    const first = await ask()
+    await userEvent.setup().click(screen.getByTestId(CLOSE_TEST_IDS.close))
+    await first.done
+    expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['もう一度［戻る］を押すと閉じます'])
+    act(() => end?.())
+    expect(useToasts.getState().toasts).toEqual([])
+    // 出す前に終わっていた
+    leaveApp.mockImplementation(async (onArmEnd) => {
+      onArmEnd?.()
+      return 'armed'
+    })
+    const second = await ask()
+    await userEvent.setup().click(screen.getByTestId(CLOSE_TEST_IDS.close))
+    await second.done
+    expect(useToasts.getState().toasts).toEqual([])
   })
 
   it('端末に保存できなかった時は閉じない', async () => {

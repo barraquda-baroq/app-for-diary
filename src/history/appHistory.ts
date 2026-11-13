@@ -473,9 +473,12 @@ export class AppHistory implements RouterHistory {
     })
   }
 
-  /** アプリを閉じる（「Diary Studio を閉じますか？」の［閉じる］） */
-  leave(): Promise<LeaveResult> {
-    return new Promise((resolve) => this.run(() => this.doLeave().then(resolve)))
+  /**
+   * アプリを閉じる（「Diary Studio を閉じますか？」の［閉じる］）。閉じられずに、もう一度［戻る］で閉じる所にした時（'armed'）は、その所が
+   * 終わった時（押し終えた・長押し・ほかの「戻る」「進む」など。armExit と同じ。時間の限りは無い）に onArmEnd を呼ぶ
+   */
+  leave(onArmEnd?: () => void): Promise<LeaveResult> {
+    return new Promise((resolve) => this.run(() => this.doLeave(onArmEnd).then(resolve)))
   }
 
   /**
@@ -1294,7 +1297,7 @@ export class AppHistory implements RouterHistory {
     if (from !== 'calendar' && this.base !== null && this.cur === this.base) this.markStale()
   }
 
-  private async doLeave(): Promise<LeaveResult> {
+  private async doLeave(onArmEnd?: () => void): Promise<LeaveResult> {
     await this.untilFree()
     const gen = ++this.leaveGen
     const outside = this.outsideGen
@@ -1326,7 +1329,10 @@ export class AppHistory implements RouterHistory {
     if (this.opts.armOnLeaveFail && outside === this.outsideGen) {
       await this.travelTo(0)
       this.exitArmed = this.cur === 0 && this.cur !== this.shownIdx
-      if (this.exitArmed) return 'armed'
+      if (this.exitArmed) {
+        this.armEnd = onArmEnd ?? null
+        return 'armed'
+      }
     }
     // 待つ間に来た「戻る」「進む」で動いていたら、出していた所へ戻る
     if (this.cur !== this.shownIdx) await this.travelTo(this.shownIdx)
@@ -1607,9 +1613,12 @@ export function setHistoryHandler<K extends keyof HistoryHandlers>(key: K, handl
   }
 }
 
-/** アプリを閉じる（アプリの履歴が無い時（テストのメモリーのルーター）は離れない） */
-export function leaveApp(): Promise<LeaveResult> {
-  return current ? current.leave() : Promise.resolve('stayed')
+/**
+ * アプリを閉じる（アプリの履歴が無い時（テストのメモリーのルーター）は離れない）。もう一度［戻る］で閉じる所にした時は、その所が終わった
+ * 時に onArmEnd を呼ぶ（AppHistory.leave）
+ */
+export function leaveApp(onArmEnd?: () => void): Promise<LeaveResult> {
+  return current ? current.leave(onArmEnd) : Promise.resolve('stayed')
 }
 
 /** もう一度［戻る］で閉じる所にする（AppHistory.armExit。アプリの履歴が無い時は false） */

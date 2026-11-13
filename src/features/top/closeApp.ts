@@ -102,8 +102,17 @@ export async function askToCloseApp(): Promise<void> {
     notifyError(SAVE_FAILED)
     return
   }
-  const notice = leaveNotice(await leaveApp())
-  if (notice) notify(notice)
+  // 閉じられずに、もう一度［戻る］で閉じる所にした時（前が無い Android のタブ）は、その所が終わった時（押した・長押しした）にお知らせも
+  // 消す（■25 の所と同じ。この所には時間の限りが無く、お知らせはふつうの長さで消える）。出す前に終わっていたら出さない
+  let toast: number | null = null
+  let ended = false
+  const result = await leaveApp(() => {
+    ended = true
+    if (toast !== null) useToasts.getState().dismiss(toast)
+  })
+  const notice = leaveNotice(result)
+  if (!notice || (result === 'armed' && ended)) return
+  toast = notify(notice)
 }
 
 /**
