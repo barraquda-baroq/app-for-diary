@@ -4,7 +4,7 @@
 // 時だけ、端末に保存してあって次に開いた時に送ることを1行で添える。［閉じる］で、書きかけを端末に保存してからアプリの履歴の前へ戻る
 // （src/history/appHistory.ts の leave。閉じられなかった時はお知らせで言う）。聞いている間にもう一度「戻る」が来たら、聞くのをやめる
 // （Android の戻るでダイアログを閉じるのと同じ）。ほかのダイアログが開いている時の「戻る」も、聞かずにそのダイアログを閉じる
-// （consumeBackPress。どの画面でも、iPhone の端からのフリックでも同じ。ドラッグの途中（掴んでから離すまで）の「戻る」は何もしない）。
+// （consumeBackPress。どの画面でも、iPhone の端からのフリックでも同じ。掴んでいる間（掴んでから離すまで）の「戻る」は何もしない）。
 // 確かめのフォーカスは［キャンセル］に置き、題の列の［×］も「キャンセル」と読む（［閉じる］が2つにならないように。開発）
 import { leaveApp, type LeaveResult } from '../../history/appHistory'
 import { saveBeforeLeave } from '../../store/lifecycle'
@@ -40,9 +40,9 @@ let asking = false
 
 /**
  * 「戻る」「進む」（iPhone の端からのフリックも）が来た時に、画面を動かす前に片付ける（src/history/appHistory.ts の consumePop）:
- * 確かめのダイアログが開いていれば、それだけを閉じる（キャンセル。その下の詳細の画面などは閉じない）。ドラッグの途中（掴んでから
+ * 確かめのダイアログが開いていれば、それだけを閉じる（キャンセル。その下の詳細の画面などは閉じない）。掴んでいる間（掴んでから
  * 離すまで。WeekDnd の dragging）は何もしない。離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印
- * data-dnd-dragging はまだ残る。pageTurnDom の dragActive）は、もうドラッグの途中ではない（3.1）。片付けた時 true
+ * data-dnd-dragging はまだ残る。pageTurnDom の dragActive）は、もう掴んでいないので、ふつうに扱う（3.1）。片付けた時 true
  */
 export function consumeBackPress(): boolean {
   if (hasOpenDialog()) {

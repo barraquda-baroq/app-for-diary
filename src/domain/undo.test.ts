@@ -14,6 +14,7 @@ import {
   nextRedo,
   nextUndo,
   placeOf,
+  touchedAfter,
   pushStep,
   sessionStep,
   settleStep,
@@ -224,6 +225,16 @@ describe('お知らせの［元に戻す］で、いちばん新しくないス�
     expect(laterDependents([s2, s1], s2).map((s) => s.id)).toEqual([1])
     expect(laterDependents([s2, s1], s1)).toEqual([])
     expect(laterDependents([s2], s1)).toEqual([])
+  })
+
+  it('並びに無いステップより後に積んだ（番号の大きい）、同じ記録に触れるステップが、戻せる物かやり直せる物にあるか（touchedAfter）', () => {
+    const detached = moveA(2, '2026-11-10', '2026-11-12')
+    const before1 = moveA(1, '2026-11-08', '2026-11-10')
+    const later = moveA(4, '2026-11-12', '2026-11-13')
+    expect(touchedAfter({ past: [before1, doneB], future: [] }, detached)).toBe(false)
+    expect(touchedAfter({ past: [before1, later], future: [] }, detached)).toBe(true)
+    expect(touchedAfter({ past: [before1], future: [later] }, detached)).toBe(true)
+    expect(touchedAfter(emptyUndoStack(), detached)).toBe(false)
   })
 
   it('後のステップを戻した後の記録と比べる: 2回動かした予定の1回目は、2回目を戻せば戻せる', () => {

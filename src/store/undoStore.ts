@@ -5,10 +5,12 @@
 //   （enterUndoScope。年・月を出している間・設定などでした操作は積まない）。年・月へ替えても並びは消さない（■24 で作者「承諾」）
 // - 画面が操作の後に recordStep で積む（前・後の記録を渡す）。お知らせの［元に戻す］も同じステップを戻す（undoStep。後で同じ記録に
 //   触れた操作があれば、それも新しい方から先に戻す）。ボタンで戻したステップのお知らせは消す。積まなかった操作（年・月の画面など）の
-//   お知らせの［元に戻す］も、同じ確かめで戻す（並びには入れない。並びの中の後の操作は一緒に戻さないので、後で同じ記録に触れて
-//   いれば断る）
+//   お知らせの［元に戻す］も、同じ確かめで戻す（並びには入れない。並びの中の後の操作は一緒に戻さないので、後で同じ記録に触れた
+//   操作が並びにあれば断る）
 // - 詳細の画面は、開いてから閉じるまでに直した所を1つにまとめる（beginItemSession。中で複製・削除をした時は、その前までをまとめて
-//   先に積む。削除はゴミ箱へ移す前に flushItemSession。まとめは操作より前の番号にする（番号も並びの順））
+//   先に積む。削除は holdItemSession で、ゴミ箱へ移せた時だけ。まとめは操作の前に積み、番号も前にする（番号は積んだ順。並びの順は
+//   後で番号と違うことがある: お知らせで戻してやり直した物は後ろへ移るので、後の操作は並びの順で探す。src/domain/undo.ts の
+//   laterDependents））
 // - 戻す・やり直すは1つずつ順に当てる（続けて押した分は待って順に。ゴミ箱の出し入れは保存を待つ）。ほかの所で直されていたら
 //   当てずに「ほかの所で直されたので戻せません」と出し、そのステップを捨てる
 import { create } from 'zustand'
@@ -117,7 +119,7 @@ export function recordStep(label: string, changes: U.UndoChange[], stepHooks?: S
   changes = changes.filter((c) => !U.isNoopChange(c))
   if (changes.length === 0) return null
   if (scope > 0) {
-    // 開いている詳細の画面のまとめを先に積む（番号を取る前に。番号が並びの順になるように）
+    // 開いている詳細の画面のまとめを先に積む（番号を取る前に。まとめの番号を、この操作より前にする: 番号は積んだ順）
     for (const [id, s] of sessions) {
       const ch = changes.find((c): c is U.ItemChange => c.table === 'items' && c.id === id)
       if (ch) {
@@ -164,12 +166,24 @@ export function notifyUndoable(message: string, step: U.UndoStep | null): void {
 }
 
 /**
- * 開いている詳細の画面（予定の id）で、今までに直した所を1つにまとめて今積む（開いたまま。この後に直した所は、閉じた時に別の1つ）。
- * 中で削除する時に、ゴミ箱へ移す前に呼ぶ（移すと詳細の画面はすぐ閉じ、閉じた時には予定が無いので、まとめを積めない）。開いて
- * いなければ何もしない
+ * 開いている詳細の画面（予定の id）の中で削除する時に、ゴミ箱へ移す前に呼ぶ: 今までに直した所のまとめを取っておき、返す関数で
+ * 1つにまとめて積む（移せた時に、削除のステップより前に呼ぶ。移すと詳細の画面はすぐ閉じ、閉じた時には予定が無いので、まとめを
+ * 積めない）。移せなかった時は呼ばない（まとめは分けずに開いたまま続き、閉じた時に1つ。7.13）。開いていなければ何もしない
  */
-export function flushItemSession(id: ID): void {
-  flushSession(id, getData().items[id] ?? null)
+export function holdItemSession(id: ID): () => void {
+  const s = sessions.get(id)
+  if (!s) return () => {}
+  const base = s.base
+  const cur = getData().items[id] ?? null
+  return () => {
+    const step = cur ? U.sessionStep(seq + 1, undoText.edited(cur.title), base, cur) : null
+    if (step) {
+      seq += 1
+      push(step)
+    }
+    // まだ開いていれば（閉じる前）、ここからまとめ直す（削除のステップを積む時・閉じた時に、同じ所を2回積まない）
+    if (sessions.get(id) === s) s.base = cur
+  }
 }
 
 /**
@@ -282,11 +296,12 @@ function undoableStep(stepId: number): U.UndoStep | null {
  * お知らせの［元に戻す］: そのステップの前の形へ。後で同じ記録に触れた操作があれば（並びの中の物）、それを新しい方から先に戻す
  * （どれもやり直せる物になり、やり直すで古い方から順にまたできる）。開いている詳細の画面でその記録を直していれば、それを先に
  * 1つにまとめて積む。当てる前に、続けて戻せるかを確かめ（chainConflict）、ほかの所で直されていれば何も戻さずに断る。積まなかった
- * ステップは、後の物を一緒に戻さない（戻した後に、やり直す物が無いので。laterDependents）: 後で同じ記録に触れていれば断る
+ * ステップは undoDetached
  */
 async function undoWithLater(stepId: number): Promise<boolean> {
   const step = undoableStep(stepId)
   if (!step) return false
+  if (U.placeOf(stackNow(), stepId) !== 'past') return undoDetached(step)
   const touched = new Set([step, ...U.laterDependents(stackNow().past, step)].flatMap(U.itemIdsOf))
   for (const id of touched) if (sessions.has(id)) flushSession(id, getData().items[id] ?? null)
   const later = U.laterDependents(stackNow().past, step)
@@ -297,6 +312,20 @@ async function undoWithLater(stepId: number): Promise<boolean> {
   }
   for (const s of later) if (!(await apply('undo', () => (U.placeOf(stackNow(), s.id) === 'past' ? s : null)))) return false
   return apply('undo', () => undoableStep(stepId))
+}
+
+/**
+ * 積まなかったステップ（年・月の画面でした操作など）を戻す: 並びの中の後の操作は一緒に戻さない（戻すと、並びに無いこのステップを
+ * 先にやり直せないので、後の操作をやり直せなくなる）。後で同じ記録に触れた操作が並び（戻せる物・やり直せる物）にあれば、中身が
+ * 合っても断る（touchedAfter。その操作は並びに残り、ボタンでふつうに戻す・やり直せる）。開いている詳細の画面のまとめは積まない
+ * （直していれば記録の中身が合わないので、当てる前の確かめで断る。まとめは分けずに、閉じた時に1つ）
+ */
+async function undoDetached(step: U.UndoStep): Promise<boolean> {
+  if (U.touchedAfter(stackNow(), step)) {
+    refuse(step)
+    return false
+  }
+  return apply('undo', () => detached.get(step.id) ?? null)
 }
 
 /** いちばん新しい操作を元に戻す（ボタン・Ctrl/⌘+Z）。戻せた時 true */

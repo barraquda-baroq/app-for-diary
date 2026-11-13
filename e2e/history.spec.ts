@@ -66,23 +66,56 @@ async function askDelete(page: Page, finger: boolean) {
 const itemExists = (page: Page, id: string) => page.evaluate((i) => Boolean(window.__ds.getData().items[i]), id)
 
 /**
- * 掴んだ物を離してから 50ms 後（浮いたカードが元の所へ戻る動き（0.16秒）の間。dnd-kit の掴んだ印 data-dnd-dragging はまだ残る）に
- * 「戻る」（ブラウザの戻ると同じ popstate）。その時に掴んだ印が残っていた数を返す
+ * 掴んだ物を離して、浮いたカードが元の所へ戻る動き（dnd-kit がその間 data-dnd-dropping を付ける。掴んだ印 data-dnd-dragging もまだ残る）が
+ * 始まった時に「戻る」（ブラウザの戻ると同じ popstate）。離す前に呼び、離した後に返す関数を待つ（「戻る」の時に掴んだ印が残っていた数。
+ * 時間で待たないので、重い時にも動きの間に「戻る」が来る）
  */
-async function backSoonAfterDrop(page: Page): Promise<number> {
-  const marked = await page.evaluate(
-    () =>
-      new Promise<number>((resolve) =>
-        setTimeout(() => {
-          const n = document.querySelectorAll('[data-dnd-dragging]').length
-          history.back()
-          resolve(n)
-        }, 50),
-      ),
-  )
-  await historySettled(page)
-  return marked
+async function backWhenSettling(page: Page): Promise<() => Promise<number>> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __backOnSettle?: Promise<number> }
+    w.__backOnSettle = new Promise<number>((resolve) => {
+      const observer = new MutationObserver(() => {
+        if (!document.querySelector('[data-dnd-dropping]')) return
+        observer.disconnect()
+        const marked = document.querySelectorAll('[data-dnd-dragging]').length
+        history.back()
+        resolve(marked)
+      })
+      observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-dnd-dropping'] })
+    })
+  })
+  return async () => {
+    const marked = await page.evaluate(() => (window as unknown as { __backOnSettle: Promise<number> }).__backOnSettle)
+    await historySettled(page)
+    return marked
+  }
 }
+
+/**
+ * ホーム画面から開いた時と同じく、タブの履歴をアプリの分だけにして開き（前に履歴が無い）、押して印を作る。noNavigationApi の時は
+ * Navigation API の無いブラウザにする（読み込み直した後に、タブの履歴がどれもアプリの物か分からない）
+ */
+async function openAlone(page: Page, baseURL: string | undefined, { noNavigationApi = false } = {}) {
+  await page.clock.setFixedTime(new Date(E2E_NOW))
+  await page.addInitScript(() => localStorage.setItem('diary-studio:test-auth', '1'))
+  if (noNavigationApi) await page.addInitScript(() => Object.defineProperty(window, 'navigation', { value: undefined }))
+  await page.evaluate((url) => location.replace(url), new URL(`/#${MONTH}`, baseURL).href)
+  await page.waitForFunction(() => Boolean(window.__ds))
+  await expect(page.getByTestId('top-page')).toBeVisible()
+  await armHistory(page)
+  expect(await historyLength(page)).toBe(3)
+}
+
+/** 押さずに読み込み直す（土台のまま） */
+async function reloadOnBase(page: Page) {
+  await page.reload()
+  await expect(page.getByTestId('view-month')).toBeVisible()
+  await historySettled(page)
+}
+
+/** 「もう一度［戻る］を押すと閉じます」・PC の「閉じられませんでした」のお知らせ */
+const armedToast = (page: Page) => page.locator('.toast', { hasText: 'もう一度［戻る］を押すと閉じます' })
+const cannotCloseToast = (page: Page) => page.locator('.toast', { hasText: 'この画面からは閉じられませんでした' })
 
 /**
  * アプリの前にほかのページ（タブの初めの about:blank）が1つだけある所で、アドレス欄で # を書き換え（新しいカレンダーの履歴が最後の
@@ -340,22 +373,63 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     page,
     baseURL,
   }) => {
-    await page.clock.setFixedTime(new Date(E2E_NOW))
-    await page.addInitScript(() => localStorage.setItem('diary-studio:test-auth', '1'))
-    // ホーム画面から開いた時と同じく、タブの履歴はアプリの1つだけ
-    await page.evaluate((url) => location.replace(url), new URL(`/#${MONTH}`, baseURL).href)
-    await page.waitForFunction(() => Boolean(window.__ds))
-    await expect(page.getByTestId('top-page')).toBeVisible()
-    await armHistory(page)
-    expect(await historyLength(page)).toBe(3)
+    await openAlone(page, baseURL)
     await goBack(page)
     await expect(closeDialog(page)).toBeVisible()
     await expect(page.getByTestId('app-close-cancel')).toBeFocused()
     await page.getByTestId('app-close').click()
-    await expect(page.locator('.toast', { hasText: 'もう一度［戻る］を押すと閉じます' })).toBeVisible({ timeout: 800 })
+    await expect(armedToast(page)).toBeVisible({ timeout: 800 })
     await historySettled(page)
     expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
   })
+
+  test('ホーム画面から開いたアプリを読み込み直した後も、タブの履歴がどれもアプリの物と分かるので、［閉じる］の後すぐ「もう一度［戻る］を押すと閉じます」', async ({
+    page,
+    baseURL,
+  }) => {
+    await openAlone(page, baseURL)
+    await reloadOnBase(page)
+    await goBack(page)
+    await expect(closeDialog(page)).toBeVisible()
+    await page.getByTestId('app-close').click()
+    await expect(armedToast(page)).toBeVisible({ timeout: 800 })
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
+  })
+
+  for (const during of ['前へ戻って待つ間', 'window.close() の後に待つ間'] as const) {
+    test(`読み込み直した後で前が分からず、${during}にもう一度「戻る」を押しても、「もう一度［戻る］を押すと閉じます」にする（PC のお知らせ・閉じるかの確かめを出さない）`, async ({
+      page,
+      baseURL,
+    }) => {
+      await openAlone(page, baseURL, { noNavigationApi: true })
+      await reloadOnBase(page)
+      await goBack(page)
+      await expect(closeDialog(page)).toBeVisible()
+      // ［閉じる］が前へ戻る（何も起きない）・window.close() を試す所で、少し後に「戻る」
+      await page.evaluate((closing) => {
+        if (closing) {
+          const close = window.close.bind(window)
+          window.close = () => {
+            close()
+            setTimeout(() => history.back(), 100)
+          }
+          return
+        }
+        const go = history.go.bind(history)
+        history.go = (delta?: number) => {
+          go(delta)
+          if ((delta ?? 0) < -1) setTimeout(() => history.back(), 200)
+        }
+      }, during !== '前へ戻って待つ間')
+      await page.getByTestId('app-close').click()
+      await expect(armedToast(page)).toBeVisible()
+      await historySettled(page)
+      expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
+      await expect(cannotCloseToast(page)).toHaveCount(0)
+      await expect(closeDialog(page)).toHaveCount(0)
+    })
+  }
 
   test('詳細の画面は、シートの外を押しても閉じ、下にあった物（ヘッダーの［MIM］）は押されない（■23）', async ({ page }) => {
     await openCalendar(page, DAY, { data: demoData() })
@@ -381,8 +455,9 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     await page.waitForTimeout(200)
     await expect(closeDialog(page)).toHaveCount(0)
     await drag.moveTo(start)
+    const settled = await backWhenSettling(page)
     await drag.drop()
-    expect(await backSoonAfterDrop(page)).toBeGreaterThan(0)
+    expect(await settled()).toBeGreaterThan(0)
     await expect(closeDialog(page)).toBeVisible()
     await page.getByTestId('app-close-cancel').click()
     expect(await page.evaluate((i) => window.__ds.getData().items[i]?.start, DEMO_IDS.meeting)).toBe('2026-11-10')
@@ -463,7 +538,7 @@ test.describe('PC のブラウザの戻る・進む（■22）', { tag: ['@pc'] 
     await expect(closeDialog(page)).toBeVisible()
   })
 
-  test('動かさずに離した直後（浮いたカードが元の所へ戻る動きの間）の「戻る」は、もうドラッグの途中ではないので閉じるかを聞く', async ({
+  test('動かさずに離した直後（浮いたカードが元の所へ戻る動きの間）の「戻る」は、もう掴んでいないので閉じるかを聞く', async ({
     page,
   }) => {
     await openCalendar(page, `/week/${DEMO_WEEKS.main}`, { data: demoData() })
@@ -471,8 +546,9 @@ test.describe('PC のブラウザの戻る・進む（■22）', { tag: ['@pc'] 
     const drag = await startMouseDrag(page, start)
     await drag.moveTo({ x: start.x + 4, y: start.y + 60 })
     await drag.moveTo(start)
+    const settled = await backWhenSettling(page)
     await drag.drop()
-    expect(await backSoonAfterDrop(page)).toBeGreaterThan(0)
+    expect(await settled()).toBeGreaterThan(0)
     await expect(closeDialog(page)).toBeVisible()
     await page.getByTestId('app-close-cancel').click()
     expect(await page.evaluate((i) => window.__ds.getData().items[i]?.start, DEMO_IDS.meeting)).toBe('2026-11-10')

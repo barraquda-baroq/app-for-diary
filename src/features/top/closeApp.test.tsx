@@ -142,7 +142,7 @@ describe('「戻る」「進む」の前に片付ける（consumeBackPress）', 
     expect(hasOpenDialog()).toBe(false)
   })
 
-  it('何も開いていなければ false。ドラッグの途中（掴んでから離すまで）は true（何もしない）', () => {
+  it('何も開いていなければ false。掴んでいる間（掴んでから離すまで）は true（何もしない）', () => {
     expect(consumeBackPress()).toBe(false)
     useCalendarUi.getState().setDragging(true)
     try {
@@ -152,7 +152,7 @@ describe('「戻る」「進む」の前に片付ける（consumeBackPress）', 
     }
   })
 
-  it('離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印は残る）は、もうドラッグの途中ではない（false）', () => {
+  it('離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印は残る）は、もう掴んでいない（false）', () => {
     const settling = document.createElement('div')
     settling.setAttribute('data-dnd-dragging', '')
     settling.setAttribute('data-dnd-dropping', '')

@@ -166,6 +166,15 @@ export function laterDependents(past: UndoStep[], step: UndoStep): UndoStep[] {
 }
 
 /**
+ * 並びに無いステップ（積まなかった物。年・月の画面でした操作など）より後に積んだステップ（番号が大きい。番号は積んだ順に振る）のうち、
+ * 同じ記録に触れる物が並び（戻せる物・やり直せる物）にあるか（お知らせの［元に戻す］で、それを一緒に戻さないので断る）
+ */
+export function touchedAfter(stack: UndoStack, step: UndoStep): boolean {
+  const keys = new Set(step.changes.map(keyOf))
+  return [...stack.past, ...stack.future].some((s) => s.id > step.id && s.changes.some((c) => keys.has(keyOf(c))))
+}
+
+/**
  * 続けて戻すステップ（steps。戻す順 = 新しい順）を、前から順に戻せるかを、当てる前に確かめる: 1つ目は今の記録と、2つ目からは
  * その前のステップを戻した後の記録（そのステップの「前」）と比べる（conflictOf）。合わない最初のステップと変わり方を返す
  * （どれも合えば null）

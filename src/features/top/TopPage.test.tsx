@@ -1,6 +1,6 @@
 // トップ画面（docs/SPEC.md の 3.1〜3.7）: ヘッダー、L の並べ方（カレンダーの領域と右の列）、S・M の積み方と切り替えの列、
-// 右の列の3つのリストの見出し・畳む・入力欄、カレンダーの行き先と操作の列（#/ の置き換え・モードの切り替えは積む・‹ › 今日 は
-// 置き換える・見ている日を引き継ぐ・lastMode）、MIM の仮の画面への切り替え
+// 右の列の3つのリストの見出し・畳む・入力欄、カレンダーの行き先と操作の列（#/ の置き換え・モードの切り替えも ‹ › 今日 も積まずに
+// 置き換える（3.1）・見ている日を引き継ぐ・lastMode）、MIM の仮の画面への切り替え
 import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'

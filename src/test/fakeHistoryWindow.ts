@@ -1,7 +1,8 @@
 // アプリの履歴（src/history/appHistory.ts）の単体テスト用の作り物の window。ブラウザの履歴（同じページの中の履歴の並びと今いる所）をまねる:
 // pushState は今より後ろを捨てて積み、replaceState は今の物を替え、go は次の処理で動いて popstate を送る（範囲の外へは動かない）。
 // foreign の履歴（ほかのページ）へ動いた時は、popstate の代わりに pagehide を送る（ページが離れた）。
-// 利用者の「戻る」「進む」は userGo（ブラウザの go と同じ動き）、アドレス欄で # を書き換えた時は typeHash
+// 利用者の「戻る」「進む」は userGo（ブラウザの go と同じ動き）、アドレス欄で # を書き換えた時は typeHash。navigationApi の時は
+// Chromium の Navigation API（navigation.entries()・currentEntry）もまねる: 今いる所と続いた、ほかのページでない履歴だけを数える
 import type { HistoryWindow } from '../history/appHistory'
 
 interface Entry {
@@ -21,14 +22,37 @@ export class FakeWindow implements HistoryWindow {
   closeCalls = 0
   readonly navigator = { userActivation: { isActive: false } }
   readonly document = { querySelector: () => null }
+  /** Navigation API（navigationApi の時だけ） */
+  readonly navigation?: { readonly currentEntry: { readonly index: number } | null; entries(): { index: number }[] }
   private readonly handlers = new Map<string, Set<Handler>>()
 
-  constructor(hash = '#/', { before = 0 }: { before?: number } = {}) {
+  constructor(hash = '#/', { before = 0, navigationApi = false }: { before?: number; navigationApi?: boolean } = {}) {
     this.entries = [
       ...Array.from({ length: before }, (_, i) => ({ state: null, url: `https://other.example/${i}`, foreign: true })),
       { state: null, url: `https://app.example/${hash}` },
     ]
     this.index = before
+    if (navigationApi) {
+      const win = this
+      this.navigation = {
+        get currentEntry() {
+          return { index: win.index - win.sameOriginRange()[0] }
+        },
+        entries: () => {
+          const [from, to] = win.sameOriginRange()
+          return Array.from({ length: to - from + 1 }, (_, index) => ({ index }))
+        },
+      }
+    }
+  }
+
+  /** 今いる所と続いた、ほかのページでない履歴の範囲（初めと終わりの位置） */
+  private sameOriginRange(): [number, number] {
+    let from = this.index
+    let to = this.index
+    while (from > 0 && !this.entries[from - 1].foreign) from -= 1
+    while (to < this.entries.length - 1 && !this.entries[to + 1].foreign) to += 1
+    return [from, to]
   }
 
   readonly history = (() => {

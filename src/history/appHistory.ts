@@ -44,6 +44,8 @@ export interface HistoryWindow {
   clearTimeout(id: number): void
   close(): void
   navigator?: { userActivation?: { readonly isActive: boolean } }
+  /** Navigation API（Chromium など。無いブラウザでは使わない）: 今いる所と続いた、同じ origin の履歴だけを数える */
+  navigation?: { readonly currentEntry: { readonly index: number } | null; entries(): ArrayLike<unknown> } | null
 }
 
 /** 画面から受け取る動き（App・カレンダーが置く） */
@@ -54,7 +56,7 @@ export interface HistoryHandlers {
   askExit?: () => void
   /**
    * 「戻る」「進む」が来た時に、画面を動かす前に片付ける物があれば片付けて true（出していた所へ戻すだけにする）: 開いている確かめの
-   * ダイアログを閉じる（その下の詳細の画面などは閉じない）・ドラッグの途中は何もしない
+   * ダイアログを閉じる（その下の詳細の画面などは閉じない）・掴んでいる間（掴んでから離すまで）は何もしない
    */
   consumePop?: () => boolean
 }
@@ -159,8 +161,10 @@ export class AppHistory implements RouterHistory {
   private base: number | null
   /** あると分かっている履歴のいちばん大きい idx（これより後ろに履歴があるかを見る） */
   private top: number
-  /** top は読み込み直した時の当て推量（土台の後ろに1つあるとみなした。アプリが積むまで。doLeave の近道には使わない） */
+  /** top は読み込み直した時の当て推量（土台の後ろに1つあるとみなした。アプリが積むまで。閉じる時の近道には使わない） */
   private topGuessed = false
+  /** 閉じる途中で、window.close() を試して待っている（その間に来た「戻る」「進む」は何もしない。doLeave が終わりに片付ける） */
+  private closing = false
   /** ルーターが出している行き先と、その履歴の idx */
   private shown: Location
   private shownIdx: number
@@ -517,20 +521,16 @@ export class AppHistory implements RouterHistory {
   private async doLeave(): Promise<LeaveResult> {
     const gen = ++this.leaveGen
     this.pageHidden = false
-    // アプリの最初の履歴（idx 0）より前に、ほかのページの履歴が無いと分かる時（タブの履歴の数が、アプリの分だけ。ホーム画面から
-    // 開いた Android のアプリはいつも）は、前へ戻って待つのを省く。window.close() も、履歴が2つ以上あるので効かない（試すだけ）。
-    // 読み込み直してからアプリがまだ積んでいない時は、アプリの分の数が分からない（topGuessed）ので省かない
-    const length = this.win.history.length
-    const nothingBefore = !this.topGuessed && typeof length === 'number' && length <= this.top + 1
+    // アプリの最初の履歴（idx 0）より前に、ほかのページの履歴が無いと分かる時（knownNothingBefore。ホーム画面から開いた Android の
+    // アプリはいつも）は、前へ戻って待つのを省く。window.close() も、履歴が2つ以上あるので効かない（試すだけ）
+    let nothingBefore = this.knownNothingBefore()
     if (!nothingBefore) {
       // アプリの最初の履歴（idx 0）より前へ
       const came = await this.traverse(-(this.cur + 1), LEAVE_WAIT_MS)
       if (gen !== this.leaveGen || this.pageHidden) return 'left'
-      if (came) {
-        // 同じページの中の履歴へ来た（ふつうは無い）: 出していた所へ戻る
-        await this.travelTo(this.shownIdx)
-        return 'stayed'
-      }
+      // ページの中の履歴へ来た: 前へは戻れず（前が無い）、待つ間に利用者が「戻る」「進む」を押した（その「戻る」でアプリの最初の
+      // 履歴へ来ていても、離れようとしたのと同じ）
+      if (came) nothingBefore = true
     }
     try {
       this.win.close()
@@ -538,13 +538,37 @@ export class AppHistory implements RouterHistory {
       // 閉じられない
     }
     if (!nothingBefore) {
+      this.closing = true
       await this.wait(CLOSE_WAIT_MS)
+      this.closing = false
       if (gen !== this.leaveGen || this.pageHidden) return 'left'
     }
-    if (!this.opts.armOnLeaveFail || this.cur === 0) return 'stayed'
-    await this.travelTo(0)
-    this.exitArmed = this.cur === 0 && this.cur !== this.shownIdx
-    return this.exitArmed ? 'armed' : 'stayed'
+    if (this.opts.armOnLeaveFail) {
+      await this.travelTo(0)
+      this.exitArmed = this.cur === 0 && this.cur !== this.shownIdx
+      if (this.exitArmed) return 'armed'
+    }
+    // 待つ間に来た「戻る」「進む」で動いていたら、出していた所へ戻る
+    if (this.cur !== this.shownIdx) await this.travelTo(this.shownIdx)
+    return 'stayed'
+  }
+
+  /**
+   * アプリの最初の履歴（idx 0）より前に、ほかのページの履歴が無いと分かるか: タブの履歴の数が、あると分かっているアプリの分だけの時
+   * （読み込み直してからアプリがまだ積んでいない時は、土台の後ろの数は当て推量（topGuessed）なので、今いる所までで数える）。
+   * Navigation API（Chromium）があれば、タブの履歴がどれもこのページの物（同じ origin で続いた物だけを数える entries() が、タブの
+   * 履歴の数と同じ）で、今いる所の前がアプリの分だけの時も（読み込み直した後でも分かる）
+   */
+  private knownNothingBefore(): boolean {
+    const length = this.win.history.length
+    if (typeof length !== 'number') return false
+    if (length <= (this.topGuessed ? this.cur : this.top) + 1) return true
+    try {
+      const nav = this.win.navigation
+      return nav?.currentEntry?.index === this.cur && nav.entries().length === length
+    } catch {
+      return false
+    }
   }
 
   private readonly onPop = (): void => {
@@ -567,6 +591,9 @@ export class AppHistory implements RouterHistory {
     const from = this.cur
     this.cur = idx
     this.top = Math.max(this.top, idx)
+    // 閉じる途中（window.close() を試して待つ間）に来た「戻る」「進む」: 閉じるかを聞き直さない（doLeave が終わりに、Android は
+    // 最初の履歴で「もう一度［戻る］で閉じる」所にし、PC は出していた所へ戻る）
+    if (this.closing) return
     if (this.exitArmed) {
       this.exitArmed = false
       if (from === 0) {
@@ -582,7 +609,7 @@ export class AppHistory implements RouterHistory {
       return
     }
     if (this.handlers.consumePop?.()) {
-      // 確かめのダイアログを閉じた・ドラッグの途中: 画面は動かさず、出していた所へ戻す
+      // 確かめのダイアログを閉じた・掴んでいる間: 画面は動かさず、出していた所へ戻す
       const shownIdx = this.shownIdx
       this.run(() => this.travelTo(shownIdx))
       return
