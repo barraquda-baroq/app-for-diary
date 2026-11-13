@@ -1,12 +1,13 @@
 // アプリの履歴（docs/SPEC.md の 3.1。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・■22・■23）: 履歴の形（土台の前後に
 // 「戻る」「進む」の印）を押した時に作り、カレンダーの中の行き来は土台を置き換えるだけで増やさない。「戻る」「進む」が来たら、
 // iPhone（端からのフリック）はモードを回し、Android・PC（OS の戻る）は閉じるかを聞き、どちらも土台へ戻す（ルーターには渡さない）。
-// 登録・詳細の画面・ほかの画面での扱い、ルーターの戻る（閉じる・書きかけの確かめ）、読み込み直し、アプリを閉じる
+// 登録・詳細の画面・ほかの画面での扱い、ルーターの戻る（閉じる・書きかけの確かめ）、読み込み直し、アプリを閉じる。
+// 押している間・ドラッグの途中は、アプリから履歴を動かさない（印の履歴は押し終えてから作る）
 import type { Location } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
 import { FakeWindow } from '../test/fakeHistoryWindow'
-import { AppHistory, type LeaveResult } from './appHistory'
+import { AppHistory, PRESS_STALE_MS, type LeaveResult } from './appHistory'
 import type { PopSource } from './popRules'
 
 type Update = Parameters<Parameters<AppHistory['listen']>[0]>[0]
@@ -58,6 +59,26 @@ async function arm(s: Setup) {
   await settle(s.h)
 }
 
+/** pointer の出来事（pointerId と押しているボタン付き。マウスは 1、指は 2） */
+function pointer(type: string, pointerType: 'mouse' | 'touch', buttons = 0): Event {
+  return Object.assign(new Event(type), { pointerType, pointerId: pointerType === 'mouse' ? 1 : 2, buttons })
+}
+
+/** touch の出来事（画面に触れている指の数） */
+function touch(type: string, count: number): Event {
+  return Object.assign(new Event(type), { touches: { length: count } })
+}
+
+/** 送る */
+function fire(s: Setup, event: Event) {
+  s.win.dispatch(event.type, event)
+}
+
+/** 少しだけ時間を進める（押し終えるのを待っている物は、待たせたまま） */
+async function tick(ms = 100) {
+  await vi.advanceTimersByTimeAsync(ms)
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
 })
@@ -100,6 +121,198 @@ describe('履歴の形を作る', () => {
     await settle(s.h)
     expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-17', '[fwd]'])
     expect(s.h.action).toBe('PUSH')
+  })
+})
+
+describe('押している間・ドラッグの途中は、アプリから履歴を動かさない', () => {
+  it('最初の押し方がマウスのドラッグでも、押している間・掴んでいる間・落とした後の片付けの間は作らず、ドラッグが終わってから作る', async () => {
+    const s = setup('#/week/2026-11-08', 'os-back')
+    let dragging = false
+    s.h.handlers.dragging = () => dragging
+    // マウスは押した時から「押した」になる
+    s.win.navigator.userActivation.isActive = true
+    fire(s, pointer('pointerdown', 'mouse', 1))
+    fire(s, new Event('mousedown'))
+    await tick()
+    expect(s.win.describe()).toEqual(['*/week/2026-11-08'])
+    expect(s.h.shape()).toMatchObject({ base: null, buildPending: true, held: true })
+    // 5px を超えて動かして掴んだ
+    fire(s, pointer('pointermove', 'mouse', 1))
+    dragging = true
+    await tick()
+    expect(s.win.describe()).toEqual(['*/week/2026-11-08'])
+    // 離した（落とした後の片付けの間は、まだドラッグの印がある）
+    fire(s, pointer('pointerup', 'mouse'))
+    await tick()
+    expect(s.win.describe()).toEqual(['*/week/2026-11-08'])
+    expect(s.h.shape()).toMatchObject({ base: null, held: true })
+    dragging = false
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+    expect(s.h.shape()).toMatchObject({ base: 1, cur: 1, shownIdx: 1, buildPending: false, held: false, busy: false })
+    expect(s.updates).toEqual([])
+  })
+
+  it('指で長押しして掴み、掴んだまま端で週が替わっても（ルーターの置き換え）、指を離してドラッグが終わるまで作らない（WebKit は指を下ろした時から「押した」と数える）', async () => {
+    const s = setup('#/week/2026-11-08', 'edge-flick')
+    let dragging = false
+    s.h.handlers.dragging = () => dragging
+    s.win.navigator.userActivation.isActive = true
+    fire(s, pointer('pointerdown', 'touch', 1))
+    fire(s, touch('touchstart', 1))
+    await tick(450)
+    expect(s.win.describe()).toEqual(['*/week/2026-11-08'])
+    dragging = true
+    s.h.replace(loc('/week/2026-11-15'))
+    await tick()
+    // 置き換えはその場で書く（履歴は動かさない）
+    expect(s.win.describe()).toEqual(['*/week/2026-11-15'])
+    fire(s, pointer('pointerup', 'touch'))
+    await tick()
+    expect(s.win.describe()).toEqual(['*/week/2026-11-15'])
+    fire(s, touch('touchend', 0))
+    await tick()
+    expect(s.win.describe()).toEqual(['*/week/2026-11-15'])
+    dragging = false
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-15', '[fwd]'])
+    expect(s.updates).toEqual([])
+  })
+
+  it('指の pointer を離しても、touch の指が画面に残っている間（WebKit がスクロールに取った指など）は作らず、touchend で作る', async () => {
+    const s = setup('#/month/2026-11', 'edge-flick')
+    s.win.navigator.userActivation.isActive = true
+    fire(s, touch('touchstart', 1))
+    fire(s, pointer('pointerdown', 'touch', 1))
+    fire(s, pointer('pointercancel', 'touch'))
+    await tick()
+    expect(s.win.describe()).toEqual(['*/month/2026-11'])
+    fire(s, touch('touchend', 0))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
+  })
+
+  it('押した要素が描き直しで外れて、touchend が window まで来なくても、押した要素で聞いて作る（掴んで動かしたカード）', async () => {
+    const s = setup('#/week/2026-11-08', 'os-back')
+    s.win.navigator.userActivation.isActive = true
+    const card = new EventTarget()
+    const start = Object.defineProperty(touch('touchstart', 1), 'target', { value: card })
+    fire(s, start)
+    fire(s, pointer('pointerdown', 'touch', 1))
+    fire(s, pointer('pointerup', 'touch'))
+    await tick()
+    expect(s.win.describe()).toEqual(['*/week/2026-11-08'])
+    card.dispatchEvent(touch('touchend', 0))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+  })
+
+  it('押し終えた時にブラウザが「押した直後」と数えていなければ作らず、次に押し終えた時に作る', async () => {
+    const s = setup('#/month/2026-11', 'os-back')
+    s.win.navigator.userActivation.isActive = false
+    fire(s, pointer('pointerdown', 'touch', 1))
+    fire(s, pointer('pointercancel', 'touch'))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['*/month/2026-11'])
+    s.win.press('touch')
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
+  })
+
+  it('押している間のルーターの戻る（詳細の画面を閉じる）・ほかの画面からカレンダーへ移るのは、押し終えるまで待つ（後の書き込みも順に待つ）', async () => {
+    const s = setup('#/month/2026-11', 'os-back')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    fire(s, pointer('pointerdown', 'touch', 1))
+    s.h.go(-1)
+    await tick(300)
+    expect(s.win.index).toBe(2)
+    expect(s.updates).toEqual([])
+    expect(s.h.shape()).toMatchObject({ busy: true, held: true })
+    fire(s, pointer('pointerup', 'touch'))
+    await settle(s.h)
+    expect(s.win.index).toBe(1)
+    expect(s.updates.map((u) => u.delta)).toEqual([-1])
+    // 設定の画面から、押している間にカレンダーへ（左のアイコン）
+    s.h.push(loc('/settings'))
+    await settle(s.h)
+    fire(s, pointer('pointerdown', 'mouse', 1))
+    s.h.push(loc('/week/2026-11-08'))
+    await tick(300)
+    expect(s.win.describe()).toEqual(['[back]', '/month/2026-11', '*/settings'])
+    fire(s, pointer('pointerup', 'mouse'))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '/settings'])
+  })
+
+  it('iPhone: 押している間に開いた詳細の画面の後ろの「進む」の印は、押し終えてから置く', async () => {
+    const s = setup('#/day/2026-11-10', 'edge-flick')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    fire(s, pointer('pointerdown', 'touch', 1))
+    s.h.push(loc('/day/2026-11-10', detail))
+    await tick()
+    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+detail'])
+    fire(s, pointer('pointerup', 'touch'))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+detail', '[fwd]'])
+  })
+
+  it('「戻る」が来た所から出していた所へ戻すのは、ドラッグの途中でも待たない（待つ間に、もう一度の「戻る」でアプリを離れないように）', async () => {
+    const s = setup('#/week/2026-11-08', 'os-back')
+    await arm(s)
+    let dragging = true
+    s.h.handlers.dragging = () => dragging
+    s.h.handlers.consumePop = () => dragging
+    fire(s, pointer('pointerdown', 'mouse', 1))
+    s.win.userGo(-1)
+    await tick()
+    expect(s.win.index).toBe(1)
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, busy: false, held: true })
+    expect(s.askExit).not.toHaveBeenCalled()
+    fire(s, pointer('pointerup', 'mouse'))
+    dragging = false
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+  })
+
+  it('離したのを見落としても、いつまでも待たない（マウスのボタンが離れた pointermove・ウインドウを離れた・しばらく出来事が無い）', async () => {
+    const s = setup('#/month/2026-11', 'os-back')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    const close = async () => {
+      s.h.push(loc('/month/2026-11', detail))
+      await settle(s.h)
+    }
+    // ウインドウの外でマウスを離した（pointerup が来ない）: 次に動かした時のボタンで分かる
+    await close()
+    fire(s, pointer('pointerdown', 'mouse', 1))
+    s.h.go(-1)
+    await tick(300)
+    expect(s.win.index).toBe(2)
+    fire(s, pointer('pointermove', 'mouse', 0))
+    await tick(300)
+    expect(s.win.index).toBe(1)
+    // ほかのアプリへ移った
+    await close()
+    fire(s, pointer('pointerdown', 'touch', 1))
+    s.h.go(-1)
+    await tick(300)
+    expect(s.win.index).toBe(2)
+    fire(s, new Event('blur'))
+    await tick(300)
+    expect(s.win.index).toBe(1)
+    // 指を離したのが届かなかった
+    await close()
+    fire(s, pointer('pointerdown', 'touch', 1))
+    s.h.go(-1)
+    await tick(PRESS_STALE_MS - 500)
+    expect(s.win.index).toBe(2)
+    await tick(1000)
+    expect(s.win.index).toBe(1)
+    expect(s.updates.map((u) => u.delta)).toEqual([-1, -1, -1])
   })
 })
 

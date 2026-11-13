@@ -16,6 +16,7 @@ import {
   type RouteObject,
 } from 'react-router-dom'
 import { screenOf } from './features/calendar/common/calendarHistory'
+import { dragActive } from './features/calendar/common/pageTurnDom'
 import { LoginPage } from './features/login/LoginPage'
 import { startTestAuth } from './features/login/testAuth'
 import { useInteractionClock } from './features/calendar/common/useReturnToToday'
@@ -128,6 +129,8 @@ function createAppRouter() {
   })
   setHistoryHandler('askExit', () => void askToCloseApp())
   setHistoryHandler('consumePop', consumeBackPress)
+  // ドラッグの途中は、押し終えても落とし終えるまで、アプリから履歴を動かさない（印の履歴を作るのも後に回す）
+  setHistoryHandler('dragging', dragActive)
   return UNSAFE_createRouter({
     routes,
     history,

@@ -76,6 +76,21 @@ async function openDetail(page: Page, finger: boolean) {
 test.describe('iPhone の画面の端からのフリック（Chromium に iPhone の UA）', { tag: ['@s'] }, () => {
   test.use({ userAgent: IPHONE_UA })
 
+  test('開いて最初に指で軽く押した（離した）後の、左の端からのフリックはモードを回す（印の履歴は指を離した時に作る）', async ({
+    page,
+  }) => {
+    await openCalendar(page, DAY, { arm: false })
+    const length = await historyLength(page)
+    expect(await historyShape(page)).toMatchObject({ base: null, buildPending: true })
+    await armHistory(page, { finger: true })
+    expect(await historyLength(page)).toBe(length + 2)
+    await goBack(page)
+    await showing(page, WEEK)
+    await goForward(page)
+    await showing(page, DAY)
+    expect(await historyLength(page)).toBe(length + 2)
+  })
+
   test('カレンダー: 左の端から（戻る）で 日→週→月→年→日、右の端から（進む）で 年→月→週→日→年。見ている日を保ち、ページはめくらず、履歴は増えない', async ({
     page,
   }) => {
@@ -214,6 +229,16 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
 })
 
 test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => {
+  test('開いて最初に指で軽く押した（離した）後の「戻る」は、閉じるかを聞く（印の履歴は指を離した時に作る）', async ({ page }) => {
+    await openCalendar(page, MONTH, { arm: false })
+    expect(await historyShape(page)).toMatchObject({ base: null, buildPending: true })
+    await armHistory(page, { finger: true })
+    await goBack(page)
+    await expect(closeDialog(page)).toBeVisible()
+    await page.getByTestId('app-close-cancel').click()
+    await showing(page, MONTH)
+  })
+
   test('カレンダーで「戻る」を押すと「Diary Studio を閉じますか？」。［キャンセル］で残り、もう一度押すとまた聞く。モードを替えても前のモードへは戻らない', async ({
     page,
   }) => {
