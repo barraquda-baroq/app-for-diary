@@ -4,11 +4,13 @@ import { describe, expect, it } from 'vitest'
 import { mkItem } from './testData'
 import type { Item } from './types'
 import {
+  chainConflict,
   conflictOf,
   dropStep,
   emptyUndoStack,
   isNoopChange,
   itemIdsOf,
+  laterDependents,
   nextRedo,
   nextUndo,
   placeOf,
@@ -176,5 +178,85 @@ describe('何も変えていない変わり方（isNoopChange）', () => {
     expect(isNoopChange({ table: 'items', id: 'a', before: null, after: null, entry: null })).toBe(true)
     expect(isNoopChange({ table: 'offDays', id: 'd', before: true, after: true })).toBe(true)
     expect(isNoopChange({ table: 'offDays', id: 'd', before: false, after: true })).toBe(false)
+  })
+})
+
+describe('お知らせの［元に戻す］で、いちばん新しくないステップを戻す時（laterDependents・chainConflict）', () => {
+  const at = (date: string): Item => ({ ...before, start: date })
+  const moveA = (id: number, from: string, to: string): UndoStep => ({
+    id,
+    label: `${id}`,
+    changes: [{ table: 'items', id: 'a', before: at(from), after: at(to), entry: null }],
+  })
+  const other = mkItem({ id: 'b', title: '別', start: '2026-11-10' })
+  const doneB: UndoStep = {
+    id: 3,
+    label: '3',
+    changes: [{ table: 'items', id: 'b', before: other, after: { ...other, done: true }, entry: null }],
+  }
+
+  it('後に同じ記録に触れたステップを、新しい順に先に戻す（ほかの記録だけのステップは入れない）', () => {
+    const s1 = moveA(1, '2026-11-10', '2026-11-12')
+    const s2 = moveA(2, '2026-11-12', '2026-11-13')
+    expect(laterDependents([s1, s2, doneB], s1).map((s) => s.id)).toEqual([2])
+    expect(laterDependents([s1, s2, doneB], s2)).toEqual([])
+    expect(laterDependents([s1, doneB], s1)).toEqual([])
+  })
+
+  it('後のステップが触れた別の記録に、さらに後で触れた物も入れる（休みも記録の1つ）', () => {
+    const s1 = moveA(1, '2026-11-10', '2026-11-12')
+    const both: UndoStep = {
+      id: 2,
+      label: '2',
+      changes: [
+        { table: 'items', id: 'a', before: at('2026-11-12'), after: at('2026-11-14'), entry: null },
+        { table: 'offDays', id: '2026-11-14', before: false, after: true },
+      ],
+    }
+    const off: UndoStep = { id: 4, label: '4', changes: [{ table: 'offDays', id: '2026-11-14', before: true, after: false }] }
+    expect(laterDependents([s1, both, doneB, off], s1).map((s) => s.id)).toEqual([4, 2])
+  })
+
+  it('後のステップを戻した後の記録と比べる: 2回動かした予定の1回目は、2回目を戻せば戻せる', () => {
+    const s1 = moveA(1, '2026-11-10', '2026-11-12')
+    const s2 = moveA(2, '2026-11-12', '2026-11-13')
+    // 1回目だけを今の記録と比べると、ほかの所で直されたように見える
+    expect(conflictOf(s1, 'undo', reader([at('2026-11-13')]))).not.toBeNull()
+    expect(chainConflict([s2, s1], reader([at('2026-11-13')]))).toBeNull()
+  })
+
+  it('間でほかの所で直されていれば、そのステップで断る（今の記録と合わない新しい物も、間の物も）', () => {
+    const s1 = moveA(1, '2026-11-10', '2026-11-12')
+    const s2 = moveA(2, '2026-11-12', '2026-11-13')
+    const late = chainConflict([s2, s1], reader([{ ...at('2026-11-13'), title: 'ほかの端末で直した' }]))
+    expect(late?.step.id).toBe(2)
+    // 1回目の後にほかの所で件名が直され、その後に2回目
+    const s2b: UndoStep = {
+      id: 2,
+      label: '2',
+      changes: [
+        {
+          table: 'items',
+          id: 'a',
+          before: { ...at('2026-11-12'), title: 'X' },
+          after: { ...at('2026-11-13'), title: 'X' },
+          entry: null,
+        },
+      ],
+    }
+    const mid = chainConflict([s2b, s1], reader([{ ...at('2026-11-13'), title: 'X' }]))
+    expect(mid?.step.id).toBe(1)
+  })
+
+  it('消した（ゴミ箱へ移した）後のステップを先に戻すと、ゴミ箱から出た記録と比べる', () => {
+    const s1 = moveA(1, '2026-11-10', '2026-11-12')
+    const del: UndoStep = {
+      id: 2,
+      label: '2',
+      changes: [{ table: 'items', id: 'a', before: at('2026-11-12'), after: null, entry: 'e1' }],
+    }
+    expect(chainConflict([del, s1], reader([], ['e1']))).toBeNull()
+    // ゴミ箱から戻して（並びの外で）また動かした: 消したステップは戻せない
+    expect(chainConflict([del, s1], reader([at('2026-11-15')], ['e1']))?.step.id).toBe(2)
   })
 })

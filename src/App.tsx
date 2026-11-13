@@ -19,7 +19,7 @@ import { screenOf } from './features/calendar/common/calendarHistory'
 import { LoginPage } from './features/login/LoginPage'
 import { startTestAuth } from './features/login/testAuth'
 import { useInteractionClock } from './features/calendar/common/useReturnToToday'
-import { askToCloseApp } from './features/top/closeApp'
+import { askToCloseApp, consumeBackPress } from './features/top/closeApp'
 import { TopPage } from './features/top/TopPage'
 import { createAppHistory, setHistoryHandler } from './history/appHistory'
 import { paths } from './routes'
@@ -127,6 +127,7 @@ function createAppRouter() {
     screenOf,
   })
   setHistoryHandler('askExit', () => void askToCloseApp())
+  setHistoryHandler('consumePop', consumeBackPress)
   return UNSAFE_createRouter({
     routes,
     history,

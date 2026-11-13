@@ -4,6 +4,9 @@
 // 時だけ、端末に保存してあって次に開いた時に送ることを1行で添える。［閉じる］で、書きかけを端末に保存してからアプリの履歴の前へ戻る
 // （src/history/appHistory.ts の leave。閉じられなかった時はお知らせで言う）。聞いている間にもう一度「戻る」が来たら、聞くのをやめる
 // （Android の戻るでダイアログを閉じるのと同じ）。ほかのダイアログが開いている時の「戻る」も、聞かずにそのダイアログを閉じる
+// （consumeBackPress。どの画面でも、iPhone の端からのフリックでも同じ。ドラッグの途中の「戻る」は何もしない）。
+// 確かめのフォーカスは［キャンセル］に置き、題の列の［×］も「キャンセル」と読む（［閉じる］が2つにならないように。開発）
+import { dragActive } from '../calendar/common/pageTurnDom'
 import { leaveApp, type LeaveResult } from '../../history/appHistory'
 import { saveBeforeLeave } from '../../store/lifecycle'
 import { notify, notifyError } from '../../store/uiStore'
@@ -36,6 +39,19 @@ export function leaveNotice(result: LeaveResult): string | null {
 
 let asking = false
 
+/**
+ * 「戻る」「進む」（iPhone の端からのフリックも）が来た時に、画面を動かす前に片付ける（src/history/appHistory.ts の consumePop）:
+ * 確かめのダイアログが開いていれば、それだけを閉じる（キャンセル。その下の詳細の画面などは閉じない）。ドラッグの途中は何もしない。
+ * 片付けた時 true
+ */
+export function consumeBackPress(): boolean {
+  if (hasOpenDialog()) {
+    cancelAllDialogs()
+    return true
+  }
+  return dragActive()
+}
+
 /** OS の「戻る」でアプリを閉じるかを聞く（src/App.tsx がアプリの履歴に置く） */
 export async function askToCloseApp(): Promise<void> {
   if (asking || hasOpenDialog()) {
@@ -51,6 +67,7 @@ export async function askToCloseApp(): Promise<void> {
       confirmLabel: '閉じる',
       cancelLabel: 'キャンセル',
       testIds: { confirm: CLOSE_TEST_IDS.close, cancel: CLOSE_TEST_IDS.cancel },
+      safeDefault: true,
       // モードを替えた直後の「戻る」で、替えた描画が後から終わっても閉じない（この確かめの間は画面は替わらない）
       keepOnNavigate: true,
     })

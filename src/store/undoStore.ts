@@ -2,9 +2,10 @@
 // src/domain/undo.ts（純粋な関数）、当てるのは画面と同じ actions（attempt と同じく、決まりで断られたらお知らせ。保存・同期はふつうに
 // 流れる）。端末には覚えない（アプリを開き直すと空）。
 // - 積むのは、ウィークリー・デイリーを出している間（その画面と、そこから開いた登録・詳細のシート）の、予定を変える操作だけ
-//   （enterUndoScope。年・月を出している間・設定などでした操作は積まない）。年・月へ替えても並びは消さない（■24 の「承諾」）
-// - 画面が操作の後に recordStep で積む（前・後の記録を渡す）。お知らせの［元に戻す］も同じステップを戻す（undoStep）。ボタンで戻した
-//   ステップのお知らせは消す。積まなかった操作（年・月の画面など）のお知らせの［元に戻す］も、同じ確かめで戻す（並びには入れない）
+//   （enterUndoScope。年・月を出している間・設定などでした操作は積まない）。年・月へ替えても並びは消さない（開発。■24 で作者に聞いている）
+// - 画面が操作の後に recordStep で積む（前・後の記録を渡す）。お知らせの［元に戻す］も同じステップを戻す（undoStep。後で同じ記録に
+//   触れた操作があれば、それも新しい方から先に戻す）。ボタンで戻したステップのお知らせは消す。積まなかった操作（年・月の画面など）の
+//   お知らせの［元に戻す］も、同じ確かめで戻す（並びには入れない）
 // - 詳細の画面は、開いてから閉じるまでに直した所を1つにまとめる（beginItemSession。中で複製・削除をした時は、その前までをまとめて
 //   先に積む）
 // - 戻す・やり直すは1つずつ順に当てる（続けて押した分は待って順に。ゴミ箱の出し入れは保存を待つ）。ほかの所で直されていたら
@@ -249,10 +250,39 @@ async function apply(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promi
 }
 
 /** 当てるのを順に並べる（続けて押した分は、前の分が終わってから） */
-function enqueue(dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<boolean> {
-  const run = queue.then(() => apply(dir, pick))
+function enqueueRun(op: () => Promise<boolean>): Promise<boolean> {
+  const run = queue.then(op)
   queue = run.catch(() => undefined)
   return run
+}
+
+const enqueue = (dir: U.UndoDirection, pick: () => U.UndoStep | null): Promise<boolean> => enqueueRun(() => apply(dir, pick))
+
+/** 並びの中か、積まなかった物の、まだ戻していないステップ（無ければ null） */
+function undoableStep(stepId: number): U.UndoStep | null {
+  const st = stackNow()
+  if (U.placeOf(st, stepId) === 'past') return st.past.find((s) => s.id === stepId) ?? null
+  return detached.get(stepId) ?? null
+}
+
+/**
+ * お知らせの［元に戻す］: そのステップの前の形へ。後で同じ記録に触れた操作があれば（並びの中の物）、それを新しい方から先に戻す
+ * （どれもやり直せる物になり、やり直すで古い方から順にまたできる）。開いている詳細の画面でその記録を直していれば、それを先に
+ * 1つにまとめて積む。当てる前に、続けて戻せるかを確かめ（chainConflict）、ほかの所で直されていれば何も戻さずに断る
+ */
+async function undoWithLater(stepId: number): Promise<boolean> {
+  const step = undoableStep(stepId)
+  if (!step) return false
+  const touched = new Set([step, ...U.laterDependents(stackNow().past, step)].flatMap(U.itemIdsOf))
+  for (const id of touched) if (sessions.has(id)) flushSession(id, getData().items[id] ?? null)
+  const later = U.laterDependents(stackNow().past, step)
+  const blocked = U.chainConflict([...later, step], reader())
+  if (blocked) {
+    refuse(blocked.step)
+    return false
+  }
+  for (const s of later) if (!(await apply('undo', () => (U.placeOf(stackNow(), s.id) === 'past' ? s : null)))) return false
+  return apply('undo', () => undoableStep(stepId))
 }
 
 /** いちばん新しい操作を元に戻す（ボタン・Ctrl/⌘+Z）。戻せた時 true */
@@ -263,14 +293,11 @@ export const redo = (): Promise<boolean> => enqueue('redo', () => U.nextRedo(sta
 
 /**
  * そのステップを戻す（お知らせの［元に戻す］）。並びの中でまだ戻していなければ、いちばん新しい物でなくても戻す（ボタンの元に戻すの
- * 1つ分になり、やり直すで戻せる）。積まなかった操作も戻す。もう戻した・捨てた物は何もしない
+ * 1つ分になり、やり直すで戻せる）。後で同じ予定・休みに触れた操作があれば、それも新しい方から先に戻して、その操作の前の形にする
+ * （undoWithLater）。積まなかった操作も戻す。もう戻した・捨てた物は何もしない
  */
 export function undoStep(stepId: number): Promise<boolean> {
-  return enqueue('undo', () => {
-    const st = stackNow()
-    if (U.placeOf(st, stepId) === 'past') return st.past.find((s) => s.id === stepId) ?? null
-    return detached.get(stepId) ?? null
-  })
+  return enqueueRun(() => undoWithLater(stepId))
 }
 
 /** 当て終えるまで待つ（テスト用） */

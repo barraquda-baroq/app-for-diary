@@ -191,6 +191,44 @@ describe('iPhone（端からのフリック）', () => {
     expect(s.updates.length).toBe(1)
   })
 
+  it('登録の画面を詳細の画面に置き換えた時（複製のお知らせの［開く］）も後ろに「進む」の印を置き、右の端からでも閉じる', async () => {
+    const s = setup('#/day/2026-11-10', 'edge-flick')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/day/2026-11-10', register))
+    await settle(s.h)
+    s.h.replace(loc('/day/2026-11-10', detail))
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/day/2026-11-10+detail', '[fwd]'])
+    s.win.userGo(1)
+    await settle(s.h)
+    expect(s.updates.map((u) => [u.location.state, u.delta])).toEqual([[null, -1]])
+    expect(s.win.index).toBe(1)
+  })
+
+  it('確かめのダイアログ（詳細の画面の削除の確かめなど）が開いている時は、払ってもダイアログを閉じるだけ（詳細の画面は閉じない）', async () => {
+    const s = setup('#/day/2026-11-10', 'edge-flick')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/day/2026-11-10', detail))
+    await settle(s.h)
+    let open = true
+    s.h.handlers.consumePop = () => {
+      if (!open) return false
+      open = false
+      return true
+    }
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(open).toBe(false)
+    expect(s.updates).toEqual([])
+    expect(s.win.index).toBe(2)
+    // ダイアログが閉じた後は、ふつうに閉じる
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(s.updates.map((u) => u.delta)).toEqual([-1])
+  })
+
   it('ほかの画面（設定）: どちらへ払っても1つ戻る（カレンダーの方へ）', async () => {
     const s = setup('#/month/2026-11', 'edge-flick')
     await arm(s)
@@ -261,6 +299,25 @@ describe('Android・PC（OS の戻る）', () => {
     s.h.go(-1)
     await settle(s.h)
     expect(s.updates.map((u) => u.delta)).toEqual([-1, 1, -1])
+    expect(s.win.index).toBe(1)
+  })
+
+  it('確かめのダイアログが開いている・ドラッグの途中の「戻る」は、片付けるだけ（詳細の画面を閉じない・閉じるかを聞かない）', async () => {
+    const s = setup('#/month/2026-11', 'os-back')
+    await arm(s)
+    s.win.navigator.userActivation.isActive = true
+    s.h.push(loc('/month/2026-11', detail))
+    await settle(s.h)
+    s.h.handlers.consumePop = () => true
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(s.updates).toEqual([])
+    expect(s.win.index).toBe(2)
+    s.h.go(-1)
+    await settle(s.h)
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(s.askExit).not.toHaveBeenCalled()
     expect(s.win.index).toBe(1)
   })
 
@@ -371,6 +428,31 @@ describe('アプリを閉じる', () => {
     await settle(s.h)
     expect(s.win.index).toBe(1)
     expect(s.h.shape().exitArmed).toBe(false)
+  })
+
+  it('前が無いと分かる時（ホーム画面から開いた Android のアプリ）は、前へ戻って待たずに、すぐ「もう一度［戻る］で閉じる」所にする', async () => {
+    const s = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(s)
+    let result: LeaveResult | null = null
+    void s.h.leave().then((r) => (result = r))
+    await vi.advanceTimersByTimeAsync(50)
+    expect(result).toBe('armed')
+    expect(s.win.closeCalls).toBe(1)
+    expect(s.win.index).toBe(0)
+  })
+
+  it('「もう一度［戻る］で閉じる」所から、押さずに自分で土台へ戻った（今日へ戻すなど）後の「戻る」は、また閉じるかを聞く', async () => {
+    const s = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(s)
+    expect(await leave(s)).toBe('armed')
+    s.win.navigator.userActivation.isActive = false
+    s.h.replace(loc('/month/2026-12'))
+    await settle(s.h)
+    expect(s.h.shape()).toMatchObject({ cur: 1, base: 1, exitArmed: false })
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(s.askExit).toHaveBeenCalledTimes(1)
+    expect(s.win.index).toBe(1)
   })
 
   it('前が無く、Android でない時はそのまま（離れられなかった）', async () => {

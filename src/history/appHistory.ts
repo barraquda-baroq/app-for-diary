@@ -30,6 +30,8 @@ type To = Parameters<RouterHistory['push']>[0]
 export interface HistoryWindow {
   history: {
     readonly state: unknown
+    /** このタブの履歴の数（ほかのページの分も。無ければ数えない） */
+    readonly length?: number
     pushState(data: unknown, unused: string, url?: string | null): void
     replaceState(data: unknown, unused: string, url?: string | null): void
     go(delta: number): void
@@ -50,6 +52,11 @@ export interface HistoryHandlers {
   ring?: (dir: 1 | -1) => void
   /** Android・PC の「戻る」で、アプリを閉じるかを聞く */
   askExit?: () => void
+  /**
+   * 「戻る」「進む」が来た時に、画面を動かす前に片付ける物があれば片付けて true（出していた所へ戻すだけにする）: 開いている確かめの
+   * ダイアログを閉じる（その下の詳細の画面などは閉じない）・ドラッグの途中は何もしない
+   */
+  consumePop?: () => boolean
 }
 
 export interface AppHistoryOptions {
@@ -382,13 +389,17 @@ export class AppHistory implements RouterHistory {
     this.act = kind === 'push' ? NavigationType.Push : NavigationType.Replace
     const screen = this.screen(location)
     if (screen === 'calendar') return this.writeCalendar(location)
-    if (kind === 'replace') {
-      this.replaceHere(location)
-      return
-    }
-    this.pushHere(location)
-    // iPhone: 詳細の画面・MIM・設定の後ろにも「進む」の印を置く（右の端からのフリックでも閉じる・戻る。登録の画面は置かない: 何もしない）
-    if (this.opts.source === 'edge-flick' && screen !== 'register' && this.base !== null && this.activated()) {
+    if (kind === 'replace') this.replaceHere(location)
+    else this.pushHere(location)
+    // iPhone: 詳細の画面・MIM・設定の後ろにも「進む」の印を置く（右の端からのフリックでも閉じる・戻る。登録の画面は置かない: 何もしない）。
+    // 登録の画面を詳細の画面に置き換えた時（複製のお知らせの［開く］）も、後ろに無ければ置く
+    if (
+      this.opts.source === 'edge-flick' &&
+      screen !== 'register' &&
+      this.base !== null &&
+      this.top <= this.cur &&
+      this.activated()
+    ) {
       return this.addForward()
     }
   }
@@ -451,6 +462,8 @@ export class AppHistory implements RouterHistory {
     for (let attempt = 0; attempt < 3 && this.cur !== target; attempt++) {
       if (!(await this.traverse(target - this.cur, TRAVEL_TIMEOUT_MS))) break
     }
+    // 「もう一度［戻る］で閉じる」所は、最初の履歴にいる間だけ（自分で土台へ戻った時（今日へ戻すなど）も、押した時と同じく外す）
+    if (this.cur !== 0) this.exitArmed = false
   }
 
   /** 戻る・進む（delta）。popstate が来たら true（来ないまま timeout を過ぎたら、今の state を読み直して false） */
@@ -500,24 +513,32 @@ export class AppHistory implements RouterHistory {
   private async doLeave(): Promise<LeaveResult> {
     const gen = ++this.leaveGen
     this.pageHidden = false
-    // アプリの最初の履歴（idx 0）より前へ
-    const came = await this.traverse(-(this.cur + 1), LEAVE_WAIT_MS)
-    if (gen !== this.leaveGen || this.pageHidden) return 'left'
-    if (came) {
-      // 同じページの中の履歴へ来た（ふつうは無い）: 出していた所へ戻る
-      await this.travelTo(this.shownIdx)
-      return 'stayed'
+    // アプリの最初の履歴（idx 0）より前に、ほかのページの履歴が無いと分かる時（タブの履歴の数が、アプリの分だけ。ホーム画面から
+    // 開いた Android のアプリはいつも）は、前へ戻って待つのを省く。window.close() も、履歴が2つ以上あるので効かない（試すだけ）
+    const length = this.win.history.length
+    const nothingBefore = typeof length === 'number' && length <= this.top + 1
+    if (!nothingBefore) {
+      // アプリの最初の履歴（idx 0）より前へ
+      const came = await this.traverse(-(this.cur + 1), LEAVE_WAIT_MS)
+      if (gen !== this.leaveGen || this.pageHidden) return 'left'
+      if (came) {
+        // 同じページの中の履歴へ来た（ふつうは無い）: 出していた所へ戻る
+        await this.travelTo(this.shownIdx)
+        return 'stayed'
+      }
     }
     try {
       this.win.close()
     } catch {
       // 閉じられない
     }
-    await this.wait(CLOSE_WAIT_MS)
-    if (gen !== this.leaveGen || this.pageHidden) return 'left'
+    if (!nothingBefore) {
+      await this.wait(CLOSE_WAIT_MS)
+      if (gen !== this.leaveGen || this.pageHidden) return 'left'
+    }
     if (!this.opts.armOnLeaveFail || this.cur === 0) return 'stayed'
     await this.travelTo(0)
-    this.exitArmed = this.cur !== this.shownIdx
+    this.exitArmed = this.cur === 0 && this.cur !== this.shownIdx
     return this.exitArmed ? 'armed' : 'stayed'
   }
 
@@ -538,18 +559,27 @@ export class AppHistory implements RouterHistory {
     }
     const meta = metaOf(st)
     if (this.base === null && meta) this.base = meta.base
+    const from = this.cur
     this.cur = idx
     this.top = Math.max(this.top, idx)
     if (this.exitArmed) {
-      // 閉じられずに最初の履歴へ戻っていた所から動いた: 何もせず、出していた所へ戻る
       this.exitArmed = false
-      const shownIdx = this.shownIdx
-      this.run(() => this.travelTo(shownIdx))
-      return
+      if (from === 0) {
+        // 閉じられずに最初の履歴へ戻っていた所から動いた: 何もせず、出していた所へ戻る
+        const shownIdx = this.shownIdx
+        this.run(() => this.travelTo(shownIdx))
+        return
+      }
     }
     if (idx === this.shownIdx) return
     if (this.base === null) {
       this.deliver()
+      return
+    }
+    if (this.handlers.consumePop?.()) {
+      // 確かめのダイアログを閉じた・ドラッグの途中: 画面は動かさず、出していた所へ戻す
+      const shownIdx = this.shownIdx
+      this.run(() => this.travelTo(shownIdx))
       return
     }
     const action = decidePop(this.opts.source, this.screen(this.shown), idx < this.shownIdx ? 'back' : 'forward')

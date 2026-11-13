@@ -19,6 +19,11 @@ interface ConfirmOptions {
    * 前の行き来の描画が遅れて後から替わっても閉じないように
    */
   keepOnNavigate?: boolean
+  /**
+   * 開いた時のフォーカスを［キャンセル］に置き、題の列の［×］も「キャンセル」と読む（［閉じる］などの取り消せないボタンを Enter で
+   * 押さないように・同じ名前のボタンを2つにしないように。アプリを閉じるかの確かめ）
+   */
+  safeDefault?: boolean
 }
 
 interface PromptOptions {
@@ -173,16 +178,23 @@ function ConfirmView({ req }: { req: Extract<DialogRequest, { kind: 'confirm' }>
       title={opts.title}
       onClose={() => close(false)}
       initialFocus="[data-autofocus]"
+      closeLabel={opts.safeDefault ? (opts.cancelLabel ?? 'キャンセル') : undefined}
       footer={
         <>
-          <button type="button" className="btn" onClick={() => close(false)} data-testid={opts.testIds?.cancel}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => close(false)}
+            data-autofocus={opts.safeDefault ? true : undefined}
+            data-testid={opts.testIds?.cancel}
+          >
             {opts.cancelLabel ?? 'キャンセル'}
           </button>
           <button
             type="button"
             className={`btn ${opts.danger ? 'btn-danger' : 'btn-primary'}`}
             onClick={() => close(true)}
-            data-autofocus
+            data-autofocus={opts.safeDefault ? undefined : true}
             data-testid={opts.testIds?.confirm}
           >
             {opts.confirmLabel ?? 'OK'}

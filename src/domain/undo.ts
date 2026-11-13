@@ -143,3 +143,51 @@ export function isNoopChange(c: UndoChange): boolean {
 /** そのステップが変える予定の id（詳細の画面のまとめと突き合わせる） */
 export const itemIdsOf = (step: UndoStep): ID[] =>
   step.changes.filter((c): c is ItemChange => c.table === 'items').map((c) => c.id)
+
+/** 変わり方の記録の印（表と id） */
+const keyOf = (c: UndoChange): string => `${c.table}:${c.id}`
+
+/**
+ * お知らせの［元に戻す］で、いちばん新しくないステップを戻す時に、先に戻す物: そのステップより後に積んだ（番号が大きい）past の
+ * ステップのうち、同じ記録に触れる物（それが触れた記録に、さらに後で触れた物も）。新しい順（戻す順）
+ */
+export function laterDependents(past: UndoStep[], step: UndoStep): UndoStep[] {
+  const keys = new Set(step.changes.map(keyOf))
+  const out: UndoStep[] = []
+  for (const s of [...past].sort((a, b) => a.id - b.id)) {
+    if (s.id <= step.id || !s.changes.some((c) => keys.has(keyOf(c)))) continue
+    out.push(s)
+    for (const c of s.changes) keys.add(keyOf(c))
+  }
+  return out.reverse()
+}
+
+/**
+ * 続けて戻すステップ（steps。戻す順 = 新しい順）を、前から順に戻せるかを、当てる前に確かめる: 1つ目は今の記録と、2つ目からは
+ * その前のステップを戻した後の記録（そのステップの「前」）と比べる（conflictOf）。合わない最初のステップと変わり方を返す
+ * （どれも合えば null）
+ */
+export function chainConflict(steps: UndoStep[], read: UndoReader): { step: UndoStep; change: UndoChange } | null {
+  const items = new Map<ID, Item | undefined>()
+  const off = new Map<string, boolean>()
+  /** 戻すとゴミ箱から出る1件 */
+  const restored = new Set<ID>()
+  const after: UndoReader = {
+    item: (id) => (items.has(id) ? items.get(id) : read.item(id)),
+    inTrash: (entry) => !restored.has(entry) && read.inTrash(entry),
+    off: (date) => off.get(date) ?? read.off(date),
+  }
+  for (const step of steps) {
+    const change = conflictOf(step, 'undo', after)
+    if (change) return { step, change }
+    for (const c of step.changes) {
+      if (c.table === 'offDays') {
+        off.set(c.id, c.before)
+        continue
+      }
+      items.set(c.id, c.before ?? undefined)
+      if (c.after === null && c.entry !== null) restored.add(c.entry)
+    }
+  }
+  return null
+}

@@ -203,6 +203,34 @@ test.describe('PC（マウス・キー）', { tag: ['@pc'] }, () => {
     await expectLabel(undoBtn(page), '元に戻す（11/12（木）を休みにした）')
     await expectLabel(redoBtn(page), 'やり直す（『打ち合わせ』を移した）')
   })
+
+  test('動かした後に同じカードを完了・また動かしてから、前の「〜へ移しました」の［元に戻す］: 後の操作も戻して動かす前へ（断らない）', async ({
+    page,
+  }) => {
+    await openWeek(page)
+    await mouseMoveMeeting(page, '2026-11-12')
+    await page.getByTestId(`done-${I.meeting}`).click()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.done).toBe(true)
+    await toast(page, '11/12（木）へ移しました').getByRole('button', { name: '元に戻す' }).click()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-10')
+    expect((await itemOf(page, I.meeting))?.done).toBe(false)
+    await expect.poll(async () => (await rawItem(page, I.meeting))?.done).toBe(false)
+    await expect(toast(page, 'ほかの所で直されたので戻せません')).toHaveCount(0)
+    // 完了のお知らせも戻したので消える。やり直すは古い方から
+    await expect(toast(page, '完了にしました')).toHaveCount(0)
+    await expectLabel(undoBtn(page), '元に戻す', false)
+    await expectLabel(redoBtn(page), 'やり直す（『打ち合わせ』を移した）')
+    await redoBtn(page).click()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-12')
+    await expectLabel(redoBtn(page), 'やり直す（『打ち合わせ』を完了にした）')
+    // 2回動かしてから1回目のお知らせ: 1回目の前の日（11/12）へ
+    await mouseMoveMeeting(page, '2026-11-11')
+    await mouseMoveMeeting(page, '2026-11-13')
+    await toast(page, '11/11（水）へ移しました').getByRole('button', { name: '元に戻す' }).click()
+    await expect.poll(async () => (await itemOf(page, I.meeting))?.start).toBe('2026-11-12')
+    await expect(toast(page, 'ほかの所で直されたので戻せません')).toHaveCount(0)
+    await expectLabel(redoBtn(page), 'やり直す（『打ち合わせ』を移した）')
+  })
 })
 
 test.describe('S（Pixel 7・指）', { tag: ['@s'] }, () => {

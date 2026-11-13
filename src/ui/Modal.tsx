@@ -32,6 +32,8 @@ export interface ModalProps {
   dataLabel?: string | null
   /** 題の左に添える物（ディープダークの区分のアイコンなど。読み上げない） */
   titleIcon?: ReactNode
+  /** 題の列の［×］の読み上げ（既定「閉じる」。アプリを閉じるかの確かめでは、［閉じる］のボタンと分けて「キャンセル」） */
+  closeLabel?: string
 }
 
 /** 開いているモーダルの重なり（いちばん上だけが Esc と Tab を扱う） */
@@ -74,6 +76,7 @@ export function Modal({
   dataKind,
   dataLabel,
   titleIcon,
+  closeLabel = '閉じる',
 }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -170,7 +173,8 @@ export function Modal({
             type="button"
             className="icon-btn"
             onClick={onClose}
-            aria-label="閉じる"
+            aria-label={closeLabel}
+            title={closeLabel === '閉じる' ? undefined : closeLabel}
             // disabled にするとフォーカスが外れるので、押せないことは aria-disabled で伝える
             aria-disabled={closeDisabled || undefined}
             data-testid="modal-close"

@@ -37,6 +37,9 @@ export class FakeWindow implements HistoryWindow {
       get state(): unknown {
         return win.entries[win.index].state
       },
+      get length(): number {
+        return win.entries.length
+      },
       pushState: (data: unknown, _unused: string, url?: string | null) => win.pushState(data, url),
       replaceState: (data: unknown, _unused: string, url?: string | null) => win.replaceState(data, url),
       go: (delta: number) => win.userGo(delta),

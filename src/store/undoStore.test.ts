@@ -229,6 +229,64 @@ describe('お知らせの［元に戻す］も同じ並び', () => {
     expect(labels()).toEqual(['昼食'])
   })
 
+  it('後で同じ予定を動かした後に、前の操作のお知らせで戻すと、後の操作も先に戻して前の操作の前の日へ（断らない）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const first = moveTo('2026-11-12', '1')
+    notifyUndoable('11/12（木）へ移しました', first)
+    moveTo('2026-11-13', '2')
+    expect(await undoStep(first.id)).toBe(true)
+    expect(item()?.start).toBe('2026-11-10')
+    expect(toastTexts()).not.toContain(UNDO_CONFLICT)
+    expect(labels()).toEqual([])
+    expect(futureLabels()).toEqual(['2', '1'])
+    expect(await redo()).toBe(true)
+    expect(item()?.start).toBe('2026-11-12')
+    expect(await redo()).toBe(true)
+    expect(item()?.start).toBe('2026-11-13')
+  })
+
+  it('動かした後に同じ予定を完了にしてから、動かしたお知らせで戻すと、完了も戻して動かす前へ。ほかの予定の操作は残す', async () => {
+    await start(dataWith({ items: [meeting, mkItem({ id: 'b', title: '昼食', start: '2026-11-10' })] }))
+    const moved = moveTo('2026-11-12', '会議を移した')
+    const bb = item('b')
+    actions.setItemDone('b', true)
+    recordStep('昼食を完了にした', [itemChange('b', bb, item('b'))])
+    const ba = item()
+    actions.setItemDone('a', true)
+    recordStep('会議を完了にした', [itemChange('a', ba, item())])
+    expect(await undoStep(moved.id)).toBe(true)
+    expect(item()).toMatchObject({ start: '2026-11-10', done: false })
+    expect(item('b')?.done).toBe(true)
+    expect(labels()).toEqual(['昼食を完了にした'])
+    expect(futureLabels()).toEqual(['会議を完了にした', '会議を移した'])
+  })
+
+  it('間でほかの所で直されていれば、何も戻さずに断り、合わなかった操作だけを捨てる', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const first = moveTo('2026-11-12', '1')
+    moveTo('2026-11-13', '2')
+    actions.updateItem('a', { title: 'ほかの端末で直した' })
+    expect(await undoStep(first.id)).toBe(false)
+    expect(item()?.start).toBe('2026-11-13')
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(labels()).toEqual(['1'])
+  })
+
+  it('開いている詳細の画面で同じ予定を直している時は、直した所を先に1つにまとめてから、それも戻す', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const b = item()
+    actions.setItemDone('a', true)
+    const done = recordStep('完了にした', [itemChange('a', b, item())])!
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    expect(await undoStep(done.id)).toBe(true)
+    expect(item()).toMatchObject({ title: '会議', done: false })
+    expect(futureLabels()).toEqual(['『定例会議』を直した', '完了にした'])
+    end()
+    // 戻した後の記録からまとめ直す（閉じても「直した」を積まない）
+    expect(labels()).toEqual([])
+  })
+
   it('ボタンで戻したら、その操作のお知らせを消す（もう一度押しても何もしない）', async () => {
     await start(dataWith({ items: [meeting] }))
     const s = moveTo('2026-11-12')

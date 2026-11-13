@@ -3,15 +3,19 @@
 // 来る）なので、page.goBack・page.goForward で同じ所を通す。iPhone は Chromium に iPhone の UA を付けた物（@s）と、CI の WebKit（@ios）。
 // Android は Pixel 7（mobile。UA が Android）、PC は Desktop Chrome。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
 import { devices, expect, test, type Page } from '@playwright/test'
-import { DEMO_IDS, demoData } from './fixtures/demoData'
+import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
+  armHistory,
   collectDiagnosticsOnFailure,
+  E2E_NOW,
   goBack,
   goForward,
   historySettled,
   historyShape,
   openCalendar,
+  openItemMore,
   recordTurns,
+  startMouseDrag,
   touchSwipe,
   turnDone,
   turnsOf,
@@ -44,6 +48,20 @@ const historyLength = (page: Page) => page.evaluate(() => history.length)
 
 /** 「Diary Studio を閉じますか？」 */
 const closeDialog = (page: Page) => page.getByRole('dialog', { name: 'Diary Studio を閉じますか？' })
+
+/** 「『定例ミーティング』を削除しますか？」 */
+const deleteConfirm = (page: Page) => page.getByRole('dialog', { name: '『定例ミーティング』を削除しますか？' })
+
+/** 詳細の画面で削除の確かめを出す（「…」→［削除］） */
+async function askDelete(page: Page, finger: boolean) {
+  await openItemMore(page)
+  if (finger) await page.getByTestId('item-delete').tap()
+  else await page.getByTestId('item-delete').click()
+  await expect(deleteConfirm(page)).toBeVisible()
+}
+
+/** 予定がまだある（消していない） */
+const itemExists = (page: Page, id: string) => page.evaluate((i) => Boolean(window.__ds.getData().items[i]), id)
 
 /** 詳細の画面を開く（デイリーの「定例ミーティング」。指なら tap） */
 async function openDetail(page: Page, finger: boolean) {
@@ -146,6 +164,26 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await showing(page, YEAR)
   })
 
+  test('詳細の画面で削除の確かめを出している時に払うと、確かめだけを閉じる（詳細の画面は開いたまま・消さない）。次に払うと詳細の画面を閉じる', async ({
+    page,
+  }) => {
+    await openCalendar(page, DAY, { data: demoData() })
+    await openDetail(page, true)
+    await askDelete(page, true)
+    await goBack(page)
+    await expect(deleteConfirm(page)).toHaveCount(0)
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    expect(await itemExists(page, DEMO_IDS.weekly)).toBe(true)
+    await askDelete(page, true)
+    await goForward(page)
+    await expect(deleteConfirm(page)).toHaveCount(0)
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await goBack(page)
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await showing(page, DAY)
+    expect(await itemExists(page, DEMO_IDS.weekly)).toBe(true)
+  })
+
   test('設定・MIM: どちらへ払ってもカレンダーの方へ1つ戻る', async ({ page }) => {
     await openCalendar(page, MONTH)
     await page.getByTestId('open-settings').click()
@@ -234,6 +272,42 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     await expect(closeDialog(page)).toBeVisible()
   })
 
+  test('詳細の画面で削除の確かめを出している時の「戻る」は、確かめだけを閉じる（詳細の画面は開いたまま）。次の「戻る」で詳細の画面を閉じる', async ({
+    page,
+  }) => {
+    await openCalendar(page, DAY, { data: demoData() })
+    await openDetail(page, true)
+    await askDelete(page, true)
+    await goBack(page)
+    await expect(deleteConfirm(page)).toHaveCount(0)
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await expect(closeDialog(page)).toHaveCount(0)
+    await goBack(page)
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    expect(await itemExists(page, DEMO_IDS.weekly)).toBe(true)
+  })
+
+  test('ホーム画面から開いたアプリ（前に履歴が無い）では、［閉じる］の後すぐ「もう一度［戻る］を押すと閉じます」（待たない）', async ({
+    page,
+    baseURL,
+  }) => {
+    await page.clock.setFixedTime(new Date(E2E_NOW))
+    await page.addInitScript(() => localStorage.setItem('diary-studio:test-auth', '1'))
+    // ホーム画面から開いた時と同じく、タブの履歴はアプリの1つだけ
+    await page.evaluate((url) => location.replace(url), new URL(`/#${MONTH}`, baseURL).href)
+    await page.waitForFunction(() => Boolean(window.__ds))
+    await expect(page.getByTestId('top-page')).toBeVisible()
+    await armHistory(page)
+    expect(await historyLength(page)).toBe(3)
+    await goBack(page)
+    await expect(closeDialog(page)).toBeVisible()
+    await expect(page.getByTestId('app-close-cancel')).toBeFocused()
+    await page.getByTestId('app-close').click()
+    await expect(page.locator('.toast', { hasText: 'もう一度［戻る］を押すと閉じます' })).toBeVisible({ timeout: 800 })
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
+  })
+
   test('詳細の画面は、シートの外を押しても閉じ、下にあった物（ヘッダーの［MIM］）は押されない（■23）', async ({ page }) => {
     await openCalendar(page, DAY, { data: demoData() })
     await openDetail(page, true)
@@ -293,6 +367,27 @@ test.describe('PC のブラウザの戻る・進む（■22）', { tag: ['@pc'] 
     await expect(page.getByTestId('item-sheet')).toHaveCount(0)
     await page.waitForTimeout(300)
     await showing(page, DAY)
+  })
+
+  test('ドラッグの途中の「戻る」は何もしない（閉じるかを聞かず、離すとふつうに落とす）', async ({ page }) => {
+    await openCalendar(page, `/week/${DEMO_WEEKS.main}`, { data: demoData() })
+    const card = page.locator(`[data-testid="week-card-${DEMO_IDS.meeting}"]:not([data-dnd-placeholder])`)
+    const box = await card.boundingBox()
+    if (!box) throw new Error('カードが見えていません')
+    const drag = await startMouseDrag(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+    const to = page.locator('[data-tier="work"] .wk-cell[data-date="2026-11-12"]')
+    const target = await to.boundingBox()
+    if (!target) throw new Error('日のマスが見えていません')
+    await drag.moveTo({ x: target.x + target.width / 2, y: target.y + 20 })
+    await expect(to.locator('xpath=ancestor-or-self::*[@data-drop][1]')).toHaveAttribute('data-drop', 'hover')
+    await goBack(page)
+    await page.waitForTimeout(200)
+    await expect(closeDialog(page)).toHaveCount(0)
+    await drag.drop()
+    await expect.poll(() => page.evaluate((i) => window.__ds.getData().items[i]?.start, DEMO_IDS.meeting)).toBe('2026-11-12')
+    await expect(closeDialog(page)).toHaveCount(0)
+    await goBack(page)
+    await expect(closeDialog(page)).toBeVisible()
   })
 
   test('開いた直後（まだ押していない）は履歴に積まず、最初に押した時に「戻る」「進む」の印を作る。‹ › を20回押しても増えない', async ({
