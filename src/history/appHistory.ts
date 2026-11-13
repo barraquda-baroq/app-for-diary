@@ -30,6 +30,18 @@
 //   戻す（src/ui/Layout.tsx の scrollsToTop は「戻る」「進む」では動かさない）。ただし「戻る」「進む」の印の履歴（と、印を作る・置く時に
 //   自分で戻る間の土台）だけは manual にする（押し終えた時に続いているスクロール（払った指の惰性）を、印を積んだ時の位置へ戻さない・
 //   フリックで印の履歴へ移った時に、前の位置へ跳ばない）。土台に着いたら auto に戻す
+// - iPhone の身振りの絵（3.1 の「端からのフリックの間に見える絵」）: WebKit は、端からのフリックの間、行き先の履歴の絵を出す。絵は、
+//   その履歴を最後に離れた時（pushState・go・身振りの始まり）に、その時に描かれていた画面を写した物で、身振りの絵を出している間
+//   （着いた後も、画面が描き直されて、描く物が行き先の絵の半分を超えるなどするまで。長くて3秒）は写さない。なので iPhone では:
+//   - 土台の前後の履歴の絵を、カレンダーだけを出している時に写し直す（refresh。モードを回した後・小さな画面などから土台へ戻った後・
+//     印を作った後に、身振りの絵が消えたとみなせる時（SWIPE_SETTLE_*）と、押し終えてドラッグも終わり、スクロールが止まり、画面が
+//     描かれた時（PAINT_*）。カレンダーの上に物が出ていれば少し後にもう一度（CLEAN_RETRY_*）、すばやく足すが閉じた時（uncovered）
+//     にも。土台の後ろの閉じた画面の履歴は「進む」の印に替える）。履歴は増やさない
+//   - 端からのフリックで詳細の画面などを閉じた時は、押した直後なら、閉じた画面の履歴をすぐ切り捨てる（dropClosed。その絵は閉じる前の
+//     画面で、写し直す前に次に払うと出るため）
+//   - 登録・詳細の画面をルーターの戻るで閉じる時は、戻る前に隠して描かせる（hideBeforeLeave。閉じた画面の履歴の絵に残さない）
+//   - モードを回した時、新しいモードの描く物が行き先の絵の半分に届かなければ、見えない描く物を足してすぐ絵を外させる（afterRing）
+//   - 身振りに取られた指（離す出来事が来ない）は、身振りの「戻る」「進む」が来た時に離したとみなす
 // - 読み込み直した時は、今の履歴の state（idx・ds）をそのまま使う（履歴を増やさない。印の履歴で読み込み直した時は土台へ戻る）
 // - アプリを閉じる（leave。「Diary Studio を閉じますか？」の［閉じる］）: アプリの最初の履歴（idx 0）より前へ戻る。前が無い時（ほかの
 //   アプリから開いたブラウザのタブなど）は window.close() を試し、それも効かなければ、最初の履歴へ戻って「もう一度［戻る］で閉じる」所に
@@ -67,6 +79,8 @@ export interface HistoryWindow {
   setTimeout(handler: () => void, ms: number): number
   clearTimeout(id: number): void
   close(): void
+  /** 次に描く時（無ければ 16ms 後とみなす） */
+  requestAnimationFrame?(callback: () => void): number
   navigator?: { userActivation?: { readonly isActive: boolean } }
   /** Navigation API（Chromium など。無いブラウザでは使わない）: 今いる所と続いた、同じ origin の履歴だけを数える */
   navigation?: { readonly currentEntry: { readonly index: number } | null; entries(): ArrayLike<unknown> } | null
@@ -90,6 +104,20 @@ export interface HistoryHandlers {
   consumePop?: () => boolean
   /** ドラッグの途中か（押し終えても、落とし終えるまで履歴を動かさない。src/App.tsx が dragActive を置く） */
   dragging?: () => boolean
+  /**
+   * iPhone: 画面がカレンダーだけか（小さな画面・確かめ・メニュー・すばやく足すの入力欄・掴んだカード・めくる動き・起動アニメーションが
+   * 無く、ページが見えている）。土台の前後の履歴の絵を写し直すのは、この時だけ（src/history/swipePicture.ts）
+   */
+  cleanScreen?: () => boolean
+  /**
+   * iPhone: 登録・詳細の画面をルーターの戻るで閉じる前に、小さな画面と確かめを隠す（離れる履歴の絵に残さない）。返す関数は、隠した物が
+   * 残っていれば出し直す（戻れなかった時）
+   */
+  hideSheets?: () => () => void
+  /** iPhone: ページの描く物の数の見積もり（WebKit が身振りの絵を外すのを待つ目安。見えない描く物は数えない） */
+  renderWeight?: () => number
+  /** iPhone: 見えない描く物を count 個置く（0 で外す） */
+  ballast?: (count: number) => void
 }
 
 export interface AppHistoryOptions {
@@ -128,6 +156,10 @@ export interface HistoryShape {
   exitArmed: boolean
   /** 押している間・ドラッグの途中（アプリから履歴を動かすのを待っている） */
   held: boolean
+  /** iPhone: ブラウザが身振りの絵を出しているとみなす間（端からのフリックが来てから） */
+  swipePicture: boolean
+  /** iPhone: 土台の前後の履歴の絵を写し直すのを待っている・写し直している */
+  refreshing: boolean
 }
 
 /** アプリを閉じた結果: left = 離れた、armed = 最初の履歴へ戻った（もう一度［戻る］で閉じる）、stayed = 離れられなかった */
@@ -171,6 +203,32 @@ const INPUT_EVENTS = [
 ] as const
 /** 押し終えた出来事（ここで、待っていた物を進め、最初に押し終えた時なら印の履歴を作る） */
 const PRESS_END_EVENTS = new Set(['pointerup', 'pointercancel', 'touchend', 'touchcancel', 'keyup', 'click'])
+/**
+ * iPhone: 端からのフリックが来てから、ブラウザが身振りの絵を出しているとみなす間: 最初に描く時（身振りが終わる動きの間は描かない）の
+ * 後に、さらに SWIPE_SETTLE_FRAMES 回描いて SWIPE_SETTLE_MS 待つまで（WebKit は、描く物が足りていれば、動きの後の1〜2回の描く時で
+ * 外す）
+ */
+export const SWIPE_SETTLE_FRAMES = 3
+export const SWIPE_SETTLE_MS = 100
+/** iPhone: 画面を替えてから描かれたとみなすまで（PAINT_FRAMES 回描いて PAINT_MS 待つ。WebKit は描き終えた絵を写す） */
+export const PAINT_FRAMES = 2
+export const PAINT_MS = 50
+/** iPhone: スクロールが止まったとみなすまで（その後に絵を写し直す） */
+export const SCROLL_QUIET_MS = 150
+/** iPhone: 写し直す時に画面がカレンダーだけでなかった（上の物が消える動きの途中など）時に、もう一度確かめるまでと、その回数 */
+export const CLEAN_RETRY_MS = 200
+export const CLEAN_RETRIES = 3
+/** 1回描くのを待つ長さの上限（描かない時（見えていない・テストの作り物）でも止まらないように） */
+const FRAME_TIMEOUT_MS = 1000
+/**
+ * iPhone: モードを回した後の描く物を、行き先の絵の描く物の数のこの割合までは足す（WebKit が身振りの絵を外すのを待つ物の1つが、
+ * 描く物が絵の半分を超えること。数は見積もりなので、余裕を見る）
+ */
+export const BALLAST_FRACTION = 0.8
+/** 行き先の絵の描く物の数が分からない時の見積もり（今の画面の何倍か） */
+const UNKNOWN_PICTURE_FACTOR = 2
+/** 見えない描く物の上限 */
+const BALLAST_MAX = 6000
 
 /** 履歴の state の DS の印 */
 interface Meta {
@@ -274,7 +332,31 @@ export class AppHistory implements RouterHistory {
   private forwardPending = false
   /** 押し終えた時の印の履歴を作る（置く）動きを、もう順番に入れた */
   private markQueued = false
-  private waiting: { finish: (came: boolean) => void } | null = null
+  /** iPhone: 最後に端からのフリックが来た時刻（それより前の指の出来事は、身振りに取られた物） */
+  private swipeAt = -Infinity
+  /** iPhone: ブラウザが身振りの絵を出しているとみなす間（と、その数え直しの番号） */
+  private afterSwipe = false
+  private swipeGen = 0
+  /** iPhone: 土台の前後の履歴の絵が古い（写し直す） */
+  private stale = false
+  /** iPhone: 写し直すかを確かめるのを待っている（と、その番号）・写し直す動きを順番に入れた */
+  private refreshDue = false
+  private refreshGen = 0
+  private refreshQueued = false
+  /** iPhone: 最後にスクロールした時刻 */
+  private lastScrollAt = -Infinity
+  /**
+   * iPhone: 土台のすぐ後ろに履歴があると、利用者の「戻る」「進む」で着いて分かった（その土台の idx）。読み込み直した後（top が当て推量）
+   * でも、その履歴の絵を写し直す（topGuessed は、閉じる時の近道のためにそのままにする）
+   */
+  private forwardSeen: number | null = null
+  /** iPhone: 履歴（idx）ごとの、絵を写した時の描く物の数（自分で離れた時と、身振りの始まりで控える） */
+  private readonly weights = new Map<number, number>()
+  /** iPhone: 端からのフリックが来た時の描く物の数・置いている見えない描く物の数 */
+  private popWeight = 0
+  private ballastCount = 0
+  /** 自分で始めた戻る・進むの popstate を待っている物（expect は着くはずの idx） */
+  private waiting: { finish: (came: boolean) => void; expect: number } | null = null
   private readonly queue: Op[] = []
   private running = false
   private readonly idleWaiters: (() => void)[] = []
@@ -302,6 +384,7 @@ export class AppHistory implements RouterHistory {
     win.addEventListener('pageshow', this.onPageShow)
     win.addEventListener('blur', this.onBlur)
     for (const type of INPUT_EVENTS) win.addEventListener(type, this.onInput, true)
+    if (this.flicks) win.addEventListener('scroll', this.onScroll, { capture: true, passive: true })
   }
 
   get action(): NavigationType {
@@ -344,6 +427,7 @@ export class AppHistory implements RouterHistory {
         await this.untilFree()
         await this.travelTo(base)
         this.deliver()
+        this.markStale()
       })
     }
     return () => {
@@ -363,7 +447,7 @@ export class AppHistory implements RouterHistory {
 
   /**
    * ルーターの戻る・進む（navigate(-1)・書きかけの確かめで止めた「戻る」を戻す・続ける）。ルーターが出している所から数え（土台へ
-   * 戻している途中に呼ばれても）、来た所はルーターに渡す
+   * 戻している途中に呼ばれても）、来た所はルーターに渡す。iPhone で登録・詳細の画面を閉じる時は、戻る前に隠して描かせる
    */
   go(delta: number): void {
     const target = this.shownIdx + delta
@@ -371,8 +455,20 @@ export class AppHistory implements RouterHistory {
       await this.untilFree()
       // 押し終えるのを待つ間に、利用者の「戻る」「進む」でもうそこを出していた（押している間に［×］と OS の戻るの両方で閉じた時など）
       if (delta !== 0 && this.shownIdx === target && this.cur === target) return
+      const shown = await this.hideBeforeLeave(delta)
+      // 隠して描かせる間に来た「戻る」「進む」から戻す動き（rush）を先に済ませ、押されていれば離してドラッグも終わるまで待つ（押して
+      // いる間は履歴を動かさない）。待った時は、もう一度描かせる
+      while (shown && (await this.untilFree())) await this.painted()
+      // 隠して待つ間に、利用者の「戻る」「進む」でもう閉じていた
+      if (shown && this.shownIdx === target && this.cur === target) {
+        shown(true)
+        return
+      }
       await this.travelTo(target)
       this.deliver()
+      shown?.(this.cur === target)
+      // iPhone: 隠し終える前に端からのフリックが来た（閉じた画面の履歴の絵に、小さな画面が写った）
+      await this.dropClosed()
     })
   }
 
@@ -434,6 +530,8 @@ export class AppHistory implements RouterHistory {
       buildPending: this.buildPending,
       exitArmed: this.exitArmed,
       held: !this.free(),
+      swipePicture: this.afterSwipe,
+      refreshing: this.afterSwipe || this.refreshDue || this.refreshQueued,
     }
   }
 
@@ -443,6 +541,9 @@ export class AppHistory implements RouterHistory {
     this.win.removeEventListener('pagehide', this.onPageHide)
     this.win.removeEventListener('pageshow', this.onPageShow)
     this.win.removeEventListener('blur', this.onBlur)
+    this.win.removeEventListener('scroll', this.onScroll, true)
+    this.swipeGen++
+    this.refreshGen++
     for (const type of INPUT_EVENTS) this.win.removeEventListener(type, this.onInput, true)
     this.stopFreeTimer()
     if (this.armTimer !== null) this.win.clearTimeout(this.armTimer)
@@ -542,6 +643,7 @@ export class AppHistory implements RouterHistory {
         // 変えられない
       }
     }
+    this.notePush()
     try {
       this.win.history.pushState({ usr: location.state, key: location.key, idx, ...this.meta() }, '', url)
     } catch (error) {
@@ -603,6 +705,8 @@ export class AppHistory implements RouterHistory {
         // 戻れなかった時は、今いる所を土台にする
         if (this.cur !== base) this.base = this.cur
         this.replaceHere(location)
+        // iPhone: 積んだ画面から土台へ戻った（その画面の履歴が後ろに残る）。土台の前後の絵を写し直す
+        this.markStale()
       })
   }
 
@@ -620,26 +724,38 @@ export class AppHistory implements RouterHistory {
     // 「戻る」の印・土台・「進む」の印は、スクロールの位置を戻させない（この後に積む物も同じになる）。土台へ戻り終えたら、土台だけ戻す
     const restore = this.manualScroll()
     h.replaceState({ usr: location.state, key: location.key, idx: at, ds: { base, mark: 'back' } }, '', href)
+    this.notePush()
     h.pushState({ usr: location.state, key: location.key, idx: base, ds: { base } }, '', href)
+    this.cur = base
+    this.notePush()
     h.pushState({ usr: null, key: makeKey(), idx: base + 1, ds: { base, mark: 'fwd' } }, '', href)
     this.base = base
     this.cur = this.top = base + 1
     this.shown = location
     this.shownIdx = base
-    return this.travelTo(base).then(() => restore(base))
+    // iPhone: 押し終えた時の画面（起動アニメーション・押して開いた物が写ることがある）で写した印の絵を、落ち着いてから写し直す
+    return this.travelTo(base)
+      .then(() => restore(base))
+      .then(() => this.markStale())
   }
 
   /** 今の履歴の後ろに「進む」の印を積んで、1つ戻る（印は、スクロールの位置を戻させない。build と同じ） */
   private addForward(): Promise<void> {
     const back = this.cur
     const restore = this.manualScroll()
+    this.notePush()
     this.win.history.pushState(
       { usr: null, key: makeKey(), idx: back + 1, ds: { base: this.base ?? back, mark: 'fwd' } },
       '',
       this.win.location.href,
     )
     this.cur = this.top = back + 1
-    return this.travelTo(back).then(() => restore(back))
+    return this.travelTo(back)
+      .then(() => restore(back))
+      .then(() => {
+        // iPhone: 土台の後ろに置いた時は、落ち着いてから印の絵を写し直す（詳細の画面などの後ろの印は、開いた時（描く前）の絵のまま）
+        if (back === this.base) this.markStale()
+      })
   }
 
   /**
@@ -745,9 +861,10 @@ export class AppHistory implements RouterHistory {
         this.top = Math.max(this.top, this.cur)
         resolve(came)
       }
-      const waiting = { finish }
+      const waiting = { finish, expect: this.cur + delta }
       this.waiting = waiting
       const timer = this.win.setTimeout(() => finish(false), timeout)
+      this.noteLeave(this.cur)
       this.win.history.go(delta)
     })
   }
@@ -765,6 +882,10 @@ export class AppHistory implements RouterHistory {
     const now = this.now()
     for (const [id, p] of this.pointers) if (now - p.at > PRESS_STALE_MS) this.pointers.delete(id)
     if (this.touches > 0 && now - this.touchAt > PRESS_STALE_MS) this.touches = 0
+    // iPhone: 端からのフリックが来る前から出来事の無い指は、身振りに取られて離した（離す出来事は来ない。身振りの「戻る」「進む」は
+    // 指を離した時に来る）
+    for (const [id, p] of this.pointers) if (p.type === 'touch' && p.at <= this.swipeAt) this.pointers.delete(id)
+    if (this.touches > 0 && this.touchAt <= this.swipeAt) this.touches = 0
     return this.pointers.size > 0 || this.touches > 0
   }
 
@@ -775,11 +896,13 @@ export class AppHistory implements RouterHistory {
 
   /**
    * 押し終えてドラッグも終わるまで待つ（今そうなら、すぐ）。順番の中の動き（run）からだけ呼ぶ: 待つ間に来た「戻る」「進む」から戻す
-   * 動き（rush）は、待ったままにせず、ここで先に行う
+   * 動き（rush）は、待ったままにせず、ここで先に行う。待った・戻す動きを行った時は true（すぐ返した時は false）
    */
-  private async untilFree(): Promise<void> {
+  private async untilFree(): Promise<boolean> {
+    let waited = false
     for (;;) {
       while (this.urgent.length > 0) {
+        waited = true
         const op = this.urgent.shift()!
         try {
           const result = op()
@@ -788,7 +911,8 @@ export class AppHistory implements RouterHistory {
           console.error('履歴の書き込みに失敗しました', error)
         }
       }
-      if (this.free()) return
+      if (this.free()) return waited
+      waited = true
       await new Promise<void>((resolve) => {
         this.freeWaiters.push(resolve)
         this.watchFree()
@@ -834,6 +958,8 @@ export class AppHistory implements RouterHistory {
     }
     this.stopFreeTimer()
     for (const resolve of this.freeWaiters.splice(0)) resolve()
+    // iPhone: 押している間は写さなかった土台の前後の絵を、写し直す
+    this.requestRefresh()
     if (this.markQueued || !this.activated()) return
     const atBase = this.base !== null && this.cur === this.base && this.shownIdx === this.base && this.top <= this.base
     if (!this.buildPending && !this.forwardPending && !(atBase && !this.running)) return
@@ -872,8 +998,286 @@ export class AppHistory implements RouterHistory {
     return this.now() - this.lastActivation < ACTIVATION_FALLBACK_MS
   }
 
+  // ---------- iPhone の身振りの絵（docs/SPEC.md の 3.1。上の初めの説明） ----------
+
+  /** 端からのフリックの端末（iPhone・iPad）か */
+  private get flicks(): boolean {
+    return this.opts.source === 'edge-flick'
+  }
+
+  /** ページの描く物の数の見積もり（無ければ 0） */
+  private weigh(): number {
+    return this.handlers.renderWeight?.() ?? 0
+  }
+
+  /** 今いる履歴を離れる（go）: WebKit はこの時の画面をこの履歴の絵に写す（身振りの絵を出している間は写さない）。描く物の数を控える */
+  private noteLeave(idx: number): void {
+    if (!this.flicks || this.afterSwipe) return
+    const weight = this.weigh()
+    if (weight > 0) this.weights.set(idx, weight + this.ballastCount)
+  }
+
+  /** 今の後ろに積む（pushState）: 後ろの履歴は無くなり（絵も消える）、今いる履歴は離れる */
+  private notePush(): void {
+    if (!this.flicks) return
+    for (const idx of [...this.weights.keys()]) if (idx > this.cur) this.weights.delete(idx)
+    this.noteLeave(this.cur)
+  }
+
+  /**
+   * 利用者の「戻る」「進む」（端からのフリック）が来た: WebKit は身振りを始めた時に、離れた履歴（from）の絵をその時の画面で写し、
+   * 着いた後もしばらく身振りの絵を出す（その間は絵を写さない）。その間とみなす長さを数え始める（終わったら、見えない描く物を外して、
+   * 土台の前後の絵を写し直すかを確かめる）。身振りに取られた指は離したとみなす（pressing）
+   */
+  private noteSwipe(from: number): void {
+    if (!this.flicks) return
+    // 着いた所が土台のすぐ後ろの履歴（「進む」の印・閉じた画面）: 読み込み直した後の当て推量でなく、あると分かった
+    const meta = metaOf(this.win.history.state)
+    if (meta && this.cur === meta.base + 1) this.forwardSeen = meta.base
+    this.swipeAt = this.now()
+    this.popWeight = this.weigh()
+    if (this.popWeight > 0) this.weights.set(from, this.popWeight + this.ballastCount)
+    this.afterSwipe = true
+    this.refreshGen++
+    this.refreshDue = false
+    const gen = ++this.swipeGen
+    void this.frames(1 + SWIPE_SETTLE_FRAMES)
+      .then(() => this.wait(SWIPE_SETTLE_MS))
+      .then(() => {
+        if (gen !== this.swipeGen) return
+        this.afterSwipe = false
+        if (this.ballastCount > 0) {
+          this.ballastCount = 0
+          this.handlers.ballast?.(0)
+        }
+        this.requestRefresh()
+      })
+  }
+
+  /**
+   * 端からのフリックでモードを回した直後: 土台の前後の絵は前のモードのままなので、写し直す。WebKit は、着いた後に画面が描き直され、
+   * 描く物の数が行き先の履歴（target）の絵の半分を超えるなどするまで身振りの絵を外さない（長くて3秒。待つ物はほかにもある）。新しい
+   * モードが半分に届かない時（イヤーから月・日へなど）は、見えない描く物を足して、その分は待たせない（身振りの絵を出しているとみなす
+   * 間の終わりに外す）。新しいモードを数えるのは、React が描いた後
+   * （popstate の中のルーターの更新は、その後の最初のマイクロタスクで描く）。身振りが終わる動きの間は、ブラウザは描かないので間に合う
+   */
+  private afterRing(target: number): void {
+    if (!this.flicks) return
+    this.markStale()
+    const { renderWeight, ballast } = this.handlers
+    if (!renderWeight || !ballast) return
+    const picture = Math.max(this.weights.get(target) ?? this.popWeight * UNKNOWN_PICTURE_FACTOR, this.popWeight)
+    const gen = this.swipeGen
+    queueMicrotask(() => {
+      if (gen !== this.swipeGen) return
+      const need = Math.min(BALLAST_MAX, Math.ceil(picture * BALLAST_FRACTION) - renderWeight())
+      if (need <= 0) return
+      this.ballastCount = need
+      ballast(need)
+    })
+  }
+
+  /** n 回描くまで待つ（描かない時も、1回 FRAME_TIMEOUT_MS で先へ進む） */
+  private frames(n: number): Promise<void> {
+    return new Promise((resolve) => {
+      const step = (left: number) => {
+        if (left <= 0) {
+          resolve()
+          return
+        }
+        let done = false
+        const next = () => {
+          if (done) return
+          done = true
+          this.win.clearTimeout(timer)
+          step(left - 1)
+        }
+        const timer = this.win.setTimeout(next, FRAME_TIMEOUT_MS)
+        if (this.win.requestAnimationFrame) this.win.requestAnimationFrame(next)
+        else this.win.setTimeout(next, 16)
+      }
+      step(n)
+    })
+  }
+
+  /** 今の画面が描かれるまで待つ */
+  private painted(): Promise<void> {
+    return this.frames(PAINT_FRAMES).then(() => this.wait(PAINT_MS))
+  }
+
+  /** 土台の前後の絵が古くなった: 写し直す（落ち着いてから） */
+  private markStale(): void {
+    if (!this.flicks) return
+    this.stale = true
+    this.requestRefresh()
+  }
+
+  /**
+   * 写し直すかを、delay ms 待って今の画面が描かれた後に確かめる（待っていれば待ち直す。身振りの絵を出しているとみなす間は、その終わりに
+   * 確かめる）。押している間は、確かめた時にやめ、次に押し終えた時・土台へ戻った時などにまた。画面がカレンダーだけでないだけの時
+   * （上の物が消える動きの途中など）は、CLEAN_RETRY_MS 後にもう一度（retries 回まで。上の物が出たままなら止め、すばやく足すが
+   * 閉じた時（uncovered）・押し終えた時などにまた）
+   */
+  private requestRefresh(delay = 0, retries = CLEAN_RETRIES): void {
+    if (!this.flicks || !this.stale || this.afterSwipe) return
+    this.refreshDue = true
+    const gen = ++this.refreshGen
+    void (delay > 0 ? this.wait(delay) : Promise.resolve()).then(() => this.painted()).then(() => this.checkRefresh(gen, retries))
+  }
+
+  /** 写し直すかを確かめる（requestRefresh の、描かれた後） */
+  private checkRefresh(gen: number, retries: number): void {
+    if (gen !== this.refreshGen) return
+    this.refreshDue = false
+    const quiet = this.lastScrollAt + SCROLL_QUIET_MS - this.now()
+    if (quiet > 0) {
+      // スクロールの途中（払った指の惰性など）: 止まってから
+      this.refreshDue = true
+      this.win.setTimeout(() => {
+        if (gen !== this.refreshGen) return
+        this.refreshDue = false
+        this.requestRefresh()
+      }, quiet)
+      return
+    }
+    if (this.refreshQueued) return
+    if (!this.readyToRecord()) {
+      // 画面がカレンダーだけでないだけ: 少し後にもう一度
+      if (retries > 0 && this.readyToRecord(true, false)) this.requestRefresh(CLEAN_RETRY_MS, retries - 1)
+      return
+    }
+    this.refreshQueued = true
+    this.run(() => {
+      this.refreshQueued = false
+      return this.refresh()
+    })
+  }
+
+  /**
+   * 自分で履歴を動かして絵を写してよいか: 土台でカレンダーだけを出していて（atBase を外すと、写し直す途中の確かめ。clean を外すと、
+   * 画面の上の物は見ない）、押している物もドラッグも無く、身振りの絵を出しているとみなす間でもスクロールの途中でもない
+   */
+  private readyToRecord(atBase = true, clean = true): boolean {
+    return (
+      this.base !== null &&
+      this.shownIdx === this.base &&
+      (!atBase || this.cur === this.base) &&
+      this.screen(this.shown) === 'calendar' &&
+      !this.afterSwipe &&
+      !this.exitArmed &&
+      !this.closing &&
+      this.now() - this.lastScrollAt >= SCROLL_QUIET_MS &&
+      this.free() &&
+      (!clean || this.handlers.cleanScreen?.() !== false)
+    )
+  }
+
+  /**
+   * 土台の前後の履歴の絵を、今のカレンダーで写し直す（WebKit は離れる履歴の絵を写す）: 後ろの履歴へ（土台を写す）、前の印へ（後ろの
+   * 履歴を写す）、土台へ（前の印を写す）。後ろの履歴が「進む」の印でなければ（閉じた画面の履歴）、着いた時に「進む」の印に替える
+   * （履歴は増やさない。印はスクロールの位置を戻させない）。動く前ごとに確かめ、押した・画面が替わった・フリックが来た時はやめて
+   * 土台へ戻る（押している間でも戻る: 印の履歴に残ったまま身振りが始まらないように。3.1 の「押している間は、アプリからは履歴を
+   * 動かさない」の例外）。絵は古いまま、次に落ち着いた時にまた。自分で動いている途中に利用者のフリックが来た時（思った所と違う所へ
+   * 着いた。その払いは何もしない）も、その身振りの絵が消えた後にまた。後ろの数が当て推量（読み込み直した後）の時は、利用者の
+   * 「戻る」「進む」で土台のすぐ後ろへ着いて分かるまで、前の印だけ。動けなかった時（popstate が来ない）は、写し直すのをやめる（次に
+   * 古くなった時にまた）
+   */
+  private async refresh(): Promise<void> {
+    if (!this.stale || !this.readyToRecord()) return
+    const base = this.base as number
+    const restore = this.manualScroll()
+    let result: 'done' | 'stopped' | 'failed' = 'stopped'
+    try {
+      if (this.top > base && (!this.topGuessed || this.forwardSeen === base)) {
+        await this.travelTo(base + 1)
+        if (this.cur === base && this.idx() === base) {
+          // 後ろに履歴が無かった
+          this.top = base
+        } else if (this.cur !== base + 1) {
+          result = 'failed'
+          return
+        } else {
+          this.toForwardMarker(base)
+          if (!this.readyToRecord(false)) return
+        }
+      }
+      await this.travelTo(base - 1)
+      if (this.cur !== base - 1) {
+        result = 'failed'
+        return
+      }
+      if (!this.readyToRecord(false)) return
+      await this.travelTo(base)
+      result = this.cur === base ? 'done' : 'failed'
+    } finally {
+      if (this.base === base && this.cur !== base && this.shownIdx === base) await this.travelTo(base)
+      await restore(base)
+      // 途中で利用者のフリックが来た（思った所と違う所へ着いた）時は、その身振りの絵を出している間に動いたので、写っていない
+      if (result !== 'stopped' && !this.afterSwipe) this.stale = false
+      else this.requestRefresh()
+    }
+  }
+
+  /** 今いる履歴（土台の後ろ）が「進む」の印でなければ（閉じた画面の履歴）、「進む」の印に替える（絵は、この後に離れる時に写る） */
+  private toForwardMarker(base: number): void {
+    const h = this.win.history
+    const meta = metaOf(h.state)
+    if (meta?.mark === 'fwd' && meta.base === base) return
+    h.replaceState({ usr: null, key: makeKey(), idx: this.cur, ds: { base, mark: 'fwd' } }, '', this.createHref(this.shown))
+    try {
+      h.scrollRestoration = 'manual'
+    } catch {
+      // 変えられない
+    }
+  }
+
+  /**
+   * iPhone: 端からのフリックで詳細の画面・MIM・設定を閉じて土台へ着いた（と、隠し終える前にフリックが来た登録・詳細の画面を閉じた）時:
+   * 閉じた画面の履歴は土台の後ろに残り、右の端から払った時の行き先になる。その絵は身振りの始まりに写した閉じる前の画面で、身振りの絵を
+   * 出している間は写し直せず、写し直す前に次の指が下りると、払うたびにその絵が出る。押した直後（ブラウザが、積んだ履歴を行き先から
+   * 外さない間）なら、すぐ土台の後ろに「進む」の印を積み直して閉じた画面の履歴を切り捨て、1つ戻る（積み直した印には、写し直すまで
+   * 絵が無い: その間に払うと地の色が出る）。押してから時間がたっていれば、落ち着いてから写し直す時に「進む」の印に替える（それまでに
+   * 払うと、閉じた画面の絵が出る。3.1 の残ること）
+   */
+  private dropClosed(): Promise<void> | void {
+    if (!this.flicks || !this.afterSwipe || this.base === null || this.top <= this.base) return
+    if (this.cur !== this.base || this.shownIdx !== this.base || !this.free() || !this.activated()) return
+    return this.addForward()
+  }
+
+  /**
+   * iPhone: カレンダーの上の物（すばやく足すの入力欄）が消えた（押し終わりの無い閉じ方: Esc・キーボードの完了など。画面の側が知らせる）:
+   * ms 待って描かれた後に、土台の前後の絵を写し直すかを確かめる
+   */
+  uncovered(ms: number): void {
+    this.requestRefresh(ms)
+  }
+
+  /**
+   * iPhone で登録・詳細の画面をルーターの戻るで閉じる時（［×］・Esc・背景・登録・削除）: 戻る前に小さな画面と確かめを隠して描かせる
+   * （WebKit は離れる履歴の絵をその時の画面で写す。閉じた画面の履歴が「進む」の行き先に残っても、絵に小さな画面を残さない）。返す関数は、
+   * 戻れなかった時に出し直す（戻れた時は、ルーターが外す。外さなかった物も、少し後に出し直す）
+   */
+  private async hideBeforeLeave(delta: number): Promise<((left: boolean) => void) | null> {
+    if (!this.flicks || delta >= 0) return null
+    const screen = this.screen(this.shown)
+    if (screen !== 'register' && screen !== 'detail') return null
+    const show = this.handlers.hideSheets?.()
+    if (!show) return null
+    await this.painted()
+    return (left) => {
+      if (left) this.win.setTimeout(show, FRAME_TIMEOUT_MS)
+      else show()
+    }
+  }
+
+  private readonly onScroll = (): void => {
+    this.lastScrollAt = this.now()
+  }
+
   /** ルーターに渡す（描く）。今いる履歴の行き先を、出していた所からの差と一緒に */
   private deliver(): void {
+    const from = this.screen(this.shown)
     const location = this.readLocation()
     const delta = this.cur - this.shownIdx
     this.shown = location
@@ -883,6 +1287,8 @@ export class AppHistory implements RouterHistory {
     if (this.base === null && meta) this.base = meta.base
     if (this.base === null && this.screen(location) === 'calendar') this.buildPending = true
     this.listener?.({ action: NavigationType.Pop, location, delta })
+    // iPhone: 小さな画面・ほかの画面から土台へ戻った（閉じた画面の履歴が後ろに残る）。土台の前後の絵を写し直す
+    if (from !== 'calendar' && this.base !== null && this.cur === this.base) this.markStale()
   }
 
   private async doLeave(): Promise<LeaveResult> {
@@ -946,7 +1352,11 @@ export class AppHistory implements RouterHistory {
     const waiting = this.waiting
     if (waiting) {
       // 自分で始めた戻る・進む。思った所と違っても（すばやく続けた「戻る」「進む」が先に来た）、今いる所から続ける
+      const from = this.cur
       this.cur = idx ?? this.adoptOutside(st)
+      // iPhone: 思った所と違う所へ着いた（利用者の端からのフリックが先に来た。その払いは何もしない）: その身振りの絵を出している間と
+      // みなす（絵を写し直している途中なら、やめて後でもう一度）
+      if (idx !== null && idx !== waiting.expect) this.noteSwipe(from)
       waiting.finish(true)
       if (!this.running) for (const resolve of this.idleWaiters.splice(0)) resolve()
       return
@@ -960,6 +1370,7 @@ export class AppHistory implements RouterHistory {
     const from = this.cur
     this.cur = idx
     this.top = Math.max(this.top, idx)
+    this.noteSwipe(from)
     // 閉じる途中（window.close() を試して待つ間）に来た「戻る」「進む」: 閉じるかを聞き直さない（doLeave が終わりに、Android は
     // 最初の履歴で「もう一度［戻る］で閉じる」所にし、PC は出していた所へ戻る）
     if (this.closing) return
@@ -998,6 +1409,7 @@ export class AppHistory implements RouterHistory {
       case 'ring':
         this.rush(() => this.travelTo(shownIdx))
         this.handlers.ring?.(action.dir)
+        this.afterRing(idx)
         return
       case 'ask-exit':
         this.rush(() => this.travelTo(shownIdx))
@@ -1014,11 +1426,13 @@ export class AppHistory implements RouterHistory {
         const target = shownIdx - 1
         if (this.cur === target) {
           this.deliver()
+          this.rush(() => this.dropClosed())
           return
         }
         this.rush(async () => {
           await this.travelTo(target)
           this.deliver()
+          await this.dropClosed()
         })
       }
     }
@@ -1201,4 +1615,9 @@ export function whenHistoryIdle(): Promise<void> {
 /** 今の履歴の形（E2E の window.__ds.historyShape） */
 export function historyShape(): HistoryShape | null {
   return current?.shape() ?? null
+}
+
+/** iPhone: カレンダーの上の物が、押し終わりの無い閉じ方で消えた（AppHistory.uncovered。src/history/swipePicture.ts が呼ぶ） */
+export function calendarUncovered(ms: number): void {
+  current?.uncovered(ms)
 }

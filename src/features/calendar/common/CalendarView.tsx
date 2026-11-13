@@ -8,7 +8,8 @@
 // 左右の画面の端までの余白（frame.css の .cal.is-swipe）。モードはそのままで期間が替わると、ページをめくる（PageTurn。
 // モードの画面を包まず、.cal-body の横に置く）。
 // iPhone の画面のいちばん端からのフリック（ブラウザの「戻る」「進む」の身振り。ページには来ず、アプリの履歴に popstate だけが来る）では、
-// モードを円環で1つ回す（src/history/appHistory.ts から nav.ring を呼ぶ。3.1）
+// モードを円環で1つ回す（src/history/appHistory.ts から nav.ring を呼ぶ。3.1）。開いているすばやく足すは、モードのボタンを押した時と
+// 同じく、字があれば足してから閉じる（12.1）
 import { useEffect, useMemo, useRef, type ComponentType } from 'react'
 import { setHistoryHandler } from '../../../history/appHistory'
 import { useCalendarUi } from '../../../store/uiStore'
@@ -19,6 +20,7 @@ import { WeekView } from '../week/WeekView'
 import { YearView } from '../year/YearView'
 import { CalendarToolbar } from './CalendarToolbar'
 import { PageTurn } from './PageTurn'
+import { quickAddModeChanging } from './parts/QuickAdd'
 import { useItemSheets } from './sheets'
 import { swipeEnabled } from './swipe'
 import { testIds } from './testIds'
@@ -49,8 +51,15 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
   const area = useMemo(() => ({ width: size.width, height: size.height }), [size.width, size.height])
   const swipe = swipeEnabled(mode, width)
   useSwipe(root, swipe, nav.shift)
-  // 端からのフリックでモードを回す（カレンダーを出している間だけ）
-  useEffect(() => setHistoryHandler('ring', nav.ring), [nav])
+  // 端からのフリックでモードを回す（カレンダーを出している間だけ）。すばやく足すは先に閉じる（モードのボタンを押した時と同じ）
+  useEffect(
+    () =>
+      setHistoryHandler('ring', (dir) => {
+        quickAddModeChanging()
+        nav.ring(dir)
+      }),
+    [nav],
+  )
 
   const View = VIEWS[mode]
   const fixed = width !== 'L' && FIXED.includes(mode)

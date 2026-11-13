@@ -293,6 +293,10 @@ export interface HistoryShape {
   exitArmed: boolean
   /** 押している間・ドラッグの途中（アプリから履歴を動かすのを待っている） */
   held: boolean
+  /** iPhone: ブラウザが身振りの絵を出しているとみなす間（端からのフリックが来てから） */
+  swipePicture: boolean
+  /** iPhone: 土台の前後の履歴の絵を写し直すのを待っている・写し直している（docs/SPEC.md の 3.1） */
+  refreshing: boolean
 }
 
 declare global {
@@ -471,7 +475,8 @@ export async function historySettled(page: Page): Promise<void> {
       page.evaluate(() => {
         const s = window.__ds.historyShape()
         const idx = (history.state as { idx?: number } | null)?.idx
-        return Boolean(s && !s.busy && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
+        // iPhone で土台の前後の履歴の絵を写し直すのを待っている・写し直している間も、動かしている途中（docs/SPEC.md の 3.1）
+        return Boolean(s && !s.busy && !s.refreshing && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
       }),
     )
     .toBe(true)
