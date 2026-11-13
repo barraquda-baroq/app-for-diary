@@ -192,15 +192,20 @@ async function recordPageScroll(page: Page) {
 }
 const pageScrolls = (page: Page) => page.evaluate(() => (window as unknown as { __pageScrolls: number[] }).__pageScrolls)
 
-/** なめらかなスクロールが終わるまで待つ（続けて2回、同じ位置） */
+/**
+ * なめらかなスクロールが終わるまで待つ（続けて3回、同じ位置）。落とした後に見える所へ出すのは次に描く時から（dnd-kit の写しが
+ * 外れてから）なので、先に3回描くのを待つ（重い時に、送り始める前の2回の読みが同じで、終わったと見ないように）
+ */
 async function scrollSettled(scroller: Locator) {
-  let last = Number.NaN
+  await scroller.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))),
+  )
+  const seen: number[] = []
   await expect
     .poll(async () => {
-      const top = await scroller.evaluate((e) => e.scrollTop)
-      const still = top === last
-      last = top
-      return still
+      seen.push(await scroller.evaluate((e) => e.scrollTop))
+      const [a, b, c] = seen.slice(-3)
+      return seen.length >= 3 && a === b && b === c
     })
     .toBe(true)
 }
@@ -1005,6 +1010,8 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await overDropDay(to)
     await drag.drop()
     await expect(toast(page, '開始日を 11/11（水）にしました')).toBeVisible()
+    // 落とした直後は、dnd-kit が移った先のカードを掴んだ物として浮かせ、写しを置くことがある（数十 ms。同じ data-testid が2つ）
+    await expect(page.locator('[data-dnd-placeholder], [data-dnd-dragging]')).toHaveCount(0)
     await expect(to.getByTestId(`week-start-${I.tripPrep}`)).toBeVisible()
     // 見える所へ出すのは WeekDnd（移った先の要素を scrollIntoViewWithin で）だけ。名札の行の分は .wk-v の scroll-padding-top の
     // 1か所で見込む（送る量は切れない向きへ整数に丸めるので、1px 足らず下がることはある）
@@ -1037,6 +1044,7 @@ test.describe('スマホ（Pixel 7・指）', { tag: ['@s'] }, () => {
     await drag.drop()
     const note = toast(page, '11/12（木）へ移しました')
     await expect(note).toBeVisible()
+    await expect(page.locator('[data-dnd-placeholder], [data-dnd-dragging]')).toHaveCount(0)
     await scrollSettled(view)
     const moved = to.getByTestId(`week-card-${I.meeting}`)
     await expect(moved).toBeInViewport({ ratio: 1 })

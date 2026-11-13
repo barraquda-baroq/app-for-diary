@@ -348,6 +348,17 @@ function afterDrop(m: DragDropManager, fn: () => void, frames = 120): void {
   requestAnimationFrame(() => (m.dragOperation.status.idle || frames <= 0 ? fn() : afterDrop(m, fn, frames - 1)))
 }
 
+/**
+ * dnd-kit が掴んだ物の場所取り（[data-dnd-placeholder]）を外してから fn を呼ぶ（次に描く時から。外れていなければ外れるまで、
+ * 10回描くまで待つ）。外れる前に測ると、場所取りが移った先のカードより上に残っている時、外れた分（試しでは 56px）だけカードが上へずれ、
+ * 見える所へ出したのに名札の行の下に隠れる（重い時にだけ起きた）
+ */
+function afterPlaceholder(fn: () => void, frames = 10): void {
+  requestAnimationFrame(() =>
+    frames <= 0 || !document.querySelector('[data-dnd-placeholder]') ? fn() : afterPlaceholder(fn, frames - 1),
+  )
+}
+
 // ---------- 目印の帯（左右の端に留まっている間） ----------
 
 function EdgeCueView({ cue }: { cue: Signal<EdgeCue | null> }) {
@@ -566,7 +577,7 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
       if (moved && data) {
         // 移った先の要素（始点・●を動かして1日の予定になった時は、カード。元の要素は外れている）を見える所まで出し、収める
         const ids = [source?.id, dragId(data.item.id, 'card')]
-        requestAnimationFrame(() => {
+        afterPlaceholder(() => {
           const el = ids
             .map((id) => (id === undefined ? undefined : m.registry.draggables.get(id)?.element))
             .find((x) => x?.isConnected)
