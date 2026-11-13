@@ -135,10 +135,8 @@ test.describe('イヤー（PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId(testIds.view('month'))).toBeVisible()
     await page.getByTestId(testIds.calMode('week')).click()
     await at(page, '/week/2026-11-22')
-    // 「戻る」でマンスリー、もう一度でイヤーへ（モードを替えた時は積む）
-    await page.goBack()
-    await at(page, '/month/2026-11')
-    await page.goBack()
+    // ［年］でイヤーへ（モードを替えても履歴に積まないので、「戻る」では戻らない。3.1）
+    await page.getByTestId(testIds.calMode('year')).click()
     await at(page, YEAR)
     await expect(view(page)).toBeVisible()
     await page.getByTestId(testIds.yearMonth(2)).click()
@@ -269,7 +267,7 @@ test.describe('イヤー（スマホ）', { tag: ['@s'] }, () => {
     await expect(view(page).locator('.yr-minis')).toHaveAttribute('data-cols', '2')
     await cell(page, '2026-03-11').tap()
     await at(page, '/month/2026-03')
-    await page.goBack()
+    await page.getByTestId(testIds.calMode('year')).tap()
     await at(page, YEAR)
     // なぞるのは押すのの後にする（速くなぞった直後の指の押し下げは、ブラウザが慣性のスクロールを止める物として扱い、押したことに
     // しないことがある。人がなぞった後に次の年を見てから押すのと違い、テストではすぐに押すので）。なぞり始めは右の列の小さな月

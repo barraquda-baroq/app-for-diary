@@ -247,18 +247,20 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     expect(await groundOf(cell(page, '2026-11-11'))).toBe(await token(page, '--off-fill'))
   })
 
-  test('数字はその日のデイリーへ（積む）、マスのほかの所もその日のデイリーへ、前後の月の日はその月のマンスリーへ（7.12・9.3）', async ({
+  test('数字はその日のデイリーへ（置き換える。3.1）、マスのほかの所もその日のデイリーへ、前後の月の日はその月のマンスリーへ（7.12・9.3）', async ({
     page,
   }) => {
     await openCalendar(page, MONTH, { data: demoData() })
+    const length = await page.evaluate(() => history.length)
     await count(page, '2026-11-10', 'private').click()
     await at(page, '/day/2026-11-10')
-    await page.goBack()
+    await page.getByTestId('cal-mode-month').click()
     await at(page, MONTH)
     await pressCell(page, '2026-11-12')
     await at(page, '/day/2026-11-12')
-    await page.goBack()
+    await page.getByTestId('cal-mode-month').click()
     await at(page, MONTH)
+    expect(await page.evaluate(() => history.length)).toBe(length)
     await pressCell(page, '2026-12-02')
     await at(page, '/month/2026-12')
     await expect(page.getByTestId('cal-numeral')).toHaveText('12')
@@ -282,7 +284,7 @@ test.describe('マンスリー（PC）', { tag: ['@pc'] }, () => {
     // 数字でない所からデイリーへ移って戻っても、完了にした物は数えない
     await pressCell(page, '2026-11-12')
     await at(page, '/day/2026-11-12')
-    await page.goBack()
+    await page.getByTestId('cal-mode-month').click()
     await at(page, MONTH)
     await expect(count(page, '2026-11-10', 'work')).toHaveText('7')
     await expect(cell(page, '2026-11-03').locator('.mo-counts')).toHaveCount(0)

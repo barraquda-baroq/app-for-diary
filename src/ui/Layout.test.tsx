@@ -114,13 +114,12 @@ describe('左のアイコンと名前（3.3・FRAME-029・D05）', () => {
     vi.useRealTimers()
   })
 
-  it('前回のモードのカレンダー（トップを含む）では置き換え、ほかの画面・別のモードからは積む', () => {
-    expect(brandReplaces('/', 'month')).toBe(true)
-    expect(brandReplaces('/month/2026-12', 'month')).toBe(true)
-    expect(brandReplaces('/week/2026-11-08', 'week')).toBe(true)
-    expect(brandReplaces('/week/2026-11-08', 'month')).toBe(false)
-    expect(brandReplaces('/settings', 'month')).toBe(false)
-    expect(brandReplaces('/mim', 'month')).toBe(false)
+  it('カレンダー（トップを含む。どのモードでも）では置き換え、ほかの画面からは積む行き来にする（カレンダーの中の行き来は積まない。3.1）', () => {
+    expect(brandReplaces('/')).toBe(true)
+    expect(brandReplaces('/month/2026-12')).toBe(true)
+    expect(brandReplaces('/week/2026-11-08')).toBe(true)
+    expect(brandReplaces('/settings')).toBe(false)
+    expect(brandReplaces('/mim')).toBe(false)
   })
 
   it.each([
@@ -128,7 +127,7 @@ describe('左のアイコンと名前（3.3・FRAME-029・D05）', () => {
     ['/', 'REPLACE'],
     ['/settings', 'PUSH'],
     ['/mim', 'PUSH'],
-    ['/week/2026-11-08', 'PUSH'],
+    ['/week/2026-11-08', 'REPLACE'],
   ])('%s から押すと、トップ（#/）へ %s し、見ている日を今日にする', async (from, action) => {
     const router = renderHeaderAt(from)
     const brand = screen.getByTestId('brand')
@@ -190,8 +189,11 @@ describe('カレンダーの4つのモードから開いた MIM（3.1・FRAME-00
 })
 
 describe('画面が変わった時のスクロール（D54）', () => {
-  it('積む・ほかの画面への置き換えは先頭へ。戻る／進むと、カレンダーの中の置き換えはそのまま', () => {
+  it('積む・ほかの画面への置き換え・モードを替える置き換えは先頭へ。戻る／進むと、同じモードの中の置き換えはそのまま', () => {
     expect(scrollsToTop('PUSH', '/month/2026-11', '/week/2026-11-08')).toBe(true)
+    // モードの切り替え（積まずに置き換える。3.1）
+    expect(scrollsToTop('REPLACE', '/month/2026-11', '/week/2026-11-08')).toBe(true)
+    expect(scrollsToTop('REPLACE', '/day/2026-11-10', '/year/2026')).toBe(true)
     expect(scrollsToTop('PUSH', '/', '/settings')).toBe(true)
     expect(scrollsToTop('REPLACE', '/login', '/')).toBe(true)
     expect(scrollsToTop('REPLACE', '/month/2026-11', '/settings')).toBe(true)

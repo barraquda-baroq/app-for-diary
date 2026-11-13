@@ -1,23 +1,31 @@
 // 画面の行き先と外枠。NS の src/App.tsx から（小説の画面・ゴミ箱の自動の片付け・Claude 連携を外し、ログインの関所を足した物）。
 // 行き先はトップ（#/）・カレンダーの4つのモード（#/year/2026・#/month/2026-11・#/week/2026-11-08・#/day/2026-11-10。段階2）・
-// MIM（仮の画面）・ログイン・設定（docs/SPEC.md の 3.1・21.）
+// MIM（仮の画面）・ログイン・設定（docs/SPEC.md の 3.1・21.）。
+// 履歴はアプリの履歴（src/history/appHistory.ts。カレンダーの中の行き来は積まない・iPhone の端からのフリックでモードを回す・Android と
+// PC の「戻る」でアプリを閉じるかを聞く。3.1）をデータのルーターに渡す（createHashRouter と同じ作りで、履歴だけを替える）
 import { lazy, Suspense } from 'react'
 import {
-  createHashRouter,
   Navigate,
   Outlet,
   RouterProvider,
+  UNSAFE_createRouter,
+  UNSAFE_hydrationRouteProperties,
+  UNSAFE_mapRouteProperties,
   useLocation,
   useRouteError,
   type RouteObject,
 } from 'react-router-dom'
+import { screenOf } from './features/calendar/common/calendarHistory'
 import { LoginPage } from './features/login/LoginPage'
 import { startTestAuth } from './features/login/testAuth'
 import { useInteractionClock } from './features/calendar/common/useReturnToToday'
+import { askToCloseApp } from './features/top/closeApp'
 import { TopPage } from './features/top/TopPage'
+import { createAppHistory, setHistoryHandler } from './history/appHistory'
 import { paths } from './routes'
 import { canShowData, useSync } from './sync/controller'
 import { ErrorBoundary, ErrorScreen } from './ui/ErrorBoundary'
+import { currentPlatform, popSourceOf } from './ui/device'
 import { AppFrame } from './ui/Layout'
 import { NotFound } from './ui/NotFound'
 
@@ -106,12 +114,33 @@ export const routes: RouteObject[] = [
   },
 ]
 
-// 画面を離れる前の確認（useBlocker）を後で使えるよう、NS と同じくデータルーターにする
-let router: ReturnType<typeof createHashRouter> | null = null
+/**
+ * 画面を離れる前の確認（useBlocker）を使うので、NS と同じくデータのルーターにする。中身は createHashRouter と同じで、履歴だけを
+ * アプリの履歴にする（端末で「戻る」「進む」の扱いを決める。src/ui/device.ts）
+ */
+function createAppRouter() {
+  const platform = currentPlatform()
+  const history = createAppHistory({
+    window,
+    source: popSourceOf(platform),
+    armOnLeaveFail: platform === 'android',
+    screenOf,
+  })
+  setHistoryHandler('askExit', () => void askToCloseApp())
+  return UNSAFE_createRouter({
+    routes,
+    history,
+    mapRouteProperties: UNSAFE_mapRouteProperties,
+    hydrationRouteProperties: UNSAFE_hydrationRouteProperties,
+    window,
+  }).initialize()
+}
+
+let router: ReturnType<typeof createAppRouter> | null = null
 
 export function App() {
   // テストの時だけ: localStorage の diary-studio:test-auth があれば、ログインした状態で開く（開発サーバーだけ。src/features/login/testAuth.ts）
   if (import.meta.env.DEV) void startTestAuth()
-  router ??= createHashRouter(routes)
+  router ??= createAppRouter()
   return <RouterProvider router={router} />
 }

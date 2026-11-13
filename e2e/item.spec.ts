@@ -8,7 +8,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, noHorizontalScroll, openCalendar, rawItem } from './helpers'
+import { collectDiagnosticsOnFailure, historySettled, noHorizontalScroll, openCalendar, rawItem } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -485,7 +485,7 @@ test.describe('登録の画面の長さ（スマホ）', { tag: ['@s'] }, () => 
 })
 
 test.describe('登録の画面（iPhone）', { tag: ['@ios'] }, () => {
-  test('件名の欄の字は 16px 以上（iOS のズームを防ぐ）、キーボードの高さ（--kb）でシートを持ち上げ、「戻る」で閉じる（FRAME-086・199・ITEMS-190・191・192）', async ({
+  test('件名の欄の字は 16px 以上（iOS のズームを防ぐ）、キーボードの高さ（--kb）でシートを持ち上げる。端からのフリック（「戻る」）では閉じず、［×］で閉じる（3.1・FRAME-086・199・ITEMS-190・191・192）', async ({
     page,
   }) => {
     await openCalendar(page, '/month/2026-11')
@@ -505,6 +505,9 @@ test.describe('登録の画面（iPhone）', { tag: ['@ios'] }, () => {
     const vh = await page.evaluate(() => window.innerHeight)
     expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(vh - 300)
     await page.goBack()
+    await historySettled(page)
+    await expect(sheetOf(page)).toBeVisible()
+    await page.getByTestId('modal-close').click()
     await expect(sheetOf(page)).toHaveCount(0)
   })
 })

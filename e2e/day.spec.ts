@@ -236,8 +236,9 @@ test.describe('デイリー（PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId(testIds.dayEvent(DEMO_IDS.dinner))).not.toHaveClass(/\bflash\b/)
     // 目立たせるのは 1.2秒
     await expect(page.getByTestId(testIds.dayArea('work'))).not.toHaveClass(/\bflash\b/, { timeout: 3000 })
-    // 11/11 のプライベートの数字から: 開いた時の 7:00 からは見えない夜行バス（22:00〜）が見える所まで動かす
-    await page.goBack()
+    // 11/11 のプライベートの数字から: 開いた時の 7:00 からは見えない夜行バス（22:00〜）が見える所まで動かす（マンスリーへは
+    // ［月］で戻る。モードを替えても履歴に積まないので、「戻る」では戻らない。3.1）
+    await page.getByTestId(testIds.calMode('month')).click()
     await at(page, '/month/2026-11')
     await page.getByTestId(testIds.monthCount('2026-11-11', 'private')).click()
     await at(page, '/day/2026-11-11')

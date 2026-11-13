@@ -12,6 +12,13 @@ interface ConfirmOptions {
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
+  /** ボタンの data-testid（E2E 用。題の列の［×］も「閉じる」と読み上げるので、ボタンの名前だけでは見分けにくい時） */
+  testIds?: { confirm?: string; cancel?: string }
+  /**
+   * 画面が替わっても閉じない（cancelAllDialogs の onNavigate で閉じない）。行き先が替わる前に出す物（アプリを閉じるかの確かめ）で、
+   * 前の行き来の描画が遅れて後から替わっても閉じないように
+   */
+  keepOnNavigate?: boolean
 }
 
 interface PromptOptions {
@@ -94,11 +101,20 @@ export function choiceDialog<T extends string>(opts: ChoiceOptions<T>): Promise<
   )
 }
 
-/** 開いている・待っているダイアログをすべてキャンセル扱いで閉じる（画面遷移時など） */
-export function cancelAllDialogs(): void {
-  const { queue } = useDialogs.getState()
+/** 開いている・待っているダイアログがあるか */
+export function hasOpenDialog(): boolean {
+  return useDialogs.getState().queue.length > 0
+}
+
+/**
+ * 開いている・待っているダイアログをすべてキャンセル扱いで閉じる（画面遷移時など）。onNavigate は画面が替わった時
+ * （keepOnNavigate の物は残す）
+ */
+export function cancelAllDialogs({ onNavigate = false }: { onNavigate?: boolean } = {}): void {
+  const { queue: all } = useDialogs.getState()
+  const queue = onNavigate ? all.filter((r) => !(r.kind === 'confirm' && r.opts.keepOnNavigate)) : all
   if (queue.length === 0) return
-  useDialogs.setState({ queue: [] })
+  useDialogs.setState({ queue: all.filter((r) => !queue.includes(r)) })
   for (const req of queue) {
     if (req.kind === 'confirm') req.resolve(false)
     else req.resolve(null)
@@ -159,7 +175,7 @@ function ConfirmView({ req }: { req: Extract<DialogRequest, { kind: 'confirm' }>
       initialFocus="[data-autofocus]"
       footer={
         <>
-          <button type="button" className="btn" onClick={() => close(false)}>
+          <button type="button" className="btn" onClick={() => close(false)} data-testid={opts.testIds?.cancel}>
             {opts.cancelLabel ?? 'キャンセル'}
           </button>
           <button
@@ -167,6 +183,7 @@ function ConfirmView({ req }: { req: Extract<DialogRequest, { kind: 'confirm' }>
             className={`btn ${opts.danger ? 'btn-danger' : 'btn-primary'}`}
             onClick={() => close(true)}
             data-autofocus
+            data-testid={opts.testIds?.confirm}
           >
             {opts.confirmLabel ?? 'OK'}
           </button>

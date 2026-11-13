@@ -517,13 +517,13 @@ describe('日付の見出し・休みのチェック（10.2・10.4・7.4・7.12�
     ['L', 994],
     ['S', 341],
   ] as const)(
-    '%s: 日付の見出し（丸いラベル＋「11/10」）を押すと、その日のデイリーへ積む（ITEMS-055・CALENDAR-192）',
+    '%s: 日付の見出し（丸いラベル＋「11/10」）を押すと、その日のデイリーへ（置き換える。3.1。ITEMS-055・CALENDAR-192）',
     async (width, px) => {
       const user = userEvent.setup()
       const { router } = await renderWeek({ width, area: { width: px, height: 600 } })
       await user.click(within(screen.getByTestId(testIds.weekHead('2026-11-12'))).getByRole('button', { name: /デイリーを開く/ }))
       expect(router.state.location.pathname).toBe('/day/2026-11-12')
-      expect(router.state.historyAction).toBe('PUSH')
+      expect(router.state.historyAction).toBe('REPLACE')
     },
   )
 

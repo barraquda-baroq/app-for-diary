@@ -6,8 +6,11 @@
 // ウィークリー・デイリーは 100dvh − ヘッダー − 切り替えの列 に固定（操作の列を含む。is-fixed。src/features/top/top.css。D15）。
 // S・M の指で左右になぞると前後の期間へ（どのモードでも。useSwipe）。なぞりを聞くのは、この区切りの全部（操作の列とモードの画面）と、
 // 左右の画面の端までの余白（frame.css の .cal.is-swipe）。モードはそのままで期間が替わると、ページをめくる（PageTurn。
-// モードの画面を包まず、.cal-body の横に置く）
-import { useMemo, useRef, type ComponentType } from 'react'
+// モードの画面を包まず、.cal-body の横に置く）。
+// iPhone の画面のいちばん端からのフリック（ブラウザの「戻る」「進む」の身振り。ページには来ず、アプリの履歴に popstate だけが来る）では、
+// モードを円環で1つ回す（src/history/appHistory.ts から nav.ring を呼ぶ。3.1）
+import { useEffect, useMemo, useRef, type ComponentType } from 'react'
+import { setHistoryHandler } from '../../../history/appHistory'
 import { useCalendarUi } from '../../../store/uiStore'
 import { useElementSize } from '../../../ui/hooks'
 import { DayView } from '../day/DayView'
@@ -46,6 +49,8 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
   const area = useMemo(() => ({ width: size.width, height: size.height }), [size.width, size.height])
   const swipe = swipeEnabled(mode, width)
   useSwipe(root, swipe, nav.shift)
+  // 端からのフリックでモードを回す（カレンダーを出している間だけ）
+  useEffect(() => setHistoryHandler('ring', nav.ring), [nav])
 
   const View = VIEWS[mode]
   const fixed = width !== 'L' && FIXED.includes(mode)

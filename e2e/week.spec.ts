@@ -559,7 +559,9 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     expect(await body.evaluate((e) => e.scrollTop)).toBeGreaterThan(0)
   })
 
-  test('日付の見出しを押すと、その日のデイリーへ（積む。「戻る」で週へ。ITEMS-055・CALENDAR-192）', async ({ page }) => {
+  test('日付の見出しを押すと、その日のデイリーへ（置き換える。「戻る」で週へは戻らず、閉じるかを聞く。3.1・ITEMS-055・CALENDAR-192）', async ({
+    page,
+  }) => {
     await openWeek(page)
     await head(page, '2026-11-12')
       .getByRole('button', { name: /デイリーを開く/ })
@@ -567,8 +569,10 @@ test.describe('ウィークリーの動き（PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId('view-day')).toBeVisible()
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/day/2026-11-12')
     await page.goBack()
-    await expect(page.getByTestId('view-week')).toBeVisible()
-    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/week/2026-11-08')
+    await expect(page.getByRole('dialog', { name: 'Diary Studio を閉じますか？' })).toBeVisible()
+    await page.getByTestId('app-close-cancel').click()
+    await expect(page.getByTestId('view-day')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/day/2026-11-12')
   })
 
   test('ウインドウの幅を替えると、すぐに並べ直す（1400 → 960 → 700 → 390 → 1400。FRAME-021・ITEMS-052）', async ({ page }) => {

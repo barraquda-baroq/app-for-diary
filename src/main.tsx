@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import { App } from './App'
 import { holdTurnsForTest } from './features/calendar/common/pageTurnDom'
+import { historyShape, whenHistoryIdle } from './history/appHistory'
 import { afterNextPaint, notifyAppReady } from './launch/launchHook'
 import { actions } from './store/actions'
 import { flushNow, getData, getRaw, initStore, replaceAllData, setTrashClock, startTrashPurge } from './store/appStore'
@@ -81,6 +82,12 @@ if (import.meta.env.DEV) {
      * めくる箱を外さない（めくっている途中の絵を、時間に追われずに止めて測る）。押す・キーではいつもどおりすぐ終える
      */
     holdTurns: holdTurnsForTest,
+    /**
+     * 画面のテスト用（e2e/helpers.ts の historyIdle・historyShape）: アプリの履歴（src/history/appHistory.ts）が、ブラウザの履歴を
+     * 動かし終えるまで待つ（印の履歴を作る・「戻る」「進む」の後に土台へ戻す・閉じる）。今の履歴の形（今いる所・土台の番号など）
+     */
+    historyIdle: whenHistoryIdle,
+    historyShape,
   }
 }
 

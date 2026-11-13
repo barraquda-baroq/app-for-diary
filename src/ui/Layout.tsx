@@ -17,7 +17,6 @@ import {
   useCalendarUi,
   usePrefs,
   useToasts,
-  type CalendarMode,
   type Toast,
 } from '../store/uiStore'
 import { DialogHost, cancelAllDialogs } from './dialogs'
@@ -90,11 +89,12 @@ function MimButton() {
 }
 
 /**
- * 左のアイコンと名前を押した時、履歴を置き換えるか（docs/SPEC.md の 3.3・確かめ A6・D05）。前回のモードのカレンダーを見ている時
- * （トップ #/ を含む）は［今日］と同じく置き換え、ほかの画面（設定・MIM・別のモードを開いた直後）からは積む
+ * 左のアイコンと名前を押した時、履歴を置き換えるか（docs/SPEC.md の 3.1・3.3・確かめ A6・D05）。カレンダーを見ている時（トップ #/ を
+ * 含む）は［今日］と同じく置き換える（カレンダーの中の行き来は積まない）。ほかの画面（設定・MIM）からは積む行き来にし、アプリの履歴
+ * （src/history/appHistory.ts）がカレンダーの履歴の所まで戻ってから置き換える（履歴は増えない）
  */
-export function brandReplaces(pathname: string, lastMode: CalendarMode): boolean {
-  return isCalendarPath(pathname) && (calendarModeOf(pathname) ?? lastMode) === lastMode
+export function brandReplaces(pathname: string): boolean {
+  return isCalendarPath(pathname)
 }
 
 /**
@@ -104,12 +104,11 @@ export function brandReplaces(pathname: string, lastMode: CalendarMode): boolean
  */
 export function AppHeader({ actions }: { actions?: ReactNode }) {
   const { pathname } = useLocation()
-  const lastMode = usePrefs((s) => s.lastMode)
   return (
     <header className="app-header" data-testid="app-header">
       <Link
         to={paths.top()}
-        replace={brandReplaces(pathname, lastMode)}
+        replace={brandReplaces(pathname)}
         onClick={() => useCalendarUi.getState().setViewed(todayStr())}
         className="brand"
         aria-label="Diary Studio（トップへ）"
@@ -225,12 +224,17 @@ export function PrefsEffect() {
 
 /**
  * 画面（パス）が変わったら先頭から表示する（スマホでトップを下までスクロールしてから設定を開いた時など）。
- * ブラウザの「戻る／進む」では動かさない（ブラウザが元の位置に戻す）。カレンダーの中の置き換え（‹ ›・［今日］・スワイプ・
- * 6時間で今日へ戻る）でも動かさない（S・M でカレンダーの下のリストまで送っていても、その位置のまま。D54）。モードの切り替え（積む）は先頭へ
+ * ブラウザの「戻る／進む」では動かさない（ブラウザが元の位置に戻す）。カレンダーの中の置き換えのうち、同じモードの中で期間を移る時
+ * （‹ ›・［今日］・スワイプ・6時間で今日へ戻る・トップ #/ から前回のモードへ）は動かさない（S・M でカレンダーの下のリストまで
+ * 送っていても、その位置のまま。D54）。モードの切り替え（置き換えるが、モードが替わる。3.1）は先頭へ
  */
 export function scrollsToTop(navType: 'POP' | 'PUSH' | 'REPLACE', from: string, to: string): boolean {
   if (navType === 'POP') return false
-  if (navType === 'REPLACE' && isCalendarPath(from) && isCalendarPath(to)) return false
+  if (navType === 'REPLACE' && isCalendarPath(from) && isCalendarPath(to)) {
+    const a = calendarModeOf(from)
+    const b = calendarModeOf(to)
+    return a !== null && b !== null && a !== b
+  }
   return true
 }
 
@@ -253,10 +257,14 @@ function KeyboardInset() {
   return null
 }
 
-/** 画面が変わったら、開いたままの確認・入力ダイアログはキャンセル扱いで閉じる */
+/**
+ * 画面が変わったら、開いたままの確認・入力ダイアログはキャンセル扱いで閉じる。画面が替わる前から出している「閉じますか？」
+ * （keepOnNavigate）は閉じない: ルーターは startTransition で描くので、モードを替えた描画が重い時は、替わったのが「戻る」で
+ * 確かめを出した後になることがある（開発）
+ */
 function CloseDialogsOnNavigate() {
   const { pathname } = useLocation()
-  useEffect(() => cancelAllDialogs, [pathname])
+  useEffect(() => () => cancelAllDialogs({ onNavigate: true }), [pathname])
   return null
 }
 

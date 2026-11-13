@@ -123,13 +123,13 @@ describe('マス目と中身（9.1・9.2）', () => {
 
 describe('押した時（7.12・9.3）', () => {
   it.each(['L', 'M'] as const)(
-    '%s: 数字はその日のデイリーへ（積む）、押した区分の区切りと予定を目立たせる（CALENDAR-188・247）',
+    '%s: 数字はその日のデイリーへ（置き換える。3.1）、押した区分の区切りと予定を目立たせる（CALENDAR-188・247）',
     async (width) => {
       const user = userEvent.setup()
       const { router } = await renderAt('/month/2026-11', { data: sample(), width })
       await user.click(count('2026-11-10', 'private'))
       expect(router.state.location.pathname).toBe('/day/2026-11-10')
-      expect(router.state.historyAction).toBe('PUSH')
+      expect(router.state.historyAction).toBe('REPLACE')
       expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
       expect(useCalendarUi.getState().viewed).toBe('2026-11-10')
     },
@@ -148,16 +148,16 @@ describe('押した時（7.12・9.3）', () => {
     const { router } = await renderAt('/month/2026-11', { data: sample() })
     await user.click(hit('2026-11-12'))
     expect(router.state.location.pathname).toBe('/day/2026-11-12')
-    expect(router.state.historyAction).toBe('PUSH')
+    expect(router.state.historyAction).toBe('REPLACE')
     expect(useCalendarUi.getState().flash).toBeNull()
   })
 
-  it('数字からデイリーへ移って、目立たせるキーが消える前に「戻る」でマスを押しても、前の数字の区分は目立たせない（CALENDAR-189）', async () => {
+  it('数字からデイリーへ移って、目立たせるキーが消える前にマンスリーへ戻ってマスを押しても、前の数字の区分は目立たせない（CALENDAR-189）', async () => {
     const user = userEvent.setup()
     const { router } = await renderAt('/month/2026-11', { data: sample() })
     await user.click(count('2026-11-10', 'private'))
     expect(useCalendarUi.getState().flash?.keys).toEqual(['day-area:private', 'day-events:private'])
-    await act(() => router.navigate(-1))
+    await user.click(screen.getByTestId(testIds.calMode('month')))
     expect(router.state.location.pathname).toBe('/month/2026-11')
     await user.click(hit('2026-11-12'))
     expect(router.state.location.pathname).toBe('/day/2026-11-12')
@@ -302,8 +302,9 @@ describe('休みを付ける状態（9.5・D30）', () => {
     const { user, router } = await openOffMode()
     await user.click(screen.getByTestId(testIds.calMode('week')))
     expect(useCalendarUi.getState().offMode).toBe(false)
-    // 週 → 月（積む）で入り直し、「戻る」で週へ
-    await user.click(screen.getByTestId(testIds.calMode('month')))
+    // 週の後ろに月を積んで入り直し（アプリでは、カレンダーの中の行き来は積まない。ここでは「戻る」でマンスリーを離れる時を作る）、
+    // 「戻る」で週へ
+    await act(() => router.navigate('/month/2026-11'))
     await user.click(screen.getByTestId(testIds.calOff))
     expect(useCalendarUi.getState().offMode).toBe(true)
     await act(() => router.navigate(-1))
