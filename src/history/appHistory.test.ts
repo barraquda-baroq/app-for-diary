@@ -1281,15 +1281,54 @@ describe('アプリを閉じる', () => {
     expect(s.h.shape().exitArmed).toBe(false)
   })
 
-  it('前が無くて「もう一度［戻る］で閉じる」所にした Android のブラウザのタブは、今までどおり指を下ろした時に終え（■22）、離してから土台へ戻る', async () => {
+  it('前が無くて「もう一度［戻る］で閉じる」所にした Android のブラウザのタブも、ホーム画面から開いたアプリ（■25）と同じく押し終えた時（指を離した・キーを打った）に終える。指を下ろしただけ・取り消された指（戻る身振りの始まり）では終わらない。時間の限りは無い', async () => {
     const s = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
     await arm(s)
     expect(await leave(s)).toBe('armed')
+    // 戻る身振りの始まり: ページに指を下ろした出来事が来てから、身振りと分かった所で取り消される
     fire(s, pointer('pointerdown', 'touch', 1, { id: 5, primary: true }))
     fire(s, touch('touchstart', 1))
     await tick(100)
-    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: false, held: true })
-    fire(s, pointer('pointerup', 'touch', 0, { id: 5, primary: true }))
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true, held: true })
+    fire(s, pointer('pointercancel', 'touch', 0, { id: 5, primary: true }))
+    fire(s, touch('touchcancel', 0))
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true, held: false })
+    // 時間が過ぎても終えない（■22 のまま）
+    await tick(10_000)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true })
+    // 押し終えた: 出していた所へ戻る
+    tapFinger(s, 6)
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false, held: false })
+    // キーを打った時も
+    expect(await leave(s)).toBe('armed')
+    fire(s, new Event('keydown'))
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false })
+    expect(s.askExit).not.toHaveBeenCalled()
+  })
+
+  it('前が無くて「もう一度［戻る］で閉じる」所にした Android のブラウザのタブで押したまま（長押しで掴む）にした時は、掴む前（ARM_HOLD_MS）に終えて、離すのを待たずに出していた所へ戻る（掴んでいる間の「戻る」でアプリを離れない）', async () => {
+    const s = setup('#/month/2026-11', 'os-back', { armOnLeaveFail: true })
+    await arm(s)
+    expect(await leave(s)).toBe('armed')
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 7, primary: true }))
+    fire(s, touch('touchstart', 1))
+    await tick(ARM_HOLD_MS - 50)
+    expect(s.h.shape()).toMatchObject({ cur: 0, exitArmed: true, held: true })
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false, held: true })
+    // 掴んだ。掴んでいる間の「戻る」は何もしない（閉じるかを聞かない）
+    s.h.handlers.dragging = () => true
+    s.h.handlers.consumePop = () => true
+    s.win.userGo(-1)
+    await tick(100)
+    expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false })
+    expect(s.askExit).not.toHaveBeenCalled()
+    s.h.handlers.dragging = () => false
+    s.h.handlers.consumePop = () => false
+    fire(s, pointer('pointerup', 'touch', 0, { id: 7, primary: true }))
     fire(s, touch('touchend', 0))
     await tick(100)
     expect(s.h.shape()).toMatchObject({ cur: 1, exitArmed: false, held: false })

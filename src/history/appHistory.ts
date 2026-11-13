@@ -45,7 +45,8 @@
 // - 読み込み直した時は、今の履歴の state（idx・ds）をそのまま使う（履歴を増やさない。印の履歴で読み込み直した時は土台へ戻る）
 // - アプリを閉じる（leave。「Diary Studio を閉じますか？」の［閉じる］）: アプリの最初の履歴（idx 0）より前へ戻る。前が無い時（ほかの
 //   アプリから開いたブラウザのタブなど）は window.close() を試し、それも効かなければ、最初の履歴へ戻って「もう一度［戻る］で閉じる」所に
-//   する（Android。指を下ろした・キーを打った時に終え、押し終えてから出していた所へ戻る）か、そのまま（PC）
+//   する（Android。下のホーム画面から開いた Android のアプリの所と同じく、押し終えた・キーを打った・押したまま ARM_HOLD_MS たった時に
+//   終えて出していた所へ戻る。時間の限りは無い）か、そのまま（PC）
 // - もう一度［戻る］で閉じる所（armExit。ホーム画面から開いた Android のアプリのカレンダーでの「戻る」。■25）: 最初の履歴へ戻り、決めた
 //   長さ（お知らせを出している間）だけその所にする。その間のもう一度の「戻る」で、ブラウザがアプリの前へ戻る（ホーム画面のアプリは
 //   閉じる）。時間が過ぎた・押し終えた・キーを打った・押したまま ARM_HOLD_MS たった（長押しで掴む前）時は、押している間でも待たずに
@@ -297,8 +298,6 @@ export class AppHistory implements RouterHistory {
   private startOnMarker = false
   /** 最初の履歴へ戻った、もう一度「戻る」で閉じる所（閉じられなかった・armExit）。押し終えたら土台へ戻る */
   private exitArmed = false
-  /** その所は armExit の物（ホーム画面から開いた Android のアプリの1回目の「戻る」）。でなければ［閉じる］の後の物 */
-  private armedOnBack = false
   /** armExit の所を終える時の見張り（決めた長さが過ぎたら土台へ戻る）と、終わった時に知らせる先 */
   private armTimer: number | null = null
   private armEnd: (() => void) | null = null
@@ -503,7 +502,6 @@ export class AppHistory implements RouterHistory {
           return
         }
         this.exitArmed = true
-        this.armedOnBack = true
         this.armEnd = onEnd
         this.armTimer = this.win.setTimeout(() => this.expireArmed(), ms)
         resolve(true)
@@ -796,7 +794,6 @@ export class AppHistory implements RouterHistory {
   /** 「もう一度［戻る］で閉じる」所を終える（見張りを止め、armExit の onEnd に知らせる。出していた所へ戻すのは呼んだ所） */
   private endArmed(): void {
     this.exitArmed = false
-    this.armedOnBack = false
     if (this.armTimer !== null) {
       this.win.clearTimeout(this.armTimer)
       this.armTimer = null
@@ -821,7 +818,7 @@ export class AppHistory implements RouterHistory {
   }
 
   /**
-   * armExit の所を終えて、出していた所へ戻る。押している間・ドラッグの途中でも待たない（rush。お知らせが消えた後・掴んでいる間に、
+   * もう一度［戻る］で閉じる所を終えて、出していた所へ戻る。押している間・ドラッグの途中でも待たない（rush。お知らせが消えた後・掴んでいる間に、
    * 最初の履歴に残ったまま、もう一度の「戻る」でアプリを離れないように）
    */
   private leaveArmed(): void {
@@ -830,22 +827,16 @@ export class AppHistory implements RouterHistory {
     this.rush(() => this.travelTo(shownIdx))
   }
 
-  /** armExit の所で指を下ろした: 下ろしたまま ARM_HOLD_MS たったら（長押し。取り消された指・離した指は見ない）、出していた所へ戻る */
+  /**
+   * もう一度［戻る］で閉じる所で指を下ろした: 下ろしたまま ARM_HOLD_MS たったら（長押し。取り消された指・離した指は見ない）、出していた
+   * 所へ戻る
+   */
   private watchArmHold(id: number | string): void {
     if (this.armHoldTimer !== null) this.win.clearTimeout(this.armHoldTimer)
     this.armHoldTimer = this.win.setTimeout(() => {
       this.armHoldTimer = null
-      if (this.exitArmed && this.armedOnBack && (this.pointers.has(id) || this.handlers.dragging?.())) this.leaveArmed()
+      if (this.exitArmed && (this.pointers.has(id) || this.handlers.dragging?.())) this.leaveArmed()
     }, ARM_HOLD_MS)
-  }
-
-  /** 出していた所へ戻る（押し終えてドラッグも終わってから。［閉じる］の後のもう一度［戻る］で閉じる所で指を下ろした時） */
-  private backToShown(): void {
-    const shownIdx = this.shownIdx
-    this.run(async () => {
-      await this.untilFree()
-      await this.travelTo(shownIdx)
-    })
   }
 
   /** 戻る・進む（delta）。popstate が来たら true（来ないまま timeout を過ぎたら、今の state を読み直して false） */
@@ -1515,20 +1506,15 @@ export class AppHistory implements RouterHistory {
         break
     }
     const pressEnd = type === 'pointerup' || type === 'touchend' || type === 'keydown'
-    if (this.exitArmed && this.armedOnBack) {
-      // ホーム画面から開いた Android のアプリの、もう一度［戻る］で閉じる所（最初の履歴）で、押し終えた（指・マウスを離した。スクロールに
-      // 取られた指は touchend）・キーを打った: 出していた所へ戻り、それから押した物を動かす（capture で、アプリの部品より先に聞く。
-      // 押した物の行き先の書き込みは、戻り終えるまで順番を待つ）。下ろしただけ・取り消された押し方（pointercancel・touchcancel）では
-      // 戻らない: Android の戻る身振りは、ページに指を下ろした出来事が来た後、身振りと分かった所で取り消す見込み（その身振りの「戻る」で
-      // 閉じられるように）。下ろしたまま ARM_HOLD_MS たった時（長押し）は、離すのを待たずに戻る
+    if (this.exitArmed) {
+      // もう一度［戻る］で閉じる所（最初の履歴。ホーム画面から開いた Android のアプリの1回目の「戻る」の後（■25）と、ブラウザのタブで
+      // ［閉じる］で閉じられなかった後。どちらも同じ）で、押し終えた（指・マウスを離した。スクロールに取られた指は touchend）・キーを
+      // 打った: 出していた所へ戻り、それから押した物を動かす（capture で、アプリの部品より先に聞く。押した物の行き先の書き込みは、戻り
+      // 終えるまで順番を待つ）。下ろしただけ・取り消された押し方（pointercancel・touchcancel）では戻らない: Android の戻る身振りは、
+      // ページに指を下ろした出来事が来た後、身振りと分かった所で取り消す見込み（その身振りの「戻る」で閉じられるように）。下ろしたまま
+      // ARM_HOLD_MS たった時（長押し）は、離すのを待たずに戻る
       if (pressEnd) this.leaveArmed()
       else if (type === 'pointerdown') this.watchArmHold(id)
-    } else if (this.exitArmed && (type === 'pointerdown' || type === 'keydown')) {
-      // ［閉じる］で閉じられずに最初の履歴へ戻っていた所で押した（今までどおり。■22）: 押し終えたら出していた所へ戻り、それから押した物を
-      // 動かす（押した物の行き先の書き込みは、戻り終えるまで順番を待つ）
-      this.endArmed()
-      this.backToShown()
-      return
     }
     const armBack = this.armBack
     if (armBack && pressEnd) {

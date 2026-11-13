@@ -511,6 +511,37 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
   })
 
+  test('前に履歴が無いタブの［閉じる］の後の「もう一度［戻る］を押すと閉じます」の所で予定を長押しで掴むと、掴む前に元の所へ戻り（■25 の所と同じ）、掴んでいる間の「戻る」は何もしない', async ({
+    page,
+    baseURL,
+  }) => {
+    await openAlone(page, baseURL, { path: WEEK, data: demoData() })
+    await meetingCard(page).scrollIntoViewIfNeeded()
+    await historySettled(page)
+    const start = await centerOf(meetingCard(page))
+    await goBack(page)
+    await expect(closeDialog(page)).toBeVisible()
+    await page.getByTestId('app-close').click()
+    await expect(armedToast(page)).toBeVisible({ timeout: 800 })
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
+    const drag = await startLongPress(page, start)
+    await expect(page.locator('[data-dnd-dragging]')).toHaveCount(1)
+    // 掴む前（指を下ろして 0.3秒）に、離すのを待たずに元の所（カレンダーの履歴）へ戻っている
+    expect(await historyShape(page)).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false })
+    await drag.moveTo({ x: start.x + 4, y: start.y + 60 })
+    await goBack(page)
+    await page.waitForTimeout(300)
+    await expect(closeDialog(page)).toHaveCount(0)
+    await expect(page.locator('[data-dnd-dragging]')).toHaveCount(1)
+    await drag.moveTo(start)
+    await drag.drop()
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 1, shownIdx: 1, exitArmed: false })
+    expect(await page.evaluate((i) => window.__ds.getData().items[i]?.start, DEMO_IDS.meeting)).toBe('2026-11-10')
+    await expect(closeDialog(page)).toHaveCount(0)
+  })
+
   test('前に履歴が無いタブを読み込み直した後も、タブの履歴がどれもアプリの物と分かるので、［閉じる］の後すぐ「もう一度［戻る］を押すと閉じます」', async ({
     page,
     baseURL,
