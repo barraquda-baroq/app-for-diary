@@ -200,15 +200,15 @@ export interface Toast {
   action?: ToastAction
 }
 
-/** 消えるまで: ふつうは4秒、ボタン付き・エラーは6秒 */
+/** 消えるまで: ふつうは4秒、ボタン付き・エラーは6秒（出す所が長さを決めた物は、その長さ。3.9） */
 export const TOAST_MS = { info: 4000, long: 6000 }
 /** 重ねて出す数 */
 const TOAST_MAX = 3
 
 interface ToastState {
   toasts: Toast[]
-  /** 出す（戻り値はお知らせの番号。dismiss で消せる） */
-  push: (kind: Toast['kind'], message: string, action?: ToastAction) => number
+  /** 出す（戻り値はお知らせの番号。dismiss で消せる。ms は消えるまでの長さ（無ければ TOAST_MS）） */
+  push: (kind: Toast['kind'], message: string, action?: ToastAction, ms?: number) => number
   dismiss: (id: number) => void
 }
 
@@ -216,18 +216,21 @@ let toastSeq = 0
 
 export const useToasts = create<ToastState>((set, get) => ({
   toasts: [],
-  push: (kind, message, action) => {
+  push: (kind, message, action, ms) => {
     const id = ++toastSeq
     set({ toasts: [...get().toasts.slice(-(TOAST_MAX - 1)), { id, kind, message, action }] })
-    setTimeout(() => get().dismiss(id), kind === 'error' || action ? TOAST_MS.long : TOAST_MS.info)
+    setTimeout(() => get().dismiss(id), ms ?? (kind === 'error' || action ? TOAST_MS.long : TOAST_MS.info))
     return id
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }))
 
-/** お知らせを出す（戻り値はお知らせの番号。元に戻す・やり直すのボタンで戻した時に、そのお知らせを消すのに使う） */
-export function notify(message: string, action?: ToastAction): number {
-  return useToasts.getState().push('info', message, action)
+/**
+ * お知らせを出す（戻り値はお知らせの番号。元に戻す・やり直すのボタンで戻した時に、そのお知らせを消すのに使う）。ms は消えるまでの
+ * 長さ（無ければ TOAST_MS。「もう一度［戻る］を押すと閉じます」は、その所にしている長さと同じにする）
+ */
+export function notify(message: string, action?: ToastAction, ms?: number): number {
+  return useToasts.getState().push('info', message, action, ms)
 }
 
 export function notifyError(message: string): void {

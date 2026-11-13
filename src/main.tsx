@@ -66,6 +66,16 @@ if (import.meta.env.DEV) {
     inboxContext,
     syncNow,
     syncStatus: () => useSync.getState().status,
+    /**
+     * 画面のテスト用（e2e/history.spec.ts）: 同期していない変更の件数を決める（同期を始めない E2E で、閉じる時に添える1行を出す。
+     * docs/SPEC.md の 3.1）
+     */
+    fakeSyncPending: (pending: number) => {
+      const status = useSync.getState().status
+      useSync.setState({
+        status: status ? { ...status, pending } : { phase: 'offline', pending, lastSyncedAt: null, error: null },
+      })
+    },
     /** 画面のテスト用: 新しい版を受け取った時の帯（本物の UpdateBanner）を出す。［更新する］を押すと updateApplied() が true になる */
     showUpdateBanner: () => {
       updateApplied = false

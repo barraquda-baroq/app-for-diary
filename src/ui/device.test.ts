@@ -1,7 +1,17 @@
-// 端末の見分けと、ブラウザの「戻る」「進む」（popstate）を何として扱うか（docs/SPEC.md の 2.5・3.1。22. の段階2の終わりの確かめ）:
-// iPhone・iPad（Mac を名乗る iPadOS の Safari もタッチの指の数で）は画面の端からのフリック、Android・PC は OS の戻る
+// 端末の見分けと、ブラウザの「戻る」「進む」（popstate）を何として扱うか・カレンダーでの「戻る」の閉じ方（docs/SPEC.md の 2.5・3.1。
+// 22. の段階2の終わりの確かめ・■22・■25）: iPhone・iPad（Mac を名乗る iPadOS の Safari もタッチの指の数で）は画面の端からのフリック、
+// Android・PC は OS の戻る。閉じ方は、ホーム画面から開いた Android のアプリだけ「もう一度［戻る］を押すと閉じます」、ほかは聞く
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { currentPlatform, currentPopSource, detectPlatform, popSourceOf } from './device'
+import {
+  currentExitStyle,
+  currentPlatform,
+  currentPopSource,
+  detectPlatform,
+  exitStyleOf,
+  isStandalone,
+  popSourceOf,
+  type Platform,
+} from './device'
 
 const UA = {
   iphone:
@@ -56,5 +66,47 @@ describe('popstate を何として扱うか', () => {
     expect(currentPopSource()).toBe('edge-flick')
     vi.stubGlobal('navigator', { userAgent: UA.android, platform: 'Linux armv8l', maxTouchPoints: 5 })
     expect(currentPopSource()).toBe('os-back')
+  })
+})
+
+describe('カレンダーでの OS の「戻る」の閉じ方（■22・■25）', () => {
+  it('ホーム画面から開いた Android のアプリ（表示の形が standalone）だけ、聞かずに「もう一度［戻る］を押すと閉じます」', () => {
+    expect(exitStyleOf('android', true)).toBe('press-again')
+  })
+
+  it('Android のブラウザのタブと PC（ホーム画面に置いたアプリとして開いていても）は「Diary Studio を閉じますか？」と聞く', () => {
+    expect(exitStyleOf('android', false)).toBe('ask')
+    expect(exitStyleOf('desktop', false)).toBe('ask')
+    expect(exitStyleOf('desktop', true)).toBe('ask')
+  })
+
+  it('iPhone・iPad は端からのフリックでモードを回すので、閉じ方は使わない（ホーム画面のアプリでも ask のまま）', () => {
+    for (const standalone of [false, true]) expect(exitStyleOf('ios', standalone)).toBe('ask')
+    expect(popSourceOf('ios')).toBe('edge-flick')
+  })
+
+  /** navigator と、表示の形（display-mode: standalone）を決める */
+  function stub(ua: string, platform: string, touch: number, standalone: boolean) {
+    vi.stubGlobal('navigator', { userAgent: ua, platform, maxTouchPoints: touch })
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: standalone && query === '(display-mode: standalone)',
+      media: query,
+    }))
+  }
+
+  it('いまの端末と表示の形から決める（ホーム画面の Android・Android のタブ・PC・iPhone）', () => {
+    const cases: [string, string, number, boolean, Platform, 'ask' | 'press-again'][] = [
+      [UA.android, 'Linux armv8l', 5, true, 'android', 'press-again'],
+      [UA.android, 'Linux armv8l', 5, false, 'android', 'ask'],
+      [UA.windows, 'Win32', 0, true, 'desktop', 'ask'],
+      [UA.windows, 'Win32', 0, false, 'desktop', 'ask'],
+      [UA.iphone, 'iPhone', 5, true, 'ios', 'ask'],
+    ]
+    for (const [ua, platform, touch, standalone, expected, style] of cases) {
+      stub(ua, platform, touch, standalone)
+      expect(currentPlatform()).toBe(expected)
+      expect(isStandalone()).toBe(standalone)
+      expect(currentExitStyle()).toBe(style)
+    }
   })
 })

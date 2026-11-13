@@ -1,7 +1,8 @@
-// 履歴と「戻る」「進む」の E2E（docs/SPEC.md の 3.1・3.8。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・■22・■23。
+// 履歴と「戻る」「進む」の E2E（docs/SPEC.md の 3.1・3.8。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・■22・■23・■25。
 // src/history/appHistory.ts）。iPhone の画面の端からのフリックは、ブラウザの「戻る」「進む」の身振りそのもの（ページには popstate だけが
 // 来る）なので、page.goBack・page.goForward で同じ所を通す。iPhone は Chromium に iPhone の UA を付けた物（@s）と、CI の WebKit（@ios）。
-// Android は Pixel 7（mobile。UA が Android）、PC は Desktop Chrome。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。
+// Android は Pixel 7（mobile。UA が Android）、PC は Desktop Chrome。ホーム画面から開いた Android のアプリは、Pixel 7 の表示の形を
+// standalone にして（openAlone の standalone）まねる。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。
 // Playwright の page.evaluate・locator は、それだけでブラウザに「押した」と数えさせる（Chromium では 5秒。navigator.userActivation）ので、
 // ここの多くのテストでは、印の履歴を作る時の「押した直後か」はいつも真になる。押した物の分だけで作ることは、5秒あまり何もせずに待って
 // から指で押す1つ（Android の「開いて最初に指で軽く押した…」）と、単体テスト（src/history/appHistory.test.ts）で確かめる
@@ -13,6 +14,7 @@ import {
   collectDiagnosticsOnFailure,
   pressEvents,
   E2E_NOW,
+  seedData,
   goBack,
   goForward,
   historySettled,
@@ -95,19 +97,52 @@ async function backWhenSettling(page: Page): Promise<() => Promise<number>> {
   }
 }
 
+interface OpenAloneOptions {
+  /** Navigation API の無いブラウザにする（読み込み直した後に、タブの履歴がどれもアプリの物か分からない） */
+  noNavigationApi?: boolean
+  /**
+   * ホーム画面から開いたアプリにする（表示の形を standalone にする。Playwright・CDP の media の決め方では決められないので、
+   * matchMedia の「(display-mode: standalone)」に当たると答える）。最初の押し方は指
+   */
+  standalone?: boolean
+  /** アプリの前に、ほかのページ（data:）を1つ置く（もう一度の「戻る」でアプリを離れることを見る。本物のホーム画面のアプリには無い） */
+  before?: boolean
+  /** 開く行き先（既定はマンスリー）と、開いた後に置くデータ */
+  path?: string
+  data?: Parameters<typeof seedData>[1]
+}
+
 /**
- * ホーム画面から開いた時と同じく、タブの履歴をアプリの分だけにして開き（前に履歴が無い）、押して印を作る。noNavigationApi の時は
- * Navigation API の無いブラウザにする（読み込み直した後に、タブの履歴がどれもアプリの物か分からない）
+ * ホーム画面から開いた時と同じく、タブの履歴をアプリの分だけにして開き（前に履歴が無い。before の時は data: のページの後ろ）、押して
+ * 印を作る
  */
-async function openAlone(page: Page, baseURL: string | undefined, { noNavigationApi = false } = {}) {
+async function openAlone(
+  page: Page,
+  baseURL: string | undefined,
+  { noNavigationApi = false, standalone = false, before = false, path = MONTH, data }: OpenAloneOptions = {},
+) {
+  // data: のページでは localStorage を使えないので、置く物（addInitScript）より先に開く
+  if (before) await page.goto('data:text/html,<title>before</title><p>before</p>')
   await page.clock.setFixedTime(new Date(E2E_NOW))
-  await page.addInitScript(() => localStorage.setItem('diary-studio:test-auth', '1'))
+  await page.addInitScript(() => {
+    if (location.protocol !== 'data:') localStorage.setItem('diary-studio:test-auth', '1')
+  })
   if (noNavigationApi) await page.addInitScript(() => Object.defineProperty(window, 'navigation', { value: undefined }))
-  await page.evaluate((url) => location.replace(url), new URL(`/#${MONTH}`, baseURL).href)
+  if (standalone) {
+    await page.addInitScript(() => {
+      const match = window.matchMedia.bind(window)
+      window.matchMedia = (query: string) => match(query.replace(/\(\s*display-mode\s*:\s*standalone\s*\)/g, 'all'))
+    })
+  }
+  const url = new URL(`/#${path}`, baseURL).href
+  if (before) await page.goto(url)
+  else await page.evaluate((u) => location.replace(u), url)
   await page.waitForFunction(() => Boolean(window.__ds))
   await expect(page.getByTestId('top-page')).toBeVisible()
-  await armHistory(page)
-  expect(await historyLength(page)).toBe(3)
+  if (data) await seedData(page, data)
+  const length = await historyLength(page)
+  await armHistory(page, { finger: standalone })
+  expect(await historyLength(page)).toBe(before ? length + 2 : 3)
 }
 
 /** 押さずに読み込み直す（土台のまま） */
@@ -117,7 +152,7 @@ async function reloadOnBase(page: Page) {
   await historySettled(page)
 }
 
-/** 「もう一度［戻る］を押すと閉じます」・PC の「閉じられませんでした」のお知らせ */
+/** 「もう一度［戻る］を押すと閉じます」（ホーム画面の Android の1回目の「戻る」・前が無くて閉じられなかった Android）・PC の「閉じられませんでした」のお知らせ */
 const armedToast = (page: Page) => page.locator('.toast', { hasText: 'もう一度［戻る］を押すと閉じます' })
 const cannotCloseToast = (page: Page) => page.locator('.toast', { hasText: 'この画面からは閉じられませんでした' })
 
@@ -388,7 +423,8 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     page,
   }) => {
     await openCalendar(page, MONTH)
-    expect((await historyShape(page))?.source).toBe('os-back')
+    // ブラウザのタブ（表示の形が standalone でない）の Android は、今までどおり聞く（■22・■25）
+    expect(await historyShape(page)).toMatchObject({ source: 'os-back', exit: 'ask' })
     await page.getByTestId('cal-mode-week').click()
     await showing(page, WEEK)
     await goBack(page)
@@ -461,7 +497,7 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     expect(await itemExists(page, DEMO_IDS.weekly)).toBe(true)
   })
 
-  test('ホーム画面から開いたアプリ（前に履歴が無い）では、［閉じる］の後すぐ「もう一度［戻る］を押すと閉じます」（待たない）', async ({
+  test('ブラウザのタブでも前に履歴が無い時（ほかのアプリから開いたタブなど）は、［閉じる］の後すぐ「もう一度［戻る］を押すと閉じます」（待たない）', async ({
     page,
     baseURL,
   }) => {
@@ -475,7 +511,7 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
     expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
   })
 
-  test('ホーム画面から開いたアプリを読み込み直した後も、タブの履歴がどれもアプリの物と分かるので、［閉じる］の後すぐ「もう一度［戻る］を押すと閉じます」', async ({
+  test('前に履歴が無いタブを読み込み直した後も、タブの履歴がどれもアプリの物と分かるので、［閉じる］の後すぐ「もう一度［戻る］を押すと閉じます」', async ({
     page,
     baseURL,
   }) => {
@@ -569,11 +605,96 @@ test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => 
   })
 })
 
+test.describe('ホーム画面から開いた Android のアプリ（Pixel 7 の表示の形を standalone に。■25）', { tag: ['@s'] }, () => {
+  /** 「戻る」の後、聞かずに「もう一度［戻る］を押すと閉じます」が出て、最初の履歴へ移った（もう一度［戻る］で閉じる所） */
+  async function backArms(page: Page) {
+    await goBack(page)
+    await expect(armedToast(page)).toBeVisible()
+    await expect(closeDialog(page)).toHaveCount(0)
+    await expect.poll(async () => (await historyShape(page))?.exitArmed).toBe(true)
+    expect(await historyShape(page)).toMatchObject({ cur: 0, exitArmed: true })
+  }
+
+  test('開いて最初に指で押した後の「戻る」は、聞かずに「もう一度［戻る］を押すと閉じます」を出し、出ている間のもう一度の「戻る」でアプリを離れる', async ({
+    page,
+    baseURL,
+  }) => {
+    await openAlone(page, baseURL, { standalone: true, before: true })
+    expect(await historyShape(page)).toMatchObject({ source: 'os-back', exit: 'press-again' })
+    await backArms(page)
+    await page.goBack()
+    await expect.poll(() => page.url()).toMatch(/^data:/)
+  })
+
+  test('出ている間に「戻る」を押さないと、お知らせが消えて元の所へ戻り、カレンダーはそのまま使え、次の「戻る」でまた出す。押した時も元の所へ戻る（履歴は増えない）', async ({
+    page,
+    baseURL,
+  }) => {
+    await openAlone(page, baseURL, { standalone: true })
+    const length = await historyLength(page)
+    await backArms(page)
+    // 3秒で消える（その所も終わる）
+    await expect(armedToast(page)).toHaveCount(0, { timeout: 5000 })
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 1, base: 1, shownIdx: 1, exitArmed: false })
+    await page.getByTestId('cal-next').tap()
+    await showing(page, '/month/2026-12')
+    await historySettled(page)
+    await backArms(page)
+    // 出ている間に押した: お知らせを消して元の所へ戻ってから、押した物が動く
+    await page.getByTestId('cal-prev').tap()
+    await expect(armedToast(page)).toHaveCount(0)
+    await showing(page, MONTH)
+    await historySettled(page)
+    expect(await historyShape(page)).toMatchObject({ cur: 1, base: 1, shownIdx: 1, exitArmed: false })
+    await backArms(page)
+    expect(await historyLength(page)).toBe(length)
+    await expect(closeDialog(page)).toHaveCount(0)
+  })
+
+  test('詳細のシートが開いている時の「戻る」はシートを閉じるだけ（お知らせは出さない）。次の「戻る」で出す', async ({
+    page,
+    baseURL,
+  }) => {
+    await openAlone(page, baseURL, { standalone: true, path: DAY, data: demoData() })
+    await openDetail(page, true)
+    await goBack(page)
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await page.waitForTimeout(300)
+    await expect(armedToast(page)).toHaveCount(0)
+    expect(await historyShape(page)).toMatchObject({ exitArmed: false })
+    await showing(page, DAY)
+    await backArms(page)
+  })
+
+  test('同期していない変更がある時だけ、お知らせの次の行に「同期していない変更（n件）は…次に開いた時に送ります。」を添える', async ({
+    page,
+    baseURL,
+  }) => {
+    const line = '同期していない変更（2件）は、この端末に保存してあり、次に開いた時に送ります。'
+    await openAlone(page, baseURL, { standalone: true })
+    await backArms(page)
+    await expect(armedToast(page)).not.toContainText('同期していない変更')
+    await expect(armedToast(page)).toHaveCount(0, { timeout: 5000 })
+    await historySettled(page)
+    await page.evaluate(() => window.__ds.fakeSyncPending(2))
+    await backArms(page)
+    await expect(armedToast(page)).toContainText(line)
+    // 2行に分けて出す
+    expect(
+      await armedToast(page)
+        .locator('p')
+        .evaluate((p) => (p as HTMLElement).innerText),
+    ).toBe(`もう一度［戻る］を押すと閉じます\n${line}`)
+  })
+})
+
 test.describe('PC のブラウザの戻る・進む（■22）', { tag: ['@pc'] }, () => {
   test('カレンダーで「戻る」は閉じるかを聞き、「進む」は何もしない。詳細の画面は「戻る」で閉じ、「進む」で開き直さない', async ({
     page,
   }) => {
     await openCalendar(page, DAY, { data: demoData() })
+    expect(await historyShape(page)).toMatchObject({ source: 'os-back', exit: 'ask' })
     await goForward(page)
     await showing(page, DAY)
     await expect(closeDialog(page)).toHaveCount(0)
