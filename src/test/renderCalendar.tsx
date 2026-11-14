@@ -180,15 +180,31 @@ async function prepare(opts: RenderOptions): Promise<void> {
 
 export type CalendarRender = RenderResult & { router: ReturnType<typeof createMemoryRouter> }
 
+/** 渡した履歴の上のデータのルーター（src/App.tsx と同じ作り。初めの行き先は履歴の物） */
+function routerOn(routes: RouteObject[], history: RouterInit['history']): ReturnType<typeof createMemoryRouter> {
+  return UNSAFE_createRouter({
+    routes,
+    history,
+    mapRouteProperties: UNSAFE_mapRouteProperties,
+    hydrationRouteProperties: UNSAFE_hydrationRouteProperties,
+  }).initialize() as ReturnType<typeof createMemoryRouter>
+}
+
 /**
  * アプリの行き先（src/App.tsx の routes）を描く。entries に履歴を並べると最後の物を開く（{ pathname, state } で location.state も）。
+ * history を渡すと、メモリーのルーターの代わりに、その履歴の上のデータのルーターにする（entries は使わない。初めの行き先は履歴の物）。
  * 例: await renderAt('/week/2026-11-08', { width: 'S', data: { items } })
  */
-export async function renderAt(entries: InitialEntry | InitialEntry[], opts: RenderOptions = {}): Promise<CalendarRender> {
+export async function renderAt(
+  entries: InitialEntry | InitialEntry[],
+  opts: RenderOptions & { history?: RouterInit['history'] } = {},
+): Promise<CalendarRender> {
   await prepare(opts)
   const { routes } = await import('../App')
   const list = Array.isArray(entries) ? entries : [entries]
-  const router = createMemoryRouter(routes, { initialEntries: list, initialIndex: list.length - 1 })
+  const router = opts.history
+    ? routerOn(routes, opts.history)
+    : createMemoryRouter(routes, { initialEntries: list, initialIndex: list.length - 1 })
   const result = render(<RouterProvider router={router} />)
   return { ...result, router }
 }
@@ -227,12 +243,7 @@ export async function renderView<P extends object>(
     },
   ]
   const router = opts.history
-    ? (UNSAFE_createRouter({
-        routes,
-        history: opts.history,
-        mapRouteProperties: UNSAFE_mapRouteProperties,
-        hydrationRouteProperties: UNSAFE_hydrationRouteProperties,
-      }).initialize() as ReturnType<typeof createMemoryRouter>)
+    ? routerOn(routes, opts.history)
     : createMemoryRouter(routes, { initialEntries: [opts.path ?? '/'] })
   const result = render(<RouterProvider router={router} />)
   return {

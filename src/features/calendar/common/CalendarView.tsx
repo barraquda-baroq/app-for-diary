@@ -7,12 +7,12 @@
 // S・M の指で左右になぞると前後の期間へ（どのモードでも。useSwipe）。なぞりを聞くのは、この区切りの全部（操作の列とモードの画面）と、
 // 左右の画面の端までの余白（frame.css の .cal.is-swipe）。モードはそのままで期間が替わると、ページをめくる（PageTurn。
 // モードの画面を包まず、.cal-body の横に置く）。
-// iPhone の画面のいちばん端からのフリック（ブラウザの「戻る」「進む」の身振り。ページには来ず、アプリの履歴に popstate だけが来る）では、
-// モードを円環で1つ回す（src/history/appHistory.ts から nav.ring を呼ぶ。3.1）。ブラウザが身振りを始めなかった時（前の払いの絵が消える
-// 前など）の、画面の端から内へ払った指も同じく回す（useSwipe の onEdge。絵を出している間なら、見えない描く物を足し直す
-// afterInPageRing）。開いているすばやく足すは、どちらでも字を足さずに閉じる（書きかけは残る。12.1）
+// iPhone・iPad の画面の端からのフリック（画面の左右の端から 20px の中で押して内へ払った指。アプリが window で受け取る:
+// src/history/edgeFlick.ts）では、モードを円環で1つ回す（左の端から＝年→月→週→日→年、右の端から＝日→週→月→年→日。アプリの履歴
+// src/history/singleEntryHistory.ts の flick から nav.ring を呼ぶ。3.1）。動く絵は無く、指を離した時に替わる。開いているすばやく
+// 足すは、字を足さずに閉じる（書きかけは残る。12.1）
 import { useCallback, useEffect, useMemo, useRef, type ComponentType } from 'react'
-import { afterInPageRing, setHistoryHandler } from '../../../history/appHistory'
+import { setHistoryHandler } from '../../../history/appHistory'
 import { useCalendarUi } from '../../../store/uiStore'
 import { useElementSize } from '../../../ui/hooks'
 import { DayView } from '../day/DayView'
@@ -59,10 +59,7 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
     },
     [nav],
   )
-  useSwipe(root, swipe, nav.shift, (dir) => {
-    ringFromFlick(dir)
-    afterInPageRing()
-  })
+  useSwipe(root, swipe, nav.shift)
   useEffect(() => setHistoryHandler('ring', ringFromFlick), [ringFromFlick])
 
   const View = VIEWS[mode]

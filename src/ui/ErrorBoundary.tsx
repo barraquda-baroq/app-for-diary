@@ -1,5 +1,8 @@
-// 画面の描画中に例外が起きても、アプリ全体が真っ白にならないようにする
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+// 画面の描画中に例外が起きても、アプリ全体が真っ白にならないようにする。案内の［トップへ］［アプリの設定・バックアップ］は # のリンク。
+// iPhone・iPad ではブラウザの履歴を1つのままにする（docs/SPEC.md の 3.1。22. の ■31〜■33）ので、押した時は履歴に積まずに、今の物を
+// 置き換えて移る（# のリンクのまま移ると履歴が増え、端から払った時にブラウザのめくる動きが戻る）。Android・PC は今までどおりリンクで移る
+import { Component, type ErrorInfo, type MouseEvent, type ReactNode } from 'react'
+import { currentPopSource } from './device'
 
 interface Props {
   children: ReactNode
@@ -32,6 +35,15 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 }
 
+/** iPhone・iPad: # のリンクを、履歴に積まずに今の物を置き換えて開く（Android・PC はリンクのまま） */
+function replaceOnEdgeFlick(e: MouseEvent<HTMLAnchorElement>): void {
+  if (currentPopSource() !== 'edge-flick') return
+  const href = e.currentTarget.getAttribute('href')
+  if (!href) return
+  e.preventDefault()
+  window.location.replace(href)
+}
+
 /** 画面を表示できなかった時の案内（ErrorBoundary と、ルーターの errorElement で使う） */
 export function ErrorScreen({ message }: { message: string }) {
   return (
@@ -45,10 +57,10 @@ export function ErrorScreen({ message }: { message: string }) {
           {message}
         </pre>
         <div className="row">
-          <a className="btn" href="#/">
+          <a className="btn" href="#/" onClick={replaceOnEdgeFlick}>
             トップへ
           </a>
-          <a className="btn" href="#/settings">
+          <a className="btn" href="#/settings" onClick={replaceOnEdgeFlick}>
             アプリの設定・バックアップ
           </a>
           <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>

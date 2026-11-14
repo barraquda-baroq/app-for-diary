@@ -98,6 +98,21 @@ describe('開発（iPhone・iPad だけ。端からのフリックの記録。3.
     expect(screen.getByTestId('swipe-log-clear').textContent).toBe('記録を消す')
   })
 
+  it('「履歴の数」に今のブラウザの履歴の数を出す（1 なら、端から払った時にブラウザのめくる動きは出ない。iPhone・iPad だけ）', async () => {
+    const length = vi.spyOn(History.prototype, 'length', 'get').mockReturnValue(3)
+    renderAt('/settings')
+    expect(await screen.findByTestId('app-settings')).toBeTruthy()
+    expect(screen.queryByTestId('history-length')).toBeNull()
+    cleanup()
+    onIPhone()
+    renderAt('/settings')
+    expect((await screen.findByTestId('history-length')).textContent).toBe('履歴の数 3')
+    cleanup()
+    length.mockReturnValue(1)
+    renderAt('/settings')
+    expect((await screen.findByTestId('history-length')).textContent).toBe('履歴の数 1')
+  })
+
   it('「端からのフリックの記録を取る」を入れると端末に覚えて控え始め（開き直しても入ったまま）、外すと控えた物も消す', async () => {
     onIPhone()
     const user = userEvent.setup()

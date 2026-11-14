@@ -3,10 +3,11 @@
 // 予定があれば開き直し、無ければ・登録の画面は印を外す。データを読み終えるまでは決めない
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mkItem } from '../../../domain/testData'
 import { useApp } from '../../../store/appStore'
 import { renderAt, renderView, setupCalendarTests } from '../../../test/renderCalendar'
+import * as device from '../../../ui/device'
 import { PAGE_ID, sheetOf, useItemSheets, type ItemSheets } from './sheets'
 import { SheetHost } from './SheetHost'
 
@@ -257,5 +258,36 @@ describe('読み込み直した後（D03）', () => {
     expect(sheetOf({ sheet: { kind: 'register', init: {} } })).toBeNull()
     expect(sheetOf({ sheet: { kind: 'other', id: 'a' } })).toBeNull()
     expect(sheetOf({ mimFromCalendar: true })).toBeNull()
+  })
+})
+
+describe('iPhone・iPad（ブラウザの履歴は1つのまま。3.1・22. の ■31〜■33）', () => {
+  it('起動アニメーションが消えている途中・すばやく足すの入力欄が出ている時も、待たずにすぐ開く（ブラウザの履歴に積まないので、写す絵も無い）', async () => {
+    vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
+    const w = window as unknown as { DiaryStudioLaunch?: { active: () => boolean } }
+    w.DiaryStudioLaunch = { active: () => true }
+    const quick = document.createElement('div')
+    quick.className = 'cp-quick'
+    document.body.appendChild(quick)
+    try {
+      await renderView(Harness, {}, { path: '/week/2026-11-08', data: { items } })
+      await act(async () => {
+        fireEvent.click(screen.getByText('a を開く'))
+      })
+      expect(sheet()).not.toBeNull()
+      expect(screen.getByTestId('item-title')).toHaveProperty('value', '定例ミーティング')
+      await act(async () => {
+        fireEvent.click(screen.getByText('閉じる'))
+      })
+      expect(sheet()).toBeNull()
+      await act(async () => {
+        fireEvent.click(screen.getByText('登録を開く'))
+      })
+      expect(sheet()?.getAttribute('data-kind')).toBe('private')
+    } finally {
+      delete w.DiaryStudioLaunch
+      quick.remove()
+      vi.restoreAllMocks()
+    }
   })
 })

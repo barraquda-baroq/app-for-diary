@@ -1,7 +1,9 @@
 // 設定の「開発」（iPhone・iPad だけ。docs/SPEC.md の 3.1・18.1）: 端からのフリックの記録（src/history/swipeLog.ts）を取る・コピーする・
-// 消す。うまくいかなかった払いの後に、作者が［記録をコピー］で送れるようにする（iPhone が途中で戻したのか、アプリの側で何かしたのかを
-// 分ける）。記録を取るかは端末に覚え、控えた物はこのページの間だけ（読み込み直すと消える）。画面の上に浮かべる物は作らない（端からの
-// フリックの間に見える絵に写るため）
+// 消す。うまくいかなかった払いの後に、作者が［記録をコピー］で送れるようにする（iPhone が指を取ったのか、アプリの側で何かしたのかを
+// 分ける）。記録を取るかは端末に覚え、控えた物はこのページの間だけ（読み込み直すと消える）。画面の上に浮かべる物は作らない。
+// 「履歴の数」は今のブラウザの履歴の数（history.length）。iPhone・iPad ではいつも1つにしている（src/history/singleEntryHistory.ts）ので、
+// 1 なら端から払った時にブラウザのめくる動きは出ない。前の版が残した履歴がある間（更新した直後・Google のログインの後など）は 2 以上で、
+// アプリを一度閉じて開き直すと 1 に戻る（22. の ■31〜■33）
 import { useId, useState } from 'react'
 import { clearSwipeLog, setSwipeLogEnabled, SWIPE_LOG_MAX, swipeLogEnabled, swipeLogText } from '../../history/swipeLog'
 
@@ -12,6 +14,8 @@ export function DevSettings() {
   const [status, setStatus] = useState<string | null>(null)
   /** コピーできなかった時に、字を選んでコピーできるように出す記録 */
   const [fallback, setFallback] = useState<string | null>(null)
+  /** 今のブラウザの履歴の数（開いた時の物） */
+  const [historyLength] = useState(() => window.history.length)
 
   const toggle = (next: boolean) => {
     setSwipeLogEnabled(next)
@@ -81,6 +85,15 @@ export function DevSettings() {
               {on ? 'オン' : 'オフ'}
             </span>
           </label>
+        </div>
+      </div>
+      <div className="aset-row">
+        <div className="aset-row-label">
+          <span data-testid="history-length">履歴の数 {historyLength}</span>
+          <span className="aset-row-desc">
+            1 なら、画面の端から払った時にブラウザのページがめくれる動きは出ません。2 以上の時は、アプリを一度閉じて（App
+            スイッチャーで上へ払って）開き直すと 1 に戻ります。
+          </span>
         </div>
       </div>
       <div className="aset-row">

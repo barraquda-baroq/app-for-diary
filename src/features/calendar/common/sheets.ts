@@ -1,14 +1,13 @@
 // 登録・詳細の小さな画面（L は真ん中・M/S は下からのシート）の開け閉めと履歴（docs/SPEC.md の 3.1・3.8。D03・確かめ A3）。
 // 開く時は行き先を変えずに、同じ行き先を履歴の state.sheet に積む（URL に予定の id を出さない。スマホの「戻る」で閉じられる）。
 // ［×］・Esc・背景・登録・削除で閉じる時は履歴を1つ戻す（戻る物が無い時は state.sheet を外して置き換える）。OS の「戻る」（Android・PC）でも
-// 同じく閉じる。iPhone の端からのフリックでは、詳細は閉じ、登録は閉じない（src/history/appHistory.ts が決める。3.1）。
-// iPhone では、閉じる時は戻る前に小さな画面を隠して描かせ（appHistory.ts）、開く時はすばやく足すの入力欄などが消えた画面を描かせてから
-// 積む（端からのフリックの間に見える履歴の絵に、小さな画面・入力欄を残さない。3.1）。
+// 同じく閉じる。iPhone・iPad の画面の端からのフリックでも左右どちらでも閉じる（登録の画面は書きかけでも聞かずに捨てる。■27。
+// src/history/popRules.ts が決める。3.1）。iPhone・iPad では、積む・戻るはアプリの中の行き先の並びだけで、ブラウザの履歴は1つのまま
+// （src/history/singleEntryHistory.ts）なので、開く時も待たずにすぐ開く。
 // 中の小さな画面（削除の確かめ・複製・日付や時刻の一覧）は積まない（WP9）。小さな画面を出すのは common/SheetHost.tsx
 import { useContext, useMemo } from 'react'
 import { UNSAFE_DataRouterContext, useNavigate, type Location } from 'react-router-dom'
 import type { ID } from '../../../domain/types'
-import { whenScreenClean } from '../../../history/swipePicture'
 import type { RegisterInit, SheetLocationState, SheetState } from './types'
 
 /**
@@ -89,9 +88,8 @@ export function useItemSheets(): ItemSheets {
   const current = useCurrentLocation()
   return useMemo(
     () => ({
-      // iPhone: すばやく足すの入力欄などが出ていれば、消えた画面が描かれてから開く（積む時に写すカレンダーの履歴の絵に残さない。3.1）
-      openRegister: (init) => whenScreenClean(() => open(navigate, current(), { kind: 'register', init })),
-      openDetail: (id) => whenScreenClean(() => open(navigate, current(), { kind: 'detail', id })),
+      openRegister: (init) => open(navigate, current(), { kind: 'register', init }),
+      openDetail: (id) => open(navigate, current(), { kind: 'detail', id }),
       closeSheet: () => {
         const location = current()
         if (!sheetOf(location.state)) return

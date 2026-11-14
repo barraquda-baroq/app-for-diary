@@ -6,10 +6,12 @@ import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { HOUR, T0 } from '../../../domain/testData'
-import * as appHistory from '../../../history/appHistory'
+import { createAppHistory } from '../../../history/appHistory'
 import { useCalendarUi } from '../../../store/uiStore'
+import { FakeWindow } from '../../../test/fakeHistoryWindow'
 import { renderAt, resizeObserved, setupCalendarTests } from '../../../test/renderCalendar'
 import * as device from '../../../ui/device'
+import { screenOf } from './calendarHistory'
 import type { ViewProps } from './types'
 
 // モードの画面は、受け取った物をそのまま字にして出す（中身は各モードの担当。ここでは渡し方だけを見る）
@@ -374,22 +376,17 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
     }
   })
 
-  it('iPhone・iPad で画面の端（20px の中）から内へ払うと、期間へは移らず端からのフリックと同じくモードを回す（ブラウザが身振りを始めなかった時。3.1）。内側からは前後へ', async () => {
+  it('iPhone・iPad で画面の端（20px の中）から指で払っても、前後の期間へは移らない（端の指は端からのフリック: src/history/edgeFlick.ts が受け取ってモードを回す）。内側からは前後へ', async () => {
     vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
-    const topUp = vi.spyOn(appHistory, 'afterInPageRing')
     try {
       const { router } = await renderAt('/month/2026-11', { width: 'S' })
-      // 左の端から右へ: 日→週→月→年の向き（月 → 年）
       drag(screen.getByTestId('calendar-body'), [4, 400], [140, 400])
-      expect(router.state.location.pathname).toBe('/year/2026')
-      expect(topUp).toHaveBeenCalledTimes(1)
-      // 右の端から左へ: 年 → 月
+      expect(router.state.location.pathname).toBe('/month/2026-11')
       drag(screen.getByTestId('calendar-body'), [window.innerWidth - 4, 400], [window.innerWidth - 150, 400])
       expect(router.state.location.pathname).toBe('/month/2026-11')
       // 端から 20px より内側からは、今までどおり前後の月へ
       drag(screen.getByTestId('calendar-body'), [40, 400], [200, 400])
       expect(router.state.location.pathname).toBe('/month/2026-10')
-      expect(topUp).toHaveBeenCalledTimes(2)
     } finally {
       vi.restoreAllMocks()
     }
@@ -400,6 +397,45 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
     expect(screen.getByTestId('calendar').classList.contains('is-swipe')).toBe(false)
     drag(screen.getByTestId('calendar-body'), [300, 400], [100, 400])
     expect(wide.router.state.location.pathname).toBe('/month/2026-11')
+  })
+})
+
+describe('iPhone・iPad の端からのフリック（1つの履歴の形の flick から。3.1。2026-11-14 の作者の答えの向き）', () => {
+  /** iPhone・iPad の1つの履歴の形をその行き先で作る（createAppHistory なので、CalendarView が置いた ring が届く） */
+  function singleHistory(path: string) {
+    return createAppHistory({
+      window: new FakeWindow(`#${path}`),
+      source: 'edge-flick',
+      armOnLeaveFail: false,
+      screenOf,
+      isLoginPath: (p) => p === '/login',
+    })
+  }
+
+  async function flickAt(path: string, side: -1 | 1, expected: string[]) {
+    vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
+    const h = singleHistory(path)
+    try {
+      const { router } = await renderAt(path, { width: 'S', history: h })
+      expect(router.state.location.pathname).toBe(path)
+      for (const next of expected) {
+        await act(async () => h.flick?.(side))
+        expect(router.state.location.pathname).toBe(next)
+        // モードを替えた時はページをめくらない
+        expect(document.querySelector('.cal-turn')).toBeNull()
+      }
+    } finally {
+      h.dispose()
+      vi.restoreAllMocks()
+    }
+  }
+
+  it('左の端から（指を左から右へ。flick(-1)）: 年→月→週→日→年（見ている日を保つ）', async () => {
+    await flickAt('/day/2026-11-12', -1, ['/year/2026', '/month/2026-11', '/week/2026-11-08', '/day/2026-11-12'])
+  })
+
+  it('右の端から（指を右から左へ。flick(1)）: 日→週→月→年→日（見ている日を保つ）', async () => {
+    await flickAt('/day/2026-11-12', 1, ['/week/2026-11-08', '/month/2026-11', '/year/2026', '/day/2026-11-12'])
   })
 })
 

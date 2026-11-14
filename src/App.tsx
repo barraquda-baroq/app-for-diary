@@ -4,7 +4,8 @@
 // 履歴はアプリの履歴（src/history/appHistory.ts。カレンダーの中の行き来は積まない・iPhone の端からのフリックでモードを回す・Android の
 // ブラウザのタブと PC の「戻る」でアプリを閉じるかを聞く・ホーム画面から開いた Android のアプリの「戻る」は聞かずに「もう一度［戻る］を
 // 押すと閉じます」。3.1）をデータのルーターに渡す（createHashRouter と同じ作りで、履歴だけを替える）。iPhone・iPad はブラウザの履歴を
-// 1つのままにする形（src/history/singleEntryHistory.ts。22. の ■31〜■33）、Android・PC は印の履歴の形
+// 1つのままにする形（src/history/singleEntryHistory.ts。22. の ■31〜■33）で、画面の端からのフリックは window で受け取る
+// （src/history/edgeFlick.ts）。Android・PC は印の履歴の形
 import { lazy, Suspense } from 'react'
 import {
   Navigate,
@@ -25,6 +26,7 @@ import { useInteractionClock } from './features/calendar/common/useReturnToToday
 import { armExitOnBack, askToCloseApp, consumeBackPress } from './features/top/closeApp'
 import { TopPage } from './features/top/TopPage'
 import { createAppHistory, setHistoryHandler } from './history/appHistory'
+import { attachEdgeFlick } from './history/edgeFlick'
 import { hideSheets, renderWeight, screenIsClean, setBallast } from './history/swipePicture'
 import { paths } from './routes'
 import { canShowData, useSync } from './sync/controller'
@@ -140,8 +142,12 @@ function createAppRouter() {
   setHistoryHandler('consumePop', consumeBackPress)
   // ドラッグの途中は、押し終えても落とし終えるまで、アプリから履歴を動かさない（印の履歴を作るのも後に回す）
   setHistoryHandler('dragging', dragActive)
-  // iPhone の端からのフリックの間に見える絵（3.1）: 印の履歴を作る・閉じた後に「進む」の印の絵を写す時の画面がカレンダーだけか・
-  // 登録・詳細の画面を閉じる前に隠す・モードを回した直後の描く物の数と見えない描く物
+  // iPhone・iPad: 画面の端から払った指を window で受け取り、履歴の flick に渡す（どの画面の上でも。src/history/edgeFlick.ts。
+  // ブラウザの履歴を1つのままにする形の時だけ付き、Android・PC には付かない）
+  attachEdgeFlick(history, { dragging: dragActive })
+  // 印の履歴の形の iPhone の端からのフリックの間に見える絵（前の作り。今は iPhone・iPad でもこの形を作らないので使われない。後の版で
+  // 片付ける（開発））: 印の履歴を作る・閉じた後に「進む」の印の絵を写す時の画面がカレンダーだけか・登録・詳細の画面を閉じる前に
+  // 隠す・モードを回した直後の描く物の数と見えない描く物
   setHistoryHandler('cleanScreen', screenIsClean)
   setHistoryHandler('hideSheets', hideSheets)
   setHistoryHandler('renderWeight', renderWeight)

@@ -74,6 +74,7 @@ import { actions } from '../../../../store/actions'
 import { getData } from '../../../../store/appStore'
 import { quickDraftKey, readLocal, writeLocal } from '../../../../store/localDrafts'
 import { swipeLog } from '../../../../history/swipeLog'
+import { edgeOfScreen } from '../../../../history/edgeFlick'
 import { overCalendarGone } from '../../../../history/swipePicture'
 import { attempt } from '../../../../store/uiStore'
 import { itemChange, notifyUndoable, recordStep } from '../../../../store/undoStore'
@@ -82,7 +83,7 @@ import { CheckIcon } from '../../../../ui/icons'
 import { KEEP_QUICK_ADD } from '../../../../ui/keepQuickAdd'
 import { scrollBehavior } from '../../../../ui/motion'
 import { toastInset } from '../../../../ui/scrollWithin'
-import { edgeSide, SWIPE_SLOP_PX } from '../swipe'
+import { SWIPE_SLOP_PX } from '../swipe'
 import { testIds } from '../testIds'
 import { cls } from './itemLook'
 import './parts.css'
@@ -440,12 +441,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       const outside = !!box.current && e.target instanceof Node && !box.current.contains(e.target) && !keep
       // iPhone・iPad で画面の端を指で押した（端からのフリックの指）: 外を押したとはまだ扱わない（離した時に決める。前に外を押して
       // 押し終わりを待っている分は、そのまま待つ）
-      if (
-        outside &&
-        e.pointerType === 'touch' &&
-        currentPopSource() === 'edge-flick' &&
-        edgeSide(e.clientX, window.innerWidth) !== null
-      ) {
+      if (outside && e.pointerType === 'touch' && currentPopSource() === 'edge-flick' && edgeOfScreen(e.clientX) !== null) {
         edge.current = { id: e.pointerId, x: e.clientX, y: e.clientY }
         swipeLog('quick-edge', { x: Math.round(e.clientX) })
         return
