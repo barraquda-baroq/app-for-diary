@@ -84,8 +84,13 @@ export interface SingleHistoryShape {
 export const FLICK_DEDUPE_MS = 400
 /** 書けなかった時に、もう一度書くまで */
 export const WRITE_RETRY_MS = 1000
-/** 描いた後にスクロールの位置を戻すのを試す回数（描く時ごと。ページがまだ短い時） */
-const SCROLL_TRIES = 6
+/**
+ * 描いた後にスクロールの位置を戻すのを試し続ける長さの上限（ms。描く時ごとに試す。ページがまだ短い時・描くのが遅い時: ルーターは
+ * 描くのを途中で区切って進めるので、重いイヤーは何コマもかかる）
+ */
+export const SCROLL_RESTORE_MS = 1500
+/** 戻すのを待っている間にこれが来たら、やめる（利用者が自分で触れた・スクロールし始めた） */
+const USER_INPUT = ['touchstart', 'pointerdown', 'wheel', 'keydown'] as const
 /** 1回描くのを待つ長さの上限 */
 const FRAME_TIMEOUT_MS = 200
 /** トップ（src/routes.ts の paths.top()。設定・MIM などを直接開いた時に下に置く） */
@@ -446,21 +451,31 @@ export class SingleEntryHistory implements DsHistory {
     })
   }
 
-  /** 描いた後に、その位置へスクロールする（ページがまだ短ければ次に描く時にもう一度。ほかへ動いたらやめる） */
+  /**
+   * 描いた後に、その位置へスクロールする（ページがまだ短ければ、届くまで次に描く時にもう一度。SCROLL_RESTORE_MS まで）。ほかへ動いた・
+   * 利用者が触れた時はやめる
+   */
   private restoreScroll(y: number, gen: number): void {
     this.restoring = true
-    let tries = 0
+    const until = this.now() + SCROLL_RESTORE_MS
+    let touched = false
+    const onInput = () => {
+      touched = true
+    }
+    for (const type of USER_INPUT) this.win.addEventListener(type, onInput)
+    const finish = () => {
+      for (const type of USER_INPUT) this.win.removeEventListener(type, onInput)
+      this.restoring = false
+      this.settleIdle()
+    }
     const step = () => {
-      if (gen !== this.moveGen || this.disposed) {
-        this.restoring = false
-        this.settleIdle()
+      if (touched || gen !== this.moveGen || this.disposed) {
+        finish()
         return
       }
       this.win.scrollTo?.(0, y)
-      tries += 1
-      if (Math.abs(this.scrollY() - y) <= 1 || tries >= SCROLL_TRIES) {
-        this.restoring = false
-        this.settleIdle()
+      if (Math.abs(this.scrollY() - y) <= 1 || this.now() >= until) {
+        finish()
         return
       }
       this.nextFrame(step)

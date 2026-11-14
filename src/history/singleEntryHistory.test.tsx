@@ -420,6 +420,35 @@ describe('iPhone・iPad の1つの履歴の形（SingleEntryHistory）', () => {
     expect(s.win.scrollY).toBe(300)
   })
 
+  it('カレンダーを描き終えるのが遅い時（ルーターが描くのを途中で区切る・重いイヤー）も、ページが届く高さになるまで（1秒ほどの内）待ってから戻す。その間に利用者が触れたらやめる', async () => {
+    const s = setup('#/year/2026')
+    s.win.scrollY = 420
+    s.h.push(loc('/settings'))
+    s.win.scrollTo(0, 0)
+    // 描き終えるまでは、ページが短く（設定の画面のまま）、送れない
+    let tall = false
+    s.win.scrollTo = (_x: number, y: number) => {
+      s.win.scrollY = tall ? y : 0
+    }
+    s.h.go(-1)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(s.win.scrollY).toBe(0)
+    tall = true
+    await settle(s)
+    expect(s.win.scrollY).toBe(420)
+    // 待っている間に利用者が触れたら（指・ホイール）、戻すのをやめる
+    tall = false
+    s.h.go(1)
+    await settle(s)
+    s.win.scrollY = 0
+    s.h.go(-1)
+    await vi.advanceTimersByTimeAsync(100)
+    s.win.dispatch('touchstart', new Event('touchstart'))
+    tall = true
+    await settle(s)
+    expect(s.win.scrollY).toBe(0)
+  })
+
   // ---------- SE7 ----------
   describe('前の版が残した履歴（更新した後・ログインの行き来の後。アプリを閉じて開き直すまで）', () => {
     /** 前の版の印の履歴 [戻るの印, 土台, 進むの印] の土台にいる */

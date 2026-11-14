@@ -245,7 +245,7 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: 330, y: y - 200 }, 25))
     await showing(page, WEEK)
     await turnDone(page)
-    expect(await turnsOf(page)).toEqual(['next', 'prev'])
+    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
     // 画面の端（3px）からの同じ払いは、モードだけを回す（期間はそのまま。ページはめくらない。Chromium の本物のタッチ: pointer の
     // 出来事も来るが、なぞりの所は端の指を数えない）
     await edgeFlick(page, 'left', { via: 'cdp' })
