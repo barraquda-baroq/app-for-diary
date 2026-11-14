@@ -8,7 +8,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, historySettled, noHorizontalScroll, openCalendar, rawItem } from './helpers'
+import { collectDiagnosticsOnFailure, edgeFlick, historySettled, noHorizontalScroll, openCalendar, rawItem } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -504,7 +504,8 @@ test.describe('登録の画面（iPhone）', { tag: ['@ios'] }, () => {
     const box = await page.locator('.modal-backdrop').boundingBox()
     const vh = await page.evaluate(() => window.innerHeight)
     expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(vh - 300)
-    await page.goBack()
+    // 左の端からのフリック（ブラウザの履歴は1つのままなので、アプリが受け取って閉じる）
+    await edgeFlick(page, 'left')
     await historySettled(page)
     await expect(sheetOf(page)).toHaveCount(0)
     await page.getByTestId('cal-add').click()

@@ -6,17 +6,19 @@
 // 作者の答え。作者の手順のとおり、週で動かして日に替え、日で戻すと週へ戻る）。同じモードなら、今の週・日に無ければそのモードのまま
 // その日へ移ってから。
 // データは作り物の e2e/fixtures/demoData.ts（今日は 2026年11月10日（火）9:00。週 11/8〜11/14）
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { devices, expect, test, type Locator, type Page } from '@playwright/test'
 import type { Item } from '../src/domain/types'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
   collectDiagnosticsOnFailure,
+  historyCalls,
   historySettled,
   noHorizontalScroll,
   openCalendar,
   openItemMore,
   rawItem,
   sheetReady,
+  spyHistory,
   startLongPress,
   startMouseDrag,
   tapSize,
@@ -1060,6 +1062,20 @@ test.describe('戻した・やり直したお知らせ（S）', { tag: ['@s'] },
       await tapSize(okBtn(page), 'OK')
     })
   }
+})
+
+// iPhone・iPad はブラウザの履歴を1つのままにする形（src/history/singleEntryHistory.ts。22. の ■31〜■33）: モードをまたいで戻す・
+// やり直す時の移り（置き換え）でも、ブラウザの履歴は増えず、積む・戻る・進むは呼ばない
+test.describe('戻した・やり直したお知らせ（iPhone。Chromium に iPhone の UA）', { tag: ['@s'] }, () => {
+  test.use({ userAgent: devices['iPhone 14'].userAgent })
+
+  test('作者の手順（指。■28）: 週で長押しで動かして戻す・やり直す、日に替えて戻す・やり直す → 週へ戻る。ブラウザの履歴は増えず、積む・戻る・進むは呼ばない', async ({
+    page,
+  }) => {
+    await spyHistory(page)
+    await authorSteps(page, 'touch-v')
+    expect(await historyCalls(page)).toEqual([])
+  })
 })
 
 test.describe('戻した・やり直したお知らせ（M）', { tag: ['@m'] }, () => {

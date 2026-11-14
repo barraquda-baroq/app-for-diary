@@ -1,13 +1,13 @@
 // 履歴と「戻る」「進む」の E2E（docs/SPEC.md の 3.1・3.8。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・■22・■23・■25。
-// src/history/appHistory.ts）。iPhone の画面の端からのフリックは、ブラウザの「戻る」「進む」の身振りそのもの（ページには popstate だけが
-// 来る）なので、page.goBack・page.goForward で同じ所を通す。iPhone は Chromium に iPhone の UA を付けた物（@s）。CI の WebKit（@ios）では、
-// 同じ払い（モードを回す・登録・詳細の画面・設定・MIM を閉じる）を e2e/swipe-order.spec.ts で、履歴を書く・動かす順番と一緒に流す。
+// src/history/appHistory.ts）。Android の戻るボタン・PC のブラウザの戻る・進むは page.goBack・page.goForward で同じ所を通す。
+// iPhone・iPad はブラウザの履歴を1つのままにする形（src/history/singleEntryHistory.ts。22. の ■31〜■33）で、画面の端からのフリックは
+// アプリが受け取るので、e2e/edge-flick.spec.ts で確かめる。
 // Android は Pixel 7（mobile。UA が Android）、PC は Desktop Chrome。ホーム画面から開いた Android のアプリは、Pixel 7 の表示の形を
 // standalone にして（openAlone の standalone）まねる。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）。
 // Playwright の page.evaluate・locator は、それだけでブラウザに「押した」と数えさせる（Chromium では 5秒。navigator.userActivation）ので、
 // ここの多くのテストでは、印の履歴を作る時の「押した直後か」はいつも真になる。押した物の分だけで作ることは、5秒あまり何もせずに待って
 // から指で押す1つ（Android の「開いて最初に指で軽く押した…」）と、単体テスト（src/history/appHistory.test.ts）で確かめる
-import { devices, expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
   armHistory,
@@ -22,17 +22,11 @@ import {
   historyShape,
   openCalendar,
   openItemMore,
-  recordTurns,
   startLongPress,
   startMouseDrag,
-  touchSwipe,
-  turnDone,
-  turnsOf,
 } from './helpers'
 
 collectDiagnosticsOnFailure()
-
-const IPHONE_UA = devices['iPhone 14'].userAgent
 
 const DAY = '/day/2026-11-10'
 const WEEK = '/week/2026-11-08'
@@ -190,279 +184,6 @@ async function openDetail(page: Page, finger: boolean) {
   await expect(page.getByTestId('item-title')).toHaveValue('定例ミーティング')
   await historySettled(page)
 }
-
-test.describe('iPhone の画面の端からのフリック（Chromium に iPhone の UA）', { tag: ['@s'] }, () => {
-  test.use({ userAgent: IPHONE_UA })
-
-  test('開いて最初に指で軽く押した（離した）後の、左の端からのフリックはモードを回す（印の履歴は指を離した時に作る）', async ({
-    page,
-  }) => {
-    await openCalendar(page, DAY, { arm: false })
-    const length = await historyLength(page)
-    expect(await historyShape(page)).toMatchObject({ base: null, buildPending: true })
-    await armHistory(page, { finger: true })
-    expect(await historyLength(page)).toBe(length + 2)
-    await goBack(page)
-    await showing(page, WEEK)
-    await goForward(page)
-    await showing(page, DAY)
-    expect(await historyLength(page)).toBe(length + 2)
-  })
-
-  test('端の身振りで離す出来事が来なかった指が残っても、次に指で押せば、詳細の画面は［×］ですぐ閉じ、右の端からのフリックでも閉じる（残った指は捨てる）', async ({
-    page,
-  }) => {
-    await openCalendar(page, DAY, { data: demoData() })
-    // 端末が身振りに取った指（docs/SPEC.md の 3.7）: 下ろした出来事だけが来て、離した出来事は来ない
-    await page.evaluate(() => {
-      const at = { clientX: 2, clientY: 400 }
-      document.body.dispatchEvent(
-        new PointerEvent('pointerdown', { ...at, pointerId: 77, pointerType: 'touch', isPrimary: true, bubbles: true }),
-      )
-      const finger = new Touch({ ...at, identifier: 77, target: document.body })
-      document.body.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [finger], changedTouches: [finger] }))
-    })
-    expect((await historyShape(page))?.held).toBe(true)
-    await goBack(page)
-    await showing(page, WEEK)
-    await goForward(page)
-    await showing(page, DAY)
-    const sheet = page.getByTestId('item-sheet')
-    await openDetail(page, true)
-    expect((await historyShape(page))?.held).toBe(false)
-    await page.getByTestId('modal-close').tap()
-    await expect(sheet).toHaveCount(0, { timeout: 2000 })
-    await historySettled(page)
-    await openDetail(page, true)
-    await goForward(page)
-    await expect(sheet).toHaveCount(0)
-    await showing(page, DAY)
-  })
-
-  test('カレンダー: 左の端から（戻る）で 日→週→月→年→日、右の端から（進む）で 年→月→週→日→年。見ている日を保ち、ページはめくらず、履歴は増えない', async ({
-    page,
-  }) => {
-    await openCalendar(page, '/day/2026-11-12')
-    expect((await historyShape(page))?.source).toBe('edge-flick')
-    await recordTurns(page)
-    const length = await historyLength(page)
-    for (const next of ['/week/2026-11-08', '/month/2026-11', '/year/2026', '/day/2026-11-12']) {
-      await goBack(page)
-      await showing(page, next)
-    }
-    for (const next of ['/year/2026', '/month/2026-11', '/week/2026-11-08', '/day/2026-11-12']) {
-      await goForward(page)
-      await showing(page, next)
-    }
-    expect(await turnsOf(page)).toEqual([])
-    expect(await historyLength(page)).toBe(length)
-    // 閉じるかは聞かない（iPhone には OS の戻るボタンが無い）
-    await expect(closeDialog(page)).toHaveCount(0)
-  })
-
-  test('20回払っても、モードのボタン・‹ ›・なぞりで替えても履歴は増えず、なぞり・‹ › はページをめくる', async ({ page }) => {
-    await openCalendar(page, WEEK, { data: demoData() })
-    const length = await historyLength(page)
-    for (let i = 0; i < 10; i++) {
-      await goBack(page)
-      await goForward(page)
-    }
-    await showing(page, WEEK)
-    await page.getByTestId('cal-mode-month').click()
-    await page.getByTestId('cal-mode-day').click()
-    await showing(page, DAY)
-    await recordTurns(page)
-    await page.getByTestId('cal-next').click()
-    await at(page, '/day/2026-11-11')
-    await turnDone(page)
-    await touchSwipe(page, page.getByTestId('calendar-body'), 140, 0)
-    await at(page, DAY)
-    await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
-    expect(await historyLength(page)).toBe(length)
-    // 替えた後も、端からのフリックはモードを回す
-    await goForward(page)
-    await showing(page, YEAR)
-  })
-
-  test('登録の画面: 左右どちらのフリックでも閉じ、書きかけがあっても確かめずに捨てる（詳細の画面と同じ。■27）。［やめる］は今までどおり確かめる', async ({
-    page,
-  }) => {
-    await openCalendar(page, DAY)
-    const sheet = page.getByTestId('item-sheet')
-    const added = () =>
-      page.evaluate(() => Object.values(window.__ds.getData().items).filter((i) => i.title === '書きかけの予定').length)
-    for (const flick of [goBack, goForward]) {
-      await page.getByTestId('cal-add').click()
-      await expect(sheet).toBeVisible()
-      await page.getByTestId('item-title').fill('書きかけの予定')
-      await historySettled(page)
-      await flick(page)
-      await expect(sheet).toHaveCount(0)
-      await expect(page.getByTestId('item-discard')).toHaveCount(0)
-      await showing(page, DAY)
-      expect(await added()).toBe(0)
-    }
-    // ［やめる］は今までどおり書きかけを確かめて閉じる
-    await page.getByTestId('cal-add').click()
-    await expect(sheet).toBeVisible()
-    await page.getByTestId('item-title').fill('書きかけの予定')
-    await page.getByTestId('item-cancel').click()
-    await page.getByTestId('item-discard').click()
-    await expect(sheet).toHaveCount(0)
-    await showing(page, DAY)
-    expect(await added()).toBe(0)
-  })
-
-  test('登録の画面で押す・字を打つ・縦のスクロール・登録はいつもどおり。左の端からの身振りを止める touch-action の試しは外した（どの小さな画面にも付けない。ダブルタップの拡大も戻る。3.1・■27）', async ({
-    page,
-  }) => {
-    // 中で縦にスクロールするように、背を低くする
-    await page.setViewportSize({ width: 390, height: 600 })
-    await openCalendar(page, DAY, { data: demoData() })
-    await page.getByTestId('cal-add').tap()
-    const sheet = page.getByTestId('item-sheet')
-    await expect(sheet).toBeVisible()
-    // 試しの印（it-edge-guard）は無く、背景も中の物も touch-action は初めのまま（auto）
-    await expect(page.locator('.modal-backdrop')).toHaveCount(1)
-    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
-    const touchAction = (testId: string | null, selector = '') =>
-      page.evaluate(
-        ({ testId, selector }) => {
-          const el = testId
-            ? document.querySelector(`[data-testid="${testId}"]`)
-            : document.querySelector(`.modal-backdrop${selector}`)
-          return el ? getComputedStyle(el).touchAction : null
-        },
-        { testId, selector },
-      )
-    expect(await touchAction(null)).toBe('auto')
-    for (const id of ['item-sheet', 'item-title', 'item-requester', 'item-memo', 'item-register'])
-      expect(await touchAction(id), id).toBe('auto')
-    expect(await touchAction(null, ' .modal-body')).toBe('auto')
-    // 押す・字を打つ
-    const title = page.getByTestId('item-title')
-    await title.tap()
-    await expect(title).toBeFocused()
-    await page.keyboard.type('試しの予定')
-    await expect(title).toHaveValue('試しの予定')
-    await page.getByTestId('item-kind-private').tap()
-    await expect(sheet).toHaveAttribute('data-kind', 'private')
-    const requester = page.getByTestId('item-requester')
-    await requester.tap()
-    await expect(requester).toBeFocused()
-    await page.keyboard.type('総務')
-    await expect(requester).toHaveValue('総務')
-    // 縦のスクロール（指でなぞる）
-    const body = sheet.locator('.modal-body')
-    const scrollTop = () => body.evaluate((el) => el.scrollTop)
-    const room = await body.evaluate((el) => el.scrollHeight - el.clientHeight)
-    expect(room).toBeGreaterThan(40)
-    // 欄を押した時に、その欄が見える所まで送られていることがあるので、いちばん上から
-    await body.evaluate((el) => el.scrollTo({ top: 0 }))
-    expect(await scrollTop()).toBe(0)
-    const box = await body.boundingBox()
-    if (!box) throw new Error('登録の画面の中身が見えていません')
-    await touchSwipe(page, { x: box.x + box.width / 2, y: box.y + box.height * 0.7 }, 0, -Math.min(200, box.height * 0.5), {
-      steps: 10,
-      durationMs: 300,
-    })
-    await expect.poll(scrollTop).toBeGreaterThan(20)
-    // 払った惰性のスクロールが止まるまで待つ（動いている間に押すと、ブラウザはスクロールを止めるだけで押したことにしない）
-    let last = -1
-    await expect
-      .poll(async () => {
-        const now = await scrollTop()
-        const still = now === last
-        last = now
-        return still
-      })
-      .toBe(true)
-    // 登録できる（閉じる）
-    await page.getByTestId('item-register').tap()
-    await expect(sheet).toHaveCount(0)
-    expect(
-      await page.evaluate(() =>
-        Object.values(window.__ds.getData().items).some((i) => i.title === '試しの予定' && i.requester === '総務'),
-      ),
-    ).toBe(true)
-    // 詳細の画面も同じ
-    await historySettled(page)
-    await openDetail(page, true)
-    await expect(page.locator('.modal-backdrop')).toHaveCount(1)
-    await expect(page.locator('.it-edge-guard')).toHaveCount(0)
-    expect(await touchAction('item-sheet')).toBe('auto')
-  })
-
-  test('詳細の画面: 左の端からでも右の端からでも閉じ（モード・期間はそのまま）、［×］でも閉じる。閉じた後に払うとモードを回す（開き直さない）', async ({
-    page,
-  }) => {
-    await openCalendar(page, DAY, { data: demoData() })
-    const sheet = page.getByTestId('item-sheet')
-    await openDetail(page, true)
-    await goBack(page)
-    await expect(sheet).toHaveCount(0)
-    await showing(page, DAY)
-    await openDetail(page, true)
-    await goForward(page)
-    await expect(sheet).toHaveCount(0)
-    await showing(page, DAY)
-    await openDetail(page, true)
-    await page.getByTestId('modal-close').click()
-    await expect(sheet).toHaveCount(0)
-    await historySettled(page)
-    await goForward(page)
-    await expect(sheet).toHaveCount(0)
-    await showing(page, YEAR)
-  })
-
-  test('詳細の画面で削除の確かめを出している時に払うと、確かめだけを閉じる（詳細の画面は開いたまま・消さない）。次に払うと詳細の画面を閉じる', async ({
-    page,
-  }) => {
-    await openCalendar(page, DAY, { data: demoData() })
-    await openDetail(page, true)
-    await askDelete(page, true)
-    await goBack(page)
-    await expect(deleteConfirm(page)).toHaveCount(0)
-    await expect(page.getByTestId('item-sheet')).toBeVisible()
-    expect(await itemExists(page, DEMO_IDS.weekly)).toBe(true)
-    await askDelete(page, true)
-    await goForward(page)
-    await expect(deleteConfirm(page)).toHaveCount(0)
-    await expect(page.getByTestId('item-sheet')).toBeVisible()
-    await goBack(page)
-    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
-    await showing(page, DAY)
-    expect(await itemExists(page, DEMO_IDS.weekly)).toBe(true)
-  })
-
-  test('設定・MIM: どちらへ払ってもカレンダーの方へ1つ戻る', async ({ page }) => {
-    await openCalendar(page, MONTH)
-    await page.getByTestId('open-settings').click()
-    await expect(page.getByTestId('app-settings')).toBeVisible()
-    await historySettled(page)
-    await goForward(page)
-    await showing(page, MONTH)
-    await page.getByTestId('open-mim').click()
-    await at(page, '/mim')
-    await historySettled(page)
-    await goBack(page)
-    await showing(page, MONTH)
-  })
-
-  test('読み込み直しても印を作り直さず（履歴は増えない）、フリックでモードを回せる', async ({ page }) => {
-    await openCalendar(page, WEEK)
-    const length = await historyLength(page)
-    await page.reload()
-    await expect(page.getByTestId('view-week')).toBeVisible()
-    await historySettled(page)
-    expect(await historyLength(page)).toBe(length)
-    await goForward(page)
-    await showing(page, '/day/2026-11-10')
-    await goBack(page)
-    await showing(page, WEEK)
-    expect(await historyLength(page)).toBe(length)
-  })
-})
 
 test.describe('Android の戻るボタン（Pixel 7）', { tag: ['@s'] }, () => {
   test('開いて最初に指で軽く押した（離した）後の「戻る」は、閉じるかを聞く（印の履歴は、指を離した時に、ブラウザがその指で「押した」と数えている間に作る）', async ({

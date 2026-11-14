@@ -284,8 +284,13 @@ export interface DevHook {
   swipeLog: () => string
 }
 
-/** アプリの履歴の形（src/history/appHistory.ts の HistoryShape） */
+/**
+ * アプリの履歴の形（src/history/appHistory.ts の DsHistoryShape）。Android・PC は印の履歴の形（HistoryShape。kind は無い）、iPhone・iPad は
+ * ブラウザの履歴を1つのままにする形（src/history/singleEntryHistory.ts の SingleHistoryShape。kind が single。印の履歴の物は無い）
+ */
 export interface HistoryShape {
+  /** single = iPhone・iPad の1つの履歴の形（無ければ印の履歴の形） */
+  kind?: 'single' | 'markers'
   /** popstate が何から来るか（iPhone・iPad は edge-flick、Android・PC は os-back） */
   source: 'edge-flick' | 'os-back'
   /** カレンダーでの OS の「戻る」の閉じ方（ホーム画面から開いた Android のアプリは press-again、ほかは ask） */
@@ -294,9 +299,14 @@ export interface HistoryShape {
   cur: number
   base: number | null
   shownIdx: number
+  exitArmed: boolean
+  /** single: アプリの中の行き先の数と、今いる所（0 が下）・ブラウザの履歴の数・前の版やほかのページの履歴が残っているか */
+  depth?: number
+  index?: number
+  len?: number | null
+  inherited?: boolean
   top: number
   buildPending: boolean
-  exitArmed: boolean
   /** 押している間・ドラッグの途中（アプリから履歴を動かすのを待っている） */
   held: boolean
   /** iPhone: ブラウザが身振りの絵を出しているとみなす間（端からのフリックが来てから） */
@@ -482,9 +492,11 @@ export async function historySettled(page: Page): Promise<void> {
     .poll(() =>
       page.evaluate(() => {
         const s = window.__ds.historyShape()
+        // iPhone・iPad の1つの履歴の形: 後で渡す POP・描いた後のスクロールの戻しが済んだ（ブラウザの履歴は動かさない）
+        if (s?.kind === 'single') return !s.busy
         const idx = (history.state as { idx?: number } | null)?.idx
-        // iPhone で身振りの絵を出しているとみなす間・閉じた後に「進む」の印の絵を写すのを待っている・写している間も、動かしている
-        // 途中（docs/SPEC.md の 3.1）
+        // 印の履歴の形の iPhone で身振りの絵を出しているとみなす間・閉じた後に「進む」の印の絵を写すのを待っている・写している間も、
+        // 動かしている途中（前の作り。今は iPhone・iPad でもこの形を作らない）
         return Boolean(s && !s.busy && !s.swipePicture && !s.recording && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
       }),
     )
@@ -506,6 +518,11 @@ export async function armHistory(
   page: Page,
   { finger = false, idleMs = 0 }: { finger?: boolean; idleMs?: number } = {},
 ): Promise<void> {
+  // iPhone・iPad（UA が iPhone・iPad の Chromium・CI の WebKit）はブラウザの履歴を1つのままにする形で、印の履歴を作らない（何も押さない）
+  if ((await historyShape(page))?.kind === 'single') {
+    await historySettled(page)
+    return
+  }
   const brand = await page.getByTestId('brand').boundingBox()
   const gear = await page.getByTestId('open-settings').boundingBox()
   if (!brand || !gear) throw new Error('ヘッダーが見えていません')
@@ -525,13 +542,42 @@ export async function armHistory(
   await historySettled(page)
 }
 
-/** ブラウザ（端末）の「戻る」（iPhone では左の端からのフリック）をして、アプリの履歴が落ち着くまで待つ */
+/**
+ * iPhone・iPad の1つの履歴の形の確かめ用（e2e/edge-flick.spec.ts・e2e/undo.spec.ts）。開く前に置く: アプリ（とルーター）が呼んだ、ブラウザの履歴を積む・動かす物（pushState・go・back・forward）を控える
+ * （置き換え replaceState は控えない。失敗した時の控え（e2e/helpers.ts）も history の物を包むので、その外側を包む）
+ */
+export async function spyHistory(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const calls: string[] = []
+    ;(window as unknown as { __historyCalls: string[] }).__historyCalls = calls
+    const target = history as unknown as Record<string, (...args: unknown[]) => unknown>
+    for (const op of ['pushState', 'go', 'back', 'forward']) {
+      const original = target[op].bind(history)
+      Object.defineProperty(history, op, {
+        configurable: true,
+        value: (...args: unknown[]) => {
+          calls.push(op)
+          return original(...args)
+        },
+      })
+    }
+  })
+}
+
+/** spyHistory で控えた物（呼んだ順） */
+export const historyCalls = (page: Page): Promise<string[]> =>
+  page.evaluate(() => (window as unknown as { __historyCalls?: string[] }).__historyCalls ?? [])
+
+/**
+ * ブラウザ（端末）の「戻る」（Android の戻るボタン・PC のブラウザの戻る）をして、アプリの履歴が落ち着くまで待つ。iPhone・iPad の
+ * 端からのフリックは edgeFlick（ブラウザの履歴は1つのままなので、ブラウザの「戻る」はアプリの前のページへ戻る）
+ */
 export async function goBack(page: Page): Promise<void> {
   await page.goBack()
   await historySettled(page)
 }
 
-/** ブラウザ（端末）の「進む」（iPhone では右の端からのフリック）をして、アプリの履歴が落ち着くまで待つ */
+/** ブラウザ（端末）の「進む」（Android・PC）をして、アプリの履歴が落ち着くまで待つ */
 export async function goForward(page: Page): Promise<void> {
   await page.goForward()
   await historySettled(page)
@@ -755,6 +801,31 @@ export async function iosCancelledTouch(page: Page, points: Point[], { cancelAt 
     },
     { points, cancelAt, stepMs },
   )
+}
+
+/** 端からのフリックの後に、払った指の click を打ち消す間（src/features/calendar/common/swipe.ts の SWIPE_CLICK_GUARD_MS） */
+const EDGE_CLICK_GUARD_MS = 300
+
+/**
+ * iPhone・iPad の画面の端からのフリック（docs/SPEC.md の 3.1。src/history/edgeFlick.ts）: 画面の左の端（3px）から右へ・右の端
+ * （幅 − 3px）から左へ、dx（初めは 160px）を 10回に分けて少し上へ逸れながら払う。初めは iPhone と同じく 12px 動いた所で pointer を
+ * 取り消し、その後は touch の出来事だけを送る合成した出来事（iosCancelledTouch。Chromium・WebKit とも）。via: 'cdp' の時は Chromium の
+ * 本物のタッチ（Chromium は、本物のタッチの身振りの終わりにフォーカスのある入力欄が外れると、その後に押した指の click を作らなく
+ * なるので、すばやく足す・登録・詳細の画面を払って閉じる時は使わない）。払った後、離した所の click を打ち消す間（300ms）が過ぎる
+ * まで待つ（その後すぐ押す物が打ち消されないように）
+ */
+export async function edgeFlick(
+  page: Page,
+  side: 'left' | 'right',
+  { y, dx = 160, via = 'synthetic' }: { y?: number; dx?: number; via?: TouchVia } = {},
+): Promise<void> {
+  const size = page.viewportSize() ?? { width: 390, height: 844 }
+  const yy = y ?? Math.round(size.height * 0.55)
+  const x0 = side === 'left' ? 3 : size.width - 3
+  const points = path({ x: x0, y: yy }, { x: x0 + (side === 'left' ? dx : -dx), y: yy - 12 }, 10)
+  if (touchVia(page, via) === 'cdp') await cdpTouch(page, points, 0, 12)
+  else await iosCancelledTouch(page, points)
+  await page.waitForTimeout(EDGE_CLICK_GUARD_MS + 20)
 }
 
 /**
