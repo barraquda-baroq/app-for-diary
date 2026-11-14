@@ -184,6 +184,22 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(clicked).toHaveBeenCalledTimes(3)
   })
 
+  it('押した要素が払っている間に外れても（画面が替わった。外れた要素へ送られる touch の出来事は window まで伝わらない）、離すまで追って渡す', () => {
+    const flick = install()
+    document.body.innerHTML = '<div data-testid="pressed">カレンダー</div>'
+    const pressed = document.querySelector('[data-testid="pressed"]')!
+    send(pressed, 'touchstart', 5, 300, 1)
+    pressed.remove()
+    clock += 60
+    send(pressed, 'touchmove', 60, 300, 1)
+    clock += 60
+    send(pressed, 'touchend', 120, 300, 0)
+    expect(flick.mock.calls).toEqual([[-1]])
+    // window にも押した要素にも来る（ふつうの）時は1回だけ
+    swipe(5, 100, { target: document.body })
+    expect(flick.mock.calls).toEqual([[-1], [-1]])
+  })
+
   it('外すと、もう受け取らない', () => {
     const flick = install()
     uninstall?.()
