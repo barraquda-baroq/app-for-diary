@@ -93,7 +93,8 @@ const PAINT_WAIT_MS = 50
 /**
  * 小さな画面を開く（履歴に積む）前に: iPhone で、カレンダーの上に物が出ている・消えたばかりの時（すばやく足すの入力欄を開いたまま予定を
  * 押したなど）は、それが消えた画面が描かれてから開く（積む時にカレンダーの履歴の絵を写すので、入力欄を絵に残さない。閉じる物は押した
- * 時に閉じている）。ほかの時・ほかの端末は、すぐ開く
+ * 時に閉じている）。起動アニメーションが消えている途中（下のアプリはもう押せる）は、消えるまで待ってから（印の履歴がまだ無ければ、開く
+ * 時にその下に作る: src/history/appHistory.ts の write）。ほかの時・ほかの端末は、すぐ開く。長くても1秒で開く
  */
 export function whenScreenClean(open: () => void): void {
   if (currentPopSource() !== 'edge-flick' || screenIsClean()) {
@@ -106,7 +107,12 @@ export function whenScreenClean(open: () => void): void {
     done = true
     open()
   }
-  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(run, PAINT_WAIT_MS)))
-  // 描かない時（見えていない）も開く
+  const afterLaunch = () => {
+    if (done) return
+    if (launchActive()) requestAnimationFrame(afterLaunch)
+    else requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(run, PAINT_WAIT_MS)))
+  }
+  afterLaunch()
+  // 描かない時（見えていない）・消えない時も開く
   setTimeout(run, 1000)
 }

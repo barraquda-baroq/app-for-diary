@@ -108,6 +108,39 @@ describe('小さな画面を開く前（whenScreenClean）', () => {
     expect(open).toHaveBeenCalledTimes(1)
   })
 
+  it('iPhone で起動アニメーションが消えている途中（下のアプリを押せるが、まだ上に出ている）は、消えるまで待ち、描かれてから開く（1秒で開く）', () => {
+    vi.useFakeTimers()
+    vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => setTimeout(() => cb(0), 16) as unknown as number)
+    let active = true
+    const w = window as unknown as { DiaryStudioLaunch?: { active: () => boolean } }
+    w.DiaryStudioLaunch = { active: () => active }
+    try {
+      const open = vi.fn()
+      whenScreenClean(open)
+      vi.advanceTimersByTime(300)
+      expect(open).not.toHaveBeenCalled()
+      active = false
+      vi.advanceTimersByTime(30)
+      expect(open).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(100)
+      expect(open).toHaveBeenCalledTimes(1)
+      // 消えないままでも、1秒で開く
+      active = true
+      const late = vi.fn()
+      whenScreenClean(late)
+      vi.advanceTimersByTime(990)
+      expect(late).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(20)
+      expect(late).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(2000)
+      expect(open).toHaveBeenCalledTimes(1)
+      expect(late).toHaveBeenCalledTimes(1)
+    } finally {
+      delete w.DiaryStudioLaunch
+    }
+  })
+
   it('カレンダーだけの時・ほかの端末は、すぐ開く', () => {
     vi.useFakeTimers()
     vi.advanceTimersByTime(1000)

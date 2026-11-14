@@ -45,7 +45,9 @@
 //     （recordForward）、印の絵を今のカレンダーにする（押した直後でなければ、その時に閉じた画面の履歴を印に替える）。指が下りて
 //     いる間は行かない・戻らない（行った後なら、そこで待つ: parked）。画面にほかの物が出ていれば消えるまで確かめ直す。閉じてすぐ
 //     次を払った時は、その払いの動きの後に行い、その時に指が下りていれば、離した時に行う
-//   - 印の履歴を作る（build）のは、押し終えた時（押した物が動く前）に画面がカレンダーだけの時
+//   - 印の履歴を作る（build）のは、押し終えた時（押した物が動く前）に画面がカレンダーだけの時。その時に作れないまま（起動アニメーション
+//     が消える途中に押したなど）カレンダーからほかの画面を開く時は、積む前にその下に作る（buildUnder。土台の無いまま開いた画面を
+//     払って閉じると、閉じた画面の履歴が後ろに残る。それでも作れなかった時は、カレンダーでの払いは開き直さずにモードを回す）
 //   - 登録・詳細の画面をルーターの戻るで閉じる時は、戻る前に隠して描かせる（hideBeforeLeave。閉じた画面の履歴の絵に残さない）
 //   - モードを回した時、新しいモードの描く物が行き先の絵の半分に届かなければ、見えない描く物を足してすぐ絵を外させる（afterRing。
 //     絵を出している間にアプリの中で回した時は topUpBallast で足し直す）
@@ -725,7 +727,13 @@ export class AppHistory implements RouterHistory {
         .then(() => this.write(kind, location))
     }
     if (kind === 'replace') this.replaceHere(location)
-    else this.pushHere(location)
+    else {
+      // iPhone: 印の履歴がまだ無いまま、カレンダーから登録・詳細の画面・MIM・設定を開く（開いて最初に押し終えた時に、起動アニメーションが
+      // 消える途中などでカレンダーの上に物が出ていた）: 積む前に、今のカレンダーの下に印の履歴を作る（払って閉じた画面の履歴が「進む」の
+      // 行き先に残って、右の端からの払いで開き直さないように。開くのは、上の物が消えて描かれてから: swipePicture.ts の whenScreenClean）
+      if (this.flicks && this.buildPending && this.canBuild() && this.activated() && this.free()) this.buildUnder()
+      this.pushHere(location)
+    }
     // iPhone: 登録・詳細の画面・MIM・設定の後ろにも「進む」の印を置く（右の端からのフリックでも閉じる・戻る）。登録の画面を詳細の画面に
     // 置き換えた時（複製のお知らせの［開く］）は、もう後ろにある
     if (this.opts.source === 'edge-flick' && this.base !== null && this.top <= this.cur && this.activated()) {
@@ -739,8 +747,9 @@ export class AppHistory implements RouterHistory {
   private writeCalendar(location: Location): void | Promise<void> {
     if (this.base === null) {
       // 押している間（掴んだまま端で週が替わった時など）は今の履歴を置き換え、押し終えた時に作る。iPhone で画面にカレンダーのほかの物が
-      // 出ている時も（印の絵に写さない）
-      if (this.activated() && this.free() && !this.covered()) return this.build(location)
+      // 出ている時（印の絵に写さない）と、身振りの絵を出している間（印の履歴が無いままカレンダーで払ってモードを回した時。払いの popstate の
+      // 後のマイクロタスクで積まない）も
+      if (this.activated() && this.free() && !this.covered() && !this.afterSwipe) return this.build(location)
       this.replaceHere(location)
       this.buildPending = true
       return
@@ -788,9 +797,41 @@ export class AppHistory implements RouterHistory {
     this.cur = this.top = base + 1
     this.shown = location
     this.shownIdx = base
-    this.forwardDirty = false
-    // iPhone: 印の絵は、ここで写した物のまま（写し直さない。作るのは押し終えた時に画面がカレンダーだけの時: markAfterPress）
+    // iPhone: 印の絵は、ここで写した物のまま（写し直さない。作るのは押し終えた時に画面がカレンダーだけの時: markAfterPress）。身振りの
+    // 絵を出している間に作った時は（印の履歴が無いまま払った後に押し終えた）、「進む」の印に絵が写らないので、絵が消えた頃に写す
+    this.forwardDirty = this.flicks && this.afterSwipe
     return this.travelTo(base).then(() => restore(base))
+  }
+
+  /**
+   * iPhone: 印の履歴がまだ無いまま、カレンダーからほかの画面を積む前（write）: 今の履歴（カレンダー）を「戻る」の印に替え、その後ろに
+   * 土台（同じ行き先）を積む。「進む」の印は、この後に積む画面の後ろに置く（addForward）。積むだけで、戻る・進むはしない（build と違い、
+   * 土台の後ろに「進む」の印を積んで1つ戻る間が無い）。印の絵は、この時の画面（「戻る」の印と土台を離れる時に写る）
+   */
+  private buildUnder(): void {
+    const location = this.shown
+    const at = this.cur
+    const base = at + 1
+    const href = this.createHref(location)
+    const h = this.win.history
+    this.buildPending = false
+    swipeLog('build', { base, under: true })
+    // 「戻る」の印は、スクロールの位置を戻させない（積む土台にも写るが、この後に積む画面の前に pushHere が auto に戻す）
+    if (h.scrollRestoration === 'auto') {
+      try {
+        h.scrollRestoration = 'manual'
+      } catch {
+        // 変えられない
+      }
+    }
+    h.replaceState({ usr: location.state, key: location.key, idx: at, ds: { base, mark: 'back' } }, '', href)
+    this.notePush()
+    h.pushState({ usr: location.state, key: location.key, idx: base, ds: { base } }, '', href)
+    this.base = base
+    this.cur = this.top = base
+    this.topGuessed = false
+    this.shownIdx = base
+    this.forwardDirty = false
   }
 
   /** 今の履歴の後ろに「進む」の印を積んで、1つ戻る（印は、スクロールの位置を戻させない。build と同じ） */
@@ -1024,7 +1065,8 @@ export class AppHistory implements RouterHistory {
    * 印を置く。順番が来た時に、もう一度確かめる（その間にまた押した・ブラウザが「押した直後」と数えなくなった時は、次に押し終えた時に）。
    * iPhone の土台の前後の印は、押し終えた時（capture で、押した物が動く前。その押し方で開く小さな画面・設定・お知らせはまだ無い）に、
    * 画面がカレンダーだけ（消えたばかりの物も無い: cleanScreen）なら、その場で作る（印の絵は写し直さないので。上の物が出ていれば次に
-   * 押し終えた時に。待ってから作ると、その押し方で開いた物が先に出て、絵に写る・土台の無いまま開く）
+   * 押し終えた時か、その押し方でカレンダーからほかの画面を開く時（write の buildUnder）に。待ってから作ると、その押し方で開いた物が
+   * 先に出て絵に写る）
    */
   private markAfterPress(): void | Promise<void> {
     this.markQueued = false
@@ -1548,15 +1590,26 @@ export class AppHistory implements RouterHistory {
       return
     }
     if (this.base === null) {
-      // iPhone: 土台を作る前に開いた画面（開いて最初に押し終えた時にカレンダーの上に物が出ていた）でも、確かめのダイアログは先に
-      // 閉じ（下と同じ）、登録の画面は書きかけを聞かずに捨てて閉じる（■27）
+      // iPhone: 土台を作る前に開いた画面（開いて最初に押し終えた時にカレンダーの上に物が出ていて、開く時も印の履歴を作れなかった: 押して
+      // いる途中だった・押した直後でなかった）でも、確かめのダイアログは先に閉じ（下と同じ）、登録の画面は書きかけを聞かずに捨てて閉じる
+      // （■27）。カレンダーを出している時は、印の履歴の時と同じく出していた所へ戻してモードを回す（払って閉じた画面の履歴が後ろに
+      // 残っていても、開き直さない。絵は、その画面の物が動く。次に押し終えた時に印の履歴を作り、その履歴は切り捨てる）
       if (this.flicks) {
         if (this.handlers.consumePop?.()) {
           const shownIdx = this.shownIdx
           this.rush(() => this.travelTo(shownIdx))
           return
         }
-        if (this.screen(this.shown) === 'register') this.handlers.flickDiscard?.()
+        const screen = this.screen(this.shown)
+        const action = decidePop(this.opts.source, screen, idx < this.shownIdx ? 'back' : 'forward', this.opts.exit ?? 'ask')
+        if (action.kind === 'ring') {
+          const shownIdx = this.shownIdx
+          this.rush(() => this.travelTo(shownIdx))
+          this.handlers.ring?.(action.dir)
+          this.afterRing(idx)
+          return
+        }
+        if (screen === 'register') this.handlers.flickDiscard?.()
       }
       this.deliver()
       return

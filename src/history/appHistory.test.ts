@@ -1253,21 +1253,138 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     },
   )
 
-  it('土台がまだ無い時（開いて最初に押し終えた時にカレンダーの上に物が出ていた）に登録の画面を開いて払っても、書きかけを聞かずに捨てて閉じる（■27）', async () => {
-    const s = setupSwipes('week')
-    const discard = vi.fn()
-    s.h.handlers.flickDiscard = discard
+  it.each([
+    ['詳細の画面', 'detail'],
+    ['登録の画面', 'register'],
+  ] as const)(
+    '開いて最初に押し終えた時にカレンダーの上に物が出ていた（起動アニメーションが消える途中に押したなど）時も、カレンダーから%sを開く時に、その下に印の履歴を作ってから積む。払うと閉じ、次に右の端から払うとカレンダーの絵でモードを回す（閉じた画面を開き直さない）',
+    async (_name, kind) => {
+      const s = setupSwipes('week')
+      const discard = vi.fn()
+      s.h.handlers.flickDiscard = discard
+      s.win.show('week+launch')
+      await settle(s.h)
+      s.win.press('touch')
+      await settle(s.h)
+      expect(s.h.shape()).toMatchObject({ base: null, buildPending: true })
+      // 消えるのを待ってから開く（src/history/swipePicture.ts の whenScreenClean）
+      s.win.show('week')
+      await settle(s.h)
+      s.h.push(loc(PATHS.week, kind === 'detail' ? detail : register))
+      s.win.show(`week+${kind}`)
+      await settle(s.h)
+      expect(s.win.describe()).toEqual(['[back]', '/week/2026-11-08', `*/week/2026-11-08+${kind}`, '[fwd]'])
+      expect(s.win.pictures().slice(0, 2)).toEqual(['week', 'week'])
+      s.win.userGo(-1)
+      await settle(s.h)
+      expect(discard).toHaveBeenCalledTimes(kind === 'register' ? 1 : 0)
+      expect(s.updates.map((u) => [u.location.state, u.delta])).toEqual([[null, -1]])
+      expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
+      s.win.userGo(1)
+      await settle(s.h)
+      expect(s.win.slid.at(-1)).toBe('week')
+      expect(s.ring).toHaveBeenCalledWith(1)
+      expect(s.updates).toHaveLength(1)
+      expect(s.win.hazards).toEqual([])
+    },
+  )
+
+  /**
+   * 印の履歴が無いまま登録・詳細の画面を開く（開いて最初に押し終えた時にカレンダーの上に物が出ていて、開いた時は指が下りていた）。
+   * 開いた後に指を離す
+   */
+  async function openWithoutMarkers(s: Setup, kind: 'detail' | 'register') {
     s.win.show('week+quick')
     await settle(s.h)
     s.win.press('touch')
-    s.h.push(loc(PATHS.week, register))
-    s.win.show('week+register')
+    await settle(s.h)
+    s.win.show('week')
+    await settle(s.h)
+    fire(s, pointer('pointerdown', 'touch', 1, { id: 7, primary: true }))
+    fire(s, touch('touchstart', 1))
+    s.h.push(loc(PATHS.week, kind === 'detail' ? detail : register))
+    s.win.show(`week+${kind}`)
+    await settle(s.h)
+    fire(s, pointer('pointerup', 'touch', 0, { id: 7, primary: true }))
+    fire(s, touch('touchend', 0))
     await settle(s.h)
     expect(s.h.shape().base).toBe(null)
+    expect(s.win.describe()).toEqual(['/week/2026-11-08', `*/week/2026-11-08+${kind}`])
+  }
+
+  it('印の履歴が無いまま開いた登録の画面を払っても、書きかけを聞かずに捨てて閉じる（■27）', async () => {
+    const s = setupSwipes('week')
+    const discard = vi.fn()
+    s.h.handlers.flickDiscard = discard
+    await openWithoutMarkers(s, 'register')
     s.win.userGo(-1)
     await settle(s.h)
     expect(discard).toHaveBeenCalledTimes(1)
     expect(s.updates.map((u) => [u.location.state, u.delta])).toEqual([[null, -1]])
+  })
+
+  it('印の履歴が無いまま開いた登録の画面で「書きかけを捨てますか？」が出ている時に払うと、その確かめだけが閉じる（登録の画面は捨てず、開いたまま）', async () => {
+    const s = setupSwipes('week')
+    const discard = vi.fn()
+    s.h.handlers.flickDiscard = discard
+    await openWithoutMarkers(s, 'register')
+    let dialog = true
+    s.h.handlers.consumePop = () => {
+      const open = dialog
+      dialog = false
+      return open
+    }
+    s.win.userGo(-1)
+    await settle(s.h)
+    expect(discard).not.toHaveBeenCalled()
+    expect(s.updates).toEqual([])
+    expect(s.win.index).toBe(1)
+    expect(s.win.describe()).toEqual(['/week/2026-11-08', '*/week/2026-11-08+register'])
+  })
+
+  it.each([
+    ['詳細の画面', 'detail'],
+    ['登録の画面', 'register'],
+  ] as const)(
+    '印の履歴が無いまま開いた%sを左の端から払って閉じた後、カレンダーで右の端から払うと、閉じた画面は開き直さずモードを回す（閉じた画面の絵が一度動く）。次に押し終えた時に印の履歴を作る',
+    async (_name, kind) => {
+      const s = setupSwipes('week')
+      s.h.handlers.flickDiscard = vi.fn()
+      await openWithoutMarkers(s, kind)
+      s.win.userGo(-1)
+      await settle(s.h)
+      expect(s.updates.map((u) => [u.location.state, u.delta])).toEqual([[null, -1]])
+      expect(s.win.screen).toBe('week')
+      s.win.userGo(1)
+      await settle(s.h)
+      expect(s.win.slid.at(-1)).toBe(`week+${kind}`)
+      expect(s.ring).toHaveBeenCalledWith(1)
+      expect(s.updates).toHaveLength(1)
+      expect(s.win.index).toBe(0)
+      expect(s.win.screen).toBe('day')
+      expect(s.win.hazards).toEqual([])
+      s.win.press('touch')
+      await settle(s.h)
+      expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
+    },
+  )
+
+  it('印の履歴が無いまま払ってモードを回した後、身振りの絵を出している間に押し終えて印の履歴を作った時は、絵が消えた頃に「進む」の印の絵を写す（白いページを残さない）', async () => {
+    const s = setupSwipes('week')
+    await openWithoutMarkers(s, 'detail')
+    s.win.userGo(-1)
+    await settle(s.h)
+    s.win.userGo(1)
+    // 回した popstate が来て、身振りの絵がまだ出ている間に押す
+    for (let k = 0; k < 100 && s.ring.mock.calls.length === 0; k++) await tick(5)
+    expect(s.ring).toHaveBeenCalledWith(1)
+    expect(s.h.shape().swipePicture).toBe(true)
+    s.win.press('touch')
+    await settle(s.h)
+    expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
+    expect(s.win.pictures()[2]).toBe('day')
+    expect(s.h.shape()).toMatchObject({ forwardDirty: false, recording: false })
+    expect(s.win.hazards).toEqual([])
   })
 
   // ---------- 印の絵は写し直さない ----------

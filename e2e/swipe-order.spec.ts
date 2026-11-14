@@ -11,7 +11,7 @@
 // （e2e/helpers.ts の E2E_NOW）
 import { devices, expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
-import { collectDiagnosticsOnFailure, historySettled, historyShape, openCalendar } from './helpers'
+import { collectDiagnosticsOnFailure, E2E_NOW, historySettled, historyShape, openCalendar, seedData } from './helpers'
 
 collectDiagnosticsOnFailure()
 
@@ -37,7 +37,7 @@ interface Entry {
   inPop?: boolean
   /** popstate を送ってから次の処理（setTimeout 0）までの間に呼んだ（popstate の後のマイクロタスクも） */
   inPopTask?: boolean
-  /** 呼んだ時に画面に出ていた物（sheet・quick・page（カレンダーでない画面）・toast。無ければ空） */
+  /** 呼んだ時に画面に出ていた物（sheet・quick・page（カレンダーでない画面）・toast・launch（起動アニメーション）。無ければ空） */
   over?: string
 }
 
@@ -65,6 +65,7 @@ async function recordOrder(page: Page) {
         shown('.cp-quick') && 'quick',
         !shown('[data-testid^="view-"]') && 'page',
         shown('.toast') && 'toast',
+        document.getElementById('ds-launch') !== null && 'launch',
       ]
         .filter(Boolean)
         .join('+')
@@ -383,6 +384,55 @@ test.describe('iPhone の開いて最初の押し方（Chromium に iPhone の U
     await page.getByTestId(`day-event-${DEMO_IDS.weekly}`).locator('.dy-ev-open').tap()
     await expect(page.getByTestId('item-sheet')).toBeVisible()
     await historySettled(page)
+    await flick(page, 'back')
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await flick(page, 'forward')
+    await showing(page, YEAR)
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+  })
+
+  test('起動アニメーションが消える途中（下のアプリを押せる）に予定を押して開いた詳細の画面も、消えてから、その下に印の履歴を作ってから積む。払って閉じた後の右の端からの払いは、閉じた画面を開き直さずモードを回す', async ({
+    page,
+  }) => {
+    await recordOrder(page)
+    await page.clock.setFixedTime(new Date(E2E_NOW))
+    await page.addInitScript(() => {
+      localStorage.setItem('diary-studio:test-auth', '1')
+      // 消える動き（ふだんは 0.25秒）を長くして、その間に押せるようにする（src/launch/launch.js の TIMING）
+      let api: { TIMING: { fadeMs: number } } | undefined
+      Object.defineProperty(window, 'DiaryStudioLaunch', {
+        configurable: true,
+        get: () => api,
+        set(v: { TIMING: { fadeMs: number } }) {
+          v.TIMING.fadeMs = 600
+          api = v
+        },
+      })
+    })
+    await page.goto(`/?launch=1#${DAY}`)
+    await page.waitForFunction(() => Boolean(window.__ds))
+    await seedData(page, demoData())
+    const open = page.getByTestId(`day-event-${DEMO_IDS.weekly}`).locator('.dy-ev-open')
+    await expect(open).toHaveCount(1)
+    // 消え始めた（下のアプリを押せる）所で押す
+    await page.waitForFunction(() => document.querySelector('#ds-launch[data-launch-end]') !== null, undefined, {
+      timeout: 15_000,
+      polling: 5,
+    })
+    expect((await historyShape(page))?.base).toBe(null)
+    const box = (await open.boundingBox())!
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+    expect(await page.evaluate(() => document.getElementById('ds-launch')?.style.pointerEvents ?? 'gone')).toBe('none')
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await historySettled(page)
+    const log = await orderOf(page)
+    const i = log.findIndex((e) => e.ev === 'replaceState' && e.mark === 'back')
+    expect(i).toBeGreaterThan(-1)
+    const ops = log.slice(i, i + 5)
+    expect(ops.map(brief)).toEqual(['replaceState', 'pushState', 'pushState', 'pushState:fwd', 'go-1'])
+    // 印の絵を写す時（今の履歴を離れる時）は、起動アニメーションも詳細の画面も無い
+    expect(ops.slice(0, 3).map((o) => o.over)).toEqual(['', '', ''])
+    expect(await historyShape(page)).toMatchObject({ base: 1, cur: 2 })
     await flick(page, 'back')
     await expect(page.getByTestId('item-sheet')).toHaveCount(0)
     await flick(page, 'forward')
