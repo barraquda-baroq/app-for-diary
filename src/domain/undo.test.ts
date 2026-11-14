@@ -170,6 +170,28 @@ describe('詳細の画面で直した所を1つにまとめる（sessionStep）'
     expect(sessionStep(1, '', before, null)).toBeNull()
     expect(sessionStep(1, '', null, before)).toBeNull()
   })
+
+  it('開いた所（詳細を開いたモードと見ていた日。■28）を渡すと、ステップに覚える（渡さなければ覚えない）', () => {
+    const edited: Item = { ...before, title: '定例会議' }
+    expect(sessionStep(3, '直した', before, edited, { mode: 'day', date: '2026-11-12' })).toMatchObject({
+      id: 3,
+      place: { mode: 'day', date: '2026-11-12' },
+    })
+    expect(sessionStep(3, '直した', before, edited)).not.toHaveProperty('place')
+  })
+})
+
+describe('操作をした所（モードと見ていた日。■28）', () => {
+  const at = { mode: 'week', date: '2026-11-10' } as const
+  it('積む・戻す・やり直す・お知らせで戻す（いちばん後ろでない物）を行き来しても、ステップの所は替わらない', () => {
+    const s: UndoStep = { ...move(1), place: at }
+    let st = pushStep(pushStep(emptyUndoStack(), s), move(2))
+    expect(st.past[0].place).toEqual(at)
+    st = settleStep(st, { ...s, changes: [...s.changes] }, 'undo')
+    expect(nextRedo(st)).toMatchObject({ id: 1, place: at })
+    st = settleStep(st, nextRedo(st)!, 'redo')
+    expect(nextUndo(st)).toMatchObject({ id: 1, place: at })
+  })
 })
 
 describe('何も変えていない変わり方（isNoopChange）', () => {

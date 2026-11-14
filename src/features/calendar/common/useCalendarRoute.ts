@@ -1,7 +1,8 @@
 // カレンダーの行き先と見ている日のフック（docs/SPEC.md の 3.1・3.7・6.13・7.12。D02・D05・D30）。
 // - useCalendarRoute: 今の行き先からモード・期間・見ている日・今日を決め、正しくない行き先（トップ #/ を含む）を描く前に
 //   置き換える。行き先が決めた見ている日を覚え（モードを替えた時に引き継ぐ）、描いたモードを lastMode に書く。CalendarView だけが呼ぶ
-// - useCalendarNav: モードの切り替え・［‹］［›］・［今日］・スワイプ・7.12 の行き来・iPhone の端からのフリックの円環。どれも置き換える
+// - useCalendarNav: モードの切り替え・［‹］［›］・［今日］・スワイプ・7.12 の行き来・iPhone の端からのフリックの円環・元に戻す・
+//   やり直すで当てた所へ（7.13）。どれも置き換える
 //   （カレンダーの中の行き来では履歴に積まない。モードを替えても積まないので、「戻る」で前のモードへは戻らない。22. の段階2の終わりの
 //   確かめの「画面の外からのフリックの決め」）。どの部品からも呼べる
 // 行き先を読む・直す決まりそのものは calendarRoute.ts（純粋な関数）
@@ -115,10 +116,11 @@ export interface CalendarNav {
   /** ［今日］: 今日を含む期間へ（置き換える。見ている日は今日。FRAME-064） */
   goToday: () => void
   /**
-   * 今のモードのまま、その日を含む期間へ（置き換える。見ている日はその日）。ウィークリーで掴んだまま前後の週へ移った後、落とさずに
-   * やめた時に、掴んだ週へ戻す（7.11）
+   * 今のモードのまま（mode を渡すとそのモードで）、その日を含む期間へ（置き換える。見ている日はその日）。ウィークリーで掴んだまま
+   * 前後の週へ移った後、落とさずにやめた時に、掴んだ週へ戻す（7.11）。元に戻す・やり直すで当てた所へ移る時（今のモードと違えば、
+   * 操作をしたモードへ。7.13・■28。src/features/calendar/common/undoFeedback.ts）
    */
-  goTo: (date: string) => void
+  goTo: (date: string, mode?: CalendarMode) => void
   /**
    * その日の月のマンスリーへ（見ている日はその日。7.12。イヤーの日・月の見出し、マンスリーの前後の月の日。どれも置き換える。3.1）
    */
@@ -175,7 +177,7 @@ export function useCalendarNav(): CalendarNav {
         const { mode, today } = current()
         go(mode, today)
       },
-      goTo: (date) => go(current().mode, date),
+      goTo: (date, mode) => go(mode ?? current().mode, date),
       openMonth: (date) => go('month', date),
       openDay: (date, flash) => {
         if (flash) ui().flashTarget(`day-area:${flash}`, `day-events:${flash}`)

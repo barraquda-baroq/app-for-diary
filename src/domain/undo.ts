@@ -8,8 +8,9 @@
 //   直されていたら、そのステップは当てずに捨てる（「ほかの所で直されたので戻せません」）。比べるのは記録の内容の指紋（revOf。直した
 //   日時と並びの数は見ない。形2）
 // - 詳細の画面を開いてから閉じるまでに直した所は、1つのステップにまとめる（sessionStep）
-// - ボタン・キーで戻した・やり直した後に見せる所（undoFocus。予定とその日、休みの日。今の週・日に無ければ、今のモードのまま
-//   その日へ移る。■26）
+// - ボタン・キーで戻した・やり直した後に見せる所（undoFocus。予定とその日、休みの日。■26）。ステップは操作をした所（place。
+//   ウィークリーかデイリーかと、その時に見ていた日）を覚え、今のモードと違えばそのモードへ戻る（■28）。同じモードなら、今の
+//   週・日に無ければそのモードのままその日へ移る（■26）
 import { revOf } from './hash'
 import { periodOf } from './items'
 import type { ID, Item } from './types'
@@ -38,6 +39,15 @@ export interface OffDayChange {
 
 export type UndoChange = ItemChange | OffDayChange
 
+/** 操作をしたモード（ウィークリー・デイリー。そこから開いた登録・詳細の画面は、開いたモード） */
+export type UndoMode = 'week' | 'day'
+
+/** 操作をした所（■28）: モードと、その時に見ていた日（その週・その日の画面。'YYYY-MM-DD'） */
+export interface UndoPlace {
+  mode: UndoMode
+  date: string
+}
+
 /** 1つの操作 */
 export interface UndoStep {
   /** この並びの中で1つだけの番号（お知らせの［元に戻す］が、どのステップかを覚える） */
@@ -45,6 +55,11 @@ export interface UndoStep {
   /** 操作の名前（ボタンの読み上げ・ヒントの「元に戻す（『会議』を移した）」の括弧の中） */
   label: string
   changes: UndoChange[]
+  /**
+   * 操作をした所（積んだ時の画面。戻す・やり直すで替わらない）。ボタン・キーで戻した・やり直した時に、今のモードと違えば
+   * このモードへ戻る（■28）。無い時（所を教えない画面で積んだ物）は今のモードのまま
+   */
+  place?: UndoPlace
 }
 
 export interface UndoStack {
@@ -128,12 +143,19 @@ export function conflictOf(step: UndoStep, dir: UndoDirection, read: UndoReader)
 }
 
 /**
- * 詳細の画面で直した所を1つのステップにする（base = 開いた時（か前にまとめた時）の記録、cur = 今の記録）。変わっていない・
- * 予定が無くなった（消した。消したステップは別に積む）時は null
+ * 詳細の画面で直した所を1つのステップにする（base = 開いた時（か前にまとめた時）の記録、cur = 今の記録、place = 詳細の画面を
+ * 開いた所）。変わっていない・予定が無くなった（消した。消したステップは別に積む）時は null
  */
-export function sessionStep(id: number, label: string, base: Item | null, cur: Item | null | undefined): UndoStep | null {
+export function sessionStep(
+  id: number,
+  label: string,
+  base: Item | null,
+  cur: Item | null | undefined,
+  place?: UndoPlace,
+): UndoStep | null {
   if (!base || !cur || itemPrint(base) === itemPrint(cur)) return null
-  return { id, label, changes: [{ table: 'items', id: cur.id, before: base, after: cur, entry: null }] }
+  const step: UndoStep = { id, label, changes: [{ table: 'items', id: cur.id, before: base, after: cur, entry: null }] }
+  return place ? { ...step, place } : step
 }
 
 /** 何も変えていない変わり方か（前と後が同じ中身。予定は記録の指紋で比べる） */
@@ -210,7 +232,7 @@ export function chainConflict(steps: UndoStep[], read: UndoReader): { step: Undo
 // ---------- 戻した・やり直した後に見せる所（7.13・■26） ----------
 
 /**
- * 戻した・やり直した後に見せる所。予定（id）か休みの日。date は見に行く日（今のモードのままその日の期間へ移る）、from〜to は動いた
+ * 戻した・やり直した後に見せる所。予定（id）か休みの日。date は見に行く日（そのモードのその日の期間へ移る）、from〜to は動いた
  * 所（日付の動いた操作は動いた端の日だけ、日付の変わらない操作は予定の期間の全部）、span は当てた後の予定の期間の全部（6.3。休みは
  * その日）。今の期間に span のどこかが入っていて、そこに出ている物があれば、動いた端が今の期間の外でも移らずにそこを見せる
  */

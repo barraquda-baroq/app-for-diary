@@ -3,6 +3,8 @@
 // 流れる）。端末には覚えない（アプリを開き直すと空）。
 // - 積むのは、ウィークリー・デイリーを出している間（その画面と、そこから開いた登録・詳細のシート）の、予定を変える操作だけ
 //   （enterUndoScope。年・月を出している間・設定などでした操作は積まない）。年・月へ替えても並びは消さない（■24 で作者「承諾」）
+// - 積む時に、出している画面が教える所（ウィークリーかデイリーかと、見ている日。enterUndoScope に渡す）をステップに覚える
+//   （place。■28。戻した・やり直した時に、今のモードと違えばそのモードへ戻る）。詳細の画面のまとめは、開いた時の所
 // - 画面が操作の後に recordStep で積む（前・後の記録を渡す）。お知らせの［元に戻す］も同じステップを戻す（undoStep。後で同じ記録に
 //   触れた操作があれば、それも新しい方から先に戻す）。ボタンで戻したステップのお知らせは消す。積まなかった操作（年・月の画面など）の
 //   お知らせの［元に戻す］も、同じ確かめで戻す（並びには入れない。並びの中の後の操作は一緒に戻さないので、後で同じ記録に触れた
@@ -14,8 +16,8 @@
 // - 戻す・やり直すは1つずつ順に当てる（続けて押した分は待って順に。ゴミ箱の出し入れは保存を待つ）。ほかの所で直されていたら
 //   当てずに「ほかの所で直されたので戻せません」と出し、そのステップを捨てる
 // - ボタン・キー（undo・redo）で当てた時は、何を戻した・やり直したかのお知らせ（「元に戻しました：…」。文は src/domain/itemText.ts の
-//   undoDoneText）を、時間では消さずに［OK］を押すまで出し（notifyUntilOk）、当てたステップを applied に置く（その予定を見せる・今の
-//   画面に無ければ今のモードのままその日へ移るのは画面の側。src/features/calendar/common/undoFeedback.ts）。断った時の「ほかの所で
+//   undoDoneText）を、時間では消さずに［OK］を押すまで出し（notifyUntilOk）、当てたステップを applied に置く（その予定を見せる・
+//   操作をしたモードへ戻る・今の画面に無ければその日へ移るのは画面の側。src/features/calendar/common/undoFeedback.ts）。断った時の「ほかの所で
 //   直されたので戻せません」も、押した結果なので同じく［OK］まで出し、refused の番号を替える。どちらも同じ置き場所
 //   （UNDO_FEEDBACK_SLOT）に出すので、次に押すと前の物を置き換える（■26 の作者の答え）。お知らせの［元に戻す］で戻した時は
 //   「元に戻しました：…」を出さず applied にも置かない（断った時は今までどおりのエラーのお知らせ）。その時に、［OK］まで出している
@@ -72,8 +74,8 @@ let appliedSeq = 0
 let refusals = 0
 /** 新しい操作を積んだ回数（戻している間に新しい操作が来たかを見る） */
 let pushes = 0
-/** ウィークリー・デイリーを出している数（0 の間は積まない） */
-let scope = 0
+/** 出しているウィークリー・デイリー（出した順。空の間は積まない。所はいちばん後に出した物から読む） */
+const scopes: Array<{ place?: () => U.UndoPlace }> = []
 const hooks = new Map<number, StepHooks>()
 /** ステップの番号 → そのお知らせの番号（ボタンで戻した時に、そのお知らせを消す） */
 const toastOf = new Map<number, number>()
@@ -81,8 +83,8 @@ const toastOf = new Map<number, number>()
 const DETACHED_MAX = 10
 /** 積まなかったステップ（お知らせの［元に戻す］だけで戻せる） */
 const detached = new Map<number, U.UndoStep>()
-/** 開いている詳細の画面（予定の id → まとめ始めた時の記録） */
-const sessions = new Map<ID, { base: Item | null }>()
+/** 開いている詳細の画面（予定の id → まとめ始めた時の記録と、開いた所） */
+const sessions = new Map<ID, { base: Item | null; place?: U.UndoPlace }>()
 let queue: Promise<unknown> = Promise.resolve()
 /**
  * ［OK］まで出している「元に戻しました：…」「やり直しました：…」が言うステップ（ステップの番号とお知らせの番号）。お知らせの
@@ -102,19 +104,30 @@ function reader(): U.UndoReader {
   }
 }
 
-/** ウィークリー・デイリーの画面を出した（戻り値で終える。重ねて呼んでよい） */
-export function enterUndoScope(): () => void {
-  scope += 1
+/**
+ * ウィークリー・デイリーの画面を出した（戻り値で終える。重ねて呼んでよい）。place はその画面の今の所（モードと見ている日）を返す
+ * 物で、積む時に読む（■28。替わる途中で2つ出ている間は、後に出した画面の所）
+ */
+export function enterUndoScope(place?: () => U.UndoPlace): () => void {
+  const own = { place }
+  scopes.push(own)
   let left = false
   return () => {
     if (left) return
     left = true
-    scope -= 1
+    const at = scopes.indexOf(own)
+    if (at >= 0) scopes.splice(at, 1)
   }
 }
 
 /** 今、操作を積むか（ウィークリー・デイリーを出している） */
-export const undoScopeActive = (): boolean => scope > 0
+export const undoScopeActive = (): boolean => scopes.length > 0
+
+/** 今の所（いちばん後に出したウィークリー・デイリーが教える物。教えない・出していなければ undefined） */
+const placeNow = (): U.UndoPlace | undefined => {
+  const p = scopes[scopes.length - 1]?.place?.()
+  return p && { mode: p.mode, date: p.date }
+}
 
 function push(step: U.UndoStep): void {
   pushes += 1
@@ -135,7 +148,7 @@ function forget(id: number): void {
 function flushSession(id: ID, cur: Item | null): void {
   const s = sessions.get(id)
   if (!s) return
-  const step = cur ? U.sessionStep(seq + 1, undoText.edited(cur.title), s.base, cur) : null
+  const step = cur ? U.sessionStep(seq + 1, undoText.edited(cur.title), s.base, cur, s.place) : null
   if (step) {
     seq += 1
     push(step)
@@ -152,7 +165,7 @@ export function recordStep(label: string, changes: U.UndoChange[], stepHooks?: S
   // 何も変わらなかった操作（もう完了だった予定を完了にした・同じ日へ動かした）は積まない
   changes = changes.filter((c) => !U.isNoopChange(c))
   if (changes.length === 0) return null
-  if (scope > 0) {
+  if (scopes.length > 0) {
     // 開いている詳細の画面のまとめを先に積む（番号を取る前に。まとめの番号を、この操作より前にする: 番号は積んだ順）
     for (const [id, s] of sessions) {
       const ch = changes.find((c): c is U.ItemChange => c.table === 'items' && c.id === id)
@@ -163,9 +176,10 @@ export function recordStep(label: string, changes: U.UndoChange[], stepHooks?: S
     }
   }
   seq += 1
-  const step: U.UndoStep = { id: seq, label, changes }
+  const place = placeNow()
+  const step: U.UndoStep = place ? { id: seq, label, changes, place } : { id: seq, label, changes }
   if (stepHooks) hooks.set(step.id, stepHooks)
-  if (scope === 0) {
+  if (scopes.length === 0) {
     detached.set(step.id, step)
     // お知らせは 6秒で消えるので、古い物は覚えておかない
     for (const old of detached.keys()) {
@@ -210,7 +224,7 @@ export function holdItemSession(id: ID): () => void {
   const base = s.base
   const cur = getData().items[id] ?? null
   return () => {
-    const step = cur ? U.sessionStep(seq + 1, undoText.edited(cur.title), base, cur) : null
+    const step = cur ? U.sessionStep(seq + 1, undoText.edited(cur.title), base, cur, s.place) : null
     if (step) {
       seq += 1
       push(step)
@@ -221,12 +235,12 @@ export function holdItemSession(id: ID): () => void {
 }
 
 /**
- * 詳細の画面を開いた（予定の id）。閉じるまでに直した所を1つにまとめ、閉じた時（戻り値を呼んだ時）に積む。ウィークリー・デイリーを
- * 出していない時は何もしない
+ * 詳細の画面を開いた（予定の id）。閉じるまでに直した所を1つにまとめ、閉じた時（戻り値を呼んだ時）に積む。まとめの所は開いた時の
+ * 所（ウィークリーから開けば週、デイリーから開けば日。■28）。ウィークリー・デイリーを出していない時は何もしない
  */
 export function beginItemSession(id: ID): () => void {
-  if (scope === 0) return () => {}
-  const own = { base: getData().items[id] ?? null }
+  if (scopes.length === 0) return () => {}
+  const own = { base: getData().items[id] ?? null, place: placeNow() }
   sessions.set(id, own)
   return () => {
     if (sessions.get(id) !== own) return
@@ -412,7 +426,7 @@ export function resetUndoForTests(): void {
   appliedSeq = 0
   refusals = 0
   pushes = 0
-  scope = 0
+  scopes.length = 0
   hooks.clear()
   toastOf.clear()
   detached.clear()

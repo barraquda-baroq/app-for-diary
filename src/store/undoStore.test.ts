@@ -507,6 +507,79 @@ describe('お知らせの［元に戻す］も同じ並び', () => {
   })
 })
 
+describe('操作をした所（モードと見ていた日。■28 の作者の答え）', () => {
+  type Place = NonNullable<UndoStep['place']>
+  /** ウィークリー・デイリーの画面の代わり（今の所を返す） */
+  function enterAt(first: Place) {
+    const at = { now: first }
+    leave()
+    leave = enterUndoScope(() => at.now)
+    return at
+  }
+  const week10: Place = { mode: 'week', date: '2026-11-10' }
+
+  it('積む時に、出している画面の所（モードと見ている日）を覚える。後で画面が替わっても、戻す・やり直すでも替わらない（applied のステップにも）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const at = enterAt(week10)
+    const s = moveTo('2026-11-12')
+    expect(s.place).toEqual(week10)
+    at.now = { mode: 'day', date: '2026-11-11' }
+    expect(useUndo.getState().stack.past[0].place).toEqual(week10)
+    await undo()
+    expect(useUndo.getState().applied?.step.place).toEqual(week10)
+    expect(useUndo.getState().stack.future[0].place).toEqual(week10)
+    await redo()
+    expect(useUndo.getState().applied?.step.place).toEqual(week10)
+    expect(useUndo.getState().stack.past[0].place).toEqual(week10)
+    // お知らせの［元に戻す］で戻してから、ボタンでやり直しても
+    await undoStep(s.id)
+    await redo()
+    expect(useUndo.getState().applied).toMatchObject({ dir: 'redo', step: { id: s.id, place: week10 } })
+  })
+
+  it('画面が2つ出ている間（替わる途中）は、後に出た画面の所。後の画面が外れると、前の画面の所', async () => {
+    await start(dataWith({ items: [meeting] }))
+    enterAt(week10)
+    const leaveDay = enterUndoScope(() => ({ mode: 'day', date: '2026-11-12' }))
+    expect(moveTo('2026-11-12').place).toEqual({ mode: 'day', date: '2026-11-12' })
+    leaveDay()
+    expect(moveTo('2026-11-13').place).toEqual(week10)
+  })
+
+  it('詳細の画面のまとめは、開いた時の所（ウィークリーから開けば週、デイリーから開けば日）。削除の前に取っておいたまとめも同じ', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const at = enterAt({ mode: 'day', date: '2026-11-10' })
+    const end = beginItemSession('a')
+    actions.updateItem('a', { title: '定例会議' })
+    at.now = week10
+    end()
+    expect(useUndo.getState().stack.past.map((s) => s.place)).toEqual([{ mode: 'day', date: '2026-11-10' }])
+    // 中で削除: 直した所のまとめ（開いた所）を先に、削除は積んだ時の所
+    at.now = { mode: 'day', date: '2026-11-10' }
+    const end2 = beginItemSession('a')
+    actions.updateItem('a', { memo: 'あとで' })
+    at.now = { mode: 'day', date: '2026-11-11' }
+    const edited = holdItemSession('a')
+    const b = item()
+    const entry = await actions.trashItem('a')
+    edited()
+    recordStep('削除した', [itemChange('a', b, null, entry)])
+    end2()
+    expect(useUndo.getState().stack.past.map((s) => [s.label, s.place])).toEqual([
+      ['『定例会議』を直した', { mode: 'day', date: '2026-11-10' }],
+      ['『定例会議』を直した', { mode: 'day', date: '2026-11-10' }],
+      ['削除した', { mode: 'day', date: '2026-11-11' }],
+    ])
+  })
+
+  it('所を教えない画面（テストの作り物）で積んだ物・積まなかった操作は、所を覚えない', async () => {
+    await start(dataWith({ items: [meeting] }))
+    expect(moveTo('2026-11-12')).not.toHaveProperty('place')
+    leave()
+    expect(moveTo('2026-11-13')).not.toHaveProperty('place')
+  })
+})
+
 describe('詳細の画面は開いてから閉じるまでを1つに', () => {
   it('2つの欄を直して閉じると1つのステップ。戻すと両方が戻る', async () => {
     await start(dataWith({ items: [meeting] }))

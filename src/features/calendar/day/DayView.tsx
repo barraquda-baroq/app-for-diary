@@ -12,15 +12,15 @@
 // - マンスリー（L・M）の数字から来た時は、押した側の区切りとタイムスケジュールのその区分の予定を目立たせる（各部品の useFlashTarget。
 //   S のマンスリーからは目立たせない。D32）
 // - S・M の指で左右になぞると前後の日へ（画面の枠 common/CalendarView の useSwipe）
-// - 出している間は、予定を変える操作を元に戻す・やり直すの並びに積む（enterUndoScope。7.13）
-import { useCallback, useEffect, useMemo, useState } from 'react'
+// - 出している間は、予定を変える操作を元に戻す・やり直すの並びに積む（useUndoScope。操作をした所は日と見ている日。7.13・■28）
+import { useCallback, useMemo, useState } from 'react'
 import { tapToTimes } from '../../../domain/dayLayout'
 import type { ItemKind } from '../../../domain/types'
-import { enterUndoScope } from '../../../store/undoStore'
 import { cls, useCalendarData } from '../common/parts'
 import { useItemSheets } from '../common/sheets'
 import { testIds } from '../common/testIds'
 import type { ViewProps } from '../common/types'
+import { useUndoScope } from '../common/useUndoScope'
 import { DayHead } from './DayHead'
 import { buildDay } from './dayModel'
 import { Timeline } from './Timeline'
@@ -31,7 +31,7 @@ export function DayView({ viewed, today, width }: ViewProps) {
   const { list, off } = useCalendarData()
   const vm = useMemo(() => buildDay(viewed, list, off, today, width), [viewed, list, off, today, width])
   const { openRegister } = useItemSheets()
-  useEffect(() => enterUndoScope(), [])
+  useUndoScope('day', viewed)
   // すばやく足すを開いている日と区分（見ている日が替わったら閉じる。前の日へ戻っても開き直さない）
   const [adding, setAdding] = useState<{ date: string; kind: ItemKind } | null>(null)
   if (adding && adding.date !== viewed) setAdding(null)
