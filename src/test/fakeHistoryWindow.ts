@@ -24,6 +24,8 @@
 //   edgeTouch の時は、身振りの始まりの前にページへ指を下ろした出来事（pointerdown・touchstart）を送る（離す出来事は送らない。
 //   WKTouchEventsGestureRecognizer.mm）
 // - strict の時は、popstate を送っている間（その後のマイクロタスクまで）の pushState で投げる（どの時も violations に控える）
+// iPhone・iPad の1つの履歴の形（src/history/singleEntryHistory.ts）のテスト用に、ページのスクロールの位置（scrollY・scrollTo）と、
+// 前の版が残した履歴を並べる seed もある
 import type { HistoryWindow } from '../history/appHistory'
 
 /** 控えた絵（その時に描かれていた画面と、描く物の数） */
@@ -127,6 +129,8 @@ export class FakeWindow implements HistoryWindow {
   readonly calls: HistoryCall[] = []
   /** popstate を送っている間に呼んだ pushState */
   readonly violations: string[] = []
+  /** ページのスクロールの位置（scrollTo で替わる。ブラウザが「戻る」「進む」で戻す動きはまねない） */
+  scrollY = 0
   private readonly handlers = new Map<string, Set<Handler>>()
   /** typeHash の数（その前に呼んだ go を取り消す） */
   private typed = 0
@@ -474,6 +478,19 @@ export class FakeWindow implements HistoryWindow {
 
   close(): void {
     this.closeCalls += 1
+  }
+
+  /** ページをスクロールする（縦だけ使う） */
+  scrollTo(_x: number, y: number): void {
+    this.scrollY = y
+  }
+
+  /**
+   * 履歴の並びを置き換える（前の版の印の履歴が残っている時など。hash は # からの行き先、state はその履歴の state）。index が今いる所
+   */
+  seed(list: { hash: string; state: unknown }[], index: number): void {
+    this.entries = list.map((e) => ({ state: structuredClone(e.state), url: `https://app.example/${e.hash}` }))
+    this.index = index
   }
 
   /** 今の # の後ろ */

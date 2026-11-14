@@ -6,9 +6,10 @@ import { decidePop, type PopDirection, type ScreenKind } from './popRules'
 const both: PopDirection[] = ['back', 'forward']
 
 describe('iPhone・iPad（画面の端からのフリック）', () => {
-  it('カレンダー: 左の端から（戻る）は 1つ前のモード（日→週→月→年→日）、右の端から（進む）は1つ次（年→月→週→日→年）', () => {
-    expect(decidePop('edge-flick', 'calendar', 'back')).toEqual({ kind: 'ring', dir: -1 })
-    expect(decidePop('edge-flick', 'calendar', 'forward')).toEqual({ kind: 'ring', dir: 1 })
+  // 向きは 2026-11-14 の作者の答え（左から右に払う＝年→月→週→日、右から左＝日→週→月→年）。前の ■20・■21 の向きの逆
+  it('カレンダー: 左の端から（指は左から右へ・戻る）は 年→月→週→日→年（dir 1）、右の端から（右から左へ・進む）は 日→週→月→年→日（dir -1）', () => {
+    expect(decidePop('edge-flick', 'calendar', 'back')).toEqual({ kind: 'ring', dir: 1 })
+    expect(decidePop('edge-flick', 'calendar', 'forward')).toEqual({ kind: 'ring', dir: -1 })
   })
 
   it('登録・詳細の画面とほかの画面: どちらへ払っても閉じる・1つ戻る（登録の画面も詳細と同じ。書きかけは聞かずに捨てる。■27）', () => {
@@ -46,8 +47,8 @@ describe('ホーム画面から開いた Android のアプリ（閉じ方 press-
       expect(decidePop('os-back', screen, 'forward', 'press-again')).toEqual({ kind: 'stay' })
   })
 
-  it('端からのフリック（iPhone）は閉じ方に関わらず今までどおり', () => {
-    expect(decidePop('edge-flick', 'calendar', 'back', 'press-again')).toEqual({ kind: 'ring', dir: -1 })
+  it('端からのフリック（iPhone）は閉じ方に関わらず同じ（左の端から＝年→月→週→日の向き）', () => {
+    expect(decidePop('edge-flick', 'calendar', 'back', 'press-again')).toEqual({ kind: 'ring', dir: 1 })
     expect(decidePop('edge-flick', 'register', 'back', 'press-again')).toEqual({ kind: 'back-one' })
   })
 })

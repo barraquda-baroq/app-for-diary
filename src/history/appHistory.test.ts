@@ -384,7 +384,7 @@ describe('押している間・ドラッグの途中は、アプリから履歴�
     fire(s, touch('touchstart', 1))
     s.win.userGo(-1)
     await tick()
-    expect(s.ring).toHaveBeenCalledWith(-1)
+    expect(s.ring).toHaveBeenCalledWith(1)
     expect(s.win.index).toBe(1)
     // 次に指で軽く押して、詳細の画面を開く（押し終えた後の click で開く）
     tapFinger(s, 6)
@@ -490,7 +490,7 @@ describe('印の履歴とスクロールの位置', () => {
 })
 
 describe('iPhone（端からのフリック）', () => {
-  it('カレンダー: 左の端から（戻る）でモードを1つ前へ、右の端から（進む）で1つ次へ回し、土台へ戻す。20回払っても履歴は増えない', async () => {
+  it('カレンダー: 左の端から（戻る）でモードを1つ次へ（年→月→週→日→年）、右の端から（進む）で1つ前へ（日→週→月→年→日）回し、土台へ戻す。20回払っても履歴は増えない', async () => {
     const s = setup('#/day/2026-11-10', 'edge-flick')
     await arm(s)
     for (let i = 0; i < 10; i++) {
@@ -499,7 +499,7 @@ describe('iPhone（端からのフリック）', () => {
       s.win.userGo(1)
       await settle(s.h)
     }
-    expect(s.ring.mock.calls.map((c) => c[0])).toEqual(Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? -1 : 1)))
+    expect(s.ring.mock.calls.map((c) => c[0])).toEqual(Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? 1 : -1)))
     expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
     expect(s.updates).toEqual([])
     expect(s.askExit).not.toHaveBeenCalled()
@@ -583,7 +583,7 @@ describe('iPhone（端からのフリック）', () => {
     await settle(s.h)
     s.win.userGo(1)
     await settle(s.h)
-    expect(s.ring).toHaveBeenCalledWith(1)
+    expect(s.ring).toHaveBeenCalledWith(-1)
     expect(s.win.index).toBe(1)
     expect(s.updates.length).toBe(1)
   })
@@ -640,7 +640,7 @@ describe('iPhone（端からのフリック）', () => {
 })
 
 type Mode = 'year' | 'month' | 'week' | 'day'
-/** 回す先（右の端から＝進む: 年→月→週→日→年、左の端から＝戻る: その逆） */
+/** 回す先（ring の dir 1 = 年→月→週→日→年（左の端から＝戻る）、-1 = その逆（右の端から＝進む）。2026-11-14 の作者の答え） */
 const RING_NEXT: Record<Mode, Mode> = { year: 'month', month: 'week', week: 'day', day: 'year' }
 const RING_PREV: Record<Mode, Mode> = { year: 'day', month: 'year', week: 'month', day: 'week' }
 const PATHS: Record<Mode, string> = {
@@ -775,7 +775,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       s.win.userGo(1)
       await settle(s.h)
       expect(s.win.slid.at(-1)).toBe('week')
-      expect(s.ring).toHaveBeenCalledWith(1)
+      expect(s.ring).toHaveBeenCalledWith(-1)
       expect(s.win.hazards).toEqual([])
     },
   )
@@ -795,7 +795,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     s.win.userGo(1)
     await settle(s.h)
     expect(s.win.slid.at(-1)).toBe('week')
-    expect(s.win.screen).toBe('day')
+    expect(s.win.screen).toBe('month')
   })
 
   // ---------- モードを回す払い（S1） ----------
@@ -865,7 +865,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     // 「進む」の印の絵はまだ写していない（離すまで待っている）
     expect(s.h.shape().forwardDirty).toBe(true)
     await settle(s.h)
-    expect(s.ring).toHaveBeenCalledWith(1)
+    expect(s.ring).toHaveBeenCalledWith(-1)
     expect(s.win.hazards).toEqual([])
     expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, forwardDirty: false, held: false })
   })
@@ -1057,11 +1057,11 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     })
     expect(s.win.userGo(-1)).toBe('started')
     await settle(s.h)
-    expect(s.ring).toHaveBeenCalledWith(-1)
+    expect(s.ring).toHaveBeenCalledWith(1)
     // 払いの popstate で土台へ戻る go(1) と、動きの後の go(1)・go(-1)
     expect(overlayAtGo).toEqual([true, false, false])
     expect(s.h.shape()).toMatchObject({ forwardDirty: false, recording: false })
-    expect(s.win.pictures()[2]).toBe('month')
+    expect(s.win.pictures()[2]).toBe('day')
   })
 
   /** 払って閉じ、動きの後に「進む」の印へ着いた時（戻る前）に指を下ろす */
@@ -1092,10 +1092,10 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     expect(s.h.shape()).toMatchObject({ cur: 2, shownIdx: 1, held: true, recording: true })
     expect(s.win.userGo(-1)).toBe('started')
     await settle(s.h)
-    expect(s.ring).toHaveBeenCalledWith(-1)
+    expect(s.ring).toHaveBeenCalledWith(1)
     expect(callsFrom(s, from).filter((c) => c.op === 'go')).toEqual([])
     expect(s.win.index).toBe(1)
-    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
+    expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
     expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, held: false, recording: false, forwardDirty: false })
     expect(s.win.pictures()[2]).toBe('week')
     expect(s.win.hazards).toEqual([])
@@ -1153,7 +1153,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       expect(s.win.hazards).toEqual(hazards)
       if (hazards.length > 0) return
       // 始まった身振りは、左の端からならモードを回した。どれも土台に落ち着く
-      expect(s.ring.mock.calls.map((c) => c[0])).toEqual(dir === -1 ? [-1] : [])
+      expect(s.ring.mock.calls.map((c) => c[0])).toEqual(dir === -1 ? [1] : [])
       expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, busy: false, recording: false })
       expect(s.win.index).toBe(1)
     },
@@ -1230,7 +1230,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       s.win.userGo(1)
       await settle(s.h)
       expect(s.win.slid.at(-1)).toBe('week')
-      expect(s.ring).toHaveBeenCalledWith(1)
+      expect(s.ring).toHaveBeenCalledWith(-1)
       expect(s.win.hazards).toEqual([])
     },
   )
@@ -1283,7 +1283,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       s.win.userGo(1)
       await settle(s.h)
       expect(s.win.slid.at(-1)).toBe('week')
-      expect(s.ring).toHaveBeenCalledWith(1)
+      expect(s.ring).toHaveBeenCalledWith(-1)
       expect(s.updates).toHaveLength(1)
       expect(s.win.hazards).toEqual([])
     },
@@ -1358,14 +1358,14 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       s.win.userGo(1)
       await settle(s.h)
       expect(s.win.slid.at(-1)).toBe(`week+${kind}`)
-      expect(s.ring).toHaveBeenCalledWith(1)
+      expect(s.ring).toHaveBeenCalledWith(-1)
       expect(s.updates).toHaveLength(1)
       expect(s.win.index).toBe(0)
-      expect(s.win.screen).toBe('day')
+      expect(s.win.screen).toBe('month')
       expect(s.win.hazards).toEqual([])
       s.win.press('touch')
       await settle(s.h)
-      expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
+      expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
     },
   )
 
@@ -1377,12 +1377,12 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     s.win.userGo(1)
     // 回した popstate が来て、身振りの絵がまだ出ている間に押す
     for (let k = 0; k < 100 && s.ring.mock.calls.length === 0; k++) await tick(5)
-    expect(s.ring).toHaveBeenCalledWith(1)
+    expect(s.ring).toHaveBeenCalledWith(-1)
     expect(s.h.shape().swipePicture).toBe(true)
     s.win.press('touch')
     await settle(s.h)
-    expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
-    expect(s.win.pictures()[2]).toBe('day')
+    expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
+    expect(s.win.pictures()[2]).toBe('month')
     expect(s.h.shape()).toMatchObject({ forwardDirty: false, recording: false })
     expect(s.win.hazards).toEqual([])
   })
@@ -1433,7 +1433,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     s.win.userGo(1)
     await settle(s.h)
     expect(s.win.slid).toEqual(['week', 'week'])
-    expect(s.ring.mock.calls.map((c) => c[0])).toEqual([1, 1])
+    expect(s.ring.mock.calls.map((c) => c[0])).toEqual([-1, -1])
     expect(s.win.screen).toBe('year')
     expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1, forwardDirty: false })
   })
@@ -1466,7 +1466,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     s.win.userGo(1)
     await settle(s.h)
     expect(s.win.slid.at(-1)).toBe('month')
-    expect(s.win.screen).toBe('week')
+    expect(s.win.screen).toBe('year')
   })
 
   it('設定から左のアイコンでカレンダーへ移った時（土台まで戻って置き換える）も、後ろに残った設定の履歴を「進む」の印に替えて、今のカレンダーの絵にする', async () => {
@@ -1484,7 +1484,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     s.win.userGo(1)
     await settle(s.h)
     expect(s.win.slid.at(-1)).toBe('month')
-    expect(s.win.screen).toBe('week')
+    expect(s.win.screen).toBe('year')
   })
 
   it('モードを回した先の描く物が行き先の絵の半分に届かない時（イヤーから月へ）は、見えない描く物を足してすぐ絵を外させ、後で外す', async () => {
@@ -1496,7 +1496,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       placed.push(n)
       ballast?.(n)
     }
-    s.win.userGo(1)
+    s.win.userGo(-1)
     await settle(s.h)
     expect(s.win.screen).toBe('month')
     // イヤーの絵の描く物の半分を超えた（3秒待たずに外れた）
@@ -1504,22 +1504,22 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     expect(placed).toEqual([expect.any(Number), 0])
     expect(WEIGHTS.month + placed[0]).toBeGreaterThan(WEIGHTS.year / 2)
     expect(s.win.ballastCount).toBe(0)
-    // 月から週: 「進む」の印の絵は作った時（イヤー）のまま（写し直さない）なので、週でも半分に届かず、足す
+    // 月から週: 「戻る」の印の絵は作った時（イヤー）のまま（写し直さない）なので、週でも半分に届かず、足す
     placed.length = 0
-    s.win.userGo(1)
+    s.win.userGo(-1)
     await settle(s.h)
     expect(placed).toEqual([expect.any(Number), 0])
     expect(WEIGHTS.week + placed[0]).toBeGreaterThan(WEIGHTS.year / 2)
     expect(s.win.overlayEnds[1]).toBeLessThan(1000)
-    // 日からイヤーへ戻って、イヤーから日へ（左の端から）
+    // 日からイヤーへ戻って、イヤーから日へ（右の端から）
     s.h.handlers.ballast = (n) => {
       s.win.ballastCount = n
     }
-    s.win.userGo(1)
-    await settle(s.h)
-    s.win.userGo(1)
+    s.win.userGo(-1)
     await settle(s.h)
     s.win.userGo(-1)
+    await settle(s.h)
+    s.win.userGo(1)
     await settle(s.h)
     expect(s.win.screen).toBe('day')
     expect(s.win.overlayEnds.every((ms) => ms < 1000)).toBe(true)
@@ -1530,7 +1530,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     await arm(s)
     const counts: number[] = []
     s.h.handlers.ballast = (n) => counts.push(n)
-    s.win.userGo(-1)
+    s.win.userGo(1)
     await settle(s.h)
     expect(s.win.screen).toBe('week')
     expect(counts).toEqual([])
@@ -1546,7 +1546,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
       placed.push(n)
       ballast?.(n)
     }
-    s.win.userGo(1)
+    s.win.userGo(-1)
     await vi.advanceTimersByTimeAsync(0)
     expect(placed).toHaveLength(1)
     // 月から日へ（アプリの中で回した）
@@ -1626,7 +1626,7 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     // 右の端から払うと、ふつうにモードを回す
     s.win.userGo(1)
     await settle(s.h)
-    expect(s.win.screen).toBe('day')
+    expect(s.win.screen).toBe('month')
     expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1 })
   })
 
@@ -1669,9 +1669,9 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     const from = s.win.calls.length
     expect(s.win.userGo(-1)).toBe('started')
     await settle(s.h)
-    expect(s.ring).toHaveBeenCalledWith(-1)
+    expect(s.ring).toHaveBeenCalledWith(1)
     expect(callsFrom(s, from).map(callName)).toEqual(['replaceState(same)', 'go(1)', 'replaceState', 'go(1)', 'go(-1)'])
-    expect(s.win.pictures()[2]).toBe('month')
+    expect(s.win.pictures()[2]).toBe('day')
     // 次に回した時は、払いの物だけ
     const next = s.win.calls.length
     s.win.userGo(-1)
@@ -1690,12 +1690,12 @@ describe('iPhone の身振りの絵（端からのフリックの間に見える
     s.win.userGo(1)
     await settle(s.h)
     expect(s.win.slid).toEqual(['day', 'none'])
-    expect(s.win.describe()).toEqual(['[back]', '*/year/2026', '[fwd]'])
+    expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
     // その払いの動きの後に、印の絵を写した（今のモード）
     expect(s.h.shape().forwardDirty).toBe(false)
     s.win.userGo(1)
     await settle(s.h)
-    expect(s.win.slid.at(-1)).toBe('year')
+    expect(s.win.slid.at(-1)).toBe('week')
   })
 
   it.each([
@@ -1795,19 +1795,21 @@ describe('端からのフリックの記録（src/history/swipeLog.ts。設定�
   })
 })
 
-describe('利用者の「戻る」「進む」が来たか（userPopSince。src/features/calendar/common/useSwipe.ts が使う）', () => {
+describe('利用者の「戻る」「進む」が来たか（userPopSince）', () => {
+  // 印の履歴の形の iPhone（AppHistory の edge-flick）は、iPhone・iPad では作らなくなった（createAppHistory は SingleEntryHistory を
+  // 作る。src/history/singleEntryHistory.test.tsx）が、段階の後の片付けまでは残すので、今までどおり確かめる
   it('その時刻より後に利用者の「戻る」「進む」（端からのフリック）が来たら true。アプリが自分で動いた分は数えない', async () => {
     const win = new FakeWindow('#/week/2026-11-08', { swipes: true })
-    const h = createAppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf, now: () => Date.now() })
+    const h = new AppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf, now: () => Date.now() })
     disposers.push(() => h.dispose())
     h.listen(() => {})
     win.press()
     await settle(h)
     const t0 = Date.now()
-    expect(userPopSince(t0)).toBe(false)
+    expect(h.userPopSince(t0)).toBe(false)
     win.userGo(1)
     await vi.advanceTimersByTimeAsync(0)
-    expect(userPopSince(t0)).toBe(true)
+    expect(h.userPopSince(t0)).toBe(true)
     await settle(h)
     await vi.advanceTimersByTimeAsync(10)
     const t1 = Date.now()
@@ -1816,7 +1818,22 @@ describe('利用者の「戻る」「進む」が来たか（userPopSince。src/
     h.push(loc('/week/2026-11-08', detail))
     await settle(h)
     expect(win.calls.some((c) => c.op === 'go' && c.at >= t1)).toBe(true)
-    expect(userPopSince(t1)).toBe(false)
+    expect(h.userPopSince(t1)).toBe(false)
+  })
+
+  it('アプリの履歴（createAppHistory で作った物）に聞く: Android・PC の OS の「戻る」も数える', async () => {
+    const win = new FakeWindow('#/week/2026-11-08')
+    const h = createAppHistory({ window: win, source: 'os-back', armOnLeaveFail: false, screenOf, now: () => Date.now() })
+    disposers.push(() => h.dispose())
+    h.listen(() => {})
+    win.press()
+    await settle(h as AppHistory)
+    const t0 = Date.now()
+    expect(userPopSince(t0)).toBe(false)
+    win.userGo(-1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(userPopSince(t0)).toBe(true)
+    await settle(h as AppHistory)
   })
 })
 
@@ -1968,7 +1985,7 @@ describe('読み込み直す', () => {
     expect(s.win.describe()).toEqual(['[back]', '*/week/2026-11-08', '[fwd]'])
     s.win.userGo(1)
     await settle(s.h)
-    expect(s.ring).toHaveBeenCalledWith(1)
+    expect(s.ring).toHaveBeenCalledWith(-1)
   })
 
   it('印の履歴で読み込み直すと、土台へ戻ってルーターに渡す', async () => {

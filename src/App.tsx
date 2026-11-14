@@ -3,7 +3,8 @@
 // MIM（仮の画面）・ログイン・設定（docs/SPEC.md の 3.1・21.）。
 // 履歴はアプリの履歴（src/history/appHistory.ts。カレンダーの中の行き来は積まない・iPhone の端からのフリックでモードを回す・Android の
 // ブラウザのタブと PC の「戻る」でアプリを閉じるかを聞く・ホーム画面から開いた Android のアプリの「戻る」は聞かずに「もう一度［戻る］を
-// 押すと閉じます」。3.1）をデータのルーターに渡す（createHashRouter と同じ作りで、履歴だけを替える）
+// 押すと閉じます」。3.1）をデータのルーターに渡す（createHashRouter と同じ作りで、履歴だけを替える）。iPhone・iPad はブラウザの履歴を
+// 1つのままにする形（src/history/singleEntryHistory.ts。22. の ■31〜■33）、Android・PC は印の履歴の形
 import { lazy, Suspense } from 'react'
 import {
   Navigate,
@@ -123,12 +124,16 @@ export const routes: RouteObject[] = [
  */
 function createAppRouter() {
   const platform = currentPlatform()
+  const standalone = isStandalone()
   const history = createAppHistory({
     window,
     source: popSourceOf(platform),
-    exit: exitStyleOf(platform, isStandalone()),
+    exit: exitStyleOf(platform, standalone),
     armOnLeaveFail: platform === 'android',
     screenOf,
+    // iPhone・iPad の1つの履歴の形だけが使う: ログインの画面（下に何も置かず、端から払っても何もしない）と、開いた時の記録
+    isLoginPath: (pathname) => pathname === paths.login(),
+    standalone,
   })
   setHistoryHandler('askExit', () => void askToCloseApp())
   setHistoryHandler('armExit', () => void armExitOnBack())

@@ -1,6 +1,9 @@
 // アプリの履歴（docs/SPEC.md の 3.1。22. の段階2の終わりの確かめの「画面の外からのフリックの決め」・■22・■23・■25）。HashRouter と同じ
 // ハッシュの行き先の履歴（react-router の createHashHistory と同じ形: state は { usr, key, idx }）を自分で持ち、ルーターが書く・戻る所と、
 // ブラウザの「戻る」「進む」（popstate）が来た所の両方を、ここ1か所で扱う。src/App.tsx が1つだけ作ってデータのルーターに渡す。
+// iPhone・iPad（端からのフリック）では、createAppHistory はこれでなく src/history/singleEntryHistory.ts（ブラウザの履歴を1つのままに
+// する形。22. の ■31〜■33）を作る。下の iPhone の所（印の履歴の上の身振りの絵など）は、もう作らない形の物として残してあり、後の版で
+// 片付ける（開発）。Android・PC は今までどおりこれ
 //
 // 履歴の形: カレンダーの画面は、いつも1つの履歴（「土台」。state.ds.base がその番号）に置き、その前に「戻る」の印、後ろに「進む」の印の
 // 履歴を1つずつ置く（どちらも同じ行き先で、state.ds.mark が back・fwd）。カレンダーの中の行き来（モードの切り替え・‹ ›・なぞる・［今日］・
@@ -65,14 +68,25 @@
 //   出していた所へ戻る（お知らせが消えた後・掴んでいる間の「戻る」でアプリを離れないように。次の「戻る」でまたその所にする。履歴は
 //   増えない）。頼まれてから（書きかけを保存している間に）押し終えた・キーを打った時は、その所にしない
 // 画面の決まり（どの行き先がカレンダー・登録・詳細か）は、ここでは持たない（screenOf で受け取る）
-import { createPath, NavigationType, parsePath, type Location, type RouterInit } from 'react-router-dom'
+import { NavigationType, type Location } from 'react-router-dom'
+import {
+  encodeHashLocation,
+  hashHref,
+  hashURL,
+  makeKey,
+  metaOf,
+  readHashLocation,
+  stateOf,
+  toLocation,
+  type EntryState,
+  type Listener,
+  type Meta,
+  type RouterHistory,
+  type To,
+} from './hashLocation'
 import { decidePop, type ExitStyle, type PopSource, type ScreenKind } from './popRules'
+import { SingleEntryHistory, type SingleEntryOptions, type SingleHistoryShape } from './singleEntryHistory'
 import { swipeLog, swipeLogEnabled } from './swipeLog'
-
-type RouterHistory = RouterInit['history']
-type Update = Parameters<Parameters<RouterHistory['listen']>[0]>[0]
-type Listener = (update: Update) => void
-type To = Parameters<RouterHistory['push']>[0]
 
 /** 使う window の物（単体テストでは作り物を渡す） */
 export interface HistoryWindow {
@@ -157,8 +171,10 @@ export interface AppHistoryOptions {
   now?: () => number
 }
 
-/** 今の履歴の形（E2E・単体テスト用） */
+/** 今の履歴の形（E2E・単体テスト用。Android・PC の印の履歴の形。kind は書かない） */
 export interface HistoryShape {
+  /** 印の履歴の形（iPhone・iPad の1つの履歴の形 SingleHistoryShape と分ける。AppHistory は書かない） */
+  kind?: 'markers'
   /** popstate が何から来るか（端末で決めた物。src/ui/device.ts） */
   source: PopSource
   /** カレンダーでの OS の「戻る」の閉じ方（端末と表示の形で決めた物。src/ui/device.ts） */
@@ -187,8 +203,40 @@ export interface HistoryShape {
   forwardDirty: boolean
 }
 
+/** 今の履歴の形（Android・PC の印の履歴の形か、iPhone・iPad の1つの履歴の形 kind: 'single'） */
+export type DsHistoryShape = HistoryShape | SingleHistoryShape
+
 /** アプリを閉じた結果: left = 離れた、armed = 最初の履歴へ戻った（もう一度［戻る］で閉じる）、stayed = 離れられなかった */
 export type LeaveResult = 'left' | 'armed' | 'stayed'
+
+/**
+ * アプリの履歴（react-router の History の形に、画面から受け取る動きなどを足した物）。Android・PC は AppHistory（印の履歴）、
+ * iPhone・iPad は SingleEntryHistory（src/history/singleEntryHistory.ts。ブラウザの履歴は1つのまま）。createAppHistory が端末で選ぶ
+ */
+export interface DsHistory extends RouterHistory {
+  /** 画面から受け取る動き（createAppHistory が、setHistoryHandler で置いた物にする） */
+  handlers: HistoryHandlers
+  /** 履歴を動かし終えるまで待つ（E2E 用） */
+  whenIdle(): Promise<void>
+  /** 今の履歴の形（E2E・単体テスト用） */
+  shape(): DsHistoryShape
+  /** アプリを閉じる（「Diary Studio を閉じますか？」の［閉じる］） */
+  leave(onArmEnd?: () => void): Promise<LeaveResult>
+  /** もう一度［戻る］で閉じる所にする（ホーム画面から開いた Android のアプリ。■25） */
+  armExit(ms: number, onEnd: () => void): Promise<boolean>
+  /** 利用者の「戻る」「進む」が、その時刻より後に来たか */
+  userPopSince(t: number): boolean
+  /**
+   * iPhone・iPad: 画面の端から内へ払った（-1 = 左の端から右へ、1 = 右の端から左へ）。ページの中で受け取った所が呼ぶ。SingleEntryHistory
+   * だけ（AppHistory には無い）
+   */
+  flick?(side: -1 | 1): void
+  /** 片付ける（テスト用） */
+  dispose(): void
+}
+
+/** createAppHistory に渡す物（AppHistory の物と、iPhone・iPad の SingleEntryHistory だけが使う物） */
+export type DsHistoryOptions = AppHistoryOptions & Pick<SingleEntryOptions, 'isLoginPath' | 'standalone'>
 
 /** 自分で始めた戻る・進むの popstate を待つ長さの上限（来ない時は、今の履歴の state を読み直して先へ進む） */
 export const TRAVEL_TIMEOUT_MS = 1000
@@ -260,50 +308,13 @@ const UNKNOWN_PICTURE_FACTOR = 2
 /** 見えない描く物の上限 */
 const BALLAST_MAX = 6000
 
-/** 履歴の state の DS の印 */
-interface Meta {
-  /** 土台（カレンダーを置く履歴）の idx */
-  base: number
-  /** 印の履歴（back = 土台の前、fwd = 土台・積んだ画面の後ろ） */
-  mark?: 'back' | 'fwd'
-}
-
-/** 履歴の state（react-router の形に ds を足した物） */
-interface EntryState {
-  usr?: unknown
-  key?: string
-  idx?: number
-  ds?: Meta
-}
-
-function stateOf(value: unknown): EntryState | null {
-  return value && typeof value === 'object' ? (value as EntryState) : null
-}
-
-function metaOf(value: unknown): Meta | null {
-  const ds = stateOf(value)?.ds
-  return ds && typeof ds === 'object' && typeof ds.base === 'number' ? ds : null
-}
-
-/** react-router と同じ形の key */
-function makeKey(): string {
-  return Math.random().toString(36).substring(2, 10)
-}
-
-const PROTOCOL_RELATIVE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i
-
-/** ルーターが渡す行き先か（key を持つ物） */
-function isLocation(to: unknown): to is Location {
-  return Boolean(to && typeof to === 'object' && typeof (to as Location).key === 'string')
-}
-
 /** 1つの動き（書き込み・戻る・進む。戻る・進むを待つ物は Promise を返す） */
 type Op = () => void | Promise<unknown>
 
 /**
- * アプリの履歴（react-router の History の形）。src/App.tsx が createAppHistory で1つだけ作り、UNSAFE_createRouter に渡す
+ * アプリの履歴（react-router の History の形）。Android・PC で、src/App.tsx が createAppHistory で1つだけ作り、UNSAFE_createRouter に渡す
  */
-export class AppHistory implements RouterHistory {
+export class AppHistory implements DsHistory {
   /** 画面から受け取る動き */
   handlers: HistoryHandlers = {}
   private listener: Listener | null = null
@@ -435,26 +446,15 @@ export class AppHistory implements RouterHistory {
   }
 
   createHref(to: To): string {
-    const base = this.win.document.querySelector('base')
-    let href = ''
-    if (base && base.getAttribute('href')) {
-      const url = this.win.location.href
-      const hashIndex = url.indexOf('#')
-      href = hashIndex === -1 ? url : url.slice(0, hashIndex)
-    }
-    return `${href}#${typeof to === 'string' ? to : createPath(to)}`
+    return hashHref(this.win, to)
   }
 
   createURL(to: To): URL {
-    const origin = this.win.location.origin !== 'null' ? this.win.location.origin : this.win.location.href
-    let href = (typeof to === 'string' ? to : createPath(to)).replace(/ $/, '%20')
-    if (PROTOCOL_RELATIVE.test(href)) href = origin + href
-    return new URL(href, origin)
+    return hashURL(this.win, to)
   }
 
   encodeLocation(to: To): { pathname: string; search: string; hash: string } {
-    const url = this.createURL(to)
-    return { pathname: url.pathname, search: url.search, hash: url.hash }
+    return encodeHashLocation(this.win, to)
   }
 
   listen(listener: Listener): () => void {
@@ -616,17 +616,11 @@ export class AppHistory implements RouterHistory {
 
   /** 今の window の行き先（react-router の createHashHistory と同じ読み方） */
   private readLocation(): Location {
-    const parsed = parsePath(this.win.location.hash.substring(1))
-    let pathname = parsed.pathname ?? '/'
-    if (!pathname.startsWith('/') && !pathname.startsWith('.')) pathname = `/${pathname}`
-    const st = stateOf(this.win.history.state)
-    return { pathname, search: parsed.search ?? '', hash: parsed.hash ?? '', state: st?.usr ?? null, key: st?.key ?? 'default' }
+    return readHashLocation(this.win)
   }
 
   private toLocation(to: To, state: unknown): Location {
-    if (isLocation(to)) return to
-    const parts = typeof to === 'string' ? parsePath(to) : to
-    return { pathname: this.shown.pathname, search: '', hash: '', ...parts, state: state ?? null, key: makeKey() }
+    return toLocation(to, state, this.shown.pathname)
   }
 
   /** 順に行う（動いていなければすぐ始める: ルーターの書き込みは今までどおりその場で履歴に書く） */
@@ -1843,14 +1837,21 @@ export class AppHistory implements RouterHistory {
 }
 
 /** アプリの履歴（src/App.tsx が1つだけ作る。単体テストは自分で作る） */
-let current: AppHistory | null = null
+let current: DsHistory | null = null
 /** 画面から受け取る動き（履歴を作る前に置かれても渡す） */
 const handlers: HistoryHandlers = {}
 
-/** アプリの履歴を作る（アプリで1回だけ） */
-export function createAppHistory(opts: AppHistoryOptions): AppHistory {
+/**
+ * アプリの履歴を作る（アプリで1回だけ）。iPhone・iPad（端からのフリック）はブラウザの履歴を1つのままにする SingleEntryHistory
+ * （22. の ■31〜■33）、Android・PC（OS の戻る）は今までと同じ AppHistory（同じ物を渡す）
+ */
+export function createAppHistory(opts: DsHistoryOptions): DsHistory {
   current?.dispose()
-  current = new AppHistory(opts)
+  if (opts.source === 'edge-flick') current = new SingleEntryHistory(opts)
+  else {
+    const { isLoginPath: _isLoginPath, standalone: _standalone, ...base } = opts
+    current = new AppHistory(base)
+  }
   current.handlers = handlers
   return current
 }
@@ -1882,19 +1883,22 @@ export function whenHistoryIdle(): Promise<void> {
 }
 
 /** 今の履歴の形（E2E の window.__ds.historyShape） */
-export function historyShape(): HistoryShape | null {
+export function historyShape(): DsHistoryShape | null {
   return current?.shape() ?? null
 }
 
 /**
- * その時刻（performance.now）より後に、利用者の「戻る」「進む」（iPhone の端からのフリック）が来たか
- * （src/features/calendar/common/useSwipe.ts: 画面の端から払った指を、ブラウザが身振りにした時はアプリでは回さない）
+ * その時刻（performance.now）より後に、利用者の「戻る」「進む」（iPhone の端からのフリック。iPhone・iPad では、前の版が残した履歴への
+ * 身振り）が来たか（src/features/calendar/common/useSwipe.ts: 画面の端から払った指を、ブラウザが身振りにした時はアプリでは回さない）
  */
 export function userPopSince(t: number): boolean {
   return current?.userPopSince(t) ?? false
 }
 
-/** iPhone: 身振りの絵を出している間に、アプリの中でモードを回した（AppHistory.topUpBallast。src/features/calendar/common/CalendarView.tsx） */
+/**
+ * iPhone: 身振りの絵を出している間に、アプリの中でモードを回した（AppHistory.topUpBallast。src/features/calendar/common/CalendarView.tsx）。
+ * iPhone・iPad の1つの履歴の形（SingleEntryHistory）には身振りの絵が無いので、何もしない
+ */
 export function afterInPageRing(): void {
-  current?.topUpBallast()
+  if (current instanceof AppHistory) current.topUpBallast()
 }

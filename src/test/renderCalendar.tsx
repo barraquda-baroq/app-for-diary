@@ -7,7 +7,16 @@
 // ドラッグ・大きさの測り・本物の履歴・指の操作は E2E で確かめる（jsdom はレイアウトも本物の指も持たない）
 import { act, cleanup, render, type RenderResult } from '@testing-library/react'
 import { useState, type ComponentType } from 'react'
-import { createMemoryRouter, RouterProvider, type InitialEntry } from 'react-router-dom'
+import {
+  createMemoryRouter,
+  RouterProvider,
+  UNSAFE_createRouter,
+  UNSAFE_hydrationRouteProperties,
+  UNSAFE_mapRouteProperties,
+  type InitialEntry,
+  type RouteObject,
+  type RouterInit,
+} from 'react-router-dom'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { T0 } from '../domain/testData'
 import { emptyData, type AppData } from '../domain/types'
@@ -191,12 +200,13 @@ export type ViewRender<P> = CalendarRender & {
 
 /**
  * 1つの部品だけを、アプリの外枠（AppFrame: お知らせ・ダイアログ）とデータのルーター（useNavigate・useBlocker が使える）の中に描く。
- * どの行き先へ移っても同じ部品を出したまま（router.state.location で移った先を確かめる）。path は初めの行き先
+ * どの行き先へ移っても同じ部品を出したまま（router.state.location で移った先を確かめる）。path は初めの行き先。history を渡すと、
+ * メモリーのルーターの代わりに、その履歴の上のデータのルーター（src/App.tsx と同じ作り。初めの行き先は履歴の物）にする
  */
 export async function renderView<P extends object>(
   Component: ComponentType<P>,
   props: P,
-  opts: RenderOptions & { path?: InitialEntry } = {},
+  opts: RenderOptions & { path?: InitialEntry; history?: RouterInit['history'] } = {},
 ): Promise<ViewRender<P>> {
   await prepare(opts)
   const { AppFrame } = await import('../ui/Layout')
@@ -206,19 +216,24 @@ export async function renderView<P extends object>(
     setter = setP
     return <Component {...p} />
   }
-  const router = createMemoryRouter(
-    [
-      {
-        path: '*',
-        element: (
-          <AppFrame>
-            <Host />
-          </AppFrame>
-        ),
-      },
-    ],
-    { initialEntries: [opts.path ?? '/'] },
-  )
+  const routes: RouteObject[] = [
+    {
+      path: '*',
+      element: (
+        <AppFrame>
+          <Host />
+        </AppFrame>
+      ),
+    },
+  ]
+  const router = opts.history
+    ? (UNSAFE_createRouter({
+        routes,
+        history: opts.history,
+        mapRouteProperties: UNSAFE_mapRouteProperties,
+        hydrationRouteProperties: UNSAFE_hydrationRouteProperties,
+      }).initialize() as ReturnType<typeof createMemoryRouter>)
+    : createMemoryRouter(routes, { initialEntries: [opts.path ?? '/'] })
   const result = render(<RouterProvider router={router} />)
   return {
     ...result,

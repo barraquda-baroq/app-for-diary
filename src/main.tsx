@@ -95,7 +95,9 @@ if (import.meta.env.DEV) {
     holdTurns: holdTurnsForTest,
     /**
      * 画面のテスト用（e2e/helpers.ts の historyIdle・historyShape）: アプリの履歴（src/history/appHistory.ts）が、ブラウザの履歴を
-     * 動かし終えるまで待つ（印の履歴を作る・「戻る」「進む」の後に土台へ戻す・閉じる）。今の履歴の形（今いる所・土台の番号など）
+     * 動かし終えるまで待つ（印の履歴を作る・「戻る」「進む」の後に土台へ戻す・閉じる。iPhone・iPad の1つの履歴の形は、後で渡す
+     * POP・スクロールの戻し）。今の履歴の形（今いる所・土台の番号など。iPhone・iPad は kind が single で、アプリの中の行き先の数・
+     * ブラウザの履歴の数）
      */
     historyIdle: whenHistoryIdle,
     historyShape,
