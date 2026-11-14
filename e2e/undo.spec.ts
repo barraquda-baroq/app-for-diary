@@ -732,6 +732,41 @@ test.describe(
       await expect(page).toHaveURL(/#\/day\/2026-11-12$/)
     })
 
+    test('複数日の予定: 日（11/10）で研修（11/5〜11/10）を完了にして週で戻す・やり直すと、初めの日（11/5）でなく操作をした日（11/10）のデイリーへ戻る（■28。履歴は増えない）', async ({
+      page,
+    }) => {
+      await openCalendar(page, '/day/2026-11-10', { data: demoData() })
+      const row = page.getByTestId(`day-row-${I.training}`)
+      await expect(row).toBeVisible()
+      await recordFlashes(page)
+      await page.getByTestId(`done-${I.training}`).first().click()
+      await expect.poll(async () => (await itemOf(page, I.training))?.done).toBe(true)
+      // 研修の出ている週（11/8）へ替えて［元に戻す］
+      await page.getByTestId('cal-mode-week').click()
+      await expect(page).toHaveURL(/#\/week\/2026-11-08$/)
+      await historySettled(page)
+      const length = await page.evaluate(() => history.length)
+      await clearFlashes(page)
+      await undoBtn(page).click()
+      await expect(feedback(page)).toHaveText('元に戻しました：『研修』を完了にしたOK')
+      await expect.poll(async () => (await itemOf(page, I.training))?.done).toBe(false)
+      await expect(page).toHaveURL(/#\/day\/2026-11-10$/)
+      await expect(row).toBeVisible()
+      await expect.poll(() => flashes(page)).toContain(`day-row-${I.training}`)
+      // 次の週（11/15。研修は出ていない）で［やり直す］: これも 11/10 のデイリーへ
+      await page.getByTestId('cal-mode-week').click()
+      await page.getByTestId('cal-next').click()
+      await expect(page).toHaveURL(/#\/week\/2026-11-15$/)
+      await clearFlashes(page)
+      await redoBtn(page).click()
+      await expect(feedback(page)).toHaveText('やり直しました：『研修』を完了にしたOK')
+      await expect.poll(async () => (await itemOf(page, I.training))?.done).toBe(true)
+      await expect(page).toHaveURL(/#\/day\/2026-11-10$/)
+      await expect.poll(() => flashes(page)).toContain(`day-row-${I.training}`)
+      await historySettled(page)
+      expect(await page.evaluate(() => history.length)).toBe(length)
+    })
+
     test('ドラッグで落としたカード・戻したカードの枠は 1.2秒で終わり、後の描き直し（完了にした）で付け直さない', async ({
       page,
     }) => {

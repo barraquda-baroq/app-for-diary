@@ -357,6 +357,50 @@ describe('操作をしたモード（週・日）が今のモードと違えば�
     expect(flashed(await screen.findByTestId(testIds.dayRow('a')))).toBe(true)
   })
 
+  it('複数日の予定: 日（11/10）で研修（11/5〜11/10）を完了にして週で戻す・やり直すと、初めの日（11/5）でなく操作をした日（11/10）のデイリーへ戻って行を目立たせる', async () => {
+    const training = mkItem({ id: 't', title: '研修', start: '2026-11-05', due: '2026-11-10' })
+    const { user, router } = await open('/day/2026-11-10', 'L', [training])
+    expect(screen.getByTestId(testIds.dayRow('t'))).toBeTruthy()
+    change('t', undoText.done('研修', true), { done: true })
+    await user.click(screen.getByTestId(testIds.calMode('week')))
+    await user.click(screen.getByTestId(testIds.calNext))
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+    act(() => useCalendarUi.setState({ flash: null }))
+    await user.click(undoBtn())
+    await settle()
+    expect(getData().items.t.done).toBe(false)
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    expect(router.state.historyAction).toBe('REPLACE')
+    expect(flashed(await screen.findByTestId(testIds.dayRow('t')))).toBe(true)
+    expect(useCalendarUi.getState().flash?.keys).toEqual([flashKey.item('t')])
+    // 研修の出ている週（11/8）へ替えて、やり直す: これも 11/10 のデイリーへ
+    await user.click(screen.getByTestId(testIds.calMode('week')))
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    act(() => useCalendarUi.setState({ flash: null }))
+    await user.click(redoBtn())
+    await settle()
+    expect(getData().items.t.done).toBe(true)
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    expect(flashed(await screen.findByTestId(testIds.dayRow('t')))).toBe(true)
+  })
+
+  it('複数日の予定: 週（11/15）で出張の準備（11/12〜11/17）を完了にして日で戻すと、初めの日の週（11/8）でなく操作をした週（11/15）へ戻って目立たせる', async () => {
+    const prep = mkItem({ id: 'p', title: '出張の準備', start: '2026-11-12', due: '2026-11-17' })
+    const { user, router } = await open('/week/2026-11-15', 'L', [prep])
+    change('p', undoText.done('出張の準備', true), { done: true })
+    await user.click(screen.getByTestId(testIds.calMode('day')))
+    expect(router.state.location.pathname).toMatch(/^\/day\//)
+    act(() => useCalendarUi.setState({ flash: null }))
+    await user.click(undoBtn())
+    await settle()
+    expect(getData().items.p.done).toBe(false)
+    // 前の週から続く予定の受けた表示（11/15〜11/17）を、移らずに目立たせる
+    expect(flashed(await screen.findByTestId(testIds.weekReceived('p')))).toBe(true)
+    expect(router.state.location.pathname).toBe('/week/2026-11-15')
+    expect(router.state.historyAction).toBe('REPLACE')
+    expect(useCalendarUi.getState().flash?.keys).toEqual([flashKey.item('p')])
+  })
+
   it('休み（ウィークリーのチェックで付ける）: 日で戻す・やり直すと週へ戻って、その日の見出しを目立たせる（日の見出しではない）', async () => {
     const { user, router } = await open('/week/2026-11-08')
     await user.click(screen.getByTestId(testIds.weekOff('2026-11-12')))
@@ -926,13 +970,62 @@ describe('planUndoReveal（移るか・目立たせるかの決め方）', () =>
         lift: false,
       })
       expect(find).not.toHaveBeenCalled()
-      // デイリーでした操作を週で
-      const inDay: UndoStep = { ...multi, place: { mode: 'day', date: '2026-11-12' } }
+      // デイリーでした操作を週で（操作をした日 11/20 に予定の期間が掛からないので、動いた端の日へ）
+      const inDay: UndoStep = { ...multi, place: { mode: 'day', date: '2026-11-20' } }
       expect(planUndoReveal({ dir: 'undo', step: inDay }, week, find)).toEqual({
         key: flashKey.item('x'),
         goTo: toDay('2026-11-10'),
         lift: false,
       })
+    })
+
+    it('複数日の予定: 移る日が操作をした週・日の外でも、当てた後の予定の期間がそこに掛かれば、操作をした時に見ていた日へ戻る（そこで出ている物を目立たせる）', () => {
+      const find = vi.fn(() => [el])
+      // 始点を動かした3日の予定（11/10〜11/12 → 11/11〜11/13）を、日の 11/12 で動かした。週で戻すと 11/10〜11/12（11/12 に掛かる）、
+      // やり直すと 11/11〜11/13（同じ）。どちらも 11/12 のデイリーへ（動いた端の 11/10・11/11 ではない）
+      const inDay: UndoStep = { ...multi, place: { mode: 'day', date: '2026-11-12' } }
+      expect(planUndoReveal({ dir: 'undo', step: inDay }, week, find)).toEqual({
+        key: flashKey.item('x'),
+        goTo: toDay('2026-11-12'),
+        lift: false,
+      })
+      expect(planUndoReveal({ dir: 'redo', step: inDay }, week, find)).toEqual({
+        key: flashKey.item('x'),
+        goTo: toDay('2026-11-12'),
+        lift: false,
+      })
+      // 日付の変わらない操作（完了）: 研修（11/5〜11/10）を日の 11/10 で完了にした → 初めの日（11/5）でなく 11/10 のデイリーへ
+      const training = { ...meeting, id: 't', start: '2026-11-05', due: '2026-11-10' }
+      const done: UndoStep = {
+        id: 4,
+        label: undoText.done('研修', true),
+        changes: [{ table: 'items', id: 't', before: training, after: { ...training, done: true }, entry: null }],
+        place: { mode: 'day', date: '2026-11-10' },
+      }
+      const next = { mode: 'week', from: '2026-11-15', to: '2026-11-21' } as const
+      expect(planUndoReveal({ dir: 'undo', step: done }, next, find)).toEqual({
+        key: flashKey.item('t'),
+        goTo: toDay('2026-11-10'),
+        lift: false,
+      })
+      // 週の 11/15 でした操作（出張の準備 11/12〜11/17 を完了）を日で戻す → 予定の初めの日の週（11/8）でなく 11/15 の週へ
+      const prep = { ...meeting, id: 'p', start: '2026-11-12', due: '2026-11-17' }
+      const inWeek2: UndoStep = {
+        id: 5,
+        label: undoText.done('出張の準備', true),
+        changes: [{ table: 'items', id: 'p', before: prep, after: { ...prep, done: true }, entry: null }],
+        place: { mode: 'week', date: '2026-11-15' },
+      }
+      expect(planUndoReveal({ dir: 'undo', step: inWeek2 }, day12, find)).toEqual({
+        key: flashKey.item('p'),
+        goTo: toWeek('2026-11-15'),
+        lift: false,
+      })
+      expect(find).not.toHaveBeenCalled()
+      // 移る日が操作をした週の中なら、今までどおり移る日（週の見ている日はその日。1日のカードの作者の手順と同じ）
+      expect(
+        planUndoReveal({ dir: 'undo', step: { ...inWeek2, place: { mode: 'week', date: '2026-11-09' } } }, day12, find),
+      ).toEqual({ key: flashKey.item('p'), goTo: toWeek('2026-11-12'), lift: false })
     })
 
     it('今のモードと違って目立たせる所が無い時は、操作をした時に見ていた日の、そのモードの期間へ移る（文だけ）', () => {
