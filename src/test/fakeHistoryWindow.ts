@@ -75,6 +75,11 @@ export interface FakeWindowOptions {
   edgeTouch?: boolean
   /** popstate を送っている間の pushState で投げる */
   strict?: boolean
+  /**
+   * ページの go が着くまでの長さ（既定は 0: 次の処理）。WebKit では、go を頼んでから UI の側が今いる所を知るまでの数ミリ秒で、その間に
+   * 始まった身振りの行き先は、動く前の所から決まる
+   */
+  goMs?: number
 }
 
 /** popstate を送っている間とみなすマイクロタスクの数（その後の処理を待つ Promise のつながりより長く） */
@@ -137,6 +142,7 @@ export class FakeWindow implements HistoryWindow {
   private readonly focused: boolean
   private readonly edgeTouch: boolean
   private readonly strict: boolean
+  private readonly goMs: number
 
   constructor(
     hash = '#/',
@@ -148,9 +154,11 @@ export class FakeWindow implements HistoryWindow {
       focused = false,
       edgeTouch = false,
       strict = false,
+      goMs = 0,
     }: FakeWindowOptions = {},
   ) {
     this.swipes = swipes
+    this.goMs = goMs
     this.animMs = swipes ? animMs : 0
     this.focused = focused
     this.edgeTouch = edgeTouch
@@ -291,7 +299,10 @@ export class FakeWindow implements HistoryWindow {
     return this.entries.map((e) => e.picture?.screen ?? '-')
   }
 
-  /** ページの go（次の処理で、離れる履歴の絵を控えてから動いて popstate。範囲の外なら何もしない。その前に typeHash が来たら動かない） */
+  /**
+   * ページの go（次の処理（goMs の後）で、離れる履歴の絵を控えてから動いて popstate。範囲の外なら何もしない。その前に typeHash が来たら
+   * 動かない）
+   */
   move(delta: number): void {
     const typed = this.typed
     setTimeout(() => {
@@ -300,7 +311,7 @@ export class FakeWindow implements HistoryWindow {
       if (target < 0 || target >= this.entries.length) return
       this.record()
       this.arrive(target)
-    }, 0)
+    }, this.goMs)
   }
 
   private arrive(target: number): PopWindow | null {

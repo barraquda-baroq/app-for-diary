@@ -39,12 +39,13 @@
 //   - 払いの popstate で最初に、今の履歴を同じ物で置き換える（onPop。WebKit は、払いの後に最初に知らせた同じページの中の動きが積む
 //     （pushState）だと身振りの絵を3秒外さず、その間はページを押せない）。popstate の中（とその後のマイクロタスク）では積まない
 //   - モードを回す払いの後は、払いの popstate の中で土台へ戻る1回のほかは、履歴を動かさない（絵は写し直さない。印の絵は作った時・
-//     閉じた後に写したカレンダーのまま）
+//     閉じた後に写したカレンダーのまま）。ただし閉じた後の1度（下の recordForward）がまだなら、その払いの動きの後に行う
 //   - 端からのフリックで詳細の画面などを閉じた時は、押した直後なら、動きの間（popstate の後の処理）に閉じた画面の履歴を切り捨てて
 //     「進む」の印を積み直す（dropClosed。絵はまだ無い）。身振りの絵が消えた頃（SWIPE_SETTLE_*）に1度だけ、その印へ行って戻り
 //     （recordForward）、印の絵を今のカレンダーにする（押した直後でなければ、その時に閉じた画面の履歴を印に替える）。指が下りて
-//     いる間は行かない・戻らない（行った後なら、そこで待つ: parked）
-//   - 印の履歴を作る（build）のは、画面がカレンダーだけで描かれた後
+//     いる間は行かない・戻らない（行った後なら、そこで待つ: parked）。画面にほかの物が出ていれば消えるまで確かめ直す。閉じてすぐ
+//     次を払った時は、その払いの動きの後に行い、その時に指が下りていれば、離した時に行う
+//   - 印の履歴を作る（build）のは、押し終えた時（押した物が動く前）に画面がカレンダーだけの時
 //   - 登録・詳細の画面をルーターの戻るで閉じる時は、戻る前に隠して描かせる（hideBeforeLeave。閉じた画面の履歴の絵に残さない）
 //   - モードを回した時、新しいモードの描く物が行き先の絵の半分に届かなければ、見えない描く物を足してすぐ絵を外させる（afterRing。
 //     絵を出している間にアプリの中で回した時は topUpBallast で足し直す）
@@ -239,6 +240,12 @@ export const PAINT_MS = 50
  * iPhone: 指を下ろしてから、これより短い間は、離していても自分から「進む」の印へ行かない（念のため。指が下りている間は、いつも行かない）
  */
 export const TOUCH_QUIET_MS = 100
+/**
+ * iPhone: 「進む」の印の絵を写す時に、画面にカレンダーのほかの物（めくる動き・すばやく足す・落とす動きなど）が出ていた時は、
+ * RECORD_RETRY_MS ごとに確かめ直す。押し終えた時・身振りの絵が消えた時から RECORD_RETRY_FOR_MS まで（それより後は、次に押し終えた時に）
+ */
+export const RECORD_RETRY_MS = 200
+export const RECORD_RETRY_FOR_MS = 10_000
 /** 1回描くのを待つ長さの上限（描かない時（見えていない・テストの作り物）でも止まらないように） */
 const FRAME_TIMEOUT_MS = 1000
 /**
@@ -361,6 +368,12 @@ export class AppHistory implements RouterHistory {
   /** iPhone: recordForward を、描かれるのを待ってから順番に入れる・行っている */
   private recordScheduled = false
   private recordRunning = false
+  /**
+   * iPhone: recordForward をしなかった時に、もう一度確かめるまでの見張り（quiet = 指を下ろしたばかりだった: 写している途中とみなす）と、
+   * 画面にほかの物が出ていた時に確かめ直す終わりの時刻
+   */
+  private recordRetry: { timer: number; quiet: boolean } | null = null
+  private recordRetryUntil = -Infinity
   /**
    * iPhone: recordForward で土台の後ろへ行った後に指が下りたので、そこで待っている（離した時に戻る。marker = そこを「進む」の印に
    * した。restore = 土台のスクロールの戻し方を元に戻す）
@@ -562,7 +575,7 @@ export class AppHistory implements RouterHistory {
       exitArmed: this.exitArmed,
       held: !this.free(),
       swipePicture: this.afterSwipe,
-      recording: this.recordScheduled || this.recordRunning || this.parked !== null,
+      recording: this.recordScheduled || this.recordRunning || this.parked !== null || this.recordRetry?.quiet === true,
       forwardDirty: this.forwardDirty,
     }
   }
@@ -577,6 +590,8 @@ export class AppHistory implements RouterHistory {
     this.swipeGen++
     for (const type of INPUT_EVENTS) this.win.removeEventListener(type, this.onInput, true)
     this.stopFreeTimer()
+    if (this.recordRetry) this.win.clearTimeout(this.recordRetry.timer)
+    this.recordRetry = null
     if (this.armTimer !== null) this.win.clearTimeout(this.armTimer)
     if (this.armHoldTimer !== null) this.win.clearTimeout(this.armHoldTimer)
     this.armTimer = this.armHoldTimer = null
@@ -774,7 +789,7 @@ export class AppHistory implements RouterHistory {
     this.shown = location
     this.shownIdx = base
     this.forwardDirty = false
-    // iPhone: 印の絵は、ここで写した物のまま（写し直さない。作るのは画面がカレンダーだけで描かれた後: markAfterPress）
+    // iPhone: 印の絵は、ここで写した物のまま（写し直さない。作るのは押し終えた時に画面がカレンダーだけの時: markAfterPress）
     return this.travelTo(base).then(() => restore(base))
   }
 
@@ -986,7 +1001,10 @@ export class AppHistory implements RouterHistory {
    */
   private afterPress(): void {
     if (!this.free()) {
-      if (this.freeWaiters.length > 0 || this.buildPending || this.forwardPending || this.parked) this.watchFree()
+      // iPhone: 「進む」の印の絵をまだ写していない時も（離した後も落とす動きが続く間など。終わったら写す）
+      if (this.freeWaiters.length > 0 || this.buildPending || this.forwardPending || this.parked || this.forwardDirty) {
+        this.watchFree()
+      }
       return
     }
     this.stopFreeTimer()
@@ -1004,17 +1022,15 @@ export class AppHistory implements RouterHistory {
   /**
    * 押し終えた後の印: まだ土台が無ければ土台と印の履歴を作り、土台（や iPhone の登録・詳細の画面など）の後ろに履歴が無ければ「進む」の
    * 印を置く。順番が来た時に、もう一度確かめる（その間にまた押した・ブラウザが「押した直後」と数えなくなった時は、次に押し終えた時に）。
-   * iPhone の土台の前後の印は、画面がカレンダーだけで描かれてから作る（印の絵は写し直さないので。上の物が出ていれば次に押し終えた時に）
+   * iPhone の土台の前後の印は、押し終えた時（capture で、押した物が動く前。その押し方で開く小さな画面・設定・お知らせはまだ無い）に、
+   * 画面がカレンダーだけ（消えたばかりの物も無い: cleanScreen）なら、その場で作る（印の絵は写し直さないので。上の物が出ていれば次に
+   * 押し終えた時に。待ってから作ると、その押し方で開いた物が先に出て、絵に写る・土台の無いまま開く）
    */
-  private async markAfterPress(): Promise<void> {
+  private markAfterPress(): void | Promise<void> {
     this.markQueued = false
     if (!this.free() || !this.activated()) return
     if (this.buildPending) {
       if (!this.canBuild() || this.covered()) return
-      if (this.flicks) {
-        await this.painted()
-        if (!this.free() || !this.activated() || !this.canBuild() || this.covered()) return
-      }
       return this.build(this.shown)
     }
     const pending = this.forwardPending
@@ -1104,7 +1120,9 @@ export class AppHistory implements RouterHistory {
           this.handlers.ballast?.(0)
         }
         swipeLog('settle', { forwardDirty: this.forwardDirty })
-        if (this.forwardDirty) this.run(() => this.recordForward())
+        if (!this.forwardDirty) return
+        this.recordRetryUntil = this.now() + RECORD_RETRY_FOR_MS
+        this.run(() => this.recordForward())
       })
   }
 
@@ -1193,11 +1211,29 @@ export class AppHistory implements RouterHistory {
     if (!this.afterSwipe) this.scheduleRecord()
   }
 
-  /** recordForward を、今の画面が描かれるのを待ってから順番に入れる（もう入れていれば何もしない） */
-  private scheduleRecord(): void {
+  /**
+   * recordForward を、今の画面が描かれるのを待ってから順番に入れる（もう入れていれば何もしない）。retry = 確かめ直し（でなければ、
+   * 画面にほかの物が出ている時に確かめ直す長さを数え直す）
+   */
+  private scheduleRecord(retry = false): void {
+    if (!retry) this.recordRetryUntil = this.now() + RECORD_RETRY_FOR_MS
     if (this.recordScheduled) return
     this.recordScheduled = true
     void this.painted().then(() => this.run(() => this.recordForward()))
+  }
+
+  /** recordForward を ms 後にもう一度確かめる（quiet でない確かめ直しは、RECORD_RETRY_FOR_MS が過ぎていればしない） */
+  private retryRecord(ms: number, quiet: boolean): void {
+    if (!quiet && this.now() > this.recordRetryUntil) return
+    if (this.recordRetry) this.win.clearTimeout(this.recordRetry.timer)
+    const retry = {
+      quiet,
+      timer: this.win.setTimeout(() => {
+        if (this.recordRetry === retry) this.recordRetry = null
+        if (this.forwardDirty) this.scheduleRecord(true)
+      }, ms),
+    }
+    this.recordRetry = retry
   }
 
   /**
@@ -1219,12 +1255,14 @@ export class AppHistory implements RouterHistory {
 
   /**
    * iPhone: 土台の後ろの履歴（閉じた画面の履歴・積み直した「進む」の印）の絵を、今のカレンダーにする: 1つ後ろへ行き、「進む」の印で
-   * なければ印に替え（履歴は増やさない）、土台へ戻る（WebKit は離れる履歴の絵を写す）。モードを回す払いの後には行わない（払って閉じた
-   * 後・ルーターの戻るで隠さずに閉じた後だけ）。
+   * なければ印に替え（履歴は増やさない）、土台へ戻る（WebKit は離れる履歴の絵を写す）。払って閉じた後・ルーターの戻るで隠さずに閉じた
+   * 後の1度だけ（モードを回すたびにはしない。ただし、その1度の前に次の払いが来た・指が下りていた時は、その払いの動きの後（回す払い
+   * でも）か、離した時に行う）。
    * 身振りの行き先は、身振りを始めた時に決まる（ViewGestureControllerIOS.mm の beginSwipeGesture・willEndSwipeGesture）。動く間に
    * 身振りが始まると、行き先が今いる所（読み込み直し: HistoryController.cpp の itemsAreClones）・切り捨てた所（3秒止まる）になる
    * ので、動く前ごとに確かめ、指が下りていれば動かない: 行く前ならやめ（forwardDirty のまま。次に押し終えた時・身振りの絵が消えた時に
-   * また）、行った後なら、そこで待つ（parked。離した時に戻り、その指の払いで土台へ着いた時はそのままモードを回す）。go を送ってから
+   * また。画面にほかの物が出ていた時は RECORD_RETRY_MS ごとに、下ろしたばかりの指は TOUCH_QUIET_MS 後に確かめ直す）、行った後なら、
+   * そこで待つ（parked。離した時に戻り、その指の払いで土台へ着いた時はそのままモードを回す）。go を送ってから
    * 着くまで（ブラウザの中の数ミリ秒）に身振りが始まった時は避けられない（3.1 の残ること）
    */
   private async recordForward(): Promise<void> {
@@ -1233,8 +1271,10 @@ export class AppHistory implements RouterHistory {
     const blocked = this.recordBlocked()
     if (blocked) {
       if (blocked === 'none') this.forwardDirty = false
-      // 指を下ろしたばかり（もう離した）: 少し後にもう一度
-      if (blocked === 'touch') this.win.setTimeout(() => this.scheduleRecord(), TOUCH_QUIET_MS)
+      // 指を下ろしたばかり（もう離した）: 少し後にもう一度。画面にほかの物が出ている（めくる動き・すばやく足すなど）: 消えるまで
+      // 確かめ直す（RECORD_RETRY_FOR_MS まで）。押している間は、離した時に（afterPress）。身振りの絵の間は、それが消えた時に
+      if (blocked === 'touch') this.retryRecord(TOUCH_QUIET_MS, true)
+      else if (blocked === 'covered') this.retryRecord(RECORD_RETRY_MS, false)
       swipeLog('record-skip', { reason: blocked })
       return
     }
@@ -1508,6 +1548,16 @@ export class AppHistory implements RouterHistory {
       return
     }
     if (this.base === null) {
+      // iPhone: 土台を作る前に開いた画面（開いて最初に押し終えた時にカレンダーの上に物が出ていた）でも、確かめのダイアログは先に
+      // 閉じ（下と同じ）、登録の画面は書きかけを聞かずに捨てて閉じる（■27）
+      if (this.flicks) {
+        if (this.handlers.consumePop?.()) {
+          const shownIdx = this.shownIdx
+          this.rush(() => this.travelTo(shownIdx))
+          return
+        }
+        if (this.screen(this.shown) === 'register') this.handlers.flickDiscard?.()
+      }
       this.deliver()
       return
     }

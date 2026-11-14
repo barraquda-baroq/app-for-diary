@@ -37,7 +37,7 @@ interface Entry {
   inPop?: boolean
   /** popstate を送ってから次の処理（setTimeout 0）までの間に呼んだ（popstate の後のマイクロタスクも） */
   inPopTask?: boolean
-  /** 呼んだ時に画面に出ていた物（sheet・quick。無ければ空） */
+  /** 呼んだ時に画面に出ていた物（sheet・quick・page（カレンダーでない画面）・toast。無ければ空） */
   over?: string
 }
 
@@ -60,7 +60,14 @@ async function recordOrder(page: Page) {
         (el) => getComputedStyle(el).display !== 'none' && el.getClientRects().length > 0,
       )
     const over = () =>
-      [shown('.modal-backdrop, [role="dialog"]') && 'sheet', shown('.cp-quick') && 'quick'].filter(Boolean).join('+')
+      [
+        shown('.modal-backdrop, [role="dialog"]') && 'sheet',
+        shown('.cp-quick') && 'quick',
+        !shown('[data-testid^="view-"]') && 'page',
+        shown('.toast') && 'toast',
+      ]
+        .filter(Boolean)
+        .join('+')
     let popTask = 0
     // window の捕まえる段で、アプリの聞き手より先に聞く
     window.addEventListener(
@@ -212,16 +219,22 @@ test.describe('iPhone の払いの後の履歴の順番（Chromium に iPhone �
     await plus.tap()
     await expect(input).toHaveValue('資料を送る')
 
-    // 開いたまま左の端から1周（週 → 月 → 年 → 日 → 週）、右の端から1周（週 → 日 → 年 → 月 → 週）
+    // 開いたまま左の端から1周（週 → 月 → 年 → 日 → 週）、右の端から1周（週 → 日 → 年 → 月 → 週）。CI の WebKit は重いので、
+    // 左の端からの1周だけにし、1秒待つのも初めの1回だけ（どの払いの後も、払いの物のほかに呼んでいないのは下で確かめる）
+    const light = browserName === 'webkit'
     const rounds: ['back' | 'forward', string][] = [
       ['back', MONTH],
       ['back', YEAR],
       ['back', DAY],
       ['back', WEEK],
-      ['forward', DAY],
-      ['forward', YEAR],
-      ['forward', MONTH],
-      ['forward', WEEK],
+      ...(light
+        ? []
+        : ([
+            ['forward', DAY],
+            ['forward', YEAR],
+            ['forward', MONTH],
+            ['forward', WEEK],
+          ] as ['back' | 'forward', string][])),
     ]
     for (const [dir, path] of rounds) {
       await flick(page, dir)
@@ -229,13 +242,13 @@ test.describe('iPhone の払いの後の履歴の順番（Chromium に iPhone �
     }
     await expect(input).toHaveCount(0)
     const done = (await orderOf(page)).length
-    await page.waitForTimeout(1000)
+    if (!light) await page.waitForTimeout(1000)
     const log = await orderOf(page)
     expect(log.length).toBe(done)
     const swipes = bySwipe(log.slice(start))
     expectRingOnly(swipes[0].ops, 'back', WEEK)
     rounds.forEach(([dir, path], i) => expectRingOnly(swipes[i + 1].ops, dir, path))
-    expectGuarded(log, 10)
+    expectGuarded(log, rounds.length + 2)
     expect(await countByTitle(page, '資料を送る')).toBe(0)
     expect(await historyLength(page)).toBe(length)
   })
@@ -306,6 +319,75 @@ test.describe('iPhone の払って閉じた後（Chromium に iPhone の UA）',
     // 印の絵を写す（離れる時に WebKit が写す）時は、閉じた画面が消えている
     expect(ops.slice(3).map((o) => o.over)).toEqual(['', ''])
     expect((await historyShape(page))?.forwardDirty).toBe(false)
+  })
+})
+
+test.describe('iPhone の開いて最初の押し方（Chromium に iPhone の UA）', { tag: ['@s'] }, () => {
+  test.use({ userAgent: devices['iPhone 14'].userAgent })
+
+  /** 印の履歴を作った書き込み（今の履歴を「戻る」の印に替える・土台を積む・「進む」の印を積む） */
+  function buildOps(log: Entry[]): Entry[] {
+    const i = log.findIndex((e) => e.ev === 'replaceState' && e.mark === 'back')
+    return i === -1 ? [] : log.slice(i, i + 3)
+  }
+
+  test('開いて最初の押し方で登録の画面を開いた時も、押し終えた時（開く前。画面はカレンダーだけ）に印の履歴を作る。書きかけのまま払うと聞かずに捨てて閉じる（■27）', async ({
+    page,
+  }) => {
+    await recordOrder(page)
+    await openCalendar(page, DAY, { data: demoData(), arm: false })
+    expect((await historyShape(page))?.base).toBe(null)
+    const sheet = page.getByTestId('item-sheet')
+    await page.getByTestId('cal-add').tap()
+    await expect(sheet).toBeVisible()
+    await page.getByTestId('item-title').fill('書きかけの予定')
+    await historySettled(page)
+    const ops = buildOps(await orderOf(page))
+    expect(ops.map(brief)).toEqual(['replaceState', 'pushState', 'pushState:fwd'])
+    expect(ops.map((o) => o.over)).toEqual(['', '', ''])
+    await flick(page, 'back')
+    await expect(sheet).toHaveCount(0)
+    await expect(page.getByTestId('item-discard')).toHaveCount(0)
+    await showing(page, DAY)
+    expect(await countByTitle(page, '書きかけの予定')).toBe(0)
+  })
+
+  test('開いて最初の押し方で詳細の画面・設定・MIM を開いた時、予定を完了にした時（お知らせが出る）も、印の履歴はその前（画面はカレンダーだけ）に作る。払って閉じた詳細の画面は、次の右の端からの払いで開き直さない', async ({
+    page,
+  }) => {
+    await recordOrder(page)
+    const firstTaps: [string, () => Promise<void>][] = [
+      ['detail', () => page.getByTestId(`day-event-${DEMO_IDS.weekly}`).locator('.dy-ev-open').tap()],
+      ['settings', () => page.getByTestId('open-settings').tap()],
+      ['mim', () => page.getByTestId('open-mim').tap()],
+      ['done', () => page.getByTestId(`done-${DEMO_IDS.mail}`).first().tap()],
+    ]
+    for (const [name, tap] of firstTaps) {
+      await openCalendar(page, DAY, { data: demoData(), arm: false })
+      expect((await historyShape(page))?.base, name).toBe(null)
+      await tap()
+      if (name === 'detail') await expect(page.getByTestId('item-sheet')).toBeVisible()
+      if (name === 'settings') await expect(page.getByTestId('app-settings')).toBeVisible()
+      if (name === 'mim') await at(page, '/mim')
+      if (name === 'done') await expect(page.locator('.toast').first()).toBeVisible()
+      await historySettled(page)
+      const ops = buildOps(await orderOf(page))
+      expect(ops.map(brief), name).toEqual(['replaceState', 'pushState', 'pushState:fwd'])
+      expect(
+        ops.map((o) => o.over),
+        name,
+      ).toEqual(['', '', ''])
+    }
+    // 開いて最初の押し方で開いた詳細の画面を左の端から払って閉じ、右の端から払う: モードを回す（閉じた詳細の画面を開き直さない）
+    await openCalendar(page, DAY, { data: demoData(), arm: false })
+    await page.getByTestId(`day-event-${DEMO_IDS.weekly}`).locator('.dy-ev-open').tap()
+    await expect(page.getByTestId('item-sheet')).toBeVisible()
+    await historySettled(page)
+    await flick(page, 'back')
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
+    await flick(page, 'forward')
+    await showing(page, YEAR)
+    await expect(page.getByTestId('item-sheet')).toHaveCount(0)
   })
 })
 
