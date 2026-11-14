@@ -15,6 +15,7 @@ import {
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { todayStr } from '../domain/dates'
+import { historyDrawn } from '../history/appHistory'
 import { calendarModeOf, isCalendarPath, isMimPath, paths } from '../routes'
 import { saveBeforeLeave } from '../store/lifecycle'
 import {
@@ -287,7 +288,7 @@ export function scrollsToTop(navType: 'POP' | 'PUSH' | 'REPLACE', from: string, 
 }
 
 function ScrollOnNavigate() {
-  const { pathname } = useLocation()
+  const { pathname, key } = useLocation()
   const navType = useNavigationType()
   const prev = useRef(pathname)
   useLayoutEffect(() => {
@@ -296,6 +297,9 @@ function ScrollOnNavigate() {
     if (from !== pathname && scrollsToTop(navType, from, pathname)) window.scrollTo(0, 0)
     // パスが変わった時だけ動かす（navType は同じ時に一緒に変わるので、依存に入れない）
   }, [pathname])
+  // 行き先を描いた（絵にする前）とアプリの履歴に知らせる: iPhone・iPad は、設定・MIM から戻った時のスクロールの位置を、カレンダーを
+  // 描いてから戻す（src/history/singleEntryHistory.ts。Android・PC はブラウザが戻すので何もしない）
+  useLayoutEffect(() => historyDrawn(key), [key])
   return null
 }
 

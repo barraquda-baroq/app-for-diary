@@ -202,7 +202,7 @@ describe('swipeEnabled（S・M のどのモードでも。ウィークリーも 
   })
 })
 
-describe('edgeSide（iPhone・iPad で画面の左右の端から EDGE_ZONE_PX の中で押した指。3.1 の「ブラウザが身振りを始めない時」）', () => {
+describe('edgeSide（iPhone・iPad で画面の左右の端から EDGE_ZONE_PX の中で押した指。3.1 の「端からのフリック（iPhone・iPad）はアプリが受け取る」）', () => {
   it('端の幅は 20px（カレンダーの区切りの外の帯 17px と、その内側の少し）', () => {
     expect(EDGE_ZONE_PX).toBe(20)
   })

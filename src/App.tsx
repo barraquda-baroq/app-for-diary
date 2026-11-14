@@ -1,11 +1,11 @@
 // 画面の行き先と外枠。NS の src/App.tsx から（小説の画面・ゴミ箱の自動の片付け・Claude 連携を外し、ログインの関所を足した物）。
 // 行き先はトップ（#/）・カレンダーの4つのモード（#/year/2026・#/month/2026-11・#/week/2026-11-08・#/day/2026-11-10。段階2）・
 // MIM（仮の画面）・ログイン・設定（docs/SPEC.md の 3.1・21.）。
-// 履歴はアプリの履歴（src/history/appHistory.ts。カレンダーの中の行き来は積まない・iPhone の端からのフリックでモードを回す・Android の
-// ブラウザのタブと PC の「戻る」でアプリを閉じるかを聞く・ホーム画面から開いた Android のアプリの「戻る」は聞かずに「もう一度［戻る］を
-// 押すと閉じます」。3.1）をデータのルーターに渡す（createHashRouter と同じ作りで、履歴だけを替える）。iPhone・iPad はブラウザの履歴を
-// 1つのままにする形（src/history/singleEntryHistory.ts。22. の ■31〜■33）で、画面の端からのフリックは window で受け取る
-// （src/history/edgeFlick.ts）。Android・PC は印の履歴の形
+// 履歴はアプリの履歴（3.1。src/history/appHistory.ts の createAppHistory が端末で選ぶ）をデータのルーターに渡す（createHashRouter と
+// 同じ作りで、履歴だけを替える）。どちらもカレンダーの中の行き来は積まない。Android・PC は印の履歴の形（src/history/appHistory.ts の
+// AppHistory: Android のブラウザのタブと PC の「戻る」でアプリを閉じるかを聞く・ホーム画面から開いた Android のアプリの「戻る」は聞かずに
+// 「もう一度［戻る］を押すと閉じます」）。iPhone・iPad はブラウザの履歴を1つのままにする形（src/history/singleEntryHistory.ts。22. の
+// ■31〜■33）で、画面の端からのフリックは window で受け取ってモードを回す・1つ戻る（src/history/edgeFlick.ts）
 import { lazy, Suspense } from 'react'
 import {
   Navigate,

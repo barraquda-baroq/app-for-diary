@@ -3,7 +3,8 @@
 // 分ける）。記録を取るかは端末に覚え、控えた物はこのページの間だけ（読み込み直すと消える）。画面の上に浮かべる物は作らない。
 // 「履歴の数」は今のブラウザの履歴の数（history.length）。iPhone・iPad ではいつも1つにしている（src/history/singleEntryHistory.ts）ので、
 // 1 なら端から払った時にブラウザのめくる動きは出ない。前の版が残した履歴がある間（更新した直後・Google のログインの後など）は 2 以上で、
-// アプリを一度閉じて開き直すと 1 に戻る（22. の ■31〜■33）
+// ホーム画面のアプリなら、一度閉じて開き直すと 1 に戻る（Safari のタブで、ほかのページから開いた時は、その前のページの分が残る。3.1 の
+// 「残ること」）（22. の ■31〜■33）
 import { useId, useState } from 'react'
 import { clearSwipeLog, setSwipeLogEnabled, SWIPE_LOG_MAX, swipeLogEnabled, swipeLogText } from '../../history/swipeLog'
 
@@ -91,8 +92,9 @@ export function DevSettings() {
         <div className="aset-row-label">
           <span data-testid="history-length">履歴の数 {historyLength}</span>
           <span className="aset-row-desc">
-            1 なら、画面の端から払った時にブラウザのページがめくれる動きは出ません。2 以上の時は、アプリを一度閉じて（App
-            スイッチャーで上へ払って）開き直すと 1 に戻ります。
+            1 なら、画面の端から払った時にブラウザのページがめくれる動きは出ません。2
+            以上の時は、ホーム画面のアプリなら、一度閉じて（App スイッチャーで上へ払って）開き直すと 1 に戻ります（Safari
+            のタブで、ほかのページから開いた時は戻りません）。
           </span>
         </div>
       </div>

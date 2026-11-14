@@ -6,7 +6,7 @@
 // 渡した後 300ms の間の click は打ち消す。付けるのは iPhone・iPad の1つの履歴の形（SingleEntryHistory）の時だけ
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
-import { EDGE_ZONE_PX, SWIPE_CLICK_GUARD_MS } from '../features/calendar/common/swipe'
+import { EDGE_ZONE_PX, SWIPE_CLICK_GUARD_MS, SWIPE_SLOP_PX } from '../features/calendar/common/swipe'
 import { FakeWindow } from '../test/fakeHistoryWindow'
 import { AppHistory } from './appHistory'
 import { attachEdgeFlick, edgeOfScreen, installEdgeFlick } from './edgeFlick'
@@ -162,25 +162,48 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(flick.mock.calls).toEqual([[-1]])
   })
 
-  it(`渡した後 ${SWIPE_CLICK_GUARD_MS}ms の間に来た click は1つだけ打ち消す（払った指で、離した所のボタンを押さない）。その後の click は効く`, () => {
+  it(`渡した後 ${SWIPE_CLICK_GUARD_MS}ms の間に、離した所（${SWIPE_SLOP_PX}px の内）に来た click は1つだけ打ち消す（払った指で、離した所のボタンを押さない）。その後の click は効く`, () => {
+    install()
+    document.body.innerHTML = '<button type="button">押せる物</button>'
+    const button = document.querySelector('button')!
+    const clicked = vi.fn()
+    button.addEventListener('click', clicked)
+    /** 離した所（5 + 100, 300）の近くの click */
+    const clickAtLift = () => button.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 105 + 3, clientY: 300 - 2 }))
+    swipe(5, 100)
+    clock += 100
+    clickAtLift()
+    expect(clicked).not.toHaveBeenCalled()
+    clickAtLift()
+    expect(clicked).toHaveBeenCalledTimes(1)
+    swipe(5, 100)
+    clock += SWIPE_CLICK_GUARD_MS + 1
+    clickAtLift()
+    expect(clicked).toHaveBeenCalledTimes(2)
+    // 渡さなかった指（外へ）の後は打ち消さない
+    swipe(5, -100)
+    clickAtLift()
+    expect(clicked).toHaveBeenCalledTimes(3)
+  })
+
+  it(`払った後 ${SWIPE_CLICK_GUARD_MS}ms の内でも、離した所から離れた所を押した click（すぐ次に押した別の指・キーボード）は打ち消さない`, () => {
     install()
     document.body.innerHTML = '<button type="button">押せる物</button>'
     const button = document.querySelector('button')!
     const clicked = vi.fn()
     button.addEventListener('click', clicked)
     swipe(5, 100)
-    clock += 100
-    button.click()
-    expect(clicked).not.toHaveBeenCalled()
-    button.click()
+    clock += 50
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 300, clientY: 500 }))
     expect(clicked).toHaveBeenCalledTimes(1)
+    // キーボードの Enter・Space の click（座標は 0, 0）
     swipe(5, 100)
-    clock += SWIPE_CLICK_GUARD_MS + 1
+    clock += 50
     button.click()
     expect(clicked).toHaveBeenCalledTimes(2)
-    // 渡さなかった指（外へ）の後は打ち消さない
-    swipe(5, -100)
-    button.click()
+    // 打ち消す分は残らない（その後に離した所へ来た click も効く。打ち消すのは、払った直後の1つだけ）
+    clock += SWIPE_CLICK_GUARD_MS + 1
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 105, clientY: 300 }))
     expect(clicked).toHaveBeenCalledTimes(3)
   })
 
@@ -219,6 +242,26 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(log).toMatch(/ edge-up \{"x0":5,"dx":100,"dy":0,"ms":120,"dir":-1,"result":"flick"\}/)
     expect(log).toMatch(/ edge-up \{"x0":\d+,"dx":100,"dy":0,"ms":120,"dir":-1,"result":"outward"\}/)
     expect(log.split('\n').filter((l) => / edge-down /.test(l))).toHaveLength(2)
+  })
+
+  it('押した時にドラッグの途中なら、その指は追わずに数えなかった訳（edge-skip drag）を控える。入力欄の上は sideways', () => {
+    setSwipeLogEnabled(true)
+    let dragging = true
+    const flick = install({ dragging: () => dragging })
+    send(document.body, 'touchstart', 5, 300, 1)
+    dragging = false
+    clock += 60
+    send(document.body, 'touchmove', 105, 300, 1)
+    send(document.body, 'touchend', 105, 300, 0)
+    expect(flick).not.toHaveBeenCalled()
+    document.body.innerHTML = '<input data-testid="field" />'
+    swipe(5, 100, { target: document.querySelector('[data-testid="field"]')! })
+    const lines = swipeLogText().split('\n')
+    expect(lines.filter((l) => / edge-skip /.test(l)).map((l) => l.replace(/^\d+ /, ''))).toEqual([
+      'edge-skip {"why":"drag"}',
+      'edge-skip {"why":"sideways"}',
+    ])
+    expect(lines.some((l) => / edge-up /.test(l))).toBe(false)
   })
 })
 
@@ -264,5 +307,37 @@ describe('付けるのは iPhone・iPad の1つの履歴の形の時だけ（att
     swipe(5, 100)
     swipe(width() - 5, -100)
     expect(ring.mock.calls).toEqual([[1], [-1]])
+  })
+
+  it('前の版が残した履歴の中で、指を下ろした後・離す前に iPhone の身振りの popstate が来た時は、履歴の方で1回だけ回し、離した指では回さない（1回の払いで2つ進まない）', () => {
+    const win = new FakeWindow('#/week/2026-11-08')
+    win.seed(
+      [
+        { hash: '#/week/2026-11-08', state: { usr: null, key: 'a', idx: 0, ds: { base: 1, mark: 'back' } } },
+        { hash: '#/week/2026-11-08', state: { usr: null, key: 'b', idx: 1, ds: { base: 1 } } },
+      ],
+      1,
+    )
+    const h = new SingleEntryHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf, now })
+    disposers.push(() => h.dispose())
+    const ring = vi.fn()
+    h.handlers = { ring }
+    const detach = attachEdgeFlick(h, { win: window, now })
+    disposers.push(() => detach?.())
+    send(document.body, 'touchstart', 5, 300, 1)
+    clock += 40
+    send(document.body, 'touchmove', 45, 300, 1)
+    // 身振りが指を取り、前の印の履歴へ着いた（WebKit は、離す出来事を popstate の前後に送る）
+    win.index = 0
+    win.dispatch('popstate', new Event('popstate'))
+    expect(ring.mock.calls).toEqual([[1]])
+    clock += 40
+    send(document.body, 'touchmove', 125, 300, 1)
+    send(document.body, 'touchend', 125, 300, 0)
+    expect(ring.mock.calls).toEqual([[1]])
+    // 後の払いは、ページの中で受け取って回す
+    clock += 1000
+    swipe(5, 100)
+    expect(ring.mock.calls).toEqual([[1], [1]])
   })
 })

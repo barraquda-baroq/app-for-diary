@@ -110,7 +110,7 @@ describe('7.12 の行き来', () => {
 })
 
 describe('iPhone の端からのフリックの円環（3.1。22. の段階2の終わりの確かめ）', () => {
-  it('次（右の端から払う「進む」）は 年→月→週→日→年、前（左の端から払う「戻る」）は 日→週→月→年→日。見ている日を保ち、置き換える', async () => {
+  it('次（dir 1。左の端から払う）は 年→月→週→日→年、前（dir -1。右の端から払う）は 日→週→月→年→日。見ている日を保ち、置き換える', async () => {
     const user = userEvent.setup()
     const { router } = await renderView(Harness, {}, { path: '/year/2026' })
     const forward: string[] = []

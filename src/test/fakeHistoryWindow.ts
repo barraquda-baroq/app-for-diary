@@ -445,6 +445,15 @@ export class FakeWindow implements HistoryWindow {
     this.dispatchPop()
   }
 
+  /**
+   * # を置き換えて移った（location.replace('#…')。表示できなかった時の案内のリンクなど）: ブラウザは今の履歴を、state の無い物に
+   * 替えて popstate を送る（履歴は増えない）
+   */
+  replaceHash(hash: string): void {
+    this.entries[this.index] = { ...this.entries[this.index], state: null, url: `https://app.example/${hash}` }
+    this.dispatchPop()
+  }
+
   /** 押した（capture で聞いている所へ送る。指は pointerup で「押した」になる） */
   press(pointerType: 'mouse' | 'touch' = 'mouse'): void {
     this.navigator.userActivation.isActive = true

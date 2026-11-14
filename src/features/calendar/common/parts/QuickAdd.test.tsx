@@ -1243,7 +1243,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(input.value).toBe('払っただけ')
   })
 
-  it('(d) 身振りの始まりに入力欄と窓からフォーカスが外れた（iPhone はページのフォーカスを外す）後にモードが替わっても、足さない', async () => {
+  it('(d) 入力欄と窓からフォーカスが外れた（前の版が残した履歴への iPhone の身振りの始まり・窓の切り替え。iPhone はページのフォーカスを外す）後にモードが替わっても、足さない', async () => {
     onIPhone()
     const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
     fakeTimers()

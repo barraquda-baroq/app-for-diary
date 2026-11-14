@@ -165,8 +165,8 @@ export function shiftViewed(mode: CalendarMode, viewed: string, dir: 1 | -1): st
 export const MODE_RING: readonly CalendarMode[] = ['year', 'month', 'week', 'day']
 
 /**
- * 円環でとなりのモード（画面の端からのフリック。3.1）: dir 1（右の端から払う「進む」）= 年→月→週→日→年、
- * dir -1（左の端から払う「戻る」）= 日→週→月→年→日
+ * 円環でとなりのモード（画面の端からのフリック。3.1）: dir 1 = 年→月→週→日→年（左の端から払う。2026-11-14 の作者の答え）、
+ * dir -1 = 日→週→月→年→日（右の端から払う）。どちらの端がどちらの向きかは src/history/popRules.ts が決める
  */
 export function ringMode(mode: CalendarMode, dir: 1 | -1): CalendarMode {
   const i = MODE_RING.indexOf(mode)

@@ -6,8 +6,10 @@
 // - Android: UA の Android
 // - ほか（Windows・Mac・Linux・ChromeOS の PC）は PC
 // iPhone・iPad には OS の戻るボタンが無く、画面のいちばん左の端から右へ払う・右の端から左へ払う身振りが、ブラウザの「戻る」「進む」
-// そのもの（ページより先にブラウザが取り、ページには popstate だけが来る）。なので iPhone・iPad の popstate は「端からのフリック」、
-// Android（戻るボタン・戻る身振り）と PC（ブラウザの戻る・進む）の popstate は「OS の戻る」として扱う（22. の段階2の終わりの確かめ）。
+// そのもの（その向きにブラウザの履歴がある時だけ始まる）。iPhone・iPad ではブラウザの履歴を1つのままにするので身振りは始まらず、端から
+// 払った指はアプリが受け取る（src/history/singleEntryHistory.ts・edgeFlick.ts。22. の ■31〜■33）。なので iPhone・iPad は「端からの
+// フリック」（前の版が残した履歴への身振りの popstate も）、Android（戻るボタン・戻る身振り）と PC（ブラウザの戻る・進む）の popstate は
+// 「OS の戻る」として扱う（22. の段階2の終わりの確かめ）。
 // カレンダーでの OS の「戻る」は、ホーム画面から開いた Android のアプリ（表示の形が standalone）だけ、聞かずに「もう一度［戻る］を
 // 押すと閉じます」にし、Android のブラウザのタブと PC は「Diary Studio を閉じますか？」と聞く（■22・■25）
 

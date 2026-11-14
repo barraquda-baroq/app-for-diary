@@ -16,7 +16,7 @@ import { DISCARD_TEST_IDS, RegisterSheet } from '../features/item/RegisterSheet'
 import { renderView, setupCalendarTests } from '../test/renderCalendar'
 import { FakeWindow } from '../test/fakeHistoryWindow'
 import { AppHistory, createAppHistory, historyShape, type HistoryHandlers } from './appHistory'
-import { FLICK_DEDUPE_MS, SingleEntryHistory, WRITE_RETRY_MS } from './singleEntryHistory'
+import { DRAW_WAIT_MS, FLICK_DEDUPE_MS, SingleEntryHistory, WRITE_RETRY_MS } from './singleEntryHistory'
 import { clearSwipeLog, setSwipeLogEnabled, swipeLogText } from './swipeLog'
 
 type Update = Parameters<Parameters<SingleEntryHistory['listen']>[0]>[0]
@@ -56,9 +56,13 @@ const disposers: (() => void)[] = []
 
 /**
  * hash の行き先で開く（win を渡すとその作り物で。前の版の履歴を並べた時・読み込み直した時）。ring は、CalendarView と同じく
- * ルーターの置き換えでモードを回す
+ * ルーターの置き換えでモードを回す。ルーターは POP を受け取った少し後に、その行き先を描く（drawn。src/ui/Layout.tsx の
+ * ScrollOnNavigate と同じ）。draws: false の時は描かない（テストが drawn を呼ぶ）
  */
-function setup(hash = '#/week/2026-11-08', { win, handlers = {} }: { win?: FakeWindow; handlers?: HistoryHandlers } = {}): Setup {
+function setup(
+  hash = '#/week/2026-11-08',
+  { win, handlers = {}, draws = true }: { win?: FakeWindow; handlers?: HistoryHandlers; draws?: boolean } = {},
+): Setup {
   const w = win ?? new FakeWindow(hash, { swipes: true })
   const h = new SingleEntryHistory({
     window: w,
@@ -79,6 +83,7 @@ function setup(hash = '#/week/2026-11-08', { win, handlers = {} }: { win?: FakeW
   h.listen((u) => {
     updates.push(u)
     order.push(`pop ${u.delta}`)
+    if (draws) setTimeout(() => h.drawn(u.location.key), 0)
   })
   disposers.push(() => h.dispose())
   return { win: w, h, updates, ring, flickDiscard, order }
@@ -449,6 +454,65 @@ describe('iPhone・iPad の1つの履歴の形（SingleEntryHistory）', () => {
     expect(s.win.scrollY).toBe(0)
   })
 
+  it('ルーターがカレンダーを描くまで（drawn）は、スクロールの位置を戻さない（出ている設定の画面を送らない。ルーターは POP を区切って描くので、前の画面が何コマも残る）。描いた時に、その場で戻す', async () => {
+    const s = setup('#/year/2026', { draws: false })
+    s.win.scrollY = 400
+    s.h.push(loc('/settings'))
+    s.win.scrollTo(0, 0)
+    const scrollTo = vi.spyOn(s.win, 'scrollTo')
+    s.h.flick(-1)
+    await vi.advanceTimersByTimeAsync(1000)
+    const pop = s.updates.at(-1)
+    expect(pop?.location.pathname).toBe('/year/2026')
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(s.win.scrollY).toBe(0)
+    expect(s.h.shape().busy).toBe(true)
+    // ほかの行き先を描いた知らせでは戻さない
+    s.h.drawn('another-key')
+    expect(scrollTo).not.toHaveBeenCalled()
+    // カレンダーを描いた（ScrollOnNavigate の useLayoutEffect。絵にする前）: その場で戻す
+    s.h.drawn(pop!.location.key)
+    expect(s.win.scrollY).toBe(400)
+    await settle(s)
+    expect(s.h.shape().busy).toBe(false)
+    expect(s.win.scrollY).toBe(400)
+  })
+
+  it(`描いた知らせが ${DRAW_WAIT_MS}ms 来ない時は、戻さずにやめる（その後に来ても戻さない）。描く前にほかへ動いた時もやめる`, async () => {
+    const s = setup('#/year/2026', { draws: false })
+    s.win.scrollY = 400
+    s.h.push(loc('/settings'))
+    s.win.scrollTo(0, 0)
+    s.h.go(-1)
+    await vi.advanceTimersByTimeAsync(DRAW_WAIT_MS + 50)
+    expect(s.h.shape().busy).toBe(false)
+    s.h.drawn(s.updates.at(-1)!.location.key)
+    expect(s.win.scrollY).toBe(0)
+    // カレンダーを 400 まで送ってから設定へ。戻る POP を描く前に、もう一度設定へ動いた（その後にカレンダーを描いた知らせが来ても戻さない）
+    s.win.scrollTo(0, 400)
+    s.h.go(1)
+    await settle(s)
+    s.win.scrollTo(0, 0)
+    s.h.go(-1)
+    await vi.advanceTimersByTimeAsync(0)
+    const back = s.updates.at(-1)!
+    expect(back.location.pathname).toBe('/year/2026')
+    s.h.go(1)
+    await vi.advanceTimersByTimeAsync(0)
+    s.h.drawn(back.location.key)
+    expect(s.win.scrollY).toBe(0)
+    await settle(s)
+    expect(s.h.shape().busy).toBe(false)
+    // 描くのを待っている間にモードを回した（ほかへ動いた）: 待つのをすぐやめる（動かし終えたと知らせるのを遅らせない）
+    s.win.scrollTo(0, 400)
+    s.h.go(-1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.h.shape().busy).toBe(true)
+    s.h.flick(-1)
+    expect(s.h.location.pathname).not.toBe('/year/2026')
+    expect(s.h.shape().busy).toBe(false)
+  })
+
   // ---------- SE7 ----------
   describe('前の版が残した履歴（更新した後・ログインの行き来の後。アプリを閉じて開き直すまで）', () => {
     /** 前の版の印の履歴 [戻るの印, 土台, 進むの印] の土台にいる */
@@ -522,6 +586,107 @@ describe('iPhone・iPad の1つの履歴の形（SingleEntryHistory）', () => {
       s.h.flick(-1)
       await settle(s)
       expect(s.updates.at(-1)).toMatchObject({ delta: -1, location: { pathname: '/week/2026-11-08' } })
+    })
+
+    it('# を置き換えて移った時（location.replace。表示できなかった時の案内の［アプリの設定・バックアップ］）は、ブラウザの履歴が増えないので、今の行き先を置き換えた物として受け取る（idx・前の版の履歴かはそのまま）', async () => {
+      const s = setup('#/week/2026-11-08')
+      s.win.replaceHash('#/settings')
+      await settle(s)
+      expect(s.updates.map((u) => [u.action, u.location.pathname])).toEqual([['POP', '/settings']])
+      expect(s.h.shape()).toMatchObject({ depth: 1, index: 0, inherited: false, cur: 0 })
+      expect(s.win.history.state).toMatchObject({ idx: 0, key: s.h.location.key })
+      expect(s.h.userPopSince(0)).toBe(false)
+      // 払うとトップへ（下に何も無いので、開いた時と同じくトップを下に置いて戻る）
+      s.h.flick(-1)
+      await settle(s)
+      expect(s.updates.at(-1)).toMatchObject({ delta: -1, location: { pathname: '/' } })
+      expectSingle(s)
+    })
+
+    it('前の版が残した履歴の中で # を置き換えた後も、着いた idx の向きで受け取る（置き換えた所の idx は今のまま。進む の身振りは「進む」）', async () => {
+      const s = inherited()
+      s.win.replaceHash('#/settings')
+      await settle(s)
+      expect(s.h.shape()).toMatchObject({ cur: 1, len: 3 })
+      expect(s.win.history.state).toMatchObject({ idx: 1 })
+      // 進むの身振り（後ろの idx 2 へ）: 設定から1つ戻る（カレンダーの方へ）
+      await swipe(s, 1)
+      expect(s.updates.at(-1)).toMatchObject({ delta: -1 })
+      expect(s.h.location.pathname).not.toBe('/settings')
+    })
+
+    it('モードを回す所がまだ無い時（読み込み中・設定を直接開いてカレンダーがまだ無い）に払っても、何もしなかったと控え、すぐ後に来た同じ向きの popstate は使う', async () => {
+      setSwipeLogEnabled(true)
+      clearSwipeLog()
+      const s = inherited()
+      const ring = s.h.handlers.ring
+      s.h.handlers = {}
+      s.h.flick(-1)
+      expect(swipeLogText()).toMatch(/ flick \{"side":-1,"screen":"calendar","action":"nothing"\}/)
+      s.h.handlers = { ring }
+      s.ring.mockImplementation(() => {})
+      await swipe(s, -1)
+      expect(s.ring.mock.calls).toEqual([[1]])
+    })
+
+    it(`前の版の履歴への身振りの popstate の後 ${FLICK_DEDUPE_MS}ms の内に、ページの中でも受け取った同じ払い（flick）は数えない（same-pop）。その後の払いは数える`, async () => {
+      setSwipeLogEnabled(true)
+      clearSwipeLog()
+      const s = inherited()
+      s.ring.mockImplementation(() => {})
+      expect(s.win.userGo(-1)).toBe('started')
+      await vi.advanceTimersByTimeAsync(10)
+      expect(s.ring.mock.calls).toEqual([[1]])
+      s.h.flick(-1)
+      expect(s.ring.mock.calls).toEqual([[1]])
+      expect(swipeLogText()).toMatch(/ flick \{"side":-1,"screen":"calendar","action":"same-pop"\}/)
+      await vi.advanceTimersByTimeAsync(FLICK_DEDUPE_MS)
+      s.h.flick(-1)
+      expect(s.ring.mock.calls).toEqual([[1], [1]])
+    })
+
+    it('ページの中の払いの後、0.4秒より前（0.35秒）に来た popstate は着いた履歴を置き換えるだけ（pop-skip）、後（0.45秒）に来た物はもう1回する', async () => {
+      // 3.1 の「0.4秒の内」（作者の記録では、左の端の身振りは離す出来事を約 7ms 先に送る）
+      expect(FLICK_DEDUPE_MS).toBe(400)
+      setSwipeLogEnabled(true)
+      clearSwipeLog()
+      const s = inherited()
+      s.ring.mockImplementation(() => {})
+      s.h.flick(-1)
+      expect(s.win.userGo(-1, { fingerMs: 350 })).toBe('started')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(s.ring.mock.calls).toEqual([[1]])
+      expect(swipeLogText()).toMatch(/ pop-skip \{"idx":0\}/)
+      expect(s.win.history.state).toMatchObject({ idx: 0, key: s.h.location.key })
+      s.h.flick(1)
+      expect(s.win.userGo(1, { fingerMs: 450 })).toBe('started')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(s.ring.mock.calls).toEqual([[1], [-1], [-1]])
+    })
+
+    it('userPopSince: popstate が来た後は、その前の時刻には true、その後の時刻には false', async () => {
+      const s = inherited()
+      s.ring.mockImplementation(() => {})
+      const before = Date.now()
+      expect(s.h.userPopSince(before)).toBe(false)
+      await vi.advanceTimersByTimeAsync(5)
+      expect(s.win.userGo(-1)).toBe('started')
+      await vi.advanceTimersByTimeAsync(5)
+      expect(s.h.userPopSince(before)).toBe(true)
+      expect(s.h.userPopSince(Date.now() + 1)).toBe(false)
+    })
+
+    it('開いた時にブラウザの履歴が2つ以上なら（前の印の state が無くても）前の版・ほかのページの履歴が残っている（inherited）。1つなら残っていない', () => {
+      const win = new FakeWindow('#/week/2026-11-08', { swipes: true })
+      win.seed(
+        [
+          { hash: '#/somewhere', state: null },
+          { hash: '#/week/2026-11-08', state: { usr: null, key: 'w', idx: 0 } },
+        ],
+        1,
+      )
+      expect(setup('', { win }).h.shape()).toMatchObject({ inherited: true, len: 2 })
+      expect(setup('#/week/2026-11-08').h.shape()).toMatchObject({ inherited: false, len: 1 })
     })
   })
 
@@ -705,6 +870,38 @@ describe('データのルーターの上の登録の画面（書きかけの確�
     await user.click(screen.getByTestId(DISCARD_TEST_IDS.discard))
     await waitFor(() => expect(screen.queryByTestId(testIds.itemSheet)).toBeNull())
     expect(history.shape()).toMatchObject({ index: 0 })
+  })
+
+  it('設定からカレンダーへ払って戻る（本物のルーターと外枠）: カレンダーを描いた時（src/ui/Layout.tsx の ScrollOnNavigate）に、控えたスクロールの位置へ戻す。設定の画面が出ている間は送らない', async () => {
+    const win = new FakeWindow('#/year/2026', { swipes: true })
+    const history = createAppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf }) as SingleEntryHistory
+    function Pages() {
+      const { pathname } = useLocation()
+      return pathname === '/settings' ? <div data-testid="pg-settings" /> : <div data-testid="pg-calendar" />
+    }
+    const r = await renderView(Pages, {}, { history })
+    disposers.push(() => {
+      r.router.dispose()
+      history.dispose()
+    })
+    win.scrollTo(0, 400)
+    await act(() => r.router.navigate('/settings'))
+    expect(screen.queryByTestId('pg-settings')).not.toBeNull()
+    win.scrollTo(0, 0)
+    // 送った時に出ていた画面（S = 設定・C = カレンダー）と送った位置
+    const seen: string[] = []
+    const scrollTo = win.scrollTo.bind(win)
+    win.scrollTo = (x: number, y: number) => {
+      seen.push(`${screen.queryByTestId('pg-settings') ? 'S' : 'C'}:${y}`)
+      scrollTo(x, y)
+    }
+    await act(async () => history.flick(-1))
+    await waitFor(() => expect(screen.queryByTestId('pg-calendar')).not.toBeNull())
+    await act(() => history.whenIdle())
+    expect(win.scrollY).toBe(400)
+    expect(seen[0]).toBe('C:400')
+    expect(seen.filter((c) => c.startsWith('S'))).toEqual([])
+    expect(win.entries).toHaveLength(1)
   })
 
   it('端からのフリック（書きかけ）: 確かめずに閉じる（■27）', async () => {

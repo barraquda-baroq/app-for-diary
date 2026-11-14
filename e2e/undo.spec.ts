@@ -12,6 +12,7 @@ import { DEMO_IDS, DEMO_WEEKS, demoData } from './fixtures/demoData'
 import {
   collectDiagnosticsOnFailure,
   historyCalls,
+  historyGrowth,
   historySettled,
   noHorizontalScroll,
   openCalendar,
@@ -1075,6 +1076,8 @@ test.describe('戻した・やり直したお知らせ（iPhone。Chromium に i
     await spyHistory(page)
     await authorSteps(page, 'touch-v')
     expect(await historyCalls(page)).toEqual([])
+    // 開いた時から増えていない（間で比べる所は、動かした後に控えた数と比べる）
+    expect(await historyGrowth(page)).toBe(0)
   })
 })
 

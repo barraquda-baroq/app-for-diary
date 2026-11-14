@@ -208,14 +208,14 @@ describe('shiftViewed（［‹］［›］。FRAME-063・072）', () => {
 })
 
 describe('ringMode（画面の端からのフリックの円環。3.1・22. の段階2の終わりの確かめ）', () => {
-  it('次（右の端から払う「進む」）は 年→月→週→日→年（日の次は年へ回る）', () => {
+  it('次（dir 1。左の端から払う）は 年→月→週→日→年（日の次は年へ回る）', () => {
     expect(ringMode('year', 1)).toBe('month')
     expect(ringMode('month', 1)).toBe('week')
     expect(ringMode('week', 1)).toBe('day')
     expect(ringMode('day', 1)).toBe('year')
   })
 
-  it('前（左の端から払う「戻る」）は 日→週→月→年→日（年の前は日へ回る）', () => {
+  it('前（dir -1。右の端から払う）は 日→週→月→年→日（年の前は日へ回る）', () => {
     expect(ringMode('day', -1)).toBe('week')
     expect(ringMode('week', -1)).toBe('month')
     expect(ringMode('month', -1)).toBe('year')

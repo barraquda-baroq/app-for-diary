@@ -72,6 +72,38 @@ async function openDetail(page: Page) {
   await historySettled(page)
 }
 
+/**
+ * 描く時ごと（requestAnimationFrame）に、出ている画面（S = 設定・M = MIM・C = カレンダー）とページのスクロールの位置を控え始める
+ * （stopFrames まで）。設定・MIM から払って戻る時、スクロールの位置を戻すのはカレンダーを描いてから（出ている設定の画面を送らない）
+ */
+async function recordFrames(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __frames?: string[]; __framesOn?: boolean }
+    const frames: string[] = []
+    w.__frames = frames
+    w.__framesOn = true
+    const step = () => {
+      if (!w.__framesOn) return
+      const tag = document.querySelector('[data-testid="app-settings"]')
+        ? 'S'
+        : document.querySelector('[data-testid="mim-placeholder"]')
+          ? 'M'
+          : 'C'
+      frames.push(`${tag}:${Math.round(window.scrollY)}`)
+      requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  })
+}
+
+/** 控えるのをやめて、控えた物を返す */
+const stopFrames = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __frames?: string[]; __framesOn?: boolean }
+    w.__framesOn = false
+    return w.__frames ?? []
+  })
+
 /** 「『定例ミーティング』を削除しますか？」 */
 const deleteConfirm = (page: Page) => page.getByRole('dialog', { name: '『定例ミーティング』を削除しますか？' })
 
@@ -194,10 +226,19 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
         await expect(page.getByTestId('mim-placeholder')).toBeVisible()
       }
       await historySettled(page)
+      // 払う前の設定・MIM のスクロールの位置。戻ってカレンダーを描くまでの間、設定・MIM の画面はこのまま（送らない）
+      const before = await scrollY()
+      await recordFrames(page)
       await edgeFlick(page, side)
       await showing(page, YEAR)
       await historySettled(page)
       await expect.poll(scrollY).toBe(400)
+      const frames = await stopFrames(page)
+      const tag = open === 'open-settings' ? 'S' : 'M'
+      expect(frames.filter((f) => !f.startsWith('C:') && f !== `${tag}:${before}`)).toEqual([])
+      // カレンダーは初めの絵から、戻した位置（描いた直後・絵にする前に戻すので、先頭から跳ばない）
+      expect(frames.find((f) => f.startsWith('C:'))).toBe('C:400')
+      expect(frames.at(-1)).toBe('C:400')
     }
     await noGrowth(page, length)
   })

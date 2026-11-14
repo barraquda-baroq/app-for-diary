@@ -18,13 +18,17 @@
 //   （設定・MIM・詳細の画面の下の、見ていたカレンダーが戻る）。無い時（前の版の state・直接開いた）は、小さな画面なら同じ行き先の
 //   小さな画面の無い所、設定・MIM・見つからないならトップを下に置く（ログインには置かない）
 // - スクロールの位置: ブラウザは戻る・進むが無いので位置を戻さない。積む時・並びの中で動く時に今の位置を控え、行き先の替わる POP
-//   （設定・MIM からカレンダーへ戻る）では、描いた後にその位置へ戻す（小さな画面を閉じる時は、行き先が同じで、小さな画面の間も
-//   位置はそのまま: src/ui/Modal.tsx）
+//   （設定・MIM からカレンダーへ戻る）では、ルーターがその行き先を描いた時（drawn。src/ui/Layout.tsx の ScrollOnNavigate が、描いた
+//   直後・絵にする前に知らせる）にその位置へ戻す。ルーターは POP を区切って描くので、前の画面（設定・MIM）が何コマか残る: その間は
+//   送らない（出ている設定の画面が下へ跳ばない）。小さな画面を閉じる時は、行き先が同じで、小さな画面の間も位置はそのまま
+//   （src/ui/Modal.tsx）
 // - 前の版・ほかのページが残した履歴（更新した直後の［更新する］の読み込み直し・Google のログインの行き来の後・アドレス欄で # を
 //   書き換えた時など。アプリを閉じて開き直すまで残る）: その履歴へ iPhone の身振りで来た時（popstate）は、着いた履歴を今の行き先で
 //   置き換え（idx は着いた物のまま。これで身振りの後に3秒固まることも無い）、古い行き先はルーターに渡さず（閉じた画面を開き直さない）、
 //   フリックと同じことを1回する（着いた idx が前なら戻る）。ページの中で受け取った払いと同じ払いの popstate が続けて来た時
-//   （FLICK_DEDUPE_MS の内）は、2回しない。アプリが作っていない履歴（state の無い #）は、今の次に積まれた物として受け取る
+//   （FLICK_DEDUPE_MS の内）は、2回しない。アプリが作っていない履歴（state の無い #）は、ブラウザの履歴が増えていれば今の次に積まれた
+//   物（アドレス欄で書き換えた時など）、増えていなければ今の物を置き換えた物（location.replace の # の置き換え。表示できなかった時の
+//   案内のリンク: src/ui/ErrorBoundary.tsx）として受け取る
 // - 書けなかった時（WebKit の 10秒に 100回の上限で SecurityError）は、アプリの中の並びを正として、後でもう一度書く
 // - 何をしたかは、設定で記録を取る時だけ控える（src/history/swipeLog.ts。開いた時の start に、ブラウザの履歴の数）
 import { createPath, NavigationType, parsePath, type Location } from 'react-router-dom'
@@ -85,10 +89,15 @@ export const FLICK_DEDUPE_MS = 400
 /** 書けなかった時に、もう一度書くまで */
 export const WRITE_RETRY_MS = 1000
 /**
- * 描いた後にスクロールの位置を戻すのを試し続ける長さの上限（ms。描く時ごとに試す。ページがまだ短い時・描くのが遅い時: ルーターは
- * 描くのを途中で区切って進めるので、重いイヤーは何コマもかかる）
+ * ルーターが行き先を描いてから、スクロールの位置を戻すのを試し続ける長さの上限（ms。描いた直後に一度送り、ページがまだ短くて届かない
+ * 時は、描く時ごとにもう一度）
  */
 export const SCROLL_RESTORE_MS = 1500
+/**
+ * ルーターが行き先を描くのを待つ長さの上限（ms。描いた知らせ（drawn）が来ないまま過ぎたら、スクロールの位置は戻さない。描くのが
+ * 遅い CI の WebKit・重いイヤーでも届く長さ）
+ */
+export const DRAW_WAIT_MS = 5000
 /** 戻すのを待っている間にこれが来たら、やめる（利用者が自分で触れた・スクロールし始めた） */
 const USER_INPUT = ['touchstart', 'pointerdown', 'wheel', 'keydown'] as const
 /** 1回描くのを待つ長さの上限 */
@@ -100,6 +109,13 @@ const TOP_PATH = '/'
 interface Entry {
   location: Location
   y: number
+}
+
+/** スクロールの位置を戻すのを待っている物（key の行き先を描いたら、y へ戻し始める。cancel でやめる） */
+interface PendingRestore {
+  key: string
+  drawn: () => void
+  cancel: () => void
 }
 
 /** 履歴の state の ds1 に置く、下の行き先の1つ */
@@ -160,8 +176,10 @@ export class SingleEntryHistory implements DsHistory {
   private lastUserPopAt = -Infinity
   /** 後で渡す POP の数・描いた後のスクロールの戻し（数え直しの番号） */
   private pending = 0
-  private restoring = false
+  private restoring: PendingRestore | null = null
   private moveGen = 0
+  /** 最後に見たブラウザの履歴の数（state の無い popstate が、積まれた物か置き換えた物かを分ける） */
+  private lastLen: number | null
   private retryTimer: number | null = null
   private disposed = false
   private readonly idleWaiters: (() => void)[] = []
@@ -180,7 +198,8 @@ export class SingleEntryHistory implements DsHistory {
       st = stateOf(win.history.state)
     }
     this.winIdx = typeof st?.idx === 'number' ? st.idx : 0
-    const len = typeof win.history.length === 'number' ? win.history.length : null
+    const len = this.historyLength()
+    this.lastLen = len
     this.inherited = old || (len ?? 1) > 1
     const current = readHashLocation(win)
     this.stack = [...this.underneath(st, current), { location: current, y: 0 }]
@@ -242,7 +261,7 @@ export class SingleEntryHistory implements DsHistory {
     this.stack.splice(this.index + 1)
     this.stack.push({ location, y: 0 })
     this.index += 1
-    this.moveGen += 1
+    this.moved()
     this.log('vpush')
     this.write()
   }
@@ -273,7 +292,7 @@ export class SingleEntryHistory implements DsHistory {
     const before = this.stack[from].location
     this.index = target
     this.act = NavigationType.Pop
-    this.moveGen += 1
+    this.moved()
     const entry = this.stack[target]
     this.log('vpop')
     this.write()
@@ -331,6 +350,15 @@ export class SingleEntryHistory implements DsHistory {
     }
   }
 
+  /**
+   * ルーターが行き先（key）を描いた（src/ui/Layout.tsx の ScrollOnNavigate が useLayoutEffect で、描いた直後・絵にする前に
+   * appHistory.ts の historyDrawn から呼ぶ）。設定・MIM から戻った POP の行き先なら、控えたスクロールの位置へ戻し始める
+   */
+  drawn(key: string): void {
+    const r = this.restoring
+    if (r && r.key === key) r.drawn()
+  }
+
   /** 利用者の「戻る」「進む」（前の版が残した履歴への iPhone の身振り）が、その時刻（now と同じ時計）より後に来たか */
   userPopSince(t: number): boolean {
     return this.lastUserPopAt >= t
@@ -339,6 +367,7 @@ export class SingleEntryHistory implements DsHistory {
   /** 片付ける（テスト用） */
   dispose(): void {
     this.disposed = true
+    this.restoring?.cancel()
     this.win.removeEventListener('popstate', this.onPop)
     if (this.retryTimer !== null) this.win.clearTimeout(this.retryTimer)
     this.retryTimer = null
@@ -364,7 +393,18 @@ export class SingleEntryHistory implements DsHistory {
   }
 
   private busy(): boolean {
-    return this.pending > 0 || this.restoring
+    return this.pending > 0 || this.restoring !== null
+  }
+
+  /** 行き先が動いた（後で渡す POP・待っているスクロールの戻しは、前の行き先の物になる: 戻しはやめる） */
+  private moved(): void {
+    this.moveGen += 1
+    this.restoring?.cancel()
+  }
+
+  private historyLength(): number | null {
+    const len = this.win.history.length
+    return typeof len === 'number' ? len : null
   }
 
   private log(kind: string): void {
@@ -403,7 +443,7 @@ export class SingleEntryHistory implements DsHistory {
     if (collapsed) this.stack.splice(at + 1)
     this.stack[at] = { location, y: this.stack[at].y }
     this.index = at
-    this.moveGen += 1
+    this.moved()
     this.log(collapsed ? 'vcollapse' : 'vreplace')
     this.write()
   }
@@ -439,37 +479,47 @@ export class SingleEntryHistory implements DsHistory {
     }
   }
 
-  /** POP を後で（マイクロタスクで）渡し、行き先が替わったなら描いた後にスクロールの位置を戻す */
-  private deliverLater(location: Location, delta: number, scrollTo: number | null): void {
+  /**
+   * POP を後で（マイクロタスクで）渡す（delta は差。null は差の無い置き換え）。行き先が替わったなら、ルーターがそれを描いた時に
+   * スクロールの位置を戻す（渡す前に待ち始める: ルーターがすぐ描いても、描いた知らせを取りこぼさない）
+   */
+  private deliverLater(location: Location, delta: number | null, scrollTo: number | null): void {
     this.pending += 1
     const gen = this.moveGen
     queueMicrotask(() => {
       this.pending -= 1
+      if (scrollTo !== null && gen === this.moveGen && !this.disposed) this.restoreAfterDraw(location.key, scrollTo, gen)
       if (!this.disposed) this.listener?.({ action: NavigationType.Pop, location, delta })
-      if (scrollTo !== null && gen === this.moveGen && !this.disposed) this.restoreScroll(scrollTo, gen)
       this.settleIdle()
     })
   }
 
   /**
-   * 描いた後に、その位置へスクロールする（ページがまだ短ければ、届くまで次に描く時にもう一度。SCROLL_RESTORE_MS まで）。ほかへ動いた・
-   * 利用者が触れた時はやめる
+   * ルーターが key の行き先を描いた時（drawn）に、その位置 y へスクロールする: 描いた直後（絵にする前）に一度送り、次に描く時に確かめる
+   * （ページがまだ短くて届かなければ、届くまで描く時ごとにもう一度。描いてから SCROLL_RESTORE_MS まで）。描く前は送らない（出ている
+   * 前の画面を送らない）。描いた知らせが DRAW_WAIT_MS 来ない・ほかへ動いた・利用者が触れた時はやめる
    */
-  private restoreScroll(y: number, gen: number): void {
-    this.restoring = true
-    const until = this.now() + SCROLL_RESTORE_MS
+  private restoreAfterDraw(key: string, y: number, gen: number): void {
+    this.restoring?.cancel()
     let touched = false
+    let started = false
+    let until = 0
     const onInput = () => {
       touched = true
     }
     for (const type of USER_INPUT) this.win.addEventListener(type, onInput)
+    const waitTimer = this.win.setTimeout(() => finish(), DRAW_WAIT_MS)
+    const live = () => !touched && gen === this.moveGen && !this.disposed
     const finish = () => {
+      if (this.restoring !== pending) return
+      this.restoring = null
+      this.win.clearTimeout(waitTimer)
       for (const type of USER_INPUT) this.win.removeEventListener(type, onInput)
-      this.restoring = false
       this.settleIdle()
     }
     const step = () => {
-      if (touched || gen !== this.moveGen || this.disposed) {
+      if (this.restoring !== pending) return
+      if (!live()) {
         finish()
         return
       }
@@ -480,7 +530,23 @@ export class SingleEntryHistory implements DsHistory {
       }
       this.nextFrame(step)
     }
-    this.nextFrame(step)
+    const pending: PendingRestore = {
+      key,
+      drawn: () => {
+        if (started) return
+        started = true
+        this.win.clearTimeout(waitTimer)
+        if (!live()) {
+          finish()
+          return
+        }
+        until = this.now() + SCROLL_RESTORE_MS
+        this.win.scrollTo?.(0, y)
+        this.nextFrame(step)
+      },
+      cancel: finish,
+    }
+    this.restoring = pending
   }
 
   /** 次に描く時（描かない時（見えていない・テストの作り物）でも、FRAME_TIMEOUT_MS で先へ進む） */
@@ -515,7 +581,9 @@ export class SingleEntryHistory implements DsHistory {
     const action = decidePop('edge-flick', screen, direction)
     switch (action.kind) {
       case 'ring':
-        this.handlers.ring?.(action.dir)
+        // モードを回す所がまだ無い（読み込み中・設定を直接開いてカレンダーがまだ無い）: 何もしなかった（同じ払いの popstate は使う）
+        if (!this.handlers.ring) return 'nothing'
+        this.handlers.ring(action.dir)
         return action.dir === 1 ? 'ring+1' : 'ring-1'
       case 'back-one':
         // 登録の画面: 書きかけでも確かめずに捨てて閉じる（■27）。ルーターに渡す前に、閉じてよいと知らせる
@@ -541,16 +609,34 @@ export class SingleEntryHistory implements DsHistory {
   /**
    * popstate: 前の版・ほかのページが残した履歴へ、iPhone の身振り（など）で来た。着いた履歴を今の行き先で置き換え（idx は着いた物の
    * まま）、古い行き先はルーターに渡さずに、フリックと同じことを1回する（着いた idx が前なら戻る）。アプリが作っていない履歴（state に
-   * idx が無い）は、今の次に積まれた物として受け取り、ルーターに POP で渡す
+   * idx が無い）は、ブラウザの履歴が増えていれば今の次に積まれた物として、増えていなければ今の物を置き換えた物（# の置き換え）として
+   * 受け取り、ルーターに POP で渡す
    */
   private readonly onPop = (): void => {
     const st = stateOf(this.win.history.state)
     const arrived = typeof st?.idx === 'number' ? st.idx : null
     const from = this.winIdx
     const now = this.now()
+    const len = this.historyLength()
+    const grew = len === null || this.lastLen === null || len > this.lastLen
+    this.lastLen = len
+    swipeLog('pop', { idx: arrived, from })
+    if (arrived === null && !grew) {
+      // # を置き換えて移った（location.replace。表示できなかった時の案内のリンク）: 今の行き先を置き換える（履歴は増えていない）
+      const location = { ...readHashLocation(this.win), key: st?.key ?? makeKey() }
+      this.act = NavigationType.Pop
+      if (this.screen(location) === 'calendar') this.toCalendar(location)
+      else {
+        this.stack[this.index] = { location, y: this.stack[this.index].y }
+        this.moved()
+        this.log('vreplace')
+        this.write()
+      }
+      this.deliverLater(this.location, null, null)
+      return
+    }
     this.lastUserPopAt = now
     this.inherited = true
-    swipeLog('pop', { idx: arrived, from })
     if (arrived === null) {
       // 外から積まれた（アドレス欄・# のリンク）: 今の次に積まれた物として受け取る
       const location = { ...readHashLocation(this.win), key: st?.key ?? makeKey() }
@@ -560,7 +646,7 @@ export class SingleEntryHistory implements DsHistory {
       this.stack.push({ location, y: 0 })
       this.index += 1
       this.act = NavigationType.Pop
-      this.moveGen += 1
+      this.moved()
       this.log('outside')
       this.write()
       this.deliverLater(location, 1, null)

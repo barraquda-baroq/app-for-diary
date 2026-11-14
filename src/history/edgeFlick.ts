@@ -13,7 +13,8 @@
 // - pointer の出来事でなく touch の出来事で追う（iPhone は、ページが縦に少しでも動くと pointer を取り消すが、touch の出来事は離す
 //   まで来る）。どれも passive で、縦のスクロール・キーボード・字の選び方を邪魔しない。押した要素でも聞く（払っている間に画面が
 //   替わって押した要素が外れると、touch の出来事は外れた要素へ送られ、window まで伝わらない。useSwipe.ts と同じ）
-// - 渡した後 SWIPE_CLICK_GUARD_MS の間に来た click は1つだけ打ち消す（払った指で、離した所のボタンを押さない）
+// - 渡した後 SWIPE_CLICK_GUARD_MS の間に、離した所（SWIPE_SLOP_PX の内）に来た click は1つだけ打ち消す（払った指で、離した所の
+//   ボタンを押さない）。離れた所の click（すぐ次に押した別の所・キーボード）は打ち消さない
 // - 端の指は、なぞって前後の期間へ移る所（src/features/calendar/common/useSwipe.ts）では数えない（同じ edgeOfScreen で決める。
 //   1回の払いでモードと期間の両方が替わらない）
 // - 設定で記録を取る時は、端で押した指（edge-down）・数えなかった訳（edge-skip）・離した指（edge-up: 動き・長さ・向き・どうしたか）を
@@ -25,6 +26,7 @@ import {
   moveSwipe,
   startSwipe,
   SWIPE_CLICK_GUARD_MS,
+  SWIPE_SLOP_PX,
   type SwipeTrack,
 } from '../features/calendar/common/swipe'
 import { needsSideways } from '../ui/textEntry'
@@ -88,8 +90,10 @@ export function installEdgeFlick(win: Window, opts: EdgeFlickOptions): () => voi
   let track: SwipeTrack | null = null
   let side: -1 | 1 = -1
   let at = 0
-  /** この時刻までに来た click は1つ打ち消す（渡した直後） */
+  /** この時刻までに、離した所（liftX・liftY）の近くに来た click は1つ打ち消す（渡した直後） */
   let guardUntil = -Infinity
+  let liftX = 0
+  let liftY = 0
   /**
    * 押した要素（window と両方で聞く）と、最後に扱った出来事（window と押した要素の両方に来たふつうの時は、2回目を扱わない）
    */
@@ -179,6 +183,8 @@ export function installEdgeFlick(win: Window, opts: EdgeFlickOptions): () => voi
     })
     if (result !== 'flick') return
     guardUntil = now() + SWIPE_CLICK_GUARD_MS
+    liftX = t.clientX
+    liftY = t.clientY
     opts.flick(side)
   }
 
@@ -187,9 +193,11 @@ export function installEdgeFlick(win: Window, opts: EdgeFlickOptions): () => voi
     track = null
   }
 
-  // React の onClick より先に打ち消す（window の捕まえる段）
+  // React の onClick より先に打ち消す（window の捕まえる段）。離した所から離れた click は、払った指の物ではない
   const click = (e: Event) => {
     if (now() > guardUntil) return
+    const { clientX, clientY } = e as MouseEvent
+    if (Math.abs(clientX - liftX) > SWIPE_SLOP_PX || Math.abs(clientY - liftY) > SWIPE_SLOP_PX) return
     guardUntil = -Infinity
     e.preventDefault()
     e.stopPropagation()

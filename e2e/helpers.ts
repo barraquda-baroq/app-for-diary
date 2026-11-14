@@ -544,12 +544,17 @@ export async function armHistory(
 
 /**
  * iPhone・iPad の1つの履歴の形の確かめ用（e2e/edge-flick.spec.ts・e2e/undo.spec.ts）。開く前に置く: アプリ（とルーター）が呼んだ、ブラウザの履歴を積む・動かす物（pushState・go・back・forward）を控える
- * （置き換え replaceState は控えない。失敗した時の控え（e2e/helpers.ts）も history の物を包むので、その外側を包む）
+ * （置き換え replaceState は控えない。失敗した時の控え（e2e/helpers.ts）も history の物を包むので、その外側を包む）。Navigation API の
+ * あるブラウザ（Chromium）では、ページの中の移り方のうち積む（push）・戻る・進む（traverse）も控える（# のリンク・location.assign など、
+ * 関数を呼ばずに履歴が増える移り方も。置き換え（replace）・読み込み直し（reload）は控えない）。開いた時（読み込み直した時も）の
+ * ブラウザの履歴の数も控える（historyGrowth）
  */
 export async function spyHistory(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const calls: string[] = []
-    ;(window as unknown as { __historyCalls: string[] }).__historyCalls = calls
+    const w = window as unknown as { __historyCalls: string[]; __historyStart: number; navigation?: EventTarget }
+    w.__historyCalls = calls
+    w.__historyStart = history.length
     const target = history as unknown as Record<string, (...args: unknown[]) => unknown>
     for (const op of ['pushState', 'go', 'back', 'forward']) {
       const original = target[op].bind(history)
@@ -561,12 +566,20 @@ export async function spyHistory(page: Page): Promise<void> {
         },
       })
     }
+    w.navigation?.addEventListener('navigate', (e) => {
+      const type = (e as Event & { navigationType?: string }).navigationType
+      if (type === 'push' || type === 'traverse') calls.push(`navigate:${type}`)
+    })
   })
 }
 
 /** spyHistory で控えた物（呼んだ順） */
 export const historyCalls = (page: Page): Promise<string[]> =>
   page.evaluate(() => (window as unknown as { __historyCalls?: string[] }).__historyCalls ?? [])
+
+/** spyHistory を置いてから開いた時より、ブラウザの履歴がいくつ増えたか */
+export const historyGrowth = (page: Page): Promise<number> =>
+  page.evaluate(() => history.length - ((window as unknown as { __historyStart?: number }).__historyStart ?? history.length))
 
 /**
  * ブラウザ（端末）の「戻る」（Android の戻るボタン・PC のブラウザの戻る）をして、アプリの履歴が落ち着くまで待つ。iPhone・iPad の

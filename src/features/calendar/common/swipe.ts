@@ -9,8 +9,9 @@
 //   追い（touch の出来事）、取られていない時と同じ決まり（60px 以上。払い始めが横なら全体で 45° まで）で移る（縦のスクロールは
 //   取らない）。iPhone（WebKit）は touch-action: pan-y の所で指が少しでも縦に動くと縦のスクロールを始めて指を取る（10〜15px ほど
 //   動いた所）ので、iPhone の払いはほとんどがこの道を通る。Chromium は初めの動きが縦寄りの時だけ取る
-// iPhone・iPad の画面の端の指（3.1 の「ブラウザが身振りを始めない時」）: 画面の左右の端から EDGE_ZONE_PX の中で押して内へ払った指は、
-// 期間へは移らず、端からのフリックと同じくモードを回す（edgeSide。ブラウザが身振りにした指は、ページに離す出来事が来ないので数えない）
+// iPhone・iPad の画面の端の指（3.1 の「端からのフリック（iPhone・iPad）はアプリが受け取る」）: 画面の左右の端から EDGE_ZONE_PX の中で
+// 押した指（edgeSide）は端からのフリックで、src/history/edgeFlick.ts が受け取ってモードを回す（なぞりの所 useSwipe.ts は数えない。
+// 期間へは移らない）
 // React・ストアを読まない（純粋な関数。src/features/calendar/purity.test.ts）。指の出来事を拾うのは useSwipe.ts
 import type { CalendarMode, WidthClass } from './types'
 

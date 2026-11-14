@@ -231,6 +231,11 @@ export interface DsHistory extends RouterHistory {
    * だけ（AppHistory には無い）
    */
   flick?(side: -1 | 1): void
+  /**
+   * ルーターが行き先（key）を描いた（src/ui/Layout.tsx の ScrollOnNavigate が historyDrawn から呼ぶ）。SingleEntryHistory だけ: 設定・MIM
+   * から戻った時のスクロールの位置を、描いてから戻す
+   */
+  drawn?(key: string): void
   /** 片付ける（テスト用） */
   dispose(): void
 }
@@ -1888,16 +1893,25 @@ export function historyShape(): DsHistoryShape | null {
 }
 
 /**
- * その時刻（performance.now）より後に、利用者の「戻る」「進む」（iPhone の端からのフリック。iPhone・iPad では、前の版が残した履歴への
- * 身振り）が来たか（src/features/calendar/common/useSwipe.ts: 画面の端から払った指を、ブラウザが身振りにした時はアプリでは回さない）
+ * その時刻（performance.now）より後に、利用者の「戻る」「進む」（印の履歴の形の iPhone の端からのフリック。iPhone・iPad の1つの履歴の
+ * 形では、前の版が残した履歴への身振り）が来たか。本番では使わない（端の指を受け取る所 src/history/edgeFlick.ts は、履歴の
+ * userPopSince に直接聞く）。印の履歴の形の iPhone の物と一緒に、後の版で片付ける（開発）
  */
 export function userPopSince(t: number): boolean {
   return current?.userPopSince(t) ?? false
 }
 
 /**
- * iPhone: 身振りの絵を出している間に、アプリの中でモードを回した（AppHistory.topUpBallast。src/features/calendar/common/CalendarView.tsx）。
- * iPhone・iPad の1つの履歴の形（SingleEntryHistory）には身振りの絵が無いので、何もしない
+ * ルーターが行き先（key）を描いた（src/ui/Layout.tsx の ScrollOnNavigate が、行き先が替わった描画の直後・絵にする前に呼ぶ）。
+ * iPhone・iPad の1つの履歴の形が、設定・MIM から戻った時のスクロールの位置を戻し始める（Android・PC の AppHistory は何もしない）
+ */
+export function historyDrawn(key: string): void {
+  current?.drawn?.(key)
+}
+
+/**
+ * iPhone: 身振りの絵を出している間に、アプリの中でモードを回した（AppHistory.topUpBallast。前の作り）。今は呼ぶ所が無い（iPhone・iPad の
+ * 1つの履歴の形には身振りの絵が無い）。印の履歴の形の iPhone の物と一緒に、後の版で片付ける（開発）
  */
 export function afterInPageRing(): void {
   if (current instanceof AppHistory) current.topUpBallast()

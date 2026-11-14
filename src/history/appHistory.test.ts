@@ -54,7 +54,10 @@ function setup(
   }: { armOnLeaveFail?: boolean; before?: number; win?: FakeWindow; exit?: ExitStyle } = {},
 ): Setup {
   const w = win ?? new FakeWindow(hash, { before })
-  const h = new AppHistory({ window: w, source, exit, armOnLeaveFail, screenOf })
+  const opts = { window: w, source, exit, armOnLeaveFail, screenOf }
+  // Android・PC（OS の戻る）は本番と同じく createAppHistory で作る（作る物を取り違えると、ここの確かめがみな落ちる）。印の履歴の形の
+  // iPhone（端からのフリック。前の作りで、今は本番では作らない）は直接作る
+  const h = source === 'os-back' ? (createAppHistory(opts) as AppHistory) : new AppHistory(opts)
   const updates: Update[] = []
   const ring = vi.fn()
   const askExit = vi.fn()
