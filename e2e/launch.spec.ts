@@ -386,7 +386,9 @@ test.describe('起動アニメーション', { tag: ['@pc', '@s', '@ios'] }, () 
     await expect(overlay(page)).toHaveCount(0)
     await page.evaluate(() => localStorage.setItem('diary-studio:launch', 'force'))
     const tab = await context.newPage()
-    await tab.goto('/#/')
+    // 読み込みが終わるまで待つと、その間に起動アニメーションが終わって消えていることがある（CI の WebKit は重い）。上の新しいタブの
+    // 確かめと同じく、ページを読み始めた所で確かめる
+    await tab.goto('/#/', { waitUntil: 'commit' })
     await expect(overlay(tab)).toBeVisible()
   })
 

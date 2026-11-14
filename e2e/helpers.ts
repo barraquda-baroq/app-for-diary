@@ -22,18 +22,22 @@ export function collectDiagnosticsOnFailure(): void {
     t0: number
   }
   const logs = new WeakMap<Page, Rec>()
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context }) => {
     // E2E_LAUNCH_RENDERER=page の時（CI の iPhone の WebKit と、その見比べの webkit-diag。.github/workflows/ci.yml）: 起動アニメーションを
     // Worker ではなくページの中で描かせる（OffscreenCanvas の無いブラウザと同じにする。e2e/launch.spec.ts の「ページの中で描く時」と同じ）。
-    // CI の WebKit（Linux 版）は、Worker で描いた絵を画面に渡す所で時々ページごと落ちるため（docs/SPEC.md の 2.10）
+    // CI の WebKit（Linux 版）は、Worker で描いた絵を画面に渡す所で時々ページごと落ちる・固まるため（docs/SPEC.md の 2.10）。
+    // テストの中で開いた新しいタブ（context.newPage）も同じにするため、context にも置く（page だけだと、新しいタブは Worker で描いて
+    // 時々固まり、読み込みが終わる前に起動アニメーションが消えて「新しいタブでは出る」の確かめが落ちていた。CI 52・53）
     if (process.env.E2E_LAUNCH_RENDERER === 'page') {
-      await page.addInitScript(() => {
+      const inPage = () => {
         delete (window as { OffscreenCanvas?: unknown }).OffscreenCanvas
         Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', {
           value: undefined,
           configurable: true,
         })
-      })
+      }
+      await context.addInitScript(inPage)
+      await page.addInitScript(inPage)
     }
     const rec: Rec = { nav: [], errors: [], beats: [], other: [], pending: new Map(), t0: Date.now() }
     logs.set(page, rec)
