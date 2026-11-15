@@ -820,21 +820,21 @@ export async function iosCancelledTouch(page: Page, points: Point[], { cancelAt 
 const EDGE_CLICK_GUARD_MS = 300
 
 /**
- * iPhone・iPad の画面の端からのフリック（docs/SPEC.md の 3.1。src/history/edgeFlick.ts）: 画面の左の端（3px）から右へ・右の端
- * （幅 − 3px）から左へ、dx（初めは 160px）を 10回に分けて少し上へ逸れながら払う。初めは iPhone と同じく 12px 動いた所で pointer を
- * 取り消し、その後は touch の出来事だけを送る合成した出来事（iosCancelledTouch。Chromium・WebKit とも）。via: 'cdp' の時は Chromium の
- * 本物のタッチ（Chromium は、本物のタッチの身振りの終わりにフォーカスのある入力欄が外れると、その後に押した指の click を作らなく
- * なるので、すばやく足す・登録・詳細の画面を払って閉じる時は使わない）。払った後、離した所の click を打ち消す間（300ms）が過ぎる
- * まで待つ（その後すぐ押す物が打ち消されないように）
+ * iPhone・iPad の画面の端からのフリック（docs/SPEC.md の 3.1。src/history/edgeFlick.ts）: 画面の左の端から inset（初めは 3px）の所から
+ * 右へ・右の端から inset の所から左へ、dx（初めは 160px）を 10回に分けて少し上へ逸れながら払う。初めは iPhone と同じく 12px 動いた所で
+ * pointer を取り消し、その後は touch の出来事だけを送る合成した出来事（iosCancelledTouch。Chromium・WebKit とも。押した所の要素に
+ * 送るので、フォーカスは動かない）。via: 'cdp' の時は Chromium の本物のタッチ（Chromium は、本物のタッチの身振りの終わりにフォーカスの
+ * ある入力欄が外れると、その後に押した指の click を作らなくなるので、すばやく足す・登録・詳細の画面を払って閉じる時は使わない）。
+ * 払った後、離した所の click を打ち消す間（300ms）が過ぎるまで待つ（その後すぐ押す物が打ち消されないように）
  */
 export async function edgeFlick(
   page: Page,
   side: 'left' | 'right',
-  { y, dx = 160, via = 'synthetic' }: { y?: number; dx?: number; via?: TouchVia } = {},
+  { y, dx = 160, inset = 3, via = 'synthetic' }: { y?: number; dx?: number; inset?: number; via?: TouchVia } = {},
 ): Promise<void> {
   const size = page.viewportSize() ?? { width: 390, height: 844 }
   const yy = y ?? Math.round(size.height * 0.55)
-  const x0 = side === 'left' ? 3 : size.width - 3
+  const x0 = side === 'left' ? inset : size.width - inset
   const points = path({ x: x0, y: yy }, { x: x0 + (side === 'left' ? dx : -dx), y: yy - 12 }, 10)
   if (touchVia(page, via) === 'cdp') await cdpTouch(page, points, 0, 12)
   else await iosCancelledTouch(page, points)

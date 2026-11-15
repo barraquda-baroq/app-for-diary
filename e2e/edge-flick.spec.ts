@@ -6,8 +6,11 @@
 // 捨てる。■27）、確かめのダイアログはそれだけを閉じ、設定・MIM はカレンダーの方へ1つ戻る（スクロールの位置も戻る）。
 // 身振りそのものは Chromium にも CI の WebKit にも無いので、ここで確かめるのは、ブラウザの履歴が増えない（history.length が開いた時の
 // まま。Chromium のタブは初めの about:blank の分がある）こと・アプリが積む・戻る・進む（pushState・go・back・forward）を一度も呼ばない
-// こと（開く前に置く物で控える）と、端の指でアプリがすること。指は e2e/helpers.ts の edgeFlick（画面の左右の端から 3px の所から払う）。
-// @ios の印の物は CI の WebKit（本物の WebKit の履歴）でも流す。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
+// こと（開く前に置く物で控える）と、端の指でアプリがすること。指は e2e/helpers.ts の edgeFlick（初めは画面の左右の端から 3px の所から
+// 払う）。端の幅は初め 36px で、設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ（22. の「端からのフリックの3回目の直した版
+// （788e842）を試した答え」）。すばやく足すに字を打ったまま払うと、足さずに閉じて打った字も捨てる。フォーカスの無い入力欄の上から
+// 払っても端からのフリック（フォーカスのある欄の上からは数えない）。@ios の印の物は CI の WebKit（本物の WebKit の履歴）でも流す。
+// 今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
 import { devices, expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
 import {
@@ -111,7 +114,7 @@ const deleteConfirm = (page: Page) => page.getByRole('dialog', { name: '『定�
 test.describe('iPhone の画面の端からのフリック（Chromium に iPhone の UA と CI の WebKit）', { tag: ['@s', '@ios'] }, () => {
   test.use({ userAgent: IPHONE_UA })
 
-  test('カレンダー: 左の端から 年→月→週→日→年、右の端から 日→週→月→年→日（見ている日を保ち、ページはめくらない）。すばやく足すに字を打ったまま払うと、足さずに閉じてモードを回し、打った字は書きかけに残る（12.1）。ブラウザの履歴は増えず、積む・戻る・進むは呼ばない', async ({
+  test('カレンダー: 左の端から 年→月→週→日→年、右の端から 日→週→月→年→日（見ている日を保ち、ページはめくらない）。すばやく足すに字を打ったまま払うと、足さずに閉じてモードを回し、打った字も捨てる（同じ＋を開き直すと空。Esc で閉じた時は残る。12.1）。ブラウザの履歴は増えず、積む・戻る・進むは呼ばない', async ({
     page,
     browserName,
   }) => {
@@ -121,7 +124,8 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     expect(await historyShape(page)).toMatchObject({ kind: 'single', source: 'edge-flick', depth: 1, index: 0 })
     const length = await historyLength(page)
     await recordTurns(page)
-    // すばやく足すに字を打ったまま左の端から払う: 週 → 日。足さずに閉じる（作者「入力確定前の内容で払ったものは登録しない」）
+    // すばやく足すに字を打ったまま左の端から払う: 週 → 日。足さずに閉じ、打った字も捨てる（作者「入力確定前の内容で払ったものは
+    // 登録しない」「文字残しは必要ないです」）
     const input = page.getByTestId('quick-add-input')
     const plus = page.getByTestId('week-add-2026-11-12-work')
     await plus.tap()
@@ -131,11 +135,17 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await expect(input).toHaveCount(0)
     expect(await countByTitle(page, '資料を送る')).toBe(0)
     await expect(page.locator('.toast', { hasText: '足しました' })).toHaveCount(0)
-    // 右の端から: 日 → 週。同じ＋を開き直すと、打った字が出る（書きかけに残った）。開いたまま払っても、また足さずに閉じる
+    // 右の端から: 日 → 週。同じ＋を開き直すと空（打った字は捨てた）。Esc で閉じた時は今までどおり書きかけに残り、開き直すと出る
     await edgeFlick(page, 'right')
     await showing(page, WEEK)
     await plus.tap()
-    await expect(input).toHaveValue('資料を送る')
+    await expect(input).toHaveValue('')
+    await input.fill('書きかけ')
+    await page.keyboard.press('Escape')
+    await expect(input).toHaveCount(0)
+    await plus.tap()
+    await expect(input).toHaveValue('書きかけ')
+    // 開いたまま払うと、また足さずに閉じて字を捨てる
     // 1周（CI の WebKit は重いので、右の端から1回・左の端から1回だけ）
     const rounds: ['left' | 'right', string][] =
       browserName === 'webkit'
@@ -159,13 +169,18 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     }
     await expect(input).toHaveCount(0)
     expect(await countByTitle(page, '資料を送る')).toBe(0)
+    expect(await countByTitle(page, '書きかけ')).toBe(0)
+    await plus.tap()
+    await expect(input).toHaveValue('')
+    await page.keyboard.press('Escape')
+    await expect(input).toHaveCount(0)
     expect(await turnsOf(page)).toEqual([])
     await noGrowth(page, length)
     // 閉じるかは聞かない（iPhone には OS の戻るボタンが無い）
     await expect(page.getByRole('dialog', { name: 'Diary Studio を閉じますか？' })).toHaveCount(0)
   })
 
-  test('詳細・登録の画面・設定・MIM: 開いてもブラウザの履歴は増えない。左右どちらの端から払っても閉じ（登録の画面は書きかけでも聞かずに捨てる。■27）、閉じた後のカレンダーで払うとモードを回す（閉じた画面を開き直さない）。設定・MIM はカレンダーの方へ1つ戻り、開く前のページのスクロールの位置へ戻る', async ({
+  test('詳細・登録の画面・設定・MIM: 開いてもブラウザの履歴は増えない。左右どちらの端から払っても閉じ（登録の画面は書きかけでも聞かずに捨てる。■27。フォーカスの無い件名の欄の上から払っても閉じ、フォーカスのある欄の上からは閉じない）、閉じた後のカレンダーで払うとモードを回す（閉じた画面を開き直さない）。設定・MIM はカレンダーの方へ1つ戻り、開く前のページのスクロールの位置へ戻る', async ({
     page,
     browserName,
   }) => {
@@ -196,9 +211,24 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     for (const side of ['right', 'left'] as const) {
       await page.getByTestId('cal-add').tap()
       await expect(sheet).toBeVisible()
-      await page.getByTestId('item-title').fill('書きかけの予定')
+      const title = page.getByTestId('item-title')
+      await title.fill('書きかけの予定')
       await historySettled(page)
-      await edgeFlick(page, side)
+      if (side === 'left') {
+        // 件名の欄（画面の端から 16px ほどまで届く）の上、端から 24px の所から払う: フォーカスのある欄の上からは数えない（閉じない。
+        // カーソル・字を選ぶつまみがある）。フォーカスを外すと、同じ所からの払いで閉じる（開発。端を甘くする）
+        const box = await title.boundingBox()
+        if (!box) throw new Error('件名の欄が見えていません')
+        expect(box.x).toBeLessThan(24)
+        const y = Math.round(box.y + box.height / 2)
+        await expect(title).toBeFocused()
+        await edgeFlick(page, side, { inset: 24, y })
+        await expect(sheet).toBeVisible()
+        await expect(title).toHaveValue('書きかけの予定')
+        await title.evaluate((el) => (el as HTMLElement).blur())
+        await expect(title).not.toBeFocused()
+        await edgeFlick(page, side, { inset: 24, y })
+      } else await edgeFlick(page, side)
       await expect(sheet).toHaveCount(0)
       await expect(page.getByTestId('item-discard')).toHaveCount(0)
       await showing(page, DAY)
@@ -267,7 +297,7 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await noGrowth(page, length)
   })
 
-  test('画面の端から 20px より内側（30px）からの払いは、今までどおり前後の期間へ（モードはそのまま・ページをめくる）。端の指でモードと期間の両方は替わらない', async ({
+  test('端の幅（初めは 36px）: 画面の端から 60px 内側からの払いは、今までどおり前後の期間へ（モードはそのまま・ページをめくる）。30px の所からはモードだけを回す。設定の「開発」の「端の幅」で 20 を選ぶと、読み込み直した後も、30px の所からの払いは前後の期間へ。端の指でモードと期間の両方は替わらない', async ({
     page,
   }) => {
     await spyHistory(page)
@@ -278,21 +308,54 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     if (!box) throw new Error('カレンダーが見えていません')
     const y = Math.round(box.y + Math.min(box.height / 2, 200))
     await recordTurns(page)
-    // 右の端の 30px 内側から左へ大きく払う: 次の週（モードはそのまま）
-    await touchPath(page, thumbArc({ x: vw - 30, y }, { x: 30, y: y - 120 }, 12))
+    // 右の端の 60px 内側から左へ大きく払う: 次の週（モードはそのまま）
+    await touchPath(page, thumbArc({ x: vw - 60, y }, { x: 30, y: y - 120 }, 12))
     await showing(page, '/week/2026-11-15')
     await turnDone(page)
-    // iPhone の本物の指のように、12px 動いた所で pointer を取り消し、その後は touch の出来事だけの払い（左の 30px 内側から右へ）
-    await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: 330, y: y - 200 }, 25))
+    // iPhone の本物の指のように、12px 動いた所で pointer を取り消し、その後は touch の出来事だけの払い（左の 60px 内側から右へ）
+    await iosCancelledTouch(page, thumbArc({ x: 60, y }, { x: 360, y: y - 200 }, 25))
     await showing(page, WEEK)
     await turnDone(page)
     await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
-    // 画面の端（3px）からの同じ払いは、モードだけを回す（期間はそのまま。ページはめくらない。Chromium の本物のタッチ: pointer の
-    // 出来事も来るが、なぞりの所は端の指を数えない）
-    await edgeFlick(page, 'left', { via: 'cdp' })
-    await showing(page, DAY)
+    // 端から 30px（初めの端の幅 36px の中）からの同じ払いは、モードだけを回す（右の端から: 週 → 月、左の端から: 月 → 週。期間は
+    // そのまま。ページはめくらない）
+    await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: vw - 330, y: y - 120 }, 25))
+    await showing(page, MONTH)
+    await page.waitForTimeout(320)
+    await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: 330, y: y - 120 }, 25))
+    await showing(page, WEEK)
+    await page.waitForTimeout(320)
     expect(await turnsOf(page)).toEqual(['next', 'prev'])
-    await noGrowth(page, length)
+    // 設定の「開発」の「端の幅」で 20 を選ぶ（初めは 36 が選ばれている）。読み込み直しても 20 のまま
+    await page.getByTestId('open-settings').tap()
+    await expect(page.getByTestId('dev-settings')).toBeVisible()
+    await expect(page.getByTestId('edge-zone-36')).toHaveAttribute('aria-pressed', 'true')
+    await page.getByTestId('edge-zone-20').tap()
+    await expect(page.getByTestId('edge-zone-20')).toHaveAttribute('aria-pressed', 'true')
+    await historySettled(page)
+    await page.reload()
+    await expect(page.getByTestId('edge-zone-20')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('edge-zone-36')).toHaveAttribute('aria-pressed', 'false')
+    await historySettled(page)
+    // 左の端（3px）から払って、カレンダーへ戻る
+    await edgeFlick(page, 'left')
+    await showing(page, WEEK)
+    await historySettled(page)
+    await recordTurns(page)
+    // 端から 30px（端の幅 20px の外）からの払いは、前後の期間へ（前の週。モードはそのまま）
+    await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: 330, y: y - 200 }, 25))
+    await showing(page, '/week/2026-11-01')
+    await turnDone(page)
+    await expect.poll(() => turnsOf(page)).toEqual(['prev'])
+    // 画面の端（3px）からの払いは、モードだけを回す（左の端から: 週 → 日。Chromium の本物のタッチ: pointer の出来事も来るが、なぞりの
+    // 所は端の指を数えない。本物のタッチの払いの後の Chromium の動きが残っている間は、次の指で押しても click にならないことがあるので
+    // いちばん後に）
+    await page.waitForTimeout(320)
+    await edgeFlick(page, 'left', { via: 'cdp' })
+    await showing(page, '/day/2026-11-03')
+    expect(await turnsOf(page)).toEqual(['prev'])
+    expect(await historyLength(page)).toBe(length)
+    expect(await historyCalls(page)).toEqual([])
   })
 
   test('設定を開いたまま読み込み直しても、払うと読み込み直す前に見ていたカレンダー（同じ月）へ戻る（下の行き先は今の履歴に置いてある）', async ({

@@ -782,7 +782,7 @@ test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
     await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
   })
 
-  test('ウィークリーで画面の端（20px の中）から払うと、モードを回す（端からのフリック。左の端から＝年→月→週→日→年、右の端から＝日→週→月→年→日。期間は移らない。3.1）。端の 30px 内側から左の端まで大きく払うと次の週へ。途中で pointercancel が来て touch の出来事だけになった親指の弧でも次の週へ（22. の段階2の終わりの確かめ）', async ({
+  test('ウィークリーで画面の端（端の幅の中。初めは 36px）から払うと、モードを回す（端からのフリック。左の端から＝年→月→週→日→年、右の端から＝日→週→月→年→日。期間は移らない。3.1）。端から 30px の所からも同じ。端の 60px 内側から左の端まで大きく払うと次の週へ。途中で pointercancel が来て touch の出来事だけになった親指の弧でも次の週へ（22. の段階2の終わりの確かめ）', async ({
     page,
   }) => {
     await openCalendar(page, '/week/2026-11-08', { data: demoData() })
@@ -796,14 +796,19 @@ test.describe('iPhone の枠', { tag: ['@ios'] }, () => {
     await at(page, '/month/2026-11')
     await iosCancelledTouch(page, thumbArc({ x: 3, y }, { x: vw - 3, y: y - 120 }, 12))
     await at(page, '/week/2026-11-08')
+    // 端から 30px（初めの端の幅 36px の中）からも、モードを回す（22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）
+    await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: 30, y: y - 120 }, 12))
+    await at(page, '/month/2026-11')
+    await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: vw - 30, y: y - 120 }, 12))
+    await at(page, '/week/2026-11-08')
     // 払った指の click を打ち消す間（300ms）を過ぎてから
     await page.waitForTimeout(320)
-    // 端の 30px 内側から左の端まで大きく払うと、今までどおり次の週へ
-    await touchPath(page, thumbArc({ x: vw - 30, y }, { x: 3, y: y - 120 }, 12))
+    // 端の 60px 内側から左の端まで大きく払うと、今までどおり次の週へ
+    await touchPath(page, thumbArc({ x: vw - 60, y }, { x: 3, y: y - 120 }, 12))
     await at(page, '/week/2026-11-15')
     await turnDone(page)
     // iPhone の本物の指のように、12px 動いた所で pointercancel が来て、その後は touch の出来事だけが来る払い（親指の弧。34°）
-    await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: vw - 330, y: y - 200 }, 25))
+    await iosCancelledTouch(page, thumbArc({ x: vw - 60, y }, { x: vw - 360, y: y - 200 }, 25))
     await at(page, '/week/2026-11-22')
   })
 })
