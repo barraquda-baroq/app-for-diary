@@ -64,7 +64,7 @@ let arming = false
 /**
  * 「戻る」「進む」（iPhone の端からのフリックも）が来た時に、画面を動かす前に片付ける（src/history/appHistory.ts の consumePop）:
  * 確かめのダイアログが開いていれば、それだけを閉じる（キャンセル。その下の詳細の画面などは閉じない）。掴んでいる間（掴んでから
- * 離すまで。WeekDnd の dragging）は何もしない。離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印
+ * 離すまで。features/dnd の TopDnd が付ける dragging）は何もしない。離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印
  * data-dnd-dragging はまだ残る。pageTurnDom の dragActive）は、もう掴んでいないので、ふつうに扱う（3.1）。片付けた時 true
  */
 export function consumeBackPress(): boolean {

@@ -1,4 +1,4 @@
-// ウィークリーのドラッグ（week/dnd）の約束の形（docs/SPEC.md の 7.11・D52）。ウィークリー（WP7）は index から読む
+// ウィークリーのドラッグ（week/dnd）の約束の形（docs/SPEC.md の 7.11。（開発））。ウィークリー（WP7）は index から読む
 import type { HTMLAttributes } from 'react'
 import type { Handle } from '../../../../domain/drag'
 import type { ID, Item, ItemKind } from '../../../../domain/types'
@@ -40,7 +40,7 @@ export interface DragData {
   week: WeekCtx
 }
 
-/** 落とす所に持たせる値（dnd-kit の droppable の data。段階3の Task List の行からも同じ所に落とすので、日と区分だけ。D52） */
+/** 落とす所に持たせる値（dnd-kit の droppable の data。段階3の Task List の行からも同じ所に落とすので、日と区分だけ。7.11） */
 export interface DropData {
   date: string
   kind: ItemKind
