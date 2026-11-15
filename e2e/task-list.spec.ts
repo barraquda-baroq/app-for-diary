@@ -53,7 +53,7 @@ async function addTask(page: Page, title: string): Promise<string> {
   return it?.id ?? ''
 }
 
-test.describe('S3 Task List（13.・6.3。@pc）', { tag: ['@pc'] }, () => {
+test.describe('S3 Task List（13.・6.3。PC）', { tag: ['@pc'] }, () => {
   test('4通りを入力欄とチップで足す → 並び → ウィークリー・マンスリーの出方 → 連動（件名・完了・カレンダーの詳細）（S3-TASK-008〜012・110・170〜172・S3-FRAME-129）', async ({
     page,
   }) => {
@@ -279,7 +279,7 @@ test.describe('S3 Task List（13.・6.3。@pc）', { tag: ['@pc'] }, () => {
   })
 })
 
-test.describe('S3 Task List（M・S の2行の行。@s）', { tag: ['@s'] }, () => {
+test.describe('S3 Task List（M・S の2行の行。スマホ）', { tag: ['@s'] }, () => {
   test('上の行（〆・依頼者・期間・④）と、「…」の［日付…］から日付のメニュー（S3-TASK-090）', async ({ page }) => {
     await openLists(page, '/week/2026-11-08')
     await openStackedList(page, 'task')
@@ -353,7 +353,7 @@ test.describe('S3 Task List（M・S の2行の行。@s）', { tag: ['@s'] }, () 
   })
 })
 
-test.describe('S3 Task List（M。@m）', { tag: ['@m'] }, () => {
+test.describe('S3 Task List（M。タブレット）', { tag: ['@m'] }, () => {
   test('2行の行で、区分の印・チェック・「…」・チップの［×］は 34px 以上。横にはみ出さない（4.11・S3-TASK-064・093）', async ({
     page,
   }) => {

@@ -143,7 +143,6 @@ export const TaskRow = memo(function TaskRow({ view, wide, today }: TaskRowProps
       aria-label={`区分: ${KIND_NAME[kind]}（押すと${KIND_NAME[kind === 'work' ? 'private' : 'work']}にする）`}
       title={`区分: ${KIND_NAME[kind]}`}
       onClick={() => toggleTaskKind(item)}
-      data-kind-icon={kind}
       data-testid={listTestIds.taskKind(item.id)}
     >
       <KindIcon kind={kind} />
