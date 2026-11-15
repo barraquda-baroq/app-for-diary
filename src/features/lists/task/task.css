@@ -1,0 +1,290 @@
+/* ===== Task List の形（docs/SPEC.md の 13.2・13.3・4.3・4.4・4.7・4.11） =====
+   行の外枠・「…」・チェック・入力欄は common/lists.css。色・大きさは src/styles.css のトークンだけを使い、余白は 4px を単位にする
+   （src/calendarCss.test.ts が見張る） */
+
+/* ---------- 入力欄の下の［開始日］［締め切り日］［依頼者］（13.2。task/TaskChips.tsx） ---------- */
+.task-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+/* 決めた値はチップにする（枠を付け、右に［×］） */
+.task-chip.is-set {
+  border-color: var(--border-strong);
+}
+
+.task-chip.is-set .btn.task-chip-btn {
+  padding-right: 4px;
+}
+
+.task-chip-btn {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.task-chip-name {
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-btn.task-chip-clear {
+  width: 28px;
+  height: 28px;
+}
+
+.task-chip-clear .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ［依頼者］を押すと開く小さな入力欄 */
+.task-chip.is-editing {
+  flex: 1 1 160px;
+  max-width: 240px;
+}
+
+/* 指の端末・S・M は、ボタン・［×］を 34px 以上にする（4.11） */
+@media (max-width: 899px), (pointer: coarse) {
+  .icon-btn.task-chip-clear {
+    width: var(--tap);
+    height: var(--tap);
+  }
+}
+
+/* ---------- 行（13.3。task/TaskRow.tsx） ---------- */
+.list-row.task-row {
+  display: grid;
+  column-gap: 4px;
+  align-items: start;
+}
+
+/* 区分の印（16px の線のアイコン・--text-muted。押せる所は行の高さいっぱい。押すと仕事とプライベートを入れ替える） */
+.task-kind {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.task-kind .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* チェック（見える丸 18px。押せる所は 40px 四方で、となりの欄に重なる所はチェックが勝つ） */
+.dot-check.task-check {
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+}
+
+/* 件名（ハイライトの帯は、字を包む .kind-marker（src/styles.css）。帯の上の字は --text だけ） */
+.task-title {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.45;
+  text-align: left;
+  cursor: text;
+}
+
+/* 2行まで（はみ出す分は切る）。帯は中の inline の字に付け、折り返した行ごとに字の幅だけ（.kind-marker の box-decoration-break） */
+.task-title-clamp {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.task-title-text {
+  overflow-wrap: anywhere;
+}
+
+/* 済んだ行: 斜線と --done-text（帯は付けない。4.3） */
+.task-title.is-done {
+  color: var(--done-text);
+  text-decoration: line-through;
+}
+
+/* その場で直す欄（1行） */
+.input.task-title-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.task-kind:focus-visible,
+.task-date:focus-visible,
+.task-requester:focus-visible,
+.task-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ----- L（右の列。6つの列: 区分 16・チェック 24・締め切り日 40・依頼者 48（ある行だけ）・件名 残り。間 4px） ----- */
+.list-row.task-row.is-wide {
+  grid-template-columns: 16px 24px 40px minmax(0, 1fr);
+}
+
+.list-row.task-row.is-wide.has-requester {
+  grid-template-columns: 16px 24px 40px 48px minmax(0, 1fr);
+}
+
+/* チェックの押せる所（40px）を 24px の欄の真ん中に置き、両どなりへ 8px ずつ重ねる */
+.task-row.is-wide .dot-check.task-check {
+  margin-inline: -8px;
+}
+
+/* 締め切り日（等幅 12px。複数日は「11/10〜」（10px・--text-faint）の下に「11/20」） */
+.task-date {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-date-sub {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ④（開始日だけ）の「11/10〜」は、40px に収まるよう複数日の上の字と同じ 10px にする */
+.task-date[data-case='start'] .task-date-main {
+  font-size: 10px;
+}
+
+/* ①（日付なし）は淡い「—」 */
+.task-date[data-faint] {
+  color: var(--text-faint);
+}
+
+/* 期限切れは --overdue（--surface の上だけ。4.5）、今日は太字 */
+.task-date[data-overdue] .task-date-main {
+  color: var(--overdue);
+}
+
+.task-date[data-today] .task-date-main {
+  font-weight: 600;
+}
+
+/* 依頼者（12px・1行。はみ出す分は「…」） */
+.task-requester {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: left;
+  cursor: text;
+}
+
+.task-title-cell {
+  min-width: 0;
+}
+
+/* 依頼者をその場で直す間は、依頼者と件名の欄を1つにして広く使う */
+.task-row.is-wide .task-requester-edit {
+  grid-column: 4 / -1;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.task-requester-edit .input {
+  width: 100%;
+}
+
+/* 「…」は欄を取らず、件名の右上に重ねる（下の字は隠す） */
+.task-row.is-wide > .icon-btn.list-row-more {
+  position: absolute;
+  top: 3px;
+  right: 0;
+  margin: 0;
+  background: var(--surface);
+}
+
+/* 指の端末（iPad の横向き）は「…」をいつも出すので、件名の字を「…」の下に入れない */
+@media (pointer: coarse) {
+  .task-row.is-wide .task-title-cell {
+    padding-right: var(--tap);
+  }
+}
+
+/* ----- M・S（2行の行: 左に区分の印 34px とチェック、真ん中に上の行と件名、右に「…」） ----- */
+.list-row.task-row.is-stacked {
+  grid-template-columns: var(--tap) 40px minmax(0, 1fr) var(--tap);
+  align-items: center;
+}
+
+.task-row.is-stacked > .icon-btn.list-row-more {
+  margin: 0;
+}
+
+.task-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+/* 上の行「〆11/20・営業部」（11px・--text-muted。日付は等幅で、期限切れの色・今日の太字は日付の所だけ） */
+.task-line {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-line-date[data-overdue] {
+  color: var(--overdue);
+}
+
+.task-line-date[data-today] {
+  font-weight: 600;
+}
+
+/* 件名は 15px（4.7 の表の 14px より 13.3 の 15px が勝つ） */
+.task-row.is-stacked .task-title {
+  min-height: 0;
+  padding: 0;
+  font-size: 15px;
+}

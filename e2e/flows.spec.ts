@@ -248,7 +248,9 @@ test.describe('Task List 生まれの予定（PC）', { tag: ['@pc'] }, () => {
     await expect(cellOf(page, 'work', '2026-11-11').getByTestId(testIds.weekStart('both'))).toContainText('〆')
     await expect(page.getByTestId(testIds.weekEnd('both'))).toBeVisible()
     await expect(cellOf(page, 'work', '2026-11-09').getByTestId(testIds.weekCard('old'))).toHaveClass(/is-done/)
-    for (const id of ['none', 'start-only']) await expect(page.locator(`[data-testid$="-${id}"]`)).toHaveCount(0)
+    // カレンダーの中だけを見る（右の列の Task List には出る）
+    for (const id of ['none', 'start-only'])
+      await expect(page.getByTestId(testIds.view('week')).locator(`[data-testid$="-${id}"]`)).toHaveCount(0)
     await expect(page.getByTestId(testIds.view('week'))).not.toContainText('日付の無いタスク')
     await expect(page.getByTestId(testIds.view('week'))).not.toContainText('開始だけのタスク')
     // マンスリー: 11/11 は期間の1件だけ（開始だけの物は数えない）、11/12 は2件、済んだ物は数えない
