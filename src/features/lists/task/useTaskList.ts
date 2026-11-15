@@ -2,7 +2,7 @@
 // 今日・今から src/domain/taskList.ts の taskListView を作る。予定の表・today・nowMs が同じ間は作り直さない（ほかの表が替わっても）。
 // 作り直しても、行に出す物が前と同じ行は前と同じ物を返し（common/stableRows。行は記録ごとの React.memo）、行が1つも替わらなければ
 // 中身も前と同じ物を返す（1分ごとの今の時刻で作り直しても、済んで 168時間たった行が無ければ描き直さない）。
-// today は Task List の中身の部品が1つの useToday() から渡す（掴んでいる間はその日のまま。D37）。nowMs は useNow(60秒)（168時間で隠す）
+// today は Task List の中身の部品が1つの useToday() から渡す（掴んでいる間はその日のまま。開発）。nowMs は useNow(60秒)（168時間で隠す）
 import { useMemo } from 'react'
 import { taskListView, type TaskListView, type TaskRowView } from '../../../domain/taskList'
 import type { AppData, Item } from '../../../domain/types'
