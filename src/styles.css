@@ -39,7 +39,7 @@
   --gutter: 16px;
   /* 右の列の中の左右の余白と、リストどうしの間 */
   --side-pad: 16px;
-  --list-gap: 20px;
+  --list-gap: 24px;
 
   /* 角丸 */
   --radius: 10px; /* パネル */
@@ -1177,7 +1177,7 @@ h4 {
   color: var(--accent) !important;
 }
 
-/* 右の列の上に重ねるパネル（右から 180ms。段階3のリストの［詳しく］で使う） */
+/* 右の列の上に重ねるパネル（右から 180ms。3つのリストの［詳しく］のパネル。3.6・4.9） */
 .panel-in {
   animation: slide-in-right var(--dur-panel) ease-out;
 }

@@ -23,6 +23,19 @@ const SCREEN_CSS = ALL_CSS.filter(([name]) =>
   ['features/calendar/', 'features/item/', 'features/lists/'].some((dir) => name.startsWith(dir)),
 )
 
+/**
+ * 余白の 4px の見張り（下の describe）が読む CSS: 画面の CSS（SCREEN_CSS）に、段階0・1で作った画面（上の帯・右の列・切り替えの列の
+ * src/features/top、ログインの画面の src/features/login）と、ヘッダーの中身（src/ui/layout.css）・同期の表示（src/ui/sync.css）を
+ * 足した物（段階3で 4px の単位にそろえた。4.8・D21）。NS から写した共通の部品（src/styles.css の .btn・.input など、src/ui/menu.css）は
+ * NS のままなので見ない。差し色の見張りは SCREEN_CSS のまま
+ */
+const SPACING_CSS = ALL_CSS.filter(
+  ([name]) =>
+    SCREEN_CSS.some(([n]) => n === name) ||
+    ['features/top/', 'features/login/'].some((dir) => name.startsWith(dir)) ||
+    ['ui/layout.css', 'ui/sync.css'].includes(name),
+)
+
 /** 画面と部品の TS・TSX（テストを除く。src/features と src/ui） */
 const CODE = import.meta.glob(['./features/**/*.{ts,tsx}', './ui/**/*.{ts,tsx}', '!./**/*.test.{ts,tsx}'], {
   query: '?raw',
@@ -379,7 +392,8 @@ describe('マンスリーの件数の字（9.2・4.7。作者の気になった�
 })
 
 /**
- * 余白は 4px を単位にする（0・4・8・12・16・24・32。docs/SPEC.md の 4.8・FRAME-213）。カレンダー・登録と詳細の画面の CSS の余白の宣言
+ * 余白は 4px を単位にする（0・4・8・12・16・24・32。docs/SPEC.md の 4.8・FRAME-213）。SPACING_CSS（カレンダー・登録と詳細・3つのリスト・
+ * 段階0・1の画面・ヘッダー・同期の表示）の CSS の余白の宣言
  * （margin・padding・gap・row-gap・column-gap・grid-gap・grid-row-gap・grid-column-gap・inset と top・right・bottom・left。@media の中も）
  * に書いた px と rem（1rem = 16px で見る）の値のうち、3px より大きく単位に乗らない物は、4.8 の例外の印を宣言の終わりの ; のすぐ後ろ
  * （同じ行）に書いた宣言だけに許す。印は次の形で、分けは 4.8 の（開発）の5つ（（理由）は書かなくてもよい）:
@@ -502,7 +516,24 @@ describe('余白は 4px を単位に（0・4・8・12・16・24・32。例外は
     ])
   })
 
-  it.each(SCREEN_CSS)('%s: 余白は 4px の単位（乗らない所は 4.8 の例外の印と分け）', (_name, source) => {
+  it('S3 段階0・1の画面（上の帯・右の列・切り替えの列・ログイン）とヘッダー・同期の表示の CSS も見る（S3-FRAME-306・308）', () => {
+    expect(SPACING_CSS.map(([name]) => name)).toEqual(
+      expect.arrayContaining([
+        'features/top/top.css',
+        'features/login/login.css',
+        'ui/layout.css',
+        'ui/sync.css',
+        'features/lists/common/lists.css',
+        'features/calendar/week/week.css',
+        'features/item/item.css',
+      ]),
+    )
+    // NS から写した共通の部品は NS のまま（見ない）
+    expect(SPACING_CSS.map(([name]) => name)).not.toEqual(expect.arrayContaining(['styles.css']))
+    expect(SPACING_CSS.map(([name]) => name)).not.toEqual(expect.arrayContaining(['ui/menu.css']))
+  })
+
+  it.each(SPACING_CSS)('%s: 余白は 4px の単位（乗らない所は 4.8 の例外の印と分け）', (_name, source) => {
     expect(offScaleSpacing(source)).toEqual([])
   })
 })

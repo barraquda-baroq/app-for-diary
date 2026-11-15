@@ -1,5 +1,5 @@
 /* ===== トップ画面（docs/SPEC.md の 3.4〜3.7）: L の並べ方・S・M の積み方と切り替えの列 =====
-   色・大きさは src/styles.css のトークン（docs/SPEC.md の 4.5・4.8）だけを使う */
+   色・大きさは src/styles.css のトークン（docs/SPEC.md の 4.5・4.8）だけを使い、余白は 4px を単位にする（src/calendarCss.test.ts が見張る） */
 
 /* ---------- L（900px 以上。3.4）: 左にカレンダーの領域、右に右の列（300px）。間は 24px ----------
    ページ全体はスクロールせず、カレンダーの領域と右の列はそれぞれの中だけでスクロールする（高さは 100dvh − ヘッダー − 上下の余白） */
@@ -41,7 +41,7 @@
   overflow: hidden;
 }
 
-/* 右の列: 上から Routine List → Task List → Favorite List。中の左右の余白は 16px、リストどうしの間は 20px（4.8） */
+/* 右の列: 上から Routine List → Task List → Favorite List。中の左右の余白は 16px、リストどうしの間は 24px（--list-gap。4.8） */
 .top-side {
   display: flex;
   flex-direction: column;
@@ -81,7 +81,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   padding: 0 4px;
   border: 0;
   background: transparent;
