@@ -15,6 +15,7 @@ import {
   useStackedLists,
   useToasts,
 } from '../../store/uiStore'
+import { getData } from '../../store/appStore'
 import { useSync } from '../../sync/controller'
 import { setTestWidth, TEST_WIDTHS } from '../../test/width'
 import { resetListDraftsForTests } from '../lists/common/listDraft'
@@ -177,14 +178,17 @@ describe('L の並べ方（3.4）', () => {
     expect(Object.values(usePrefs.getState().collapsed.routineGroups)).toEqual([false, false, false, false, false])
   })
 
-  it('入力欄で Enter を押しても、まだ足さず（行と足す処理は各リストの中身が作る）、打った字は欄と書きかけに残る（お知らせも出さない）', async () => {
+  it('入力欄で Enter を押すと、そのリストに足し（Favorite List は PC の Enter）、欄と書きかけを空にする（お知らせは出さない）', async () => {
     const user = userEvent.setup()
     renderAt('/')
     const input = screen.getByTestId('list-favorite-input') as HTMLTextAreaElement
-    await user.type(input, 'あれを見る{Enter}')
-    expect(input.value).toBe('あれを見る')
-    expect(useToasts.getState().toasts).toEqual([])
+    await user.type(input, 'あれを見る')
     await vi.waitFor(() => expect(localStorage.getItem(draftKey('favorite'))).toBe('あれを見る'))
+    await user.keyboard('{Enter}')
+    expect(input.value).toBe('')
+    expect(Object.values(getData().favorites).map((f) => f.text)).toEqual(['あれを見る'])
+    expect(useToasts.getState().toasts).toEqual([])
+    expect(localStorage.getItem(draftKey('favorite'))).toBeNull()
   })
 })
 

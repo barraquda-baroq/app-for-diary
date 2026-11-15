@@ -132,6 +132,14 @@
   overflow: hidden;
 }
 
+/* 自動で高さが伸びる欄（Task List・Favorite List の入力欄と、Favorite List の本文のその場の直し）の高さの上限: 6行ほど
+   （S・指の端末の 16px の字で6行、L の 15px で6行と少し）。超えた分は欄の中でスクロールする（common/useGrowField が、超えた時だけ
+   スクロールの棒を出す）。360px のスマホでキーボードが出ていても、欄の右上の［足す］（✓）と打っている所が見える所に残る（開発） */
+textarea.list-input,
+textarea.list-grow {
+  max-height: 148px;
+}
+
 /* ［足す］: 入力欄の右の端の中、1行目の枠の内側（L のマウスの端末 34px、S・M と指の端末 38px）。伸びた欄でも1行目の右に置く */
 .icon-btn.list-input-add {
   position: absolute;

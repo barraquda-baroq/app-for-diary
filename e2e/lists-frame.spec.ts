@@ -1,7 +1,7 @@
 // 段階3の3つのリストの枠の E2E（docs/SPEC.md の 3.5・3.6・6.13・21. の段階3の終わりの決まり 3.）: S・M では3つのリストがアプリを開く
 // たびに畳んで始まり（読み込み直しても）、開いた状態は端末に覚えない。L の右の列の畳んだ状態は端末に覚える。幅を替えて行き来しても、
-// それぞれの状態を使う。見出しと切り替えの列の数は同じ（まだ済んでいない数。畳んでいても数える）。入力欄はいつも出ていて、Enter・
-// ［足す］ではまだ足さず（足すのは各リストの中身）、打った字は書きかけに残る。データは作り物（e2e/fixtures/listData.ts）
+// それぞれの状態を使う。見出しと切り替えの列の数は同じ（まだ済んでいない数。畳んでいても数える）。入力欄はいつも出ていて、外を押しても
+// 足さず、打った字は書きかけに残る（足す決まりは各リストの E2E）。データは作り物（e2e/fixtures/listData.ts）
 import { expect, test, type Page } from '@playwright/test'
 import { favoriteListView } from '../src/domain/favoriteList'
 import { routineListView } from '../src/domain/routineList'
@@ -135,7 +135,7 @@ test.describe(
   'S3 入力欄（3.6・12.1・6.13。S3-FRAME-069・081・082・095・S3-TASK-030・042・S3-ROUTINE-092）',
   { tag: ['@pc', '@s'] },
   () => {
-    test('いつも出ている入力欄に打った字は、Enter・外を押す・［足す］でまだ足さず（足すのは各リストの中身）、読み込み直しても戻る', async ({
+    test('いつも出ている入力欄に打った字は、外を押しても足さず（指の端末の Favorite List の Enter は改行）、読み込み直しても戻る', async ({
       page,
       isMobile,
     }) => {
@@ -145,7 +145,8 @@ test.describe(
       await input.click()
       await input.fill('週末に行く店を調べる')
       await expect(listAdd(page, 'favorite')).not.toHaveAttribute('aria-disabled', 'true')
-      await input.press('Enter')
+      // PC の Enter は足す（e2e/favorite-list.spec.ts）。指の端末の Enter は改行
+      if (isMobile) await input.press('Enter')
       await page.getByTestId('app-header').click({ position: { x: 300, y: 10 } })
       await expect(input).toHaveValue(isMobile ? '週末に行く店を調べる\n' : '週末に行く店を調べる')
       await expect.poll(() => storedDraft(page, 'favorite')).not.toBeNull()

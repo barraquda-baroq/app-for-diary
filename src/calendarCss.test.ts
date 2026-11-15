@@ -18,7 +18,7 @@ const ALL_CSS: readonly (readonly [string, string])[] = readdirSync(SRC_DIR, { r
   .map((f) => [f, readFileSync(`${SRC_DIR}${f}`, 'utf8')] as const)
 /** カレンダーの画面の CSS（src/features/calendar の下。年・月・週・日・共通の部品・ドラッグ） */
 const CALENDAR_CSS = ALL_CSS.filter(([name]) => name.startsWith('features/calendar/'))
-/** 画面の CSS（src/features/calendar・src/features/item・src/features/lists の下。3つのリストは段階3から。4.8・D21） */
+/** 画面の CSS（src/features/calendar・src/features/item・src/features/lists の下。3つのリストは段階3から。4.8（開発）） */
 const SCREEN_CSS = ALL_CSS.filter(([name]) =>
   ['features/calendar/', 'features/item/', 'features/lists/'].some((dir) => name.startsWith(dir)),
 )
@@ -26,7 +26,7 @@ const SCREEN_CSS = ALL_CSS.filter(([name]) =>
 /**
  * 余白の 4px の見張り（下の describe）が読む CSS: 画面の CSS（SCREEN_CSS）に、段階0・1で作った画面（上の帯・右の列・切り替えの列の
  * src/features/top、ログインの画面の src/features/login）と、ヘッダーの中身（src/ui/layout.css）・同期の表示（src/ui/sync.css）を
- * 足した物（段階3で 4px の単位にそろえた。4.8・D21）。NS から写した共通の部品（src/styles.css の .btn・.input など、src/ui/menu.css）は
+ * 足した物（段階3で 4px の単位にそろえた。4.8（開発））。NS から写した共通の部品（src/styles.css の .btn・.input など、src/ui/menu.css）は
  * NS のままなので見ない。差し色の見張りは SCREEN_CSS のまま
  */
 const SPACING_CSS = ALL_CSS.filter(
