@@ -131,7 +131,7 @@ export class PageTurn extends Component<PageTurnProps> {
     if (prev.mode !== mode || skipped) return null
     const dir = turnDirection(prev.from, from)
     const el = body.current
-    // 掴んでいる間（ウィークリーの WeekDnd が付ける印。dnd-kit の掴んだ物の印 canTurn と重ねて見る）もめくらない
+    // 掴んでいる間（トップの画面のドラッグの入れ物 TopDnd が付ける印。dnd-kit の掴んだ物の印 canTurn と重ねて見る）もめくらない
     if (!dir || !el?.isConnected || !el.parentElement || !canTurn() || useCalendarUi.getState().dragging) return null
     return { dir, old: cloneForTurn(el) }
   }
