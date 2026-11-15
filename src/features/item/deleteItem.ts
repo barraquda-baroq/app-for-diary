@@ -13,7 +13,7 @@ import type { Item } from '../../domain/types'
 import { actions } from '../../store/actions'
 import { getData } from '../../store/appStore'
 import { attemptAsync } from '../../store/uiStore'
-import { holdItemSession, itemChange, notifyUndoable, recordStep } from '../../store/undoStore'
+import { holdItemSession, itemChange, notifyUndoable, recordStep, type RecordOptions } from '../../store/undoStore'
 import { confirmDialog } from '../../ui/dialogs'
 import { displayTitle } from '../calendar/common/parts/itemLook'
 
@@ -28,7 +28,12 @@ export function deleteConfirmText(item: Pick<Item, 'title' | 'listed' | 'done' |
   }
 }
 
-export async function deleteItem(item: Item, nowMs: number = Date.now()): Promise<boolean> {
+/**
+ * 消す（上の決まり）。opts は積み方（RecordOptions。Task List の［削除］は stack: false で並びに積まない。7.13・D2）。
+ * 契約の形だけ（S3-STUB）: opts は今は受け取るだけで読まず、積み方は替えない（読むのは段階3の WP0）
+ */
+export async function deleteItem(item: Item, nowMs: number = Date.now(), opts?: RecordOptions): Promise<boolean> {
+  void opts
   if (isOnCalendar(item)) {
     const ok = await confirmDialog({
       ...deleteConfirmText(item, nowMs),

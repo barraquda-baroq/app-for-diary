@@ -34,6 +34,12 @@ export interface ModalProps {
   titleIcon?: ReactNode
   /** 題の列の［×］の読み上げ（既定「閉じる」。アプリを閉じるかの確かめでは、［閉じる］のボタンと分けて「キャンセル」） */
   closeLabel?: string
+  /**
+   * 出し方（docs/SPEC.md の 3.6・3.8）。auto（既定）は L で真ん中・S/M で下からのシート。side は L で右の列の上に重ねるパネル
+   * （Task List の「タスク」・ルーチン・やりたいことの［詳しく］。S/M は下からのシート）。
+   * 契約の形だけ（S3-STUB）: 今は受け取るだけで読まず、side も auto と同じに出す（パネルを作るのは段階3の WP6）
+   */
+  placement?: 'auto' | 'side'
 }
 
 /** 開いているモーダルの重なり（いちばん上だけが Esc と Tab を扱う） */

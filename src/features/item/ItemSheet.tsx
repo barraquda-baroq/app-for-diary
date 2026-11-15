@@ -26,6 +26,11 @@ export interface ItemSheetProps {
   footer?: ReactNode
   /** 開いた時にフォーカスする要素のセレクタ */
   initialFocus?: string
+  /**
+   * 出し方（src/ui/Modal の placement。side は L で右の列の上のパネル: Task List の［詳しく］の「タスク」。3.6・3.8）。
+   * 契約の形だけ（S3-STUB）: 今は受け取るだけで Modal へ渡さない（渡すのは段階3の WP6）
+   */
+  placement?: 'auto' | 'side'
   children: ReactNode
 }
 

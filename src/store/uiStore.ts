@@ -19,6 +19,9 @@ export type RoutineFlags = Record<RoutineCycle, boolean>
 /** 3つのリスト */
 export type ListKey = 'routine' | 'task' | 'favorite'
 
+/** S・M の積んだ所の区切り（カレンダーと3つのリスト。切り替えの列の4つ。docs/SPEC.md の 3.5） */
+export type PaneKey = 'calendar' | ListKey
+
 /** 畳んだ状態（true が畳んでいる）。docs/SPEC.md の 3.6・6.13 */
 export interface Collapsed {
   /**
@@ -174,15 +177,37 @@ export const usePrefs = create<PrefsState>((set, get) => ({
 
 // ---------- S・M の縦に積んだリストの畳んだ状態（docs/SPEC.md の 3.5・3.6・6.13） ----------
 
+/**
+ * S・M の積んだ所の今の形（StackedTop を出している間だけ。L・設定・ログインなどでは null）。width は幅の区分、fullMim は S で MIM を
+ * 全面で開いている（リストと切り替えの列を隠している）。「開いているリスト」（docs/SPEC.md の 3.1・D1・■34）を決めるのに読む
+ */
+export interface StackedLayout {
+  width: 'S' | 'M'
+  fullMim: boolean
+}
+
 interface StackedListsState {
   /** true が畳んでいる。アプリを開くたびに3つとも畳んだ状態で始まる（端末に覚えない。開いている間だけ保つ） */
   collapsed: Record<ListKey, boolean>
   setCollapsed: (key: ListKey, collapsed: boolean) => void
+  /**
+   * 切り替えの列で選ばれている物（見ている所。スクロールの位置で決め、押した直後は押した物。3.5）。開いている間だけ保つ。
+   * 契約の形だけ（S3-STUB）: 今はまだ誰も書かず、いつも 'calendar'（StackedTop が書くのは段階3の WP0）
+   */
+  shown: PaneKey
+  setShown: (shown: PaneKey) => void
+  /** 積んだ所の今の形（StackedLayout）。契約の形だけ（S3-STUB）: 今はまだ誰も書かず、いつも null（StackedTop が書くのは段階3の WP0） */
+  layout: StackedLayout | null
+  setLayout: (layout: StackedLayout | null) => void
 }
 
 export const useStackedLists = create<StackedListsState>((set, get) => ({
   collapsed: { routine: true, task: true, favorite: true },
   setCollapsed: (key, collapsed) => set({ collapsed: { ...get().collapsed, [key]: collapsed } }),
+  shown: 'calendar',
+  setShown: (shown) => set({ shown }),
+  layout: null,
+  setLayout: (layout) => set({ layout }),
 }))
 
 // ---------- お知らせ（トースト。docs/SPEC.md の 3.9） ----------

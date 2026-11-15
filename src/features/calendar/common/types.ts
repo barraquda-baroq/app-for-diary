@@ -3,10 +3,12 @@
 // 型だけを置く（React・ストアの中身を読まない）
 import type { RegisterInit } from '../../../domain/itemInput'
 import type { ID } from '../../../domain/types'
-import type { CalendarMode } from '../../../store/uiStore'
+import type { CalendarMode, ListKey, PaneKey } from '../../../store/uiStore'
 import type { WidthClass } from '../../../ui/hooks'
 
-export type { CalendarMode, WidthClass }
+// 決まりの関数（*Model.ts など。src/features/calendar/purity.test.ts）は store・ui を読めないので、モード・幅の区分・リスト・
+// S・M の区切りの型はここから読む
+export type { CalendarMode, ListKey, PaneKey, WidthClass }
 
 /**
  * 1つのモードの画面（YearView・MonthView・WeekView・DayView）が受け取る物。common/CalendarView が行き先（3.1）と
@@ -33,9 +35,18 @@ export type { RegisterInit }
 
 /**
  * 小さな画面（登録・詳細）を開いている印。行き先は変えず、履歴の state.sheet に置く（「戻る」で閉じる。D03）。
- * 詳細は予定の id だけを持つ（中身はデータから読む）
+ * 詳細は予定の id だけを持つ（中身はデータから読む）。リストから開く物（docs/SPEC.md の 3.6・12.2・12.3）:
+ * - register の from 'favorite': Favorite List の［予定にする］で開いた登録の画面（元に戻す・やり直すの並びに積まない。D2・D4）
+ * - detail の from 'task': Task List の［詳しく］で開いた詳細（題は「タスク」・L は右の列の上のパネル・並びに積まない。D2）
+ * - routine・favorite: Routine List・Favorite List の［詳しく］のパネル（ルーチン・やりたいことの id）
+ * 契約の形だけ（S3-STUB）: from と routine・favorite は型だけで、sheets.ts の sheetOf はまだ読まない（印があっても今までどおり
+ * register・detail だけを開き、routine・favorite は開かない。読むのは段階3の WP0）
  */
-export type SheetState = { kind: 'register'; init: RegisterInit } | { kind: 'detail'; id: ID }
+export type SheetState =
+  | { kind: 'register'; init: RegisterInit; from?: 'favorite' }
+  | { kind: 'detail'; id: ID; from?: 'task' }
+  | { kind: 'routine'; id: ID }
+  | { kind: 'favorite'; id: ID }
 
 /** 履歴の state（小さな画面を開いた時に積む。MIM の印 mimFromCalendar などほかの物と並ぶ） */
 export interface SheetLocationState {

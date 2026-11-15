@@ -157,12 +157,28 @@ function flushSession(id: ID, cur: Item | null): void {
   s.base = cur
 }
 
+/** 操作の積み方（recordStep・deleteItem などの最後の引数） */
+export interface RecordOptions {
+  /**
+   * false はウィークリー・デイリーを出していても並びに積まない（お知らせの［元に戻す］だけで戻せる。3つのリストでした操作・
+   * Task List から開いた詳細・Favorite List の［予定にする］。docs/SPEC.md の 7.13・D2）。省く・true は今までどおり。
+   * 契約の形だけ（S3-STUB）: 今は受け取るだけで読まず、積み方は替えない（読むのは段階3の WP0）
+   */
+  stack?: boolean
+}
+
 /**
  * 操作を積む（画面が操作の後に呼ぶ）。ウィークリー・デイリーを出していない時は積まない（お知らせの［元に戻す］だけで戻せる）。
  * 開いている詳細の画面があれば、それまでに直した所を先に積む（操作がその予定を変えたなら、その前の記録まで）。何も変わらなかった
- * 時は積まずに null
+ * 時は積まずに null。opts は RecordOptions（今は読まない）
  */
-export function recordStep(label: string, changes: U.UndoChange[], stepHooks?: StepHooks): U.UndoStep | null {
+export function recordStep(
+  label: string,
+  changes: U.UndoChange[],
+  stepHooks?: StepHooks,
+  opts?: RecordOptions,
+): U.UndoStep | null {
+  void opts
   // 何も変わらなかった操作（もう完了だった予定を完了にした・同じ日へ動かした）は積まない
   changes = changes.filter((c) => !U.isNoopChange(c))
   if (changes.length === 0) return null
