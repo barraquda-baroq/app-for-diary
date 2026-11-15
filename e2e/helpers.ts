@@ -309,12 +309,6 @@ export interface HistoryShape {
   buildPending: boolean
   /** 押している間・ドラッグの途中（アプリから履歴を動かすのを待っている） */
   held: boolean
-  /** iPhone: ブラウザが身振りの絵を出しているとみなす間（端からのフリックが来てから） */
-  swipePicture: boolean
-  /** iPhone: 閉じた後に、土台の後ろの「進む」の印の絵を写すのを待っている・写している・その印で指を離すのを待っている（docs/SPEC.md の 3.1） */
-  recording: boolean
-  /** iPhone: 土台の後ろの履歴の絵が、まだ今のカレンダーでない */
-  forwardDirty: boolean
 }
 
 declare global {
@@ -495,9 +489,7 @@ export async function historySettled(page: Page): Promise<void> {
         // iPhone・iPad の1つの履歴の形: 後で渡す POP・描いた後のスクロールの戻しが済んだ（ブラウザの履歴は動かさない）
         if (s?.kind === 'single') return !s.busy
         const idx = (history.state as { idx?: number } | null)?.idx
-        // 印の履歴の形の iPhone で身振りの絵を出しているとみなす間・閉じた後に「進む」の印の絵を写すのを待っている・写している間も、
-        // 動かしている途中（前の作り。今は iPhone・iPad でもこの形を作らない）
-        return Boolean(s && !s.busy && !s.swipePicture && !s.recording && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
+        return Boolean(s && !s.busy && idx === s.cur && (s.cur === s.shownIdx || s.exitArmed))
       }),
     )
     .toBe(true)

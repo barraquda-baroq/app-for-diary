@@ -4,35 +4,18 @@
 // foreign の履歴（ほかのページ）へ動いた時は、popstate の代わりに pagehide を送る（ページが離れた）。
 // 利用者の「戻る」「進む」は userGo（ブラウザの go と同じ動き）、アドレス欄で # を書き換えた時は typeHash。navigationApi の時は
 // Chromium の Navigation API（navigation.entries()・currentEntry）もまねる: 今いる所と続いた、ほかのページでない履歴だけを数える。
-// requestAnimationFrame は 16ms ごとの描く時（setTimeout）。アプリが呼んだ履歴は calls に控える（popstate を送っている間か・同じ物の
-// 置き換えかも）。
-// iPhone の WebKit の身振りの絵もまねる（docs/SPEC.md の 3.1。WebKit のソースで読んだ物。パスは WebKit の Source/WebKit・WebCore の下）:
-// - 履歴を離れる時（pushState の時・go で動く時・利用者の身振り（userGo）を始めた時）に、その時に描かれていた画面（painted。show で
-//   替えた画面は、2回描いた後に描かれる）を、離れる履歴の絵として控える（描く物の数と一緒に。weights・ballast）。身振りの絵を出している
-//   間は控えない（ViewSnapshotStore.cpp の recordSnapshot）。replaceState は絵を残し、pushState で捨てた後ろの履歴の絵は消える
-// - swipes の時の userGo は身振り: 始めた時に行き先の履歴を決め（ViewGestureControllerIOS.mm の beginSwipeGesture）、その絵を出す
-//   （slid に控える）。指を離す（fingerMs の後）と、決めた履歴へ動く。その履歴が切り捨てられていれば動かず、絵を3秒出したまま
-//   （hazards の dropped）、今いる履歴なら読み込み直しになる（reload。HistoryController.cpp の itemsAreClones）
+// requestAnimationFrame は 16ms ごとの描く時（setTimeout）。アプリが呼んだ履歴は calls に控える（同じ物の置き換えかも）。
+// swipes の時は、iPhone の WebKit の端からの身振りもまねる（WebKit のソースで読んだ物。パスは WebKit の Source/WebKit・WebCore の下。
+// iPhone・iPad の1つの履歴の形 src/history/singleEntryHistory.ts の、前の版が残した履歴への身振りの確かめに使う）:
+// - userGo は身振り: 始めた時に行き先の履歴を決め（ViewGestureControllerIOS.mm の beginSwipeGesture）、指を離す（fingerMs の後）と、
+//   決めた履歴へ動く。その履歴が切り捨てられていれば動かず、身振りの絵を3秒出したまま、今いる履歴なら読み込み直しになる（どちらも
+//   popstate は無い。HistoryController.cpp の itemsAreClones）。その向きに履歴が無ければ始まらない
 // - 指を離すと、身振りが終わる動き（animMs）の間は描かない（requestAnimationFrame はその後。WebPage.cpp の swipeAnimationDidStart）。
-//   その間に送る popstate は hasUAVisualTransition が true（Document.cpp の dispatchPopstateEvent）、ほかは false
-// - 着いた後も、描く物の数が行き先の絵の半分を超えて、動きの後 overlayMs たつまで（超えなければ3秒）絵を出したまま（overlayEnds に
-//   長さ）。ただし身振りの popstate を送っている間（その後のマイクロタスクまで）にページが最初に呼んだ書き込みが pushState なら、
-//   絵は3秒外れない（ViewGestureController.cpp の didSameDocumentNavigationForMainFrame: 最初に知らせたのが置き換えか戻る・進むの時
-//   だけ、読み込みの確かめを済ませる。WebKit は popstate を送ってから戻る・進むを知らせる: FrameLoader.cpp の loadInSameDocument）
-// - 絵を出している間は、次の身振りは始まらない（refused に数える。ViewGestureControllerIOS.mm の shouldBeginInteractiveTransition）
-// - focused の時は、身振りの始まりに window の blur、動きの後に focus を送る（ページの部品から一番目の応答者が外れる。WKWebViewIOS.mm）。
-//   edgeTouch の時は、身振りの始まりの前にページへ指を下ろした出来事（pointerdown・touchstart）を送る（離す出来事は送らない。
-//   WKTouchEventsGestureRecognizer.mm）
-// - strict の時は、popstate を送っている間（その後のマイクロタスクまで）の pushState で投げる（どの時も violations に控える）
-// iPhone・iPad の1つの履歴の形（src/history/singleEntryHistory.ts）のテスト用に、ページのスクロールの位置（scrollY・scrollTo）と、
-// 前の版が残した履歴を並べる seed もある
+//   その間に送る popstate は hasUAVisualTransition が true（Document.cpp の dispatchPopstateEvent）、ほかは false。着いた後も、動きの後
+//   overlayMs たつまで身振りの絵を出したまま
+// - 絵を出している間は、次の身振りは始まらない（refused。ViewGestureControllerIOS.mm の shouldBeginInteractiveTransition）
+// iPhone・iPad の1つの履歴の形のテスト用に、ページのスクロールの位置（scrollY・scrollTo）と、前の版が残した履歴を並べる seed もある
 import type { HistoryWindow } from '../history/appHistory'
-
-/** 控えた絵（その時に描かれていた画面と、描く物の数） */
-export interface Picture {
-  screen: string
-  weight: number
-}
 
 interface Entry {
   state: unknown
@@ -41,8 +24,6 @@ interface Entry {
   foreign?: boolean
   /** 「戻る」「進む」で来た時にスクロールの位置を戻すか（history.scrollRestoration） */
   scroll?: 'auto' | 'manual'
-  /** 身振りの絵（WebKit が離れる時に写す物） */
-  picture?: Picture
 }
 
 /** アプリが呼んだ履歴の1つ */
@@ -54,8 +35,6 @@ export interface HistoryCall {
   mark?: string | null
   /** 置き換えで、今の物と同じ state・URL（履歴は替わらない） */
   same?: boolean
-  /** popstate を送っている間（その後のマイクロタスクまで）に呼んだ */
-  inPop: boolean
   /** 呼んだ時刻（Date.now） */
   at: number
 }
@@ -71,28 +50,9 @@ export interface FakeWindowOptions {
   swipes?: boolean
   /** 身振りが終わる動きの長さ（swipes の時。描かない間） */
   animMs?: number
-  /** 身振りの始まりに window の blur、動きの後に focus を送る */
-  focused?: boolean
-  /** 身振りの始まりの前に、指を下ろした出来事（pointerdown・touchstart）を送る（離す出来事は送らない） */
-  edgeTouch?: boolean
-  /** popstate を送っている間の pushState で投げる */
-  strict?: boolean
-  /**
-   * ページの go が着くまでの長さ（既定は 0: 次の処理）。WebKit では、go を頼んでから UI の側が今いる所を知るまでの数ミリ秒で、その間に
-   * 始まった身振りの行き先は、動く前の所から決まる
-   */
-  goMs?: number
 }
-
-/** popstate を送っている間とみなすマイクロタスクの数（その後の処理を待つ Promise のつながりより長く） */
-const POP_MICROTASK_HOPS = 50
 
 type Handler = (event: Event) => void
-
-/** popstate を送っている間（その後のマイクロタスクまで）に呼んだ、置き換え・積む */
-interface PopWindow {
-  calls: ('pushState' | 'replaceState')[]
-}
 
 export class FakeWindow implements HistoryWindow {
   entries: Entry[]
@@ -104,31 +64,14 @@ export class FakeWindow implements HistoryWindow {
   readonly document = { querySelector: () => null, visibilityState: 'visible' }
   /** Navigation API（navigationApi の時だけ） */
   readonly navigation?: { readonly currentEntry: { readonly index: number } | null; entries(): { index: number }[] }
-  /** 今の画面（DOM）と、描かれている画面（show から2回描いた後） */
-  screen = 'calendar'
-  painted = 'calendar'
-  /** 画面ごとの描く物の数（無い画面は 100） */
-  weights: Record<string, number> = {}
-  /** 見えない描く物の数（ballast） */
-  ballastCount = 0
   /** 身振りの絵を出している */
   overlay = false
-  /** 身振りが終わる動きの後、身振りの絵を外すまで（描く物が足りている時） */
+  /** 身振りが終わる動きの後、身振りの絵を外すまで */
   overlayMs = 100
   /** 身振りが終わる動きの長さ */
   animMs: number
-  /** 身振りの間に出した絵（行き先の履歴の絵の画面。絵の無い履歴は none） */
-  readonly slid: string[] = []
-  /** 着いてから身振りの絵を外すまでの長さ */
-  readonly overlayEnds: number[] = []
-  /** 身振りの行き先が着いた時に無かった（dropped）・今いる履歴だった（reload） */
-  readonly hazards: string[] = []
-  /** 前の絵を出している間で、始まらなかった身振りの数 */
-  refused = 0
   /** アプリが呼んだ履歴 */
   readonly calls: HistoryCall[] = []
-  /** popstate を送っている間に呼んだ pushState */
-  readonly violations: string[] = []
   /** ページのスクロールの位置（scrollTo で替わる。ブラウザが「戻る」「進む」で戻す動きはまねない） */
   scrollY = 0
   private readonly handlers = new Map<string, Set<Handler>>()
@@ -136,37 +79,14 @@ export class FakeWindow implements HistoryWindow {
   private typed = 0
   /** 身振りが終わる動きが終わる時刻（Date.now。その前は描かない） */
   private animUntil = -Infinity
-  private popWindow: PopWindow | null = null
-  private showSeq = 0
-  private touchSeq = 900
   private frameSeq = 0
 
   /** userGo を iPhone の端からの身振りとしてまねる（絵を出す・出している間は次の身振りが始まらない） */
   private readonly swipes: boolean
-  private readonly focused: boolean
-  private readonly edgeTouch: boolean
-  private readonly strict: boolean
-  private readonly goMs: number
 
-  constructor(
-    hash = '#/',
-    {
-      before = 0,
-      navigationApi = false,
-      swipes = false,
-      animMs = 300,
-      focused = false,
-      edgeTouch = false,
-      strict = false,
-      goMs = 0,
-    }: FakeWindowOptions = {},
-  ) {
+  constructor(hash = '#/', { before = 0, navigationApi = false, swipes = false, animMs = 300 }: FakeWindowOptions = {}) {
     this.swipes = swipes
-    this.goMs = goMs
     this.animMs = swipes ? animMs : 0
-    this.focused = focused
-    this.edgeTouch = edgeTouch
-    this.strict = strict
     this.entries = [
       ...Array.from({ length: before }, (_, i) => ({ state: null, url: `https://other.example/${i}`, foreign: true })),
       { state: null, url: `https://app.example/${hash}` },
@@ -213,7 +133,7 @@ export class FakeWindow implements HistoryWindow {
       pushState: (data: unknown, _unused: string, url?: string | null) => win.pushState(data, url),
       replaceState: (data: unknown, _unused: string, url?: string | null) => win.replaceState(data, url),
       go: (delta: number) => {
-        win.calls.push({ op: 'go', delta, inPop: win.popWindow !== null, at: Date.now() })
+        win.calls.push({ op: 'go', delta, at: Date.now() })
         win.move(delta)
       },
     }
@@ -237,23 +157,16 @@ export class FakeWindow implements HistoryWindow {
     }
   })()
 
-  /** アプリが呼んだ置き換え・積むを控える（popstate を送っている間の pushState は violations にも。strict なら投げる） */
+  /** アプリが呼んだ置き換え・積むを控える */
   private note(op: 'pushState' | 'replaceState', data: unknown, url: string | null | undefined): void {
     const cur = this.entries[this.index]
     const mark = (data as { ds?: { mark?: string } } | null)?.ds?.mark ?? null
     const same = op === 'replaceState' && JSON.stringify(data) === JSON.stringify(cur.state) && this.resolve(url) === cur.url
-    const inPop = this.popWindow !== null
-    this.calls.push({ op, mark, same, inPop, at: Date.now() })
-    if (!this.popWindow) return
-    this.popWindow.calls.push(op)
-    if (op !== 'pushState') return
-    this.violations.push(`popstate の中の pushState（${mark ?? 'mark なし'}）`)
-    if (this.strict) throw new Error('popstate を送っている間に pushState を呼んだ')
+    this.calls.push({ op, mark, same, at: Date.now() })
   }
 
   private pushState(data: unknown, url?: string | null): void {
     this.note('pushState', data, url)
-    this.record()
     const scroll = this.entries[this.index].scroll
     this.entries = this.entries.slice(0, this.index + 1)
     this.entries.push({ state: structuredClone(data), url: this.resolve(url), scroll })
@@ -278,72 +191,31 @@ export class FakeWindow implements HistoryWindow {
     setTimeout(fire, ms)
   }
 
-  /** 画面を替える（描かれるのは、2回描いた後。身振りが終わる動きの間は描かない） */
-  show(screen: string): void {
-    this.screen = screen
-    const seq = ++this.showSeq
-    this.afterFreeze(() => {
-      if (seq === this.showSeq) this.painted = screen
-    }, 32)
-  }
-
-  /** 描く物の数（今の画面と、見えない描く物） */
-  weight(screen = this.screen): number {
-    return (this.weights[screen] ?? 100) + this.ballastCount
-  }
-
-  /** 今の履歴を離れる: 描かれている画面を絵に控える（身振りの絵を出している間は控えない） */
-  private record(): void {
-    if (this.overlay || this.entries[this.index].foreign) return
-    this.entries[this.index].picture = { screen: this.painted, weight: this.weight(this.painted) }
-  }
-
-  /** 履歴ごとの絵の画面（無ければ -） */
-  pictures(): string[] {
-    return this.entries.map((e) => e.picture?.screen ?? '-')
-  }
-
-  /**
-   * ページの go（次の処理（goMs の後）で、離れる履歴の絵を控えてから動いて popstate。範囲の外なら何もしない。その前に typeHash が来たら
-   * 動かない）
-   */
+  /** ページの go（次の処理で動いて popstate。範囲の外なら何もしない。その前に typeHash が来たら動かない） */
   move(delta: number): void {
     const typed = this.typed
     setTimeout(() => {
       if (this.left || typed !== this.typed) return
       const target = this.index + delta
       if (target < 0 || target >= this.entries.length) return
-      this.record()
       this.arrive(target)
-    }, this.goMs)
+    }, 0)
   }
 
-  private arrive(target: number): PopWindow | null {
+  /** その履歴へ着く（ほかのページなら離れる: pagehide。ページの中なら popstate） */
+  private arrive(target: number): void {
     this.index = target
     if (this.entries[target].foreign) {
       this.left = true
       this.dispatch('pagehide', new Event('pagehide'))
-      return null
+      return
     }
-    return this.dispatchPop()
+    this.dispatchPop()
   }
 
-  /** popstate を送る（身振りが終わる動きの間なら hasUAVisualTransition が true）。その後のマイクロタスクまでを、送っている間とみなす */
-  private dispatchPop(): PopWindow {
-    const w: PopWindow = { calls: [] }
-    this.popWindow = w
-    const event = Object.assign(new Event('popstate'), { hasUAVisualTransition: Date.now() < this.animUntil })
-    try {
-      this.dispatch('popstate', event)
-    } finally {
-      let hops = 0
-      const hop = () => {
-        if (++hops < POP_MICROTASK_HOPS) void Promise.resolve().then(hop)
-        else if (this.popWindow === w) this.popWindow = null
-      }
-      void Promise.resolve().then(hop)
-    }
-    return w
+  /** popstate を送る（身振りが終わる動きの間なら hasUAVisualTransition が true） */
+  private dispatchPop(): void {
+    this.dispatch('popstate', Object.assign(new Event('popstate'), { hasUAVisualTransition: Date.now() < this.animUntil }))
   }
 
   requestAnimationFrame(callback: () => void): number {
@@ -358,79 +230,44 @@ export class FakeWindow implements HistoryWindow {
 
   /**
    * ブラウザの「戻る」「進む」（次の処理で動いて popstate。範囲の外なら何もしない）。swipes の時は iPhone の端からの身振り: 身振りの
-   * 絵を出している間は始まらない（refused）。その向きに履歴が無ければ始まらない（none）。始めた時に今の履歴の絵を控え、行き先の履歴を
-   * 決めてその絵を出し（slid）、fingerMs の後に指を離す（lift）
+   * 絵を出している間は始まらない（refused）。その向きに履歴が無ければ始まらない（none）。始めた時に行き先の履歴を決め、fingerMs の後に
+   * 指を離す（lift）
    */
   userGo(delta: number, { fingerMs = 0 }: { fingerMs?: number } = {}): SwipeResult {
     if (!this.swipes) {
       this.move(delta)
       return 'started'
     }
-    if (this.overlay) {
-      this.refused += 1
-      return 'refused'
-    }
+    if (this.overlay) return 'refused'
     const start = this.index + delta
     if (start < 0 || start >= this.entries.length) return 'none'
     const target = this.entries[start]
-    if (this.edgeTouch) this.touchDown()
-    this.record()
     this.overlay = true
-    this.slid.push(target.picture?.screen ?? 'none')
-    if (this.focused) this.dispatch('blur', new Event('blur'))
     setTimeout(() => this.lift(target), fingerMs)
     return 'started'
   }
 
   /**
-   * 身振りの指を離した: 始めた時に決めた履歴へ動く（切り捨てられていれば dropped、今いる履歴なら reload。どちらも popstate は無い）。
-   * 身振りが終わる動きの間は描かず、その後に絵を外す（上の初めの説明）
+   * 身振りの指を離した: 始めた時に決めた履歴へ動く（切り捨てられていれば動かず、身振りの絵を3秒出したまま。今いる履歴なら読み込み
+   * 直し。どちらも popstate は無い）。身振りが終わる動きの間は描かず、その後 overlayMs たったら絵を外す（上の初めの説明）
    */
   private lift(target: Entry): void {
     if (this.left) return
-    const at = Date.now()
     const i = this.entries.indexOf(target)
     if (i === -1) {
-      this.hazards.push('dropped')
-      setTimeout(() => this.endOverlay(at), 3000)
+      setTimeout(() => (this.overlay = false), 3000)
       return
     }
     if (i === this.index) {
-      this.hazards.push('reload')
-      this.endOverlay(at)
+      this.overlay = false
       return
     }
-    this.animUntil = at + this.animMs
-    const w = this.arrive(i)
-    if (!w) return
-    if (this.focused) setTimeout(() => this.dispatch('focus', new Event('focus')), this.animMs)
-    const threshold = (target.picture?.weight ?? 0) / 2
-    const check = () => {
-      if (this.left) return
-      const waited = Date.now() - at
-      const stuck = w.calls[0] === 'pushState'
-      if (waited >= 3000 || (!stuck && this.weight() > threshold)) {
-        this.endOverlay(at)
-        return
-      }
-      setTimeout(check, Math.min(16, 3000 - waited))
-    }
-    setTimeout(check, this.animMs + this.overlayMs)
-  }
-
-  private endOverlay(at: number): void {
-    this.overlay = false
-    this.overlayEnds.push(Date.now() - at)
-  }
-
-  /** 指を下ろした出来事（身振りの指: 離す出来事は来ない） */
-  private touchDown(): void {
-    const pointerId = ++this.touchSeq
-    this.dispatch(
-      'pointerdown',
-      Object.assign(new Event('pointerdown'), { pointerType: 'touch', pointerId, isPrimary: true, buttons: 1 }),
-    )
-    this.dispatch('touchstart', Object.assign(new Event('touchstart'), { touches: { length: 1 } }))
+    this.animUntil = Date.now() + this.animMs
+    this.arrive(i)
+    if (this.left) return
+    setTimeout(() => {
+      if (!this.left) this.overlay = false
+    }, this.animMs + this.overlayMs)
   }
 
   /**

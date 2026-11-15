@@ -1,7 +1,7 @@
 // iPhone の端からのフリックの記録（docs/SPEC.md の 3.1・18.1 の「開発」）。うまくいかなかった払いの後に、作者が設定の［記録をコピー］で
 // 送れるようにする（iPhone が途中で戻したのか、アプリの側で何かしたのかを分ける）。設定で「端からのフリックの記録を取る」を入れた時
 // だけ控え、新しい物から SWIPE_LOG_MAX 件だけ残す（ページを読み込み直すと消える）。控えるのは、時刻・種類・番号や位置だけ（予定の中身は
-// 控えない）。何を控えるかは呼ぶ所が決める（src/history/appHistory.ts の popstate・履歴を書く・動く・指、
+// 控えない）。何を控えるかは呼ぶ所が決める（src/history/appHistory.ts の popstate・履歴を書く・動く、
 // src/history/singleEntryHistory.ts の開いた時（start: ブラウザの履歴の数・端の幅）・払い（flick）・アプリの中の行き先の動き（vpush・
 // vpop・vreplace・vcollapse）・前の版が残した履歴への popstate（pop・adopt・pop-act・pop-skip）・書けなかった時（write-fail）、
 // src/history/edgeFlick.ts の画面の端で下ろした指（edge-down: 端の幅も）・数えなかった訳（edge-skip）・離した指（edge-up）、

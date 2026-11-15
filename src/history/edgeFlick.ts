@@ -252,7 +252,7 @@ export function attachEdgeFlick(
   if (!history.flick) return null
   return installEdgeFlick(win, {
     flick: (side) => history.flick?.(side),
-    userPopSince: (t) => history.userPopSince(t),
+    userPopSince: (t) => history.userPopSince?.(t) ?? false,
     dragging,
     now,
   })

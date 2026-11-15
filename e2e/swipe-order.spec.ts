@@ -108,7 +108,7 @@ const orderOf = (page: Page) => page.evaluate(() => (window as unknown as { __or
 
 /**
  * 端からのフリック（左の端から = back・右の端から = forward）: 次の popstate を払いの物にして「戻る」「進む」をし、アプリの履歴が
- * 落ち着くまで待つ（身振りの絵を出しているとみなす間・閉じた後に「進む」の印の絵を写す間も待つ）
+ * 落ち着くまで待つ（historySettled）
  */
 async function flick(page: Page, dir: 'back' | 'forward') {
   await page.evaluate(() => {

@@ -82,7 +82,6 @@ import { getData } from '../../../../store/appStore'
 import { quickDraftKey, readLocal, writeLocal } from '../../../../store/localDrafts'
 import { swipeLog } from '../../../../history/swipeLog'
 import { edgeOfScreen } from '../../../../history/edgeFlick'
-import { overCalendarGone } from '../../../../history/swipePicture'
 import { attempt } from '../../../../store/uiStore'
 import { itemChange, notifyUndoable, recordStep } from '../../../../store/undoStore'
 import { currentPopSource } from '../../../../ui/device'
@@ -413,10 +412,6 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     input.current?.focus({ preventScroll: true })
     if (input.current) revealQuickAddInput(input.current)
   }, [])
-
-  // 閉じた（外した）時を知らせる: iPhone で、閉じた後すぐに小さな画面を開く時・アプリの履歴が印の履歴を作る・印の絵を写す時は、
-  // 入力欄の消えた画面が描かれるのを待つ（Esc・キーボードの完了で閉じた時も。3.1）
-  useLayoutEffect(() => overCalendarGone, [])
 
   // 押した・離した・窓を離れたを、window の捕まえる段階で見る（押した物の pointerdown・mousedown（フォーカスの移り）・click より
   // 先に分かる）。入力欄の外を押したら、押し終わってから足して閉じる（押した所の操作はそのまま。ほかの日の「＋」なら、そこの
