@@ -1,12 +1,13 @@
-// 予定の表記と文（docs/SPEC.md の 3.9・4.11・4.12・7.7・7.11・11.2・12.3・12.5・12.7・12.8）: 時刻・期間の表記、デイリーのリストの右の端、
-// list 生まれの「今どう出るか」の1行、お知らせ（トースト）の文、読み上げ（aria-label）の文。カレンダーと詳細の画面はここから取る
-// （同じ文を何か所にも書かない）。時刻は画面では時の頭の 0 を落とす（9:00。保存は 'HH:MM' のまま。開発）。月日は 0 で埋めない（11/9）
+// 予定の表記と文（docs/SPEC.md の 3.9・4.11・4.12・7.7・7.11・11.2・12.3・12.5・12.7・12.8・13.〜15.）: 時刻・期間の表記、デイリーの
+// リストの右の端、list 生まれの「今どう出るか」の1行、お知らせ（トースト）の文、読み上げ（aria-label）の文、3つのリストの断る文と
+// 日付の列のメニューの字。カレンダー・詳細の画面・リストはここから取る（同じ文を何か所にも書かない）。時刻は画面では時の頭の 0 を
+// 落とす（9:00。保存は 'HH:MM' のまま。開発）。月日は 0 で埋めない（11/9）
 import type { CalItem } from './calendar'
-import { displayHm, isYmd, jaDateLabel, mdLabel, shortDateLabel } from './dates'
+import { displayHm, isYmd, jaDateLabel, mdLabel, parseYmd, shortDateLabel } from './dates'
 import { formatCount, periodOf, type DayCounts } from './items'
 import { UNTITLED } from './repair'
 import { ITEM_KIND_LABELS } from './trash'
-import type { ItemKind } from './types'
+import { LIMITS, type ItemKind } from './types'
 import { appliedSides, type UndoDirection, type UndoStep } from './undo'
 
 // ---------- 時刻・期間の表記（7.7） ----------
@@ -90,7 +91,39 @@ export const toastText = {
   deleted: (title: string): string => `『${title}』を削除しました`,
   /** list 生まれの締め切り日を消して Task List に戻した（6.3） */
   relisted: 'カレンダーから外れたので Task List に戻しました',
+  /** Favorite List の［済みを片付ける］で、済みの物をまとめてゴミ箱へ移した（15.3） */
+  clearedDone: (n: number): string => `済みの ${n}件をゴミ箱へ移しました`,
+  /** Favorite List の［Task List へ移す］（15.4） */
+  movedToTask: 'Task List へ移しました',
 } as const
+
+// ---------- リスト（13.〜15.） ----------
+
+/** 件名が空・長すぎる時の文（足さない・保存しない。字は欄に残す。6.2・6.7・12.4・D29。items.ts・routines.ts の決まりと同じ文） */
+export const TITLE_RANGE_TEXT = `件名は1〜${LIMITS.title}字で入れてください`
+
+/** 依頼者が長すぎる時の文（6.2。items.ts の決まりと同じ文） */
+export const REQUESTER_LIMIT_TEXT = `依頼者は${LIMITS.requester}字までです`
+
+/** Task List の日付の列のメニュー（13.5）と入力欄の下の［開始日］［締め切り日］（13.2）の字。今週金曜・来週金曜は listText.fridayOf */
+export const taskDateMenuText = {
+  today: '今日',
+  tomorrow: '明日',
+  pick: '日付を選ぶ',
+  none: 'なし',
+  /** calendar 生まれの締め切り日の「なし」（開始日の1日の予定に戻る。13.5） */
+  oneDay: '1日の予定にする（締め切り日を消す）',
+  show: 'カレンダーで見る',
+} as const
+
+/**
+ * 年まで入れた日付「2026年11月10日（火）」（Task List の日付の列の読み上げ。列には年を出さないので、読み上げで年まで言う。D32）。
+ * 形の正しくない日付はそのまま返す
+ */
+export function fullDateLabel(date: string): string {
+  const v = parseYmd(date)
+  return v ? `${v.y}年${jaDateLabel(date)}` : date
+}
 
 // ---------- 元に戻す・やり直す（7.13） ----------
 

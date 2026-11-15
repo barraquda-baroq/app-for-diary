@@ -44,8 +44,11 @@ export function canGrab(item: Item, handle: Handle, week: WeekCtx): GrabCheck {
   return { ok: true }
 }
 
-/** 落とした後の時刻の決まり（6.4）: 1日の予定で終了 < 開始になる日には落とせない（null）。終了 = 開始になる時は終了時刻を空にする */
-function fitTimes(item: Item, start: string | null, due: string | null): DatePatch | null {
+/**
+ * 落とした後の時刻の決まり（6.4）: 1日の予定で終了 < 開始になる日には落とせない（null）。終了 = 開始になる時は終了時刻を空にする。
+ * 開始日 > 締め切り日になる時も null。Task List の行をカレンダーへ落とす決まり（listDrop.ts。13.6）も同じ物を使う
+ */
+export function fitTimes(item: Item, start: string | null, due: string | null): DatePatch | null {
   const next: Item = { ...item, start, due }
   const p = periodOf(next)
   let clearEnd = false

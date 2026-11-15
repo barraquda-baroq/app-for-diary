@@ -1,12 +1,18 @@
 // Task List（docs/SPEC.md の 13.・6.3・6.4）の決まり: 4通り（①なし・②締め切り日だけ・③両方・④開始日だけ）とカレンダー生まれの見分け、
 // 行に出す物（日付の列の字・M・S の上の行・期限切れ・今日）、並び（13.4）、済みと 168時間で隠す決まり、入力欄から足す物、
 // 日付を直す時の決まり、日付の列のメニュー（13.5）。画面は表示用に直した記録（useData()。6.12）を渡す。
-// 契約の形だけ（S3-STUB）: 名前と形はこれで決まり、中身は段階3の WP1 が入れる。今の関数は空の結果を返すだけで、決まりはまだ無い
-// （どの画面もまだ呼ばない）。使わない引数は void で読む（名前を契約のまま残すため）。
+// カレンダーに出るか・期間・Task List に出るかは items.ts（isOnCalendar・periodOf・isInTaskList）、日付のそろえ方と 6.4 で断る決まりは
+// itemInput.ts（editDates）をそのまま使う（ここで決め直さない）。
 // 日付は 'YYYY-MM-DD' の文字のまま比べる。today は端末の暦の今日（useToday()。リストごとに1つ）、nowMs は今（useNow(60秒)。
 // Task List の 168時間だけに使う）
+import { addDaysYmd, isYmd, mdLabel } from './dates'
+import { editDates, type When } from './itemInput'
+import { REQUESTER_LIMIT_TEXT, TITLE_RANGE_TEXT, fullDateLabel, taskDateMenuText } from './itemText'
+import { isInTaskList, periodOf } from './items'
+import { fridayOf, splitEntry } from './listText'
 import type { ItemInput } from './ops'
-import type { ID, Item } from './types'
+import { LIMITS, type ID, type Item } from './types'
+import { charCount, compareStr } from './util'
 
 /** ① none（日付なし）・② due（締め切り日だけ）・③ span（開始日と締め切り日）・④ start（開始日だけ）は Task List 生まれ（6.3）。
  * calendar はカレンダー生まれで Task List にも出している物 */
@@ -14,8 +20,10 @@ export type TaskCase = 'none' | 'due' | 'span' | 'start' | 'calendar'
 
 /** その予定の通り（Task List 生まれは日付の持ち方で4通り、カレンダー生まれは calendar） */
 export function taskCaseOf(item: Pick<Item, 'origin' | 'start' | 'due'>): TaskCase {
-  void item
-  return 'none'
+  if (item.origin !== 'list') return 'calendar'
+  const start = isYmd(item.start)
+  if (!isYmd(item.due)) return start ? 'start' : 'none'
+  return start ? 'span' : 'due'
 }
 
 /**
@@ -66,30 +74,88 @@ export interface TaskListView {
  * 仕事とプライベートは混ぜる。済みの行は doneAt の新しい順・id
  */
 export function taskListView(items: Iterable<Item>, today: string, nowMs: number): TaskListView {
-  void items
-  void today
-  void nowMs
-  return { open: [], done: [], undone: 0 }
+  const open: TaskRowView[] = []
+  const done: TaskRowView[] = []
+  for (const item of items) {
+    if (!isInTaskList(item, nowMs)) continue
+    const row = taskRowView(item, today)
+    ;(row.done ? done : open).push(row)
+  }
+  open.sort(compareOpenTasks)
+  done.sort(compareDoneTasks)
+  return { open, done, undone: open.length }
 }
+
+/** 1行に出す物（Task List に出るかは見ない。taskListView が isInTaskList で選んだ物に使う） */
+export function taskRowView(item: Item, today: string): TaskRowView {
+  const p = periodOf(item)
+  const to = p ? p.to : null
+  const done = item.done === true
+  return {
+    id: item.id,
+    item,
+    case: taskCaseOf(item),
+    onCalendar: p !== null,
+    to,
+    date: taskDateText(item),
+    stackedLine: taskStackedLine(item),
+    overdue: to !== null && to < today && !done,
+    today: to === today,
+    done,
+    canDecideDate: item.origin === 'list' && p === null,
+    canUnlist: p !== null,
+  }
+}
+
+/** 日時の数（数でない・有限でない値は 0。表示用に直した記録では起きないが、並びを壊さないため） */
+const ms = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
 /** まだの行の並び（taskListView と同じ決まり。負なら a が上） */
 export function compareOpenTasks(a: TaskRowView, b: TaskRowView): number {
-  void a
-  void b
-  return 0
+  if (a.to !== null && b.to !== null) {
+    return compareStr(a.to, b.to) || ms(a.item.createdAt) - ms(b.item.createdAt) || compareStr(a.id, b.id)
+  }
+  if (a.to !== null) return -1
+  if (b.to !== null) return 1
+  return ms(b.item.createdAt) - ms(a.item.createdAt) || compareStr(a.id, b.id)
 }
 
-/** 済みの行の並び（doneAt の新しい順・id） */
+/** 済みの行の並び（doneAt の新しい順・id。doneAt の無い物はいちばん古い扱い） */
 export function compareDoneTasks(a: TaskRowView, b: TaskRowView): number {
-  void a
-  void b
-  return 0
+  return ms(b.item.doneAt) - ms(a.item.doneAt) || compareStr(a.id, b.id)
 }
 
-/** L の日付の列の字（TaskDateText） */
+/** L の日付の列の字（TaskDateText）。aria は「2026年11月20日（金）」・「2026年11月10日（火）〜2026年11月20日（金）」・「…から」・「日付なし」 */
 export function taskDateText(item: Item): TaskDateText {
-  void item
-  return { sub: null, main: '—', faint: true, aria: '' }
+  const p = periodOf(item)
+  if (p && p.from === p.to) return { sub: null, main: mdLabel(p.to), faint: false, aria: fullDateLabel(p.to) }
+  if (p) {
+    return {
+      sub: `${mdLabel(p.from)}〜`,
+      main: mdLabel(p.to),
+      faint: false,
+      aria: `${fullDateLabel(p.from)}〜${fullDateLabel(p.to)}`,
+    }
+  }
+  if (isYmd(item.start))
+    return { sub: null, main: `${mdLabel(item.start)}〜`, faint: false, aria: `${fullDateLabel(item.start)}から` }
+  return { sub: null, main: '—', faint: true, aria: '日付なし' }
+}
+
+/**
+ * M・S の上の行の2つの部分（日付の所と依頼者）。期限切れの色と太字は日付の所だけに付ける（D27）ので、画面はこれで分けて出す。
+ * どちらも無ければ ''
+ */
+export function taskStackedParts(item: Item): { date: string; requester: string } {
+  const requester = typeof item.requester === 'string' ? item.requester.trim() : ''
+  const p = periodOf(item)
+  let date = ''
+  if (p) {
+    const oneDay = p.from === p.to
+    const range = oneDay ? mdLabel(p.to) : `${mdLabel(p.from)}〜${mdLabel(p.to)}`
+    date = item.origin === 'list' && oneDay ? `〆${range}` : range
+  } else if (isYmd(item.start)) date = `${mdLabel(item.start)}〜`
+  return { date, requester }
 }
 
 /**
@@ -97,8 +163,8 @@ export function taskDateText(item: Item): TaskDateText {
  * カレンダー生まれは '11/20'・'11/10〜11/20'（〆を付けない）。依頼者があれば '・{依頼者}' を足す
  */
 export function taskStackedLine(item: Item): string {
-  void item
-  return ''
+  const { date, requester } = taskStackedParts(item)
+  return [date, requester].filter((x) => x !== '').join('・')
 }
 
 /** Task List の入力欄で入れた物（件名の字と［開始日］［締め切り日］［依頼者］。書きかけも同じ形。D23） */
@@ -111,11 +177,46 @@ export interface TaskEntry {
 
 /**
  * 入力欄から足す物（13.2）: Task List 生まれ・仕事・Task List に出す・ラベルなし（D33）。開始日と締め切り日は editDates と同じに
- * そろえる。件名が空・200字を超える時は足さずに理由を返す（字は欄に残す。D29）
+ * そろえる。件名（最初の空でない行。前後の空白を除いて数える）が空・200字を超える時、依頼者が 60字を超える時は足さずに理由を返す
+ * （字は欄に残す。D29）。2行目からはメモ（listText.splitEntry）
  */
 export function taskInputOf(entry: TaskEntry): { ok: true; input: ItemInput } | { ok: false; message: string } {
-  void entry
-  return { ok: false, message: '' }
+  const parts = splitEntry(entry.text)
+  if (!parts || charCount(parts.title) > LIMITS.title) return { ok: false, message: TITLE_RANGE_TEXT }
+  const requester = entry.requester.trim()
+  if (charCount(requester) > LIMITS.requester) return { ok: false, message: REQUESTER_LIMIT_TEXT }
+  const r = editDates(NO_DATES, { start: entry.start, due: entry.due })
+  if (!r.ok) return r
+  return {
+    ok: true,
+    input: {
+      origin: 'list',
+      title: parts.title,
+      kind: 'work',
+      start: r.when.start,
+      due: r.when.due,
+      startTime: null,
+      endTime: null,
+      listed: true,
+      locked: false,
+      label: null,
+      requester,
+      memo: parts.memo,
+    },
+  }
+}
+
+/** 入力欄の日付の初め（list 生まれ・日付も時刻も無い） */
+const NO_DATES: When = { origin: 'list', start: null, due: null, startTime: null, endTime: null }
+
+/**
+ * 入力欄の下の［開始日］［締め切り日］で日を選んだ・×で外した時の書きかけ（13.2）: 6.3 のそろえ方（開始日を締め切り日より後にしたら
+ * 締め切り日を開始日に、締め切り日を開始日より前にしたら開始日を締め切り日に）を当てる。時刻を持たないので 6.4 で断られることは無い
+ * （日付の形が正しくない時だけ、今の書きかけのまま）
+ */
+export function taskEntryWithDates(entry: TaskEntry, edit: { start?: string | null; due?: string | null }): TaskEntry {
+  const r = editDates({ ...NO_DATES, start: entry.start, due: entry.due }, edit)
+  return r.ok ? { ...entry, start: r.when.start, due: r.when.due } : entry
 }
 
 /**
@@ -127,9 +228,21 @@ export function taskDateEdit(
   item: Item,
   edit: { start?: string | null; due?: string | null },
 ): { ok: true; patch: Pick<Item, 'start' | 'due' | 'endTime' | 'listed'>; relisted: boolean } | { ok: false; message: string } {
-  void item
-  void edit
-  return { ok: false, message: '' }
+  const when: When = {
+    origin: item.origin === 'list' ? 'list' : 'calendar',
+    start: item.start,
+    due: item.due,
+    startTime: item.startTime,
+    endTime: item.endTime,
+  }
+  const r = editDates(when, edit)
+  if (!r.ok) return r
+  const relisted = item.origin === 'list' && r.when.due === null && !item.listed
+  return {
+    ok: true,
+    patch: { start: r.when.start, due: r.when.due, endTime: r.when.endTime, listed: relisted ? true : item.listed },
+    relisted,
+  }
 }
 
 /** 日付の列のメニューで直す所（開始日・締め切り日） */
@@ -157,7 +270,9 @@ export interface TaskDateOption {
  * 日付の列のメニュー（13.5）。締め切り日: 今日・明日・今週金曜（土曜は来週金曜）・日付を選ぶ・なし（カレンダー生まれは
  * 「1日の予定にする（締め切り日を消す）」）。開始日: 日付を選ぶ・なし（カレンダー生まれは「なし」を出さない）。show は
  * ［カレンダーで見る］（カレンダーに出ている時だけ。to の日へ。無ければ null）。M・S は「…」の［日付…］から開く（D46）。
- * §3.2 で開いていた形はここで決めた: 項目ごとに字と押した時にすること（TaskDateAction）と断られるかを持つ
+ * 項目ごとに字と押した時にすること（TaskDateAction）と断られるかを持つ。
+ * 「なし」（clear）はその日付がある時だけ出す（無い日付を消しても何も変わらないため。開発）。refused は今日・明日・金曜・なしを
+ * taskDateEdit に通して断られる物（1日の予定で終了 < 開始になる。6.4・D30）。［日付を選ぶ］は断られる日を暦の側で選べなくする
  */
 export interface DateMenuModel {
   due: TaskDateOption[]
@@ -167,7 +282,49 @@ export interface DateMenuModel {
 
 /** 日付の列のメニューの中身（DateMenuModel） */
 export function taskDateMenu(item: Item, today: string): DateMenuModel {
-  void item
-  void today
-  return { due: [], start: [], show: null }
+  const list = item.origin === 'list'
+  const opt = (label: string, action: TaskDateAction): TaskDateOption => ({ label, action, refused: refusedBy(item, action) })
+  const due = quickDueOptions(today).map((o) => opt(o.label, o.action))
+  due.push(opt(taskDateMenuText.pick, { type: 'pick', field: 'due' }))
+  if (item.due !== null) due.push(opt(list ? taskDateMenuText.none : taskDateMenuText.oneDay, { type: 'clear', field: 'due' }))
+  const start = [opt(taskDateMenuText.pick, { type: 'pick', field: 'start' })]
+  if (list && item.start !== null) start.push(opt(taskDateMenuText.none, { type: 'clear', field: 'start' }))
+  const p = periodOf(item)
+  const show: TaskDateOption | null = p
+    ? { label: taskDateMenuText.show, action: { type: 'show', date: p.to }, refused: false }
+    : null
+  return { due, start, show }
+}
+
+/** 締め切り日の速い選び（今日・明日・今週金曜／来週金曜） */
+function quickDueOptions(today: string): { label: string; action: TaskDateAction }[] {
+  const fri = fridayOf(today)
+  return [
+    { label: taskDateMenuText.today, action: { type: 'set', field: 'due', date: today } },
+    { label: taskDateMenuText.tomorrow, action: { type: 'set', field: 'due', date: addDaysYmd(today, 1) } },
+    { label: fri.label, action: { type: 'set', field: 'due', date: fri.date } },
+  ]
+}
+
+/** その選びを押すと 6.4 などで断られるか（set・clear だけ。pick・show は断られない） */
+function refusedBy(item: Item, a: TaskDateAction): boolean {
+  if (a.type === 'set') return !taskDateEdit(item, { [a.field]: a.date }).ok
+  if (a.type === 'clear') return !taskDateEdit(item, { [a.field]: null }).ok
+  return false
+}
+
+/**
+ * 入力欄の下の［開始日］［締め切り日］の選び（13.2）: 開始日は 今日・明日・日付を選ぶ、締め切り日は 今日・明日・今週金曜（土曜は
+ * 来週金曜）・日付を選ぶ。書きかけは時刻を持たないので断られる物は無い（refused はいつも false）。選んだ値は taskEntryWithDates で書きかけへ
+ */
+export function taskChipOptions(field: TaskDateField, today: string): TaskDateOption[] {
+  const quick: { label: string; action: TaskDateAction }[] =
+    field === 'due'
+      ? quickDueOptions(today)
+      : [
+          { label: taskDateMenuText.today, action: { type: 'set', field: 'start', date: today } },
+          { label: taskDateMenuText.tomorrow, action: { type: 'set', field: 'start', date: addDaysYmd(today, 1) } },
+        ]
+  quick.push({ label: taskDateMenuText.pick, action: { type: 'pick', field } })
+  return quick.map((o) => ({ ...o, refused: false }))
 }
