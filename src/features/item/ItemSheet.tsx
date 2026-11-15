@@ -1,5 +1,6 @@
-// 登録・詳細の小さな画面の外枠（docs/SPEC.md の 3.8・4.3・12.2・12.3。X2）。L は真ん中の小さな画面（幅 520px・角丸 14px）、
-// M・S は下からのシート（最大 92dvh・上の角丸 16px）。どれも src/ui/Modal（Esc・背景・［×］で閉じる）。
+// 登録・詳細の小さな画面の外枠（docs/SPEC.md の 3.6・3.8・4.3・12.2・12.3。X2）。L は真ん中の小さな画面（幅 520px・角丸 14px）、
+// M・S は下からのシート（最大 92dvh・上の角丸 16px）。Task List の［詳しく］の「タスク」（placement side）は、L では右の列の上に
+// 重ねるパネル（幅 300px・右の列と同じ高さ・右から 180ms）。どれも src/ui/Modal（Esc・背景・［×］で閉じる）。
 // - 画面全体の地を区分の色（--work-sheet／--private-sheet）にする（data-kind。item.css の .it-sheet）
 // - 上の辺にラベルの色の帯（高さ 6px）を付ける（data-label。角丸に沿って切れる。src/styles.css の .modal.label-band）。
 //   ラベルが無い・知らないキーなら帯を付けない（6.12）
@@ -26,15 +27,12 @@ export interface ItemSheetProps {
   footer?: ReactNode
   /** 開いた時にフォーカスする要素のセレクタ */
   initialFocus?: string
-  /**
-   * 出し方（src/ui/Modal の placement。side は L で右の列の上のパネル: Task List の［詳しく］の「タスク」。3.6・3.8）。
-   * 契約の形だけ（S3-STUB）: 今は受け取るだけで Modal へ渡さない（渡すのは段階3の WP6）
-   */
+  /** 出し方（src/ui/Modal の placement。side は L で右の列の上のパネル: Task List の［詳しく］の「タスク」。3.6・3.8） */
   placement?: 'auto' | 'side'
   children: ReactNode
 }
 
-export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, children }: ItemSheetProps) {
+export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, placement, children }: ItemSheetProps) {
   const attrs = itemAttrs({ kind, label })
   return (
     <Modal
@@ -47,6 +45,7 @@ export function ItemSheet({ title, kind, label, onClose, footer, initialFocus, c
       dataKind={attrs['data-kind']}
       dataLabel={attrs['data-label'] ?? null}
       titleIcon={<KindIcon kind={attrs['data-kind']} />}
+      placement={placement}
     >
       {children}
     </Modal>
