@@ -1,0 +1,306 @@
+/* ===== Routine List の中身の形（docs/SPEC.md の 14.・3.6・4.4・4.7〜4.11） =====
+   色・大きさは src/styles.css のトークンだけを使い、余白は 4px を単位にする（src/calendarCss.test.ts が見張る）。
+   3つのリストに共通の形（行・「済み n件」・入力欄・パネルの外枠）は common/lists.css */
+
+/* ---------- 入力欄の上の段（［日｜週｜月｜四半期｜年］と［指定］。14.2・■35） ---------- */
+
+/* 上の段は1行に収める（［指定］の字が長い時は、ボタンの中で「…」にして縮める） */
+.list-input-above:has(.rt-cycle) {
+  flex-wrap: nowrap;
+}
+
+.segmented.rt-cycle {
+  flex: none;
+}
+
+/* 指で操作する端末と S・M では、切り替えの1つずつも 34px 四方以上（4.11） */
+@media (max-width: 899px), (pointer: coarse) {
+  .segmented.list-cycle.rt-cycle button {
+    min-width: var(--tap);
+    min-height: var(--tap);
+  }
+}
+
+.btn.rt-spec-button {
+  flex: 0 1 auto;
+  min-width: var(--tap);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.btn.rt-spec-button.is-set {
+  color: var(--text);
+}
+
+.rt-spec-button-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ［指定］の小さな窓（item/fields/Popover の .it-pop の中） */
+.rt-spec-pop-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.rt-spec-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- 指定を選ぶ所（routine/SpecPicker。窓とパネルで同じ） ---------- */
+
+/* 毎週: 7つの曜日のボタン（34px 四方。押している曜日は選んでいる所の色） */
+.rt-spec-week {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rt-spec-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rt-spec-day:hover {
+  background: var(--surface-3);
+}
+
+.rt-spec-day[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.rt-spec-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 毎月の日・毎年の月と日の選択 */
+.rt-spec-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rt-spec-label {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.select.rt-spec-select {
+  width: auto;
+  min-width: 88px;
+}
+
+/* ---------- 種類ごとのかたまり（routine/RoutineGroup。14.2） ---------- */
+.rt-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rt-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 見出し（高さ 32px）: 種類の名前・済んだ数／全部・山形。見出しのどこを押しても畳む・開く */
+.rt-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rt-group-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.rt-group-count {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* 山形（34px 四方。見出しの 32px からは上下に 1px ずつはみ出す）の中の印の右の端を、見出しの右の端にそろえる */
+.icon-btn.rt-group-fold {
+  margin-block: -1px;
+  margin-right: -8px;
+}
+
+.rt-group-fold .icon {
+  transition: rotate var(--dur-fold) ease;
+}
+
+.rt-group.is-collapsed .rt-group-fold .icon {
+  rotate: -90deg;
+}
+
+/* 項目の無い種類: 名前と＋だけを不透明度 0.5 で（数と山形は出さない） */
+.rt-group.is-empty .rt-group-head {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.icon-btn.rt-group-add {
+  margin-block: -1px;
+  margin-right: -8px;
+}
+
+/* 中身（入力欄のフォーカスの影と同じく、行の中の欄の影が切れないよう左右に 4px のゆとり） */
+.rt-group-body {
+  margin-inline: -4px;
+  padding-inline: 4px;
+}
+
+/* ---------- 行（routine/RoutineRow。14.1・14.2） ---------- */
+.rt-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+/* 件名（押すとその場で直す） */
+.rt-title {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.rt-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+.list-row[data-done='true'] .rt-title {
+  text-decoration: line-through;
+}
+
+.input.rt-title-input {
+  margin-block: 2px;
+}
+
+/* 右に小さく指定（11px・--text-faint） */
+.rt-spec {
+  flex: none;
+  align-self: center;
+  max-width: 50%;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+/* 済んだ行の「11/16（月）に戻ります」: PC で行に乗せた時と、キーボードで行の中に来た時に、行の右（「…」の左）に重ねて出す。
+   行の高さ・件名の折り返しは変えない（重ねた所の下の件名の終わりと指定は隠れる。地は行と同じ --surface） */
+.rt-return {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: var(--tap);
+  bottom: 1px;
+  align-items: center;
+  padding-left: 8px;
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list-row[data-done='true']:not(.is-editing):is(:hover, :focus-within) .rt-return {
+    display: flex;
+  }
+}
+
+/* PC の並べ替えの掴む所（並べ替えられる行だけ。行に乗せた時に出す。features/dnd の useReorder） */
+.rt-grip {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0;
+}
+
+.list-row:is(:hover, :focus-within) .rt-grip {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .rt-grip {
+    display: none;
+  }
+}
+
+/* ---------- ［詳しく］のパネル（routine/RoutinePanel。地は --surface。common/ListSheet） ---------- */
+.rt-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 開いた時のフォーカスの置き場（件名の欄にフォーカスすると、スマホでキーボードが開くため）。押す物ではないので枠を出さない */
+.rt-panel-top:focus {
+  outline: none;
+}
+
+.segmented.rt-panel-cycle {
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+
+.rt-panel-return {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.rt-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 段階5の Claude の提案の置き場（今は中身が無い） */
+.rt-panel-proposal:empty {
+  display: none;
+}

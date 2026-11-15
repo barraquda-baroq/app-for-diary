@@ -1,46 +1,78 @@
-// Routine List の中身（docs/SPEC.md の 14.）: 2段の入力欄（上の段に［日｜週｜月｜四半期｜年］と［指定］、下の段に字の欄と［足す］。D3・■35）、
-// 種類ごとの5つのかたまり（見出し・'済み数/全部'・畳む・開く・空のかたまりの＋）、行、かたまりごとの「済み n件」。
-// 見出しと畳む・開くの枠は common の ListSection（トップの画面が置く）。
-// 契約の形と土台の入力欄だけ（S3-STUB）: 今は2段の入力欄の上の段の種類の切り替え（選んだ種類は端末が覚える。diary-studio:prefs の
-// routineAddCycle）と、下の段の1行の欄と［足す］（書きかけは diary-studio:draft:routine に控える）だけを出し、Enter・［足す］では何も
-// 足さない（字は欄に残る）。［指定］・かたまり・行・足す処理は段階3の WP3 が入れる
-import { ROUTINE_CYCLES, usePrefs, type RoutineCycle } from '../../../store/uiStore'
-import { ListInput } from '../common/ListInput'
-import { listTestIds } from '../common/testIds'
+// Routine List の中身（docs/SPEC.md の 14.・3.6）: 2段の入力欄（routine/RoutineInput。上の段に［日｜週｜月｜四半期｜年］と［指定］、
+// 下の段に字の欄と［足す］。■35）と、その下に種類ごとの5つのかたまり（routine/RoutineGroup。毎日 → 毎週 → 毎月 → 四半期 → 毎年）。
+// 見出しと畳む・開くの枠は common/ListSection（トップの画面が置く）、見出しの右の［すべて開く／畳む］は routine/RoutineAllToggle。
+// - 今日は、この部品の1つの useToday() から決める（0時のタイマー・画面が見えるようになった時・フォーカスが戻った時に計算し直す。
+//   日が替わると、チェックの記録を書き換えずに、戻った行が「済み」から元の位置へ上がる。数も替わる。14.3・6.4）
+// - 足す: その種類のいちばん下へ（件名は1〜200字。合わない時はお知らせして足さず、字は欄に残す）。足したら欄を空にしてフォーカスを
+//   残し、［指定］も「指定なし」へ戻す（種類はそのまま）。足した種類のかたまりを畳んでいれば開き、足した行を 1.2秒目立たせる（L は
+//   右の列の中だけで見える所まで送る。S・M はページを動かさない。開発）
+// - 空のかたまりの＋: その種類を選んで、入力欄へフォーカスする（押した出来事の中で。iPhone でもキーボードが出る）。欄が見えない所に
+//   あれば見える所まで送る
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { toYmd } from '../../../domain/dates'
+import type { SpecDraft } from '../../../domain/routineList'
+import type { RoutineCycle } from '../../../domain/types'
+import { usePrefs } from '../../../store/uiStore'
+import { useToday } from '../../../ui/hooks'
+import { scrollBehavior } from '../../../ui/motion'
+import { useItemSheets } from '../../calendar/common/sheets'
+import { registerDraftClear } from '../common/listDraft'
+import { flashList, listFlashKey } from '../common/listFlash'
+import type { ListDraft } from '../common/listInputModel'
 import { useListInput } from '../common/useListInput'
 import type { ListBodyProps } from '../types'
-
-/** 入力欄の上の段の種類の切り替え［日｜週｜月｜四半期｜年］（14.2） */
-const CYCLE_LABELS: Record<RoutineCycle, string> = {
-  daily: '日',
-  weekly: '週',
-  monthly: '月',
-  quarterly: '四半期',
-  yearly: '年',
-}
-
-function RoutineCycleSwitch() {
-  const cycle = usePrefs((s) => s.routineAddCycle)
-  const setPrefs = usePrefs((s) => s.setPrefs)
-  return (
-    <div className="segmented list-cycle" role="group" aria-label="足すルーチンの種類">
-      {ROUTINE_CYCLES.map((c) => (
-        <button
-          key={c}
-          type="button"
-          aria-pressed={cycle === c}
-          onClick={() => setPrefs({ routineAddCycle: c })}
-          data-testid={listTestIds.routineCycle(c)}
-        >
-          {CYCLE_LABELS[c]}
-        </button>
-      ))}
-    </div>
-  )
-}
+import { addRoutineFrom, EMPTY_SPEC } from './routineActions'
+import { RoutineGroup } from './RoutineGroup'
+import { RoutineInput } from './RoutineInput'
+import { useRoutineList } from './useRoutineList'
+import './routine.css'
 
 export function RoutineListBody(props: ListBodyProps) {
   void props
-  const input = useListInput({ list: 'routine', onAdd: () => false })
-  return <ListInput input={input} above={<RoutineCycleSwitch />} />
+  const today = toYmd(useToday())
+  const view = useRoutineList(today)
+  const { openRoutineDetail } = useItemSheets()
+  const [spec, setSpec] = useState<SpecDraft>(EMPTY_SPEC)
+  const specRef = useRef(spec)
+  specRef.current = spec
+
+  const onAdd = useCallback((d: ListDraft): boolean => {
+    const cycle = usePrefs.getState().routineAddCycle
+    const id = addRoutineFrom(d.text, cycle, specRef.current)
+    if (id === undefined) return false
+    setSpec(EMPTY_SPEC)
+    const prefs = usePrefs.getState()
+    if (prefs.collapsed.routineGroups[cycle]) {
+      prefs.setCollapsed({ routineGroups: { ...prefs.collapsed.routineGroups, [cycle]: false } })
+    }
+    flashList(listFlashKey.row('routine', id))
+    return true
+  }, [])
+  const input = useListInput({ list: 'routine', onAdd })
+
+  // ■34: 打ちかけを捨てる時は［指定］も空にする（字は useListInput が空にする）
+  useEffect(() => registerDraftClear('routine', () => setSpec(EMPTY_SPEC)), [])
+
+  const focusInput = input.focus
+  const onAddTo = useCallback(
+    (cycle: RoutineCycle) => {
+      usePrefs.getState().setPrefs({ routineAddCycle: cycle })
+      focusInput()
+      // 欄がスクロールで見えない所にあれば、近い方の端まで出す（L は右の列の中だけ。ページは動かない）
+      const el = document.activeElement
+      if (el instanceof HTMLInputElement) el.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
+    },
+    [focusInput],
+  )
+
+  return (
+    <>
+      <RoutineInput input={input} spec={spec} onSpecChange={setSpec} />
+      <div className="rt-groups">
+        {view.groups.map((g) => (
+          <RoutineGroup key={g.cycle} group={g} onAddTo={onAddTo} onDetail={openRoutineDetail} />
+        ))}
+      </div>
+    </>
+  )
 }
