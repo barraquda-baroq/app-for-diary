@@ -7,6 +7,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { routes } from '../../App'
 import { edgeZonePx, setEdgeZonePx } from '../../history/edgeZone'
+import { EDGE_ZONE_PX } from '../calendar/common/swipe'
 import { setSwipeLogEnabled, swipeLog, swipeLogEnabled, swipeLogText } from '../../history/swipeLog'
 import { DEFAULT_PREFS, usePrefs } from '../../store/uiStore'
 import { fakeSignInForTest, resetSyncForTests } from '../../sync/controller'
@@ -85,38 +86,50 @@ describe('AppSettingsPage', () => {
 
 describe('開発（iPhone・iPad だけ。端からのフリックの記録・端の幅。3.1・18.1）', () => {
   const onIPhone = () => vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
-  afterEach(() => setEdgeZonePx(36))
+  afterEach(() => setEdgeZonePx(EDGE_ZONE_PX))
 
-  it('「端の幅」は 20・28・36・44 の4つから選ぶ（初めは 36。20 は前の幅、36 は初めの幅と添える）。押すとすぐ効き、端末に覚える（開き直しても選んだまま）', async () => {
+  it('「端の幅」は 20・28・36・44 の4つから選ぶ（初めは 44。36 は前の幅、44 は初めの幅と添える。20 には添えない）。押すとすぐ効き、端末に覚える（開き直しても選んだまま）', async () => {
     onIPhone()
     const user = userEvent.setup()
     renderAt('/settings')
     const group = await screen.findByTestId('edge-zone')
     expect(group.getAttribute('role')).toBe('group')
     const choice = (px: number) => screen.getByTestId(`edge-zone-${px}`)
-    expect([20, 28, 36, 44].map((px) => choice(px).textContent)).toEqual(['20前', '28', '36初め', '44'])
-    expect([20, 28, 36, 44].map((px) => choice(px).getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false'])
-    // 読み上げの名前は「20（前の幅）」「36（初めの幅）」（添えた字だけでは何のことか分からないので）
-    expect(screen.getByRole('button', { name: '20（前の幅）' })).toBe(choice(20))
-    expect(screen.getByRole('button', { name: '36（初めの幅）' })).toBe(choice(36))
+    expect([20, 28, 36, 44].map((px) => choice(px).textContent)).toEqual(['20', '28', '36前', '44初め'])
+    expect([20, 28, 36, 44].map((px) => choice(px).getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false', 'true'])
+    // 読み上げの名前は「36（前の幅）」「44（初めの幅）」（添えた字だけでは何のことか分からないので）
+    expect(screen.getByRole('button', { name: '36（前の幅）' })).toBe(choice(36))
+    expect(screen.getByRole('button', { name: '44（初めの幅）' })).toBe(choice(44))
     expect(screen.getByRole('button', { name: '28' })).toBe(choice(28))
+    expect(screen.getByRole('button', { name: '20' })).toBe(choice(20))
     const card = screen.getByTestId('dev-settings').textContent ?? ''
     expect(card).toContain('端の幅')
     expect(card).toContain(
       '画面の端からのフリックを受け取る幅を選ぶ所と、うまくいかなかった時に何が起きたかを調べるための物です。',
     )
-    expect(card).toContain('初めは 36、前の幅は 20 です。この端末だけに覚え、押すとすぐ効きます。')
+    expect(card).toContain('初めは 44、前の幅は 36 です。この端末だけに覚え、押すとすぐ効きます。')
     await user.click(choice(20))
     expect(edgeZonePx()).toBe(20)
     expect(localStorage.getItem('diary-studio:edge-zone')).toBe('20')
     expect(choice(20).getAttribute('aria-pressed')).toBe('true')
-    expect(choice(36).getAttribute('aria-pressed')).toBe('false')
+    expect(choice(44).getAttribute('aria-pressed')).toBe('false')
     cleanup()
     renderAt('/settings')
     expect((await screen.findByTestId('edge-zone-20')).getAttribute('aria-pressed')).toBe('true')
-    await user.click(screen.getByTestId('edge-zone-44'))
-    expect(edgeZonePx()).toBe(44)
-    expect(localStorage.getItem('diary-studio:edge-zone')).toBe('44')
+    await user.click(screen.getByTestId('edge-zone-36'))
+    expect(edgeZonePx()).toBe(36)
+    expect(localStorage.getItem('diary-studio:edge-zone')).toBe('36')
+  })
+
+  it('前の初めの幅（36）を選んで覚えている端末は、初めの幅が 44 になっても 36 のまま（選び直すまで替えない）', async () => {
+    onIPhone()
+    localStorage.setItem('diary-studio:edge-zone', '36')
+    renderAt('/settings')
+    const choice = (px: number) => screen.getByTestId(`edge-zone-${px}`)
+    await screen.findByTestId('edge-zone')
+    expect([20, 28, 36, 44].map((px) => choice(px).getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false'])
+    expect(edgeZonePx()).toBe(36)
+    expect(localStorage.getItem('diary-studio:edge-zone')).toBe('36')
   })
 
   it('Android・PC には「端の幅」を出さない（端からのフリックが無い）', async () => {

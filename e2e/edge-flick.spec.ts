@@ -7,8 +7,8 @@
 // 身振りそのものは Chromium にも CI の WebKit にも無いので、ここで確かめるのは、ブラウザの履歴が増えない（history.length が開いた時の
 // まま。Chromium のタブは初めの about:blank の分がある）こと・アプリが積む・戻る・進む（pushState・go・back・forward）を一度も呼ばない
 // こと（開く前に置く物で控える）と、端の指でアプリがすること。指は e2e/helpers.ts の edgeFlick（初めは画面の左右の端から 3px の所から
-// 払う）。端の幅は初め 36px で、設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ（22. の「端からのフリックの3回目の直した版
-// （788e842）を試した答え」）。すばやく足すに字を打ったまま払うと、足さずに閉じて打った字も捨てる。フォーカスの無い入力欄の上から
+// 払う）。端の幅は初め 44px（前は 36px）で、設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ（22. の「端からのフリックの3回目の
+// 直した版（788e842）を試した答え」「端からのフリックの4回目の直した版（5e521a7）を試した答え」）。すばやく足すに字を打ったまま払うと、足さずに閉じて打った字も捨てる。フォーカスの無い入力欄の上から
 // 払っても端からのフリック（フォーカスのある欄の上からは数えない）。@ios の印の物は CI の WebKit（本物の WebKit の履歴）でも流す。
 // 今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
 import { devices, expect, test, type Page } from '@playwright/test'
@@ -297,7 +297,7 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await noGrowth(page, length)
   })
 
-  test('端の幅（初めは 36px）: 画面の端から 60px 内側からの払いは、今までどおり前後の期間へ（モードはそのまま・ページをめくる）。30px の所からはモードだけを回す。設定の「開発」の「端の幅」で 20 を選ぶと、読み込み直した後も、30px の所からの払いは前後の期間へ。端の指でモードと期間の両方は替わらない', async ({
+  test('端の幅（初めは 44px）: 画面の端から 60px 内側からの払いは、今までどおり前後の期間へ（モードはそのまま・ページをめくる）。40px の所からはモードだけを回す。設定の「開発」の「端の幅」で 36（前の幅）を選ぶと、読み込み直した後も、40px の所からの払いは前後の期間へ。端の指でモードと期間の両方は替わらない', async ({
     page,
   }) => {
     await spyHistory(page)
@@ -317,33 +317,33 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await showing(page, WEEK)
     await turnDone(page)
     await expect.poll(() => turnsOf(page)).toEqual(['next', 'prev'])
-    // 端から 30px（初めの端の幅 36px の中）からの同じ払いは、モードだけを回す（右の端から: 週 → 月、左の端から: 月 → 週。期間は
-    // そのまま。ページはめくらない）
-    await iosCancelledTouch(page, thumbArc({ x: vw - 30, y }, { x: vw - 330, y: y - 120 }, 25))
+    // 端から 40px（初めの端の幅 44px の中。前の 36px の外）からの同じ払いは、モードだけを回す（右の端から: 週 → 月、左の端から:
+    // 月 → 週。期間はそのまま。ページはめくらない）
+    await iosCancelledTouch(page, thumbArc({ x: vw - 40, y }, { x: vw - 340, y: y - 120 }, 25))
     await showing(page, MONTH)
     await page.waitForTimeout(320)
-    await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: 330, y: y - 120 }, 25))
+    await iosCancelledTouch(page, thumbArc({ x: 40, y }, { x: 340, y: y - 120 }, 25))
     await showing(page, WEEK)
     await page.waitForTimeout(320)
     expect(await turnsOf(page)).toEqual(['next', 'prev'])
-    // 設定の「開発」の「端の幅」で 20 を選ぶ（初めは 36 が選ばれている）。読み込み直しても 20 のまま
+    // 設定の「開発」の「端の幅」で 36（前の幅）を選ぶ（初めは 44 が選ばれている）。読み込み直しても 36 のまま
     await page.getByTestId('open-settings').tap()
     await expect(page.getByTestId('dev-settings')).toBeVisible()
+    await expect(page.getByTestId('edge-zone-44')).toHaveAttribute('aria-pressed', 'true')
+    await page.getByTestId('edge-zone-36').tap()
     await expect(page.getByTestId('edge-zone-36')).toHaveAttribute('aria-pressed', 'true')
-    await page.getByTestId('edge-zone-20').tap()
-    await expect(page.getByTestId('edge-zone-20')).toHaveAttribute('aria-pressed', 'true')
     await historySettled(page)
     await page.reload()
-    await expect(page.getByTestId('edge-zone-20')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('edge-zone-36')).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByTestId('edge-zone-36')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('edge-zone-44')).toHaveAttribute('aria-pressed', 'false')
     await historySettled(page)
     // 左の端（3px）から払って、カレンダーへ戻る
     await edgeFlick(page, 'left')
     await showing(page, WEEK)
     await historySettled(page)
     await recordTurns(page)
-    // 端から 30px（端の幅 20px の外）からの払いは、前後の期間へ（前の週。モードはそのまま）
-    await iosCancelledTouch(page, thumbArc({ x: 30, y }, { x: 330, y: y - 200 }, 25))
+    // 端から 40px（端の幅 36px の外）からの払いは、前後の期間へ（前の週。モードはそのまま）
+    await iosCancelledTouch(page, thumbArc({ x: 40, y }, { x: 340, y: y - 200 }, 25))
     await showing(page, '/week/2026-11-01')
     await turnDone(page)
     await expect.poll(() => turnsOf(page)).toEqual(['prev'])

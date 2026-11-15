@@ -761,7 +761,7 @@ describe('iPhone・iPad の1つの履歴の形（SingleEntryHistory）', () => {
     await settle(s)
     const lines = swipeLogText().split('\n')
     expect(lines[0]).toMatch(/ start \{"len":1,"idx":0,"old":false/)
-    expect(lines[0]).toMatch(/"zone":36\}$/)
+    expect(lines[0]).toMatch(/"zone":44\}$/)
     expect(lines.some((l) => / flick \{"side":-1,"screen":"calendar","action":"ring\+1"\}/.test(l))).toBe(true)
     expect(lines.some((l) => / flick \{"side":1,"screen":"other","action":"back"\}/.test(l))).toBe(true)
     for (const kind of ['vreplace', 'vpush', 'vpop'])

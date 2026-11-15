@@ -10,7 +10,7 @@
 //   取らない）。iPhone（WebKit）は touch-action: pan-y の所で指が少しでも縦に動くと縦のスクロールを始めて指を取る（10〜15px ほど
 //   動いた所）ので、iPhone の払いはほとんどがこの道を通る。Chromium は初めの動きが縦寄りの時だけ取る
 // iPhone・iPad の画面の端の指（3.1 の「端からのフリック（iPhone・iPad）はアプリが受け取る」）: 画面の左右の端から端の幅（初めは
-// EDGE_ZONE_PX の 36px。設定の「開発」の「端の幅」で EDGE_ZONE_CHOICES から選ぶ。src/history/edgeZone.ts）の中で押した指（edgeSide）は
+// EDGE_ZONE_PX の 44px。設定の「開発」の「端の幅」で EDGE_ZONE_CHOICES から選ぶ。src/history/edgeZone.ts）の中で押した指（edgeSide）は
 // 端からのフリックで、src/history/edgeFlick.ts が受け取ってモードを回す（なぞりの所 useSwipe.ts は数えない。期間へは移らない）
 // React・ストアを読まない（純粋な関数。src/features/calendar/purity.test.ts）。指の出来事を拾うのは useSwipe.ts
 import type { CalendarMode, WidthClass } from './types'
@@ -36,15 +36,17 @@ export const SWIPE_ARC_MAX_DEG = 45
 export const SWIPE_CLICK_GUARD_MS = 300
 
 /**
- * iPhone・iPad の画面の端の幅の初め（px。画面の上の長さ）。この中で押した指は端からのフリックの指（3.1）。作者「もうちょっと画面端
- * 判定を甘くしてもらった方が操作しやすい気がします」（22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）で、前の
- * 20px（カレンダーの区切りの外の帯 17px と、その内側の少し）から広げた。作者の記録では、端の指は端から 5〜15px で押されていた。
- * 幅は設定の「開発」の「端の幅」で選べる（EDGE_ZONE_CHOICES。端末ごとに覚える。src/history/edgeZone.ts）
+ * iPhone・iPad の画面の端の幅の初め（px。画面の上の長さ）。この中で押した指は端からのフリックの指（3.1）。作者「使いやすいのは44です」
+ * （22. の「端からのフリックの4回目の直した版（5e521a7）を試した答え」。設定の「開発」の「端の幅」で選べる幅を試して、いちばん広い
+ * 物を選んだ）で、前の 36px から広げた。その前は 20px（カレンダーの区切りの外の帯 17px と、その内側の少し）で、作者「もうちょっと
+ * 画面端判定を甘くしてもらった方が操作しやすい気がします」（22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）で
+ * 36px に広げた。幅は設定の「開発」の「端の幅」で選べる（EDGE_ZONE_CHOICES。端末ごとに覚える。覚えた幅はそのまま。
+ * src/history/edgeZone.ts）
  */
-export const EDGE_ZONE_PX = 36
+export const EDGE_ZONE_PX = 44
 
-/** 前の端の幅（px。2026-11-15 まで） */
-export const EDGE_ZONE_FORMER_PX = 20
+/** 前の端の幅（px。2026-11-15 まで。設定の「開発」の「端の幅」で「前」と添える） */
+export const EDGE_ZONE_FORMER_PX = 36
 
 /** 設定の「開発」の「端の幅」で選べる幅（px。狭い順） */
 export const EDGE_ZONE_CHOICES = [20, 28, 36, 44] as const

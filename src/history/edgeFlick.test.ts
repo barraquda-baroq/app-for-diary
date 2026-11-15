@@ -1,6 +1,6 @@
 // 画面の端からのフリックを受け取る所（src/history/edgeFlick.ts。docs/SPEC.md の 3.1・3.7。22. の ■31〜■33）: iPhone・iPad では
 // ブラウザの履歴を1つのままにしているので、画面の端から払った指はブラウザの身振りにならず、ページに来る。それを window の
-// 捕まえる段の touch の出来事で受け取り、画面の左右の端から端の幅（初めは EDGE_ZONE_PX の 36px。設定の「開発」の「端の幅」で
+// 捕まえる段の touch の出来事で受け取り、画面の左右の端から端の幅（初めは EDGE_ZONE_PX の 44px。設定の「開発」の「端の幅」で
 // 20・28・36・44px から選ぶ。src/history/edgeZone.ts）の中で押して、内へ払って離した指だけを flick に渡す（-1 = 左の端から右へ、
 // 1 = 右の端から左へ）。決まり（60px・30°・払い始めが横なら 45°・400ms の長押し）は swipe.ts と同じ。横にスクロールできる所・
 // フォーカスのある入力欄の上から押した指・ドラッグの途中・押した後に前の版の履歴への身振り（popstate）が来た指は渡さない
@@ -85,7 +85,7 @@ afterEach(() => {
 })
 
 describe('画面の端から内へ払った指を受け取る（installEdgeFlick）', () => {
-  it('左の端（5px）から右へ 100px を 0.2秒の内に払うと flick(-1)、右の端（幅 − 5px）から左へ 100px は flick(1)。端から 30px（初めの端の幅 36px の中）からも渡し、36px・40px の所からは何もしない', () => {
+  it('左の端（5px）から右へ 100px を 0.2秒の内に払うと flick(-1)、右の端（幅 − 5px）から左へ 100px は flick(1)。端から 30px・40px・43px（初めの端の幅 44px の中）からも渡し、44px・50px の所からは何もしない', () => {
     const flick = install()
     swipe(5, 100)
     expect(flick.mock.calls).toEqual([[-1]])
@@ -94,13 +94,19 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     swipe(30, 100)
     swipe(width() - 30, -100)
     expect(flick.mock.calls).toEqual([[-1], [1], [-1], [1]])
-    swipe(EDGE_ZONE_PX, 100)
     swipe(40, 100)
     swipe(width() - 40, -100)
-    expect(flick).toHaveBeenCalledTimes(4)
+    swipe(EDGE_ZONE_PX - 1, 100)
+    swipe(width() - EDGE_ZONE_PX + 1, -100)
+    expect(flick.mock.calls).toEqual([[-1], [1], [-1], [1], [-1], [1], [-1], [1]])
+    swipe(EDGE_ZONE_PX, 100)
+    swipe(width() - EDGE_ZONE_PX, -100)
+    swipe(50, 100)
+    swipe(width() - 50, -100)
+    expect(flick).toHaveBeenCalledTimes(8)
   })
 
-  it('設定の「開発」で端の幅を替えると、付けたまま（読み込み直さずに）次の指から効く: 20px なら 30px の所からは何もせず、44px なら 40px の所からも渡す', () => {
+  it('設定の「開発」で端の幅を替えると、付けたまま（読み込み直さずに）次の指から効く: 20px なら 30px の所からは何もせず、36px（前の幅）なら 40px の所からは何もせず、44px（初めの幅）に戻すと 40px の所からも渡す', () => {
     const flick = install()
     setEdgeZonePx(20)
     swipe(30, 100)
@@ -108,10 +114,17 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(flick).not.toHaveBeenCalled()
     swipe(19, 100)
     expect(flick.mock.calls).toEqual([[-1]])
+    setEdgeZonePx(36)
+    swipe(40, 100)
+    swipe(width() - 40, -100)
+    expect(flick.mock.calls).toEqual([[-1]])
+    swipe(35, 100)
+    swipe(width() - 35, -100)
+    expect(flick.mock.calls).toEqual([[-1], [-1], [1]])
     setEdgeZonePx(44)
     swipe(40, 100)
     swipe(width() - 40, -100)
-    expect(flick.mock.calls).toEqual([[-1], [-1], [1]])
+    expect(flick.mock.calls).toEqual([[-1], [-1], [1], [-1], [1]])
   })
 
   it('外へ払った指・短い指（50px）・縦寄りの指・2本の指・止まってから動かした指（400ms。ドラッグの掴み方）・端末が取った指（touchcancel）では何もしない', () => {
@@ -193,7 +206,7 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(flick.mock.calls).toEqual([[-1], [1], [-1], [-1], [1]])
   })
 
-  it('拡大している時（2本の指で広げた・ダブルタップ。visualViewport.scale）は、端の幅を画面の上の長さで決め（2倍なら見えている所の端から 18px）、フォーカスの無い入力欄の上から押した指も渡さない（拡大した画面を動かす指と分ける。788e842 と同じ）。欄の外の端からは渡す', () => {
+  it('拡大している時（2本の指で広げた・ダブルタップ。visualViewport.scale）は、端の幅を画面の上の長さで決め（2倍なら見えている所の端から 22px）、フォーカスの無い入力欄の上から押した指も渡さない（拡大した画面を動かす指と分ける。788e842 と同じ）。欄の外の端からは渡す', () => {
     setSwipeLogEnabled(true)
     const flick = install()
     zoomTo({ offsetLeft: 0, width: width() / 2, scale: 2 })
@@ -202,7 +215,7 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     const memo = document.querySelector('[data-testid="memo"]')!
     swipe(5, 100, { target: field })
     swipe(width() / 2 - 5, -100, { target: memo })
-    // 見えている所の端から 25px（画面の上で 50px。端の幅 36px の外）は、欄の外でも端の指ではない
+    // 見えている所の端から 25px（画面の上で 50px。端の幅 44px の外）は、欄の外でも端の指ではない
     swipe(25, 100)
     expect(flick).not.toHaveBeenCalled()
     swipe(5, 100)
@@ -210,7 +223,7 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(flick.mock.calls).toEqual([[-1], [1]])
     const log = swipeLogText()
     expect(log.split('\n').filter((l) => / edge-skip \{"why":"zoomed"\}/.test(l))).toHaveLength(2)
-    expect(log).toMatch(/ edge-down \{"x":5,"y":300,"side":-1,"w":\d+,"zone":36,"scale":2\}/)
+    expect(log).toMatch(/ edge-down \{"x":5,"y":300,"side":-1,"w":\d+,"zone":44,"scale":2\}/)
   })
 
   it('フォーカスのある入力欄（カーソル・字を選ぶつまみがある）の上から押した指は渡さない。書ける要素（contenteditable）は、フォーカスのある要素の中の物の上からも渡さない', () => {
@@ -326,7 +339,7 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     setEdgeZonePx(20)
     swipe(6, 100)
     const log = swipeLogText()
-    expect(log).toMatch(/ edge-down \{"x":5,"y":300,"side":-1,"w":\d+,"zone":36\}/)
+    expect(log).toMatch(/ edge-down \{"x":5,"y":300,"side":-1,"w":\d+,"zone":44\}/)
     expect(log).toMatch(/ edge-down \{"x":6,"y":300,"side":-1,"w":\d+,"zone":20\}/)
     expect(log).toMatch(/ edge-up \{"x0":5,"dx":100,"dy":0,"ms":120,"dir":-1,"result":"flick"\}/)
     expect(log).toMatch(/ edge-up \{"x0":\d+,"dx":100,"dy":0,"ms":120,"dir":-1,"result":"outward"\}/)
@@ -367,8 +380,13 @@ describe('画面の端の決め方（edgeOfScreen）', () => {
     expect(edgeOfScreen(5, win)).toBe(-1)
     expect(edgeOfScreen(385, win)).toBe(1)
     expect(edgeOfScreen(30, win)).toBe(-1)
-    expect(edgeOfScreen(40, win)).toBeNull()
-    expect(edgeOfScreen(350, win)).toBeNull()
+    expect(edgeOfScreen(40, win)).toBe(-1)
+    expect(edgeOfScreen(43, win)).toBe(-1)
+    expect(edgeOfScreen(44, win)).toBeNull()
+    expect(edgeOfScreen(50, win)).toBeNull()
+    expect(edgeOfScreen(346, win)).toBeNull()
+    expect(edgeOfScreen(347, win)).toBe(1)
+    expect(edgeOfScreen(350, win)).toBe(1)
     const zoomed = { innerWidth: 390, visualViewport: { offsetLeft: 100, width: 195, scale: 2 } } as unknown as Window
     expect(edgeOfScreen(105, zoomed)).toBe(-1)
     expect(edgeOfScreen(290, zoomed)).toBe(1)
@@ -376,20 +394,23 @@ describe('画面の端の決め方（edgeOfScreen）', () => {
     expect(edgeOfScreen(200, zoomed)).toBeNull()
   })
 
-  it('拡大している時は、端の幅を画面の上の長さ（拡大する前の px）で決める: 2倍なら見えている所の端から 18px（44px を選んでいれば 22px）の中だけ。倍率が無い・おかしい時は 1倍', () => {
+  it('拡大している時は、端の幅を画面の上の長さ（拡大する前の px）で決める: 2倍なら見えている所の端から 22px（36px を選んでいれば 18px）の中だけ。倍率が無い・おかしい時は 1倍', () => {
     const zoomed = { innerWidth: 390, visualViewport: { offsetLeft: 100, width: 195, scale: 2 } } as unknown as Window
+    expect(edgeOfScreen(100 + 21, zoomed)).toBe(-1)
+    expect(edgeOfScreen(100 + 23, zoomed)).toBeNull()
+    expect(edgeOfScreen(100 + 30, zoomed)).toBeNull()
+    expect(edgeOfScreen(100 + 195 - 21, zoomed)).toBe(1)
+    expect(edgeOfScreen(100 + 195 - 23, zoomed)).toBeNull()
+    setEdgeZonePx(36)
     expect(edgeOfScreen(100 + 17, zoomed)).toBe(-1)
     expect(edgeOfScreen(100 + 19, zoomed)).toBeNull()
-    expect(edgeOfScreen(100 + 30, zoomed)).toBeNull()
     expect(edgeOfScreen(100 + 195 - 17, zoomed)).toBe(1)
     expect(edgeOfScreen(100 + 195 - 19, zoomed)).toBeNull()
     setEdgeZonePx(44)
-    expect(edgeOfScreen(100 + 21, zoomed)).toBe(-1)
-    expect(edgeOfScreen(100 + 23, zoomed)).toBeNull()
     for (const scale of [NaN, 0, -1, undefined]) {
       const odd = { innerWidth: 390, visualViewport: { offsetLeft: 0, width: 390, scale } } as unknown as Window
-      expect(edgeOfScreen(40, odd)).toBe(-1)
-      expect(edgeOfScreen(50, odd)).toBeNull()
+      expect(edgeOfScreen(43, odd)).toBe(-1)
+      expect(edgeOfScreen(45, odd)).toBeNull()
     }
   })
 })

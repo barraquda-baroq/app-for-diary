@@ -376,7 +376,7 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
     }
   })
 
-  it('iPhone・iPad で画面の端（端の幅の中。初めは 36px）から指で払っても、前後の期間へは移らない（端の指は端からのフリック: src/history/edgeFlick.ts が受け取ってモードを回す）。内側からは前後へ', async () => {
+  it('iPhone・iPad で画面の端（端の幅の中。初めは 44px）から指で払っても、前後の期間へは移らない（端の指は端からのフリック: src/history/edgeFlick.ts が受け取ってモードを回す）。内側からは前後へ', async () => {
     vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
     try {
       const { router } = await renderAt('/month/2026-11', { width: 'S' })
@@ -385,6 +385,10 @@ describe('スワイプ（3.7。S・M の指だけ。どのモードでも）', (
       drag(screen.getByTestId('calendar-body'), [window.innerWidth - 4, 400], [window.innerWidth - 150, 400])
       expect(router.state.location.pathname).toBe('/month/2026-11')
       drag(screen.getByTestId('calendar-body'), [30, 400], [190, 400])
+      expect(router.state.location.pathname).toBe('/month/2026-11')
+      drag(screen.getByTestId('calendar-body'), [40, 400], [200, 400])
+      expect(router.state.location.pathname).toBe('/month/2026-11')
+      drag(screen.getByTestId('calendar-body'), [window.innerWidth - 40, 400], [window.innerWidth - 200, 400])
       expect(router.state.location.pathname).toBe('/month/2026-11')
       // 端の幅より内側からは、今までどおり前後の月へ
       drag(screen.getByTestId('calendar-body'), [60, 400], [220, 400])

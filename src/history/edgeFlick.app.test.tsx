@@ -1,13 +1,14 @@
 // iPhone・iPad の画面の端からのフリックを、アプリの行き先（src/App.tsx の routes）の上で通しで確かめる（docs/SPEC.md の 3.1・12.1。
 // 22. の ■31〜■33）: ブラウザの履歴を1つのままにする履歴（SingleEntryHistory）と、window で端の指を受け取る所（edgeFlick.ts）を
 // 付け、画面の端から指で払う（pointer と touch の出来事。iPhone と同じく pointer が先）。カレンダーではモードを1つ回し（左の端から
-// ＝年→月→週→日→年、右の端から＝日→週→月→年→日）、前後の期間へは移らない（1回の払いで1つだけ）。端の幅（初めは 36px。設定の
+// ＝年→月→週→日→年、右の端から＝日→週→月→年→日）、前後の期間へは移らない（1回の払いで1つだけ）。端の幅（初めは 44px。設定の
 // 「開発」で選ぶ。src/history/edgeZone.ts）は、端の指を受け取る所・なぞりの所の両方で同じ。すばやく足すに字を打ったまま払うと、
 // 足さずに閉じてモードを回し、打った字も捨てる（同じ＋を開き直すと空。22. の「端からのフリックの3回目の直した版（788e842）を試した
 // 答え」）。ブラウザの履歴は増えない
 import { act, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
+import { EDGE_ZONE_PX } from '../features/calendar/common/swipe'
 import { testIds } from '../features/calendar/common/testIds'
 import { getData } from '../store/appStore'
 import { quickDraftKey, readLocal } from '../store/localDrafts'
@@ -26,7 +27,7 @@ let clock = 0
 afterEach(() => {
   for (const c of cleanups.splice(0)) c()
   vi.restoreAllMocks()
-  setEdgeZonePx(36)
+  setEdgeZonePx(EDGE_ZONE_PX)
 })
 
 /** 指の PointerEvent（pointerType: touch） */
@@ -97,16 +98,16 @@ describe('iPhone・iPad の画面の端からのフリック（アプリの行�
     expect(win.calls.filter((c) => c.op !== 'replaceState')).toEqual([])
   })
 
-  it('端から 30px（初めの端の幅 36px の中）の払いはモードを回し、前後の期間へは移らない。60px の所からは前後の期間へ。設定の「開発」で 20px にすると、読み込み直さずに 30px の所からも前後の期間へ（どちらの所も同じ幅で決める。1回の払いで1つだけ）', async () => {
+  it('端から 40px（初めの端の幅 44px の中）の払いはモードを回し、前後の期間へは移らない。60px の所からは前後の期間へ。設定の「開発」で 36px（前の幅）にすると、読み込み直さずに 40px の所からも前後の期間へ（どちらの所も同じ幅で決める。1回の払いで1つだけ）', async () => {
     const { router, win } = await open('/week/2026-11-08')
-    await edgeFlick(-1, 30)
+    await edgeFlick(-1, 40)
     expect(router.state.location.pathname).toBe('/day/2026-11-10')
-    await edgeFlick(1, 30)
+    await edgeFlick(1, 40)
     expect(router.state.location.pathname).toBe('/week/2026-11-08')
     await edgeFlick(1, 60)
     expect(router.state.location.pathname).toBe('/week/2026-11-15')
-    setEdgeZonePx(20)
-    await edgeFlick(-1, 30)
+    setEdgeZonePx(36)
+    await edgeFlick(-1, 40)
     expect(router.state.location.pathname).toBe('/week/2026-11-08')
     await edgeFlick(-1, 4)
     expect(router.state.location.pathname).toBe('/day/2026-11-10')

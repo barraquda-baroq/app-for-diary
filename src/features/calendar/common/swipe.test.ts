@@ -205,9 +205,9 @@ describe('swipeEnabled（S・M のどのモードでも。ウィークリーも 
 })
 
 describe('edgeSide（iPhone・iPad で画面の左右の端から端の幅の中で押した指。3.1 の「端からのフリック（iPhone・iPad）はアプリが受け取る」）', () => {
-  it('端の幅の初めは 36px（作者「もうちょっと画面端判定を甘く」。前は 20px）。設定の「開発」で選べるのは 20・28・36・44px', () => {
-    expect(EDGE_ZONE_PX).toBe(36)
-    expect(EDGE_ZONE_FORMER_PX).toBe(20)
+  it('端の幅の初めは 44px（作者「使いやすいのは44です」。前は 36px、その前は 20px）。設定の「開発」で選べるのは 20・28・36・44px（同じ）', () => {
+    expect(EDGE_ZONE_PX).toBe(44)
+    expect(EDGE_ZONE_FORMER_PX).toBe(36)
     expect([...EDGE_ZONE_CHOICES]).toEqual([20, 28, 36, 44])
     expect(EDGE_ZONE_CHOICES).toContain(EDGE_ZONE_PX)
     expect(EDGE_ZONE_CHOICES).toContain(EDGE_ZONE_FORMER_PX)
@@ -217,20 +217,23 @@ describe('edgeSide（iPhone・iPad で画面の左右の端から端の幅の中
     [0, -1],
     [5, -1],
     [20, -1],
-    [35.9, -1],
-    [36, null],
+    [36, -1],
+    [43.9, -1],
+    [44, null],
     [195, null],
-    [354, null],
+    [346, null],
+    [346.1, 1],
     [354.1, 1],
     [385, 1],
     [390, 1],
-  ] as const)('幅 390px の %spx → %s（端の幅を渡さない時は初めの 36px。左の端 -1・右の端 1・ほか null）', (x, side) => {
+  ] as const)('幅 390px の %spx → %s（端の幅を渡さない時は初めの 44px。左の端 -1・右の端 1・ほか null）', (x, side) => {
     expect(edgeSide(x, 390)).toBe(side)
   })
 
   it.each([
     [20, 19.9, 30, 370.1],
     [28, 27.9, 30, 362.1],
+    [36, 35.9, 40, 354.1],
     [44, 43.9, 50, 346.1],
   ] as const)('端の幅 %spx: 左 %spx は -1、%spx は null、右 %spx は 1', (zone, inLeft, out, inRight) => {
     expect(edgeSide(inLeft, 390, zone)).toBe(-1)

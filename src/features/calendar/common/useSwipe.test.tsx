@@ -1,5 +1,5 @@
 // 指で左右になぞる（useSwipe。docs/SPEC.md の 3.1・3.7）の、iPhone・iPad の画面の端の指: 画面の左右の端から端の幅（初めは
-// EDGE_ZONE_PX の 36px。設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ。src/history/edgeZone.ts）の中で押した指は、
+// EDGE_ZONE_PX の 44px。設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ。src/history/edgeZone.ts）の中で押した指は、
 // 端からのフリック（src/history/edgeFlick.ts が window で受け取ってモードを回す。同じ edgeOfScreen で決める）なので、ここでは数えない
 // （前後の期間へ移らない。1回の払いでモードと期間の両方が替わらない）。端の幅より内側の指は今までどおり前後の期間へ。文字を打っている
 // 間・入力欄の上から押した指はどれも数えない（端からのフリックと違い、フォーカスの無い入力欄の上からの指も数えない）。Android・PC は
@@ -67,24 +67,28 @@ afterEach(() => {
 })
 
 describe('iPhone・iPad の画面の端の指は端からのフリック（ここでは数えない。3.1・3.7）', () => {
-  it('左の端（5px・30px）から右へ・右の端（幅 − 5px・幅 − 30px）から左へ払っても、前後の期間へは移らない（初めの端の幅 36px の中。モードを回すのは src/history/edgeFlick.ts）', () => {
+  it('左の端（5px・30px・40px）から右へ・右の端（幅 − 5px・幅 − 30px・幅 − 40px）から左へ払っても、前後の期間へは移らない（初めの端の幅 44px の中。モードを回すのは src/history/edgeFlick.ts）', () => {
     const { onSwipe, area } = setup()
     flick(area, 5, 100)
     flick(area, width() - 5, -100)
     flick(area, 30, 100)
     flick(area, width() - 30, -100)
+    flick(area, 40, 100)
+    flick(area, width() - 40, -100)
     flick(area, EDGE_ZONE_PX - 1, 100)
+    flick(area, width() - EDGE_ZONE_PX + 1, -100)
     expect(onSwipe).not.toHaveBeenCalled()
   })
 
-  it(`端から ${EDGE_ZONE_PX}px より内側（40px・60px・100px）から払うと、今までどおり前後の期間へ（onSwipe）`, () => {
+  it(`端から ${EDGE_ZONE_PX}px の所と、それより内側（50px・60px・100px）から払うと、今までどおり前後の期間へ（onSwipe）`, () => {
     const { onSwipe, area } = setup()
-    flick(area, 40, 100)
+    flick(area, 50, 100)
     flick(area, 60, 100)
     flick(area, 100, 100)
     flick(area, EDGE_ZONE_PX, 100)
     flick(area, width() - 60, -100)
-    expect(onSwipe.mock.calls).toEqual([[-1], [-1], [-1], [-1], [1]])
+    flick(area, width() - EDGE_ZONE_PX, -100)
+    expect(onSwipe.mock.calls).toEqual([[-1], [-1], [-1], [-1], [1], [1]])
   })
 
   it('設定の「開発」で端の幅を替えると、付けたまま（読み込み直さずに）次の指から効く（端からのフリックと同じ幅。1回の払いでモードと期間の両方が替わらない）', () => {
@@ -95,12 +99,20 @@ describe('iPhone・iPad の画面の端の指は端からのフリック（こ�
     expect(onSwipe.mock.calls).toEqual([[-1], [1]])
     flick(area, 19, 100)
     expect(onSwipe).toHaveBeenCalledTimes(2)
+    // 前の幅の 36px: 40px の所からは前後の期間へ、30px の所からは移らない
+    setEdgeZonePx(36)
+    flick(area, 40, 100)
+    flick(area, width() - 40, -100)
+    expect(onSwipe).toHaveBeenCalledTimes(4)
+    flick(area, 30, 100)
+    expect(onSwipe).toHaveBeenCalledTimes(4)
+    // 初めの 44px に戻すと、40px の所からも移らない
     setEdgeZonePx(44)
     flick(area, 40, 100)
     flick(area, width() - 40, -100)
-    expect(onSwipe).toHaveBeenCalledTimes(2)
+    expect(onSwipe).toHaveBeenCalledTimes(4)
     flick(area, 50, 100)
-    expect(onSwipe).toHaveBeenCalledTimes(3)
+    expect(onSwipe).toHaveBeenCalledTimes(5)
   })
 
   it('ブラウザに取られた（pointercancel）後も touch の出来事で追うのは内側の指だけ（端の指は初めから追わない）', () => {

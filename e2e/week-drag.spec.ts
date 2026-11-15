@@ -1509,7 +1509,7 @@ test.describe('落とした後の［元に戻す］（指。S・M）', { tag: ['
 // やめる（e2e/helpers.ts の armHistory。CI 48 で、掴む前の scrollIntoViewIfNeeded が文書を 5px スクロールする3つが落ちたのは、これと
 // 見ている。落ちた時の page-diagnostics の1行目に mouse@… と MOVE1m が出れば、これ）
 test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
-  test('長押しで1日のカードと終点の●を動かせる。すばやく足すに字を打ったまま、画面の端の幅（初めは 36px）の中の●を掴んで動かしても、打った字は足さずに閉じ、書きかけに残る', async ({
+  test('長押しで1日のカードと終点の●を動かせる。すばやく足すに字を打ったまま、画面の端の幅（初めは 44px）の中の●を掴んで動かしても、打った字は足さずに閉じ、書きかけに残る', async ({
     page,
   }) => {
     await openWeek(page, { arm: false })
@@ -1539,7 +1539,7 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
     await expect(input).toBeFocused()
     await input.fill('端で掴む前に打った字')
     const grab = await grabPoint(endDot(page, I.training))
-    expect(grab.x).toBeLessThan(36)
+    expect(grab.x).toBeLessThan(44)
     drag = await startLongPress(page, grab, { via: 'synthetic' })
     await lifted(page)
     await drag.moveTo(await visiblePoint(halfS(page, 'work', '2026-11-09')))

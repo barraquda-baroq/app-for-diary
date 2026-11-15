@@ -1,9 +1,10 @@
 // iPhone・iPad の画面の端の幅（docs/SPEC.md の 3.1・18.1 の「開発」。22. の「端からのフリックの3回目の直した版（788e842）を試した
-// 答え」）: 画面の左右の端から、この幅の中で押した指が端からのフリックの指。初めは EDGE_ZONE_PX（36px。作者「もうちょっと画面端判定を
-// 甘くしてもらった方が操作しやすい気がします」で 20px から広げた）。設定の「開発」（src/features/appSettings/DevSettings.tsx。
-// iPhone・iPad だけ）の「端の幅」で EDGE_ZONE_CHOICES（20・28・36・44px）から選び、端末（localStorage の diary-studio:edge-zone）に
-// 覚える（同期しない）。無い・知らない値は初めの幅。端末に覚えられない時（localStorage が使えない）は、このページの間だけ選んだ幅を
-// 使う。幅は画面の上の長さ（拡大していても指で同じ幅。edgeOfScreen が倍率で割る）。
+// 答え」「端からのフリックの4回目の直した版（5e521a7）を試した答え」）: 画面の左右の端から、この幅の中で押した指が端からのフリックの
+// 指。初めは EDGE_ZONE_PX（44px。作者「使いやすいのは44です」で 36px から広げた。その前は 20px）。設定の「開発」
+// （src/features/appSettings/DevSettings.tsx。iPhone・iPad だけ）の「端の幅」で EDGE_ZONE_CHOICES（20・28・36・44px）から選び、端末
+// （localStorage の diary-studio:edge-zone）に覚える（同期しない）。無い・知らない値は初めの幅（覚えた幅はそのまま。前に 36 を選んだ
+// 端末は 36 のまま）。端末に覚えられない時（localStorage が使えない）は、このページの間だけ選んだ幅を使う。幅は画面の上の長さ
+// （拡大していても指で同じ幅。edgeOfScreen が倍率で割る）。
 // 端を決めるのはどれも edgeOfScreen（src/history/edgeFlick.ts）で、押すたびにここを読む: 端からのフリックを受け取る所（edgeFlick.ts）・
 // なぞって前後の期間へ移る所（端の指を数えない。src/features/calendar/common/useSwipe.ts）・すばやく足すの、端を押した指を外を押したと
 // まだ扱わない所（src/features/calendar/common/parts/QuickAdd.tsx）。なので選ぶと読み込み直さずにすぐ効き、1回の払いでモードと期間の
