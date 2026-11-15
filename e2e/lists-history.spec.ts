@@ -36,6 +36,7 @@ import {
   listSection,
   listTestIds,
   openLists,
+  openRowMenu,
   openStackedList,
   storedDraft,
   type ListName,
@@ -608,4 +609,130 @@ test.describe('S3 L の右の列の上のパネル（3.6・3.8。PC）', { tag: 
     await expect(page.getByTestId('item-sheet')).toHaveCount(0)
     expect(await hashOf(page)).toBe('/mim')
   })
+})
+
+// ---------- リストのメニュー・小窓が開いている時の「戻る」（3.1・■34。開発） ----------
+
+/** リストのメニュー・小窓（開いて、その物を返す） */
+const POPUPS: readonly { name: string; list: ListName; open: (page: Page) => Promise<Locator> }[] = [
+  {
+    name: 'Task List の行の小さな月のカレンダー（「…」の［日付を決める］。S は下からのシート）',
+    list: 'task',
+    open: async (page) => {
+      const menu = await openRowMenu(page, 'task', LIST_IDS.printDocs)
+      await menu.getByRole('menuitem', { name: '日付を決める' }).click()
+      return page.getByTestId('item-date-picker')
+    },
+  },
+  {
+    name: 'Task List の行の「…」のメニュー',
+    list: 'task',
+    open: (page) => openRowMenu(page, 'task', LIST_IDS.printDocs),
+  },
+  {
+    name: 'Task List の［締め切り日］のメニュー',
+    list: 'task',
+    open: async (page) => {
+      await page.getByTestId(listTestIds.taskChip('due')).click()
+      return page.getByTestId('task-chip-due-menu')
+    },
+  },
+  {
+    name: 'Routine List の［指定］の小窓',
+    list: 'routine',
+    open: async (page) => {
+      await page.getByTestId(listTestIds.routineCycle('weekly')).click()
+      await page.getByTestId(listTestIds.routineSpecButton).click()
+      return page.getByTestId(listTestIds.routineSpecPicker)
+    },
+  },
+]
+
+/**
+ * そのリストを見て入力欄に打ち（入力欄からは外す）、メニュー・小窓を開いて back（端からのフリック・［戻る］）をする: 1回目はそれだけを
+ * 閉じ、リストは開いたまま・打ちかけも端末の書きかけも残る。2回目でリストを畳み、打ちかけを捨てる（■34）。履歴は動かない
+ */
+async function backClosesPopupFirst(page: Page, popup: (typeof POPUPS)[number], back: () => Promise<void>) {
+  await openLists(page, MONTH)
+  const length = await historyLength(page)
+  await showList(page, popup.list)
+  const text = '取引先へ送る見積もりを直す'
+  await listInput(page, popup.list).click()
+  await page.keyboard.type(text)
+  await draftStored(page, popup.list, text)
+  await listInput(page, popup.list).blur()
+  const opened = await popup.open(page)
+  await expect(opened).toBeVisible()
+  await back()
+  await expect(opened).toHaveCount(0)
+  await expectCollapsed(page, popup.list, false)
+  await expect(listInput(page, popup.list)).toHaveValue(text)
+  expect(await storedDraft(page, popup.list)).toContain(text)
+  await expect(closeDialog(page)).toHaveCount(0)
+  await back()
+  await expectCollapsed(page, popup.list, true)
+  await expect.poll(() => storedDraft(page, popup.list)).toBeNull()
+  await expect(closeDialog(page)).toHaveCount(0)
+  expect(await historyLength(page)).toBe(length)
+}
+
+test.describe(
+  'S3 iPhone: リストのメニュー・小窓を開いている時のフリック（Chromium に iPhone の UA。3.1・■34）',
+  { tag: ['@s'] },
+  () => {
+    test.use({ userAgent: IPHONE_UA })
+
+    test('Task List を畳むフリックは、件名の打ちかけといっしょに［締め切り日］［依頼者］のチップも捨て、読み込み直しても戻らない。行の中で直している途中の件名は捨てずに保存する（■34。S3-FRAME-024）', async ({
+      page,
+    }) => {
+      await openLists(page, MONTH)
+      await showList(page, 'task')
+      await listInput(page, 'task').click()
+      await page.keyboard.type('名刺を頼む')
+      await page.getByTestId(listTestIds.taskChip('due')).click()
+      await page.getByRole('menuitem', { name: '明日', exact: true }).click()
+      await page.getByTestId(listTestIds.taskChip('requester')).click()
+      await page.getByTestId('task-chip-requester-input').fill('人事')
+      await page.getByTestId('task-chip-requester-input').press('Enter')
+      await expect(page.getByTestId(listTestIds.taskChip('requester'))).toHaveText('人事')
+      await draftStored(page, 'task', '人事')
+      // 行の件名をその場で直している途中（保存していない）
+      await page.getByTestId(listTestIds.rowTitle('task', LIST_IDS.quoteReply)).click()
+      const edit = page.getByTestId(listTestIds.rowEdit('task', LIST_IDS.quoteReply))
+      await expect(edit).toBeFocused()
+      await edit.fill('見積もりの返事を送る')
+      await edgeFlick(page, 'left')
+      await expectCollapsed(page, 'task', true)
+      await expect.poll(() => storedDraft(page, 'task')).toBeNull()
+      await expect
+        .poll(() => page.evaluate((id) => window.__ds.getData().items[id]?.title, LIST_IDS.quoteReply))
+        .toBe('見積もりの返事を送る')
+      await page.reload()
+      await expect(page.getByTestId('top-page')).toBeVisible()
+      await showList(page, 'task')
+      await expect(listInput(page, 'task')).toHaveValue('')
+      await expect(page.getByTestId(listTestIds.taskChip('due'))).toHaveText('締め切り日')
+      await expect(page.getByTestId(listTestIds.taskChip('requester'))).toHaveText('依頼者')
+    })
+
+    for (const popup of POPUPS) {
+      test(`${popup.name}を開いている時のフリックは、それだけを閉じ、リストは開いたまま・打ちかけも残る。次のフリックで畳んで打ちかけを捨てる。ブラウザの履歴は増えず、積む・戻る・進むは呼ばない`, async ({
+        page,
+      }) => {
+        await spyHistory(page)
+        await backClosesPopupFirst(page, popup, () => edgeFlick(page, 'left'))
+        expect(await historyCalls(page)).toEqual([])
+      })
+    }
+  },
+)
+
+test.describe('S3 Android: リストのメニュー・小窓を開いている時の［戻る］（Pixel 7 のタブ。3.1・■34）', { tag: ['@s'] }, () => {
+  for (const popup of POPUPS) {
+    test(`${popup.name}を開いている時の［戻る］は、それだけを閉じ、リストは開いたまま・打ちかけも残る（閉じるかは聞かない）。次の［戻る］で畳んで打ちかけを捨てる`, async ({
+      page,
+    }) => {
+      await backClosesPopupFirst(page, popup, () => goBack(page))
+    })
+  }
 })

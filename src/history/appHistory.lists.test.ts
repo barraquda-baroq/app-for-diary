@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
 import { draftKey } from '../features/lists/common/listInputModel'
 import { listTestIds } from '../features/lists/common/testIds'
+import { consumeBackPress } from '../features/top/closeApp'
 import { closeShownList, listOpenNow } from '../features/top/listBack'
 import { useStackedLists } from '../store/uiStore'
 import { renderAt, setupCalendarTests } from '../test/renderCalendar'
@@ -259,6 +260,7 @@ describe('S3 本物のトップの画面で（Pixel 7 の幅の S。■34）', (
       setHistoryHandler('armExit', armExit),
       setHistoryHandler('listOpen', listOpenNow),
       setHistoryHandler('closeList', closeShownList),
+      setHistoryHandler('consumePop', consumeBackPress),
     ]
     const r = await renderAt('/month/2026-11', { width: 'S', history })
     disposers.push(() => {
@@ -301,6 +303,26 @@ describe('S3 本物のトップの画面で（Pixel 7 の幅の S。■34）', (
     expect(win.describe()).toEqual(before)
     await back(win, history)
     expect(askExit).toHaveBeenCalledTimes(1)
+    expect(win.describe()).toEqual(before)
+  })
+
+  it('リストのメニュー（［締め切り日］）を開いている時の「戻る」は、メニューだけを閉じ（consumePop）、Task List は開いたまま・打ちかけも残る（閉じるかを聞かない）。次の「戻る」で畳んで打ちかけを捨てる。履歴の形は同じ（3.1・■34。開発）', async () => {
+    const { win, history, askExit } = await openTop()
+    await openTask()
+    fireEvent.change(screen.getByTestId(listTestIds.input('task')), { target: { value: '会議室の予約' } })
+    fireEvent.click(screen.getByTestId(listTestIds.taskChip('due')))
+    expect(screen.getByTestId('task-chip-due-menu')).toBeTruthy()
+    const before = win.describe()
+    await back(win, history)
+    expect(screen.queryByTestId('task-chip-due-menu')).toBeNull()
+    expect(lists().collapsed.task).toBe(false)
+    expect((screen.getByTestId(listTestIds.input('task')) as HTMLTextAreaElement).value).toBe('会議室の予約')
+    expect(askExit).not.toHaveBeenCalled()
+    expect(win.describe()).toEqual(before)
+    await back(win, history)
+    expect(lists().collapsed.task).toBe(true)
+    expect(localStorage.getItem(draftKey('task'))).toBeNull()
+    expect(askExit).not.toHaveBeenCalled()
     expect(win.describe()).toEqual(before)
   })
 

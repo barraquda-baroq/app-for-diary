@@ -147,6 +147,11 @@ function keepScrollOnFold(space: HTMLElement | null, pane: HTMLElement, y: numbe
   if (height !== null) space.style.height = `${height}px`
 }
 
+/** 切り替えの列で飛んだ後、スクロールが止まったとみなす続けて同じ位置の描画の数 */
+const SCROLL_STILL_FRAMES = 3
+/** 切り替えの列で飛んだ後、止まるのを待ついちばん長い時間（ms。過ぎたら止まっていなくても合わせ直す） */
+const JUMP_SETTLE_MAX_MS = 1500
+
 /** S・M の並べ方（docs/SPEC.md の 3.5） */
 function StackedTop({ width, mimOpen, counts }: { width: 'S' | 'M'; mimOpen: boolean; counts: ListCounts }) {
   const baseId = useId()
@@ -159,6 +164,8 @@ function StackedTop({ width, mimOpen, counts }: { width: 'S' | 'M'; mimOpen: boo
   // 切り替えで移った区切り。自分でスクロールし始めるまでは、位置ではなくこれを表示中とする（NS のホームのスマホと同じ）
   const pinned = useRef<PaneKey | null>(null)
   const timer = useRef(0)
+  /** 切り替えの列で飛んだ後、止まるのを待って合わせ直す描画の番号 */
+  const settleFrame = useRef(0)
   const spacer = useRef<HTMLDivElement>(null)
   /** スクロールの位置から表示中を決め直す（下の見張りが入れる） */
   const update = useRef<() => void>(() => {})
@@ -208,7 +215,13 @@ function StackedTop({ width, mimOpen, counts }: { width: 'S' | 'M'; mimOpen: boo
     // 区切りの id（paneId）は useId から作るので変わらない。S の MIM の全面を開け閉めした時だけ付け直す
   }, [fullMim])
 
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current)
+      cancelAnimationFrame(settleFrame.current)
+    },
+    [],
+  )
 
   // 見ている所と積んだ所の形を出す（■34 の「開いているリスト」。L・ほかの画面へ移ると、見ている所はカレンダー・形は無しに戻す）
   useEffect(() => {
@@ -245,6 +258,7 @@ function StackedTop({ width, mimOpen, counts }: { width: 'S' | 'M'; mimOpen: boo
         keepScrollOnFold(spacer.current, pane, top ?? window.scrollY)
         pinned.current = null
         window.clearTimeout(timer.current)
+        cancelAnimationFrame(settleFrame.current)
         lists.setCollapsed(k, true)
         // 畳む動き（180ms）でページが縮んでから、見ている所を決め直す
         update.current()
@@ -268,14 +282,45 @@ function StackedTop({ width, mimOpen, counts }: { width: 'S' | 'M'; mimOpen: boo
       scroll(scrollBehavior())
       // 読み上げ・キーボードでも移った先から続けられるように、区切りの見出しへフォーカスを移す
       document.getElementById(headingId(k))?.focus({ preventScroll: true })
+      settleAfterJump(k)
     })
-    // 開く動き（180ms）でページが伸びてから、もう一度合わせる
     window.clearTimeout(timer.current)
-    if (opening) {
-      timer.current = window.setTimeout(() => {
-        if (pinned.current === k) scroll('auto')
-      }, FOLD_MS + 40)
+    cancelAnimationFrame(settleFrame.current)
+  }
+
+  /**
+   * 飛んだ後、なめらかなスクロールと開く動き（180ms）が終わってから（ページの位置が SCROLL_STILL_FRAMES の描画のあいだ同じ）、
+   * 区切りの見出しが切り替えの列のすぐ下（scroll-margin-top）に無ければ、なめらかにせずすぐそこへ合わせ直す。なめらかなスクロールの
+   * 途中で位置を替えると、ブラウザによってはその後も残りのスクロールを足して行き過ぎるので、止まるまで待つ。自分でスクロールし始めた
+   * 時（固定を外した時）はやめる
+   */
+  const settleAfterJump = (k: PaneKey) => {
+    const started = performance.now()
+    let lastY = Number.NaN
+    let still = 0
+    const step = () => {
+      if (pinned.current !== k) return
+      const y = window.scrollY
+      still = y === lastY ? still + 1 : 0
+      lastY = y
+      const waited = performance.now() - started
+      if ((waited >= FOLD_MS + 40 && still >= SCROLL_STILL_FRAMES) || waited >= JUMP_SETTLE_MAX_MS) {
+        alignTo(k)
+        return
+      }
+      settleFrame.current = requestAnimationFrame(step)
     }
+    settleFrame.current = requestAnimationFrame(step)
+  }
+
+  /** 区切りの見出しを、切り替えの列のすぐ下へすぐ合わせる（いちばん下の空きも合わせ直す。合っていれば動かさない） */
+  const alignTo = (k: PaneKey) => {
+    const pane = document.getElementById(paneId(k))
+    if (!pane) return
+    fitSpacer(k)
+    const margin = Number.parseFloat(getComputedStyle(pane).scrollMarginTop) || 0
+    const off = pane.getBoundingClientRect().top - margin
+    if (Math.abs(off) > 1) window.scrollTo({ top: Math.max(0, window.scrollY + off), behavior: 'auto' })
   }
 
   /**

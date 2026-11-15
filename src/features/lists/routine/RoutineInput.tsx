@@ -7,7 +7,8 @@
 // - 下の段: 1行の欄（プレースホルダ「ルーチンを足す…」）と、右の端の中に［足す］（✓）。Enter・［足す］でその種類のいちばん下に足す
 //   （common/ListInput・useListInput。変換中の Enter は足さない。外を押す・キーボードを閉じるでは足さない）
 // - ■34: S・M で開いている Routine List を端からのフリック・OS の［戻る］で畳む時（common/listDraft の discardListDraft）は、字と
-//   いっしょに［指定］も空にし、窓も閉じる
+//   いっしょに［指定］も空にし、窓も閉じる。窓が開いている時の「戻る」（端からのフリックも）は、窓だけを閉じる（打ちかけと［指定］は
+//   残す。common/listPopups。3.1・開発）
 // data-testid は routine-cycle-{種類}・routine-spec-button・routine-spec-picker（common/testIds.ts）
 import { useEffect, useRef, useState } from 'react'
 import { specButtonLabel, type SpecDraft } from '../../../domain/routineList'
@@ -15,6 +16,7 @@ import { ROUTINE_CYCLE_LABELS } from '../../../domain/routines'
 import { ROUTINE_CYCLES, usePrefs, type RoutineCycle } from '../../../store/uiStore'
 import { Popover } from '../../item/fields/Popover'
 import { registerDraftClear } from '../common/listDraft'
+import { useListPopup } from '../common/listPopups'
 import { ListInput } from '../common/ListInput'
 import { listTestIds } from '../common/testIds'
 import type { ListInputApi } from '../common/useListInput'
@@ -68,6 +70,8 @@ function SpecButton({ cycle, spec, onChange }: SpecButtonProps) {
 
   // ■34 で打ちかけを捨てる時は窓も閉じる（指定は使う側が空にする）
   useEffect(() => registerDraftClear('routine', () => setAnchor(null)), [])
+  // 窓が開いている時の「戻る」は、窓だけを閉じる（フォーカスが窓の中にあれば［指定］へ戻す）
+  useListPopup(anchor !== null, () => close())
 
   useEffect(() => {
     if (!anchor || !byKey.current) return

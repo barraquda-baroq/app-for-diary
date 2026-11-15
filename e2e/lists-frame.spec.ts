@@ -19,9 +19,28 @@ import {
   listInput,
   openLists,
   openStackedList,
+  pageScrollStill,
   storedDraft,
   switchCount,
 } from './listHelpers'
+
+/** 作り物のデータに、毎日のルーチン 13・やりたいこと 12 を足した物（画面より長いリスト） */
+function longLists(): Pick<ReturnType<typeof listData>, 'routines' | 'favorites'> {
+  const base = listData()
+  const routine = Object.values(base.routines).find((r) => r.cycle === 'daily')!
+  const favorite = Object.values(base.favorites)[0]
+  const routines = { ...base.routines }
+  const favorites = { ...base.favorites }
+  for (let i = 0; i < 13; i++) {
+    const id = `list-r-extra-${i}`
+    routines[id] = { ...routine, id, title: `毎日の用事 ${i + 1}`, order: 10 + i }
+  }
+  for (let i = 0; i < 12; i++) {
+    const id = `list-f-extra-${i}`
+    favorites[id] = { ...favorite, id, text: `行ってみたい所 ${i + 1}`, order: 100 + i, done: false, doneAt: null }
+  }
+  return { routines, favorites }
+}
 
 /** 作り物のデータのまだ済んでいない数（各リストの決まりで数えた物） */
 function expectedCounts() {
@@ -62,6 +81,32 @@ test.describe(
         .locator('.top-switcher-count')
         .evaluate((e) => getComputedStyle(e).fontFamily)
       expect(font).toContain('Roboto Mono')
+    })
+
+    test('切り替えの列で畳んでいるリストを押すと、開いてから、その見出しが切り替えの列のすぐ下（12px）に止まる（アプリを開いて初めの1回・長いリストでも行き過ぎない）。全部畳むと、ページはリストの終わりまでしか伸びない（畳んだ中の読み上げの字で伸びない。3.5・開発）', async ({
+      page,
+    }) => {
+      for (const list of LIST_NAMES) {
+        await openLists(page, '/week/2026-11-08', { extra: longLists() })
+        // 3つとも畳んでいる: ページの下の端は、ページの中身（トップの画面）の下の端
+        const ends = await page.evaluate(() => ({
+          page: document.documentElement.scrollHeight,
+          top: Math.ceil(document.querySelector('[data-testid="top-page"]')!.getBoundingClientRect().bottom + window.scrollY),
+        }))
+        expect(ends.page, JSON.stringify(ends)).toBeLessThanOrEqual(ends.top + 1)
+        await page.getByTestId(`top-jump-${list}`).click()
+        await expectCollapsed(page, list, false)
+        // なめらかなスクロールと開く動き（180ms）が終わり、合わせ直すまで
+        await pageScrollStill(page)
+        await page.waitForTimeout(400)
+        await pageScrollStill(page)
+        const at = await page.evaluate((id) => {
+          const head = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect().top
+          const switcher = document.querySelector('[data-testid="top-switcher"]')!.getBoundingClientRect().bottom
+          return { head: Math.round(head), want: Math.round(switcher + 12) }
+        }, `list-${list}`)
+        expect(Math.abs(at.head - at.want), `${list}: ${JSON.stringify(at)}`).toBeLessThanOrEqual(1)
+      }
     })
 
     test('裏に回って戻っただけ（ページを閉じていない）なら、開いた状態は続く', async ({ page }) => {

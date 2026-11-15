@@ -298,6 +298,24 @@ describe('S3 入力欄（2段。14.2・■35。S3-ROUTINE-083〜093・S3-FRAME-2
     expect(titlesIn('quarterly')).toEqual(['税の見直し'])
   })
 
+  it('［指定］の窓が開いている時の「戻る」（consumeBackPress）は、窓だけを閉じる。字と選んだ［指定］は残る（3.1・■34。開発）', async () => {
+    const { consumeBackPress } = await import('../../top/closeApp')
+    const { user } = await open()
+    await user.click(byId(listTestIds.routineCycle('weekly')))
+    await user.click(specButton()!)
+    await user.click(within(byId(listTestIds.routineSpecPicker)).getByRole('button', { name: '水曜日' }))
+    fireEvent.change(input(), { target: { value: '書きかけ' } })
+    let used = false
+    act(() => {
+      used = consumeBackPress()
+    })
+    expect(used).toBe(true)
+    expect(screen.queryByTestId(listTestIds.routineSpecPicker)).toBeNull()
+    expect(input().value).toBe('書きかけ')
+    expect(specButton()!.textContent).toBe('水')
+    expect(consumeBackPress()).toBe(false)
+  })
+
   it('■34: 打ちかけを捨てると、字といっしょに［指定］も空にし、窓も閉じる（足さない）', async () => {
     const { user } = await open()
     await user.click(byId(listTestIds.routineCycle('weekly')))

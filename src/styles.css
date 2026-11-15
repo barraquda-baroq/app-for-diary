@@ -1125,7 +1125,9 @@ h4 {
 
 /* 畳む・開く（高さを 180ms で。docs/SPEC.md の 4.9）。.fold の中に1つだけ要素を置き、畳む時は .is-closed を付ける。
    畳んでいる間は中身を見えなくし（visibility。フォーカス・読み上げからも外れる）、閉じる動きが終わってから隠す。
-   中身は overflow: hidden で切れるので、中の部品のフォーカスの枠は内側（outline-offset: -2px）にするか、左右に余白を取る */
+   中身は overflow: hidden で切れるので、中の部品のフォーカスの枠は内側（outline-offset: -2px）にするか、左右に余白を取る。
+   中身は位置の基準にもする（畳んだ中の読み上げだけの字 .visually-hidden（position: absolute）が、外の body を基準にして切れずに
+   残り、S・M のページをその分だけ下へ伸ばさないように。L の右の列の .top-side と同じ。開発） */
 .fold {
   display: grid;
   grid-template-rows: 1fr;
@@ -1133,6 +1135,7 @@ h4 {
 }
 
 .fold > * {
+  position: relative;
   min-height: 0;
   overflow: hidden;
 }

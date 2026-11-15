@@ -11,6 +11,7 @@ import { screenOf } from '../features/calendar/common/calendarHistory'
 import { sheetOf } from '../features/calendar/common/sheets'
 import { draftKey } from '../features/lists/common/listInputModel'
 import { listTestIds } from '../features/lists/common/testIds'
+import { consumeBackPress } from '../features/top/closeApp'
 import { closeShownList, listOpenNow } from '../features/top/listBack'
 import { useStackedLists } from '../store/uiStore'
 import { renderAt, setupCalendarTests } from '../test/renderCalendar'
@@ -269,7 +270,11 @@ describe('S3 本物のトップの画面で（S の積んだ所。■34）', () 
   async function openTop(path = '/month/2026-11') {
     const win = new FakeWindow(`#${path}`, { swipes: true })
     const history = createAppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf }) as SingleEntryHistory
-    const offs = [setHistoryHandler('listOpen', listOpenNow), setHistoryHandler('closeList', closeShownList)]
+    const offs = [
+      setHistoryHandler('listOpen', listOpenNow),
+      setHistoryHandler('closeList', closeShownList),
+      setHistoryHandler('consumePop', consumeBackPress),
+    ]
     const r = await renderAt(path, { width: 'S', history })
     disposers.push(() => {
       for (const off of offs) off()
@@ -305,6 +310,47 @@ describe('S3 本物のトップの画面で（S の積んだ所。■34）', () 
     // 開き直しても空
     fireEvent.click(screen.getByTestId(listTestIds.fold('task')))
     expect((screen.getByTestId(listTestIds.input('task')) as HTMLTextAreaElement).value).toBe('')
+    expect(win.entries).toHaveLength(1)
+    expect(win.calls.filter((c) => c.op !== 'replaceState')).toEqual([])
+  })
+
+  it('［締め切り日］のメニューを開いている時、メニューの外（画面の端）から押して払うと、押した時にメニューが閉じても、そのフリックはメニューを閉じただけで使い切る（畳まない・打ちかけも残る・記録は dialog）。次のフリックで畳む（3.1・■34。開発）', async () => {
+    const { history, win } = await openTop()
+    await openTask()
+    const input = screen.getByTestId(listTestIds.input('task')) as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: '見積もりの返事' } })
+    fireEvent.click(screen.getByTestId(listTestIds.taskChip('due')))
+    expect(screen.getByTestId('task-chip-due-menu')).toBeTruthy()
+    setSwipeLogEnabled(true)
+    clearSwipeLog()
+    // 端で押す: メニューの外を押したので、払い終える前にメニューは閉じる
+    act(() => {
+      document.body.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', clientX: 3, clientY: 400 }),
+      )
+    })
+    expect(screen.queryByTestId('task-chip-due-menu')).toBeNull()
+    act(() => history.flick(-1))
+    act(() => {
+      document.body.dispatchEvent(new Event('touchend', { bubbles: true }))
+    })
+    const log = swipeLogText()
+    setSwipeLogEnabled(false)
+    expect(lists().collapsed.task).toBe(false)
+    expect(input.value).toBe('見積もりの返事')
+    expect(log).toContain('dialog')
+    // 次に押して払うフリックは畳む（メニューはもう無い）
+    act(() => {
+      document.body.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', clientX: 3, clientY: 400 }),
+      )
+    })
+    act(() => history.flick(-1))
+    act(() => {
+      document.body.dispatchEvent(new Event('touchend', { bubbles: true }))
+    })
+    expect(lists().collapsed.task).toBe(true)
+    expect(localStorage.getItem(draftKey('task'))).toBeNull()
     expect(win.entries).toHaveLength(1)
     expect(win.calls.filter((c) => c.op !== 'replaceState')).toEqual([])
   })

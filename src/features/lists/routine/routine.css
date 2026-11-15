@@ -285,9 +285,14 @@
   outline: none;
 }
 
+/* 種類の切り替え: 5つを同じ幅に並べて欄の幅いっぱいに（L の右の列の上のパネル 300px でも「毎年」だけが次の行へ折り返さない。開発） */
 .segmented.rt-panel-cycle {
-  flex-wrap: wrap;
-  align-self: flex-start;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.segmented.rt-panel-cycle button {
+  padding-inline: 4px;
 }
 
 .rt-panel-return {

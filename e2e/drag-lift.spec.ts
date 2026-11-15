@@ -76,7 +76,10 @@ async function noToast(page: Page) {
   await expect(page.locator('.toast')).toHaveCount(0)
 }
 
-/** 掴んで to の日へ動かし、そこが上にある日になってから離す。「〜へ移しました」が出る */
+/**
+ * 掴んで to の日へ動かし、そこが上にある日になってから離す。「〜へ移しました」が出る。落とした日のカードは、掴んでいる間の写し
+ * （data-dnd-placeholder。知らせが出た後の1〜2描画は残る）が消えてから、本物だけを見る
+ */
 async function dropOn(page: Page, start: (from: Point) => Promise<DragSession>, id: string, to: Locator, done: string) {
   const drag = await start(await visiblePoint(card(page, id)))
   await lifted(page)
@@ -84,8 +87,8 @@ async function dropOn(page: Page, start: (from: Point) => Promise<DragSession>, 
   await overDropDay(to)
   await drag.drop()
   await expect(toast(page, done)).toBeVisible()
-  await expect(to.getByTestId(`week-card-${id}`)).toBeVisible()
   await notDragging(page)
+  await expect(to.locator(`[data-testid="week-card-${id}"]:not([data-dnd-placeholder])`)).toBeVisible()
 }
 
 test.describe('PC（マウス）', { tag: ['@pc'] }, () => {

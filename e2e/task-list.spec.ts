@@ -298,6 +298,42 @@ test.describe('S3 Task List（M・S の2行の行。スマホ）', { tag: ['@s']
     await expect(line(LIST_IDS.printDocs)).toHaveText('〆11/11')
   })
 
+  test('件名を押せる所は、上の行（〆11/11・営業部）を含む真ん中の欄の全部（高さ 40px 以上。4.11）。上の行を押しても件名をその場で直し始める', async ({
+    page,
+  }) => {
+    await openLists(page, '/week/2026-11-08')
+    await openStackedList(page, 'task')
+    const id = LIST_IDS.quoteReply
+    const title = rowTitle(page, id)
+    // 真ん中の欄の上の端の近く・下の端の近く・上の行の真ん中は、どれも件名のボタン
+    const hits = await row(page, id)
+      .locator('.task-main')
+      .evaluate(
+        (main, titleId) => {
+          const r = main.getBoundingClientRect()
+          const line = main.querySelector('.task-line')!.getBoundingClientRect()
+          const at = (x: number, y: number) =>
+            document.elementFromPoint(x, y)?.closest('button')?.getAttribute('data-testid') === titleId
+          const x = r.left + r.width / 2
+          return {
+            height: r.height,
+            top: at(x, r.top + 2),
+            bottom: at(x, r.bottom - 2),
+            line: at(line.left + 4, line.top + line.height / 2),
+          }
+        },
+        listTestIds.rowTitle('task', id),
+      )
+    expect(hits.height).toBeGreaterThanOrEqual(40)
+    expect(hits).toMatchObject({ top: true, bottom: true, line: true })
+    // 上の行の字の所を指で押す（上の行の上には件名の押せる所が重なっているので、要素ではなく位置を押す）
+    const line = await page.getByTestId(listTestIds.taskLine(id)).boundingBox()
+    if (!line) throw new Error('上の行が見えていません')
+    await page.touchscreen.tap(line.x + 4, line.y + line.height / 2)
+    await expect(page.getByTestId(listTestIds.rowEdit('task', id))).toBeFocused()
+    await expect(title).toHaveCount(0)
+  })
+
   test('書きかけ（字とチップ）は読み込み直しても残る。足してもページを動かさず、入力欄は見えたまま（S3-TASK-042）', async ({
     page,
   }) => {

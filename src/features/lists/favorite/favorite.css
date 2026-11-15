@@ -138,9 +138,10 @@
   opacity: 1;
 }
 
-/* 指で操作する端末: 「続き」も 34px の高さ（4.11）。掴む所は出さない（行を 0.4秒押し続けて掴む） */
+/* 指で操作する端末: 「続き」も 34px 四方以上（4.11）。掴む所は出さない（行を 0.4秒押し続けて掴む） */
 @media (pointer: coarse) {
   .fv-more {
+    min-width: var(--tap);
     min-height: var(--tap);
     margin-bottom: 4px;
   }

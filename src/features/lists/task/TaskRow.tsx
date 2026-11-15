@@ -14,6 +14,8 @@
 //   行の地は区分で変えず、ラベルの色も出さない（ラベルは詳細で選ぶ。4.3）
 // - 「…」メニュー（13.5）: ［詳しく］（「タスク」の詳細。L は右の列の上のパネル、S・M はシート）・M・S の［日付…］・
 //   ［日付を決める］（list 生まれの①④）・［Task List から外す］（カレンダーに出ている時）・［削除］（12.8）
+// - 日付のメニュー・小さな月のカレンダーが開いている時の「戻る」（端からのフリックも）は、それだけを閉じる（common/listPopups。リストは
+//   畳まない。3.1・開発）
 // - 掴む所（features/dnd の useTaskRowDrag）の ref と行の属性を広げる（掴めるのは L・マウス・カレンダーを出している時。13.6）
 import { memo, useCallback, useRef, useState, type ChangeEvent } from 'react'
 import { flushSync } from 'react-dom'
@@ -28,6 +30,7 @@ import { cls, displayTitle, kindOf } from '../../calendar/common/parts/itemLook'
 import { useTaskRowDrag } from '../../dnd'
 import { DotCheck } from '../common/DotCheck'
 import { listFlashKey } from '../common/listFlash'
+import { useListPopup } from '../common/listPopups'
 import { ListRow } from '../common/ListRow'
 import { RowMenu } from '../common/RowMenu'
 import { listTestIds } from '../common/testIds'
@@ -70,6 +73,10 @@ export const TaskRow = memo(function TaskRow({ view, wide, today }: TaskRowProps
   /** 開いている小さな月のカレンダー（直す欄と開いた所） */
   const [picking, setPicking] = useState<{ field: TaskDateField; anchor: HTMLElement } | null>(null)
   const [requesterEditing, setRequesterEditing] = useState(false)
+  useListPopup(dateMenu !== null || picking !== null, () => {
+    setDateMenu(null)
+    setPicking(null)
+  })
   const titleEdit = useInlineEdit({ value: item.title, onSave: (t) => saveTaskTitle(item.id, t) })
   const editing = titleEdit.editing || requesterEditing
 

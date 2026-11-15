@@ -8,13 +8,16 @@
 //   し（appHistory の armExit）、「もう一度［戻る］を押すと閉じます」を出す（同期していない変更がある時は、同じ1行を添える）。出ている間
 //   （EXIT_ARMED_MS）のもう一度の［戻る］で閉じる。消えた・押した・長押しした時は元の所へ戻り、次の［戻る］でまた出す
 // ほかのダイアログが開いている時の「戻る」は、聞かずにそのダイアログを閉じる（consumeBackPress。どの画面でも、iPhone の端からのフリック
-// でも同じ。掴んでいる間（掴んでから離すまで）の「戻る」は何もしない）。
+// でも同じ。掴んでいる間（掴んでから離すまで）の「戻る」は何もしない）。3つのリストのメニュー・小窓（行の「…」・日付のメニュー・小さな
+// 月のカレンダー・チップのメニュー・［指定］の小窓）が開いている時の「戻る」も、それだけを閉じる（S・M の開いたリストを畳むのは次の
+// 「戻る」。src/features/lists/common/listPopups.ts。開発）。
 // 確かめのフォーカスは［キャンセル］に置き、題の列の［×］も「キャンセル」と読む（［閉じる］が2つにならないように。開発）
 import { armExitApp, leaveApp, type LeaveResult } from '../../history/appHistory'
 import { saveBeforeLeave } from '../../store/lifecycle'
 import { notify, notifyError, useCalendarUi, useToasts } from '../../store/uiStore'
 import { useSync } from '../../sync/controller'
 import { cancelAllDialogs, confirmDialog, hasOpenDialog } from '../../ui/dialogs'
+import { closeListPopups } from '../lists/common/listPopups'
 
 /** 閉じるかの確かめの題 */
 export const CLOSE_TITLE = 'Diary Studio を閉じますか？'
@@ -65,14 +68,17 @@ let arming = false
  * 「戻る」「進む」（iPhone の端からのフリックも）が来た時に、画面を動かす前に片付ける（src/history/appHistory.ts の consumePop）:
  * 確かめのダイアログが開いていれば、それだけを閉じる（キャンセル。その下の詳細の画面などは閉じない）。掴んでいる間（掴んでから
  * 離すまで。features/dnd の TopDnd が付ける dragging）は何もしない。離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印
- * data-dnd-dragging はまだ残る。pageTurnDom の dragActive）は、もう掴んでいないので、ふつうに扱う（3.1）。片付けた時 true
+ * data-dnd-dragging はまだ残る。pageTurnDom の dragActive）は、もう掴んでいないので、ふつうに扱う（3.1）。リストのメニュー・小窓が
+ * 開いていれば（iPhone の端からのフリックで、払い始めに外を押したことになって先に閉じた時も）、それだけを閉じる（リストは畳まず、
+ * 打ちかけも残す。src/features/lists/common/listPopups.ts）。片付けた時 true
  */
 export function consumeBackPress(): boolean {
   if (hasOpenDialog()) {
     cancelAllDialogs()
     return true
   }
-  return useCalendarUi.getState().dragging
+  if (useCalendarUi.getState().dragging) return true
+  return closeListPopups()
 }
 
 /** Android のブラウザのタブ・PC の OS の「戻る」でアプリを閉じるかを聞く（src/App.tsx がアプリの履歴に置く） */

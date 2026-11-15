@@ -258,8 +258,11 @@
 }
 
 .task-main {
+  position: relative;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  align-self: stretch;
   min-width: 0;
   padding: 4px 0;
 }
@@ -287,4 +290,12 @@
   min-height: 0;
   padding: 0;
   font-size: 15px;
+}
+
+/* 件名を押せる所は、真ん中の欄（上の行「〆11/20・営業部」と件名。行の高さいっぱいで 40px 以上）の全部（4.11。字の高さだけの
+   22px にしない。上の行や件名の少し上を押しても、件名をその場で直し始める。開発） */
+.task-row.is-stacked .task-title::before {
+  position: absolute;
+  inset: 0;
+  content: '';
 }

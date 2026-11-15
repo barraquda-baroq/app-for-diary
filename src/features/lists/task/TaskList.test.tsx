@@ -589,3 +589,50 @@ describe('■34 で打ちかけを捨てる', () => {
     expect(localStorage.getItem(draftKey('task'))).toBeNull()
   })
 })
+
+describe('メニュー・小窓が開いている時の「戻る」（3.1・■34。開発）', () => {
+  it('行の日付の小さな月のカレンダー（S は下からのシート）・日付のメニュー・行の「…」のメニュー・チップのメニューは、「戻る」（consumeBackPress）でそれだけを閉じ、入力欄の打ちかけは残す', async () => {
+    const { consumeBackPress } = await import('../../top/closeApp')
+    const { user } = await open(FIXTURE, { width: 'S' })
+    const input = byId(listTestIds.input('task')) as HTMLTextAreaElement
+    await user.type(input, '名刺を頼む')
+    const back = () => {
+      let used = false
+      act(() => {
+        used = consumeBackPress()
+      })
+      return used
+    }
+    // 行の［日付を決める］の小さな月のカレンダー
+    await user.click(byId(listTestIds.rowMore('task', 'none')))
+    await user.click(screen.getByRole('menuitem', { name: '日付を決める' }))
+    expect(byId(DATE_PICKER_TEST_ID)).toBeTruthy()
+    expect(back()).toBe(true)
+    expect(screen.queryByTestId(DATE_PICKER_TEST_ID)).toBeNull()
+    // 「…」の［日付…］の日付のメニュー
+    await user.click(byId(listTestIds.rowMore('task', 'due')))
+    await user.click(screen.getByRole('menuitem', { name: '日付を直す' }))
+    expect(byId(listTestIds.taskDateMenu)).toBeTruthy()
+    expect(back()).toBe(true)
+    expect(screen.queryByTestId(listTestIds.taskDateMenu)).toBeNull()
+    // 行の「…」のメニュー
+    await user.click(byId(listTestIds.rowMore('task', 'due')))
+    expect(byId(listTestIds.rowMenu('task'))).toBeTruthy()
+    expect(back()).toBe(true)
+    expect(screen.queryByTestId(listTestIds.rowMenu('task'))).toBeNull()
+    // チップのメニューと、その［日付を選ぶ］の小さな月のカレンダー
+    await user.click(byId(listTestIds.taskChip('due')))
+    expect(byId('task-chip-due-menu')).toBeTruthy()
+    expect(back()).toBe(true)
+    expect(screen.queryByTestId('task-chip-due-menu')).toBeNull()
+    await user.click(byId(listTestIds.taskChip('due')))
+    await user.click(screen.getByRole('menuitem', { name: '締め切り日を選ぶ' }))
+    expect(byId(DATE_PICKER_TEST_ID)).toBeTruthy()
+    expect(back()).toBe(true)
+    expect(screen.queryByTestId(DATE_PICKER_TEST_ID)).toBeNull()
+    // どれも開いていなければ使い切らない。打ちかけは残っている
+    expect(back()).toBe(false)
+    expect(input.value).toBe('名刺を頼む')
+    expect(stored('none')).toMatchObject({ due: null })
+  })
+})

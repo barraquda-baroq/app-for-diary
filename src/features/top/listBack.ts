@@ -8,6 +8,9 @@
 //   決めずに捨てる。その場の直しは捨てない）、ページの位置を跳ばさずに畳む（stackedFold.ts の foldListInPlace。カレンダーへ
 //   スクロールで戻さない・フォーカスはそのリストの中にあった時だけそのリストの見出しの畳む・開くボタンへ）
 // - 見出しの［▾］で畳む・切り替えの列で別のリストへ移る・幅が L になる時は、打ちかけを今までどおり残す（ここを通らない）
+// - リストのメニュー・小窓（行の「…」・日付のメニュー・小さな月のカレンダー・チップのメニュー・［指定］の小窓）が開いている時の「戻る」は、
+//   ここへ来る前に履歴の consumePop（closeApp.ts の consumeBackPress・common/listPopups.ts）がそれだけを閉じて使い切る（畳まない・
+//   打ちかけも残す。開発）。畳んで打ちかけを捨てるのは、何も開いていない時の次の「戻る」
 import { useStackedLists, type ListKey } from '../../store/uiStore'
 import { discardListDraft } from '../lists/common/listDraft'
 import { listToClose } from './stackModel'

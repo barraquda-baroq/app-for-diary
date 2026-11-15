@@ -7,7 +7,8 @@
 // - 決めた値はボタンの字がチップ「開始 11/10」「〆 11/20」「営業部」になり、右の［×］で外せる（押すとまた選び直せる）。
 //   どれも書きかけ（diary-studio:draft:task）に入り、読み込み直しても戻る。足すと空に戻る（common/useListInput）
 // - ■34 で打ちかけを捨てる時（common/listDraft の discardListDraft）は、開いているメニュー・小窓・依頼者の欄も閉じ、依頼者の欄の字は
-//   決めずに捨てる
+//   決めずに捨てる。メニュー・小窓が開いている時の「戻る」（端からのフリックも）は、それだけを閉じる（打ちかけは残す。common/listPopups。
+//   3.1・開発）
 // 指の端末・S・M では、ボタン・［×］・候補を 34px 以上にする（4.11。task.css）
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -17,6 +18,7 @@ import { XIcon } from '../../../ui/icons'
 import { PopupMenu } from '../../../ui/PopupMenu'
 import { DatePicker } from '../../item/fields/MiniMonth'
 import { registerDraftClear } from '../common/listDraft'
+import { useListPopup } from '../common/listPopups'
 import { listTestIds } from '../common/testIds'
 import type { ListInputApi } from '../common/useListInput'
 import { RequesterInput } from './RequesterInput'
@@ -46,6 +48,10 @@ export function TaskChips({ input, today }: TaskChipsProps) {
   const dropped = useRef(false)
   const latest = useRef(input)
   latest.current = input
+  useListPopup(menu !== null || picking !== null, () => {
+    setMenu(null)
+    setPicking(null)
+  })
 
   useEffect(
     () =>
