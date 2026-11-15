@@ -1,10 +1,13 @@
-// 指で左右になぞる（useSwipe。docs/SPEC.md の 3.1・3.7）の、iPhone・iPad の画面の端の指: 画面の左右の端から EDGE_ZONE_PX の中で押した
-// 指は、端からのフリック（src/history/edgeFlick.ts が window で受け取ってモードを回す）なので、ここでは数えない（前後の期間へ移らない。
-// 1回の払いでモードと期間の両方が替わらない）。端から 20px より内側の指は今までどおり前後の期間へ。文字を打っている間はどの指も
-// 数えない。Android・PC は端の指も今までどおり前後の期間へ。カレンダーの区切りに付けた時の動き（期間・モード）は CalendarView.test.tsx
+// 指で左右になぞる（useSwipe。docs/SPEC.md の 3.1・3.7）の、iPhone・iPad の画面の端の指: 画面の左右の端から端の幅（初めは
+// EDGE_ZONE_PX の 36px。設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ。src/history/edgeZone.ts）の中で押した指は、
+// 端からのフリック（src/history/edgeFlick.ts が window で受け取ってモードを回す。同じ edgeOfScreen で決める）なので、ここでは数えない
+// （前後の期間へ移らない。1回の払いでモードと期間の両方が替わらない）。端の幅より内側の指は今までどおり前後の期間へ。文字を打っている
+// 間・入力欄の上から押した指はどれも数えない（端からのフリックと違い、フォーカスの無い入力欄の上からの指も数えない）。Android・PC は
+// 端の指も今までどおり前後の期間へ。カレンダーの区切りに付けた時の動き（期間・モード）は CalendarView.test.tsx
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setEdgeZonePx } from '../../../history/edgeZone'
 import * as device from '../../../ui/device'
 import { EDGE_ZONE_PX } from './swipe'
 import { useSwipe } from './useSwipe'
@@ -59,24 +62,45 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  setEdgeZonePx(EDGE_ZONE_PX)
+  localStorage.clear()
 })
 
 describe('iPhone・iPad の画面の端の指は端からのフリック（ここでは数えない。3.1・3.7）', () => {
-  it('左の端（5px）から右へ・右の端（幅 − 5px）から左へ払っても、前後の期間へは移らない（モードを回すのは src/history/edgeFlick.ts）', () => {
+  it('左の端（5px・30px）から右へ・右の端（幅 − 5px・幅 − 30px）から左へ払っても、前後の期間へは移らない（初めの端の幅 36px の中。モードを回すのは src/history/edgeFlick.ts）', () => {
     const { onSwipe, area } = setup()
     flick(area, 5, 100)
     flick(area, width() - 5, -100)
+    flick(area, 30, 100)
+    flick(area, width() - 30, -100)
     flick(area, EDGE_ZONE_PX - 1, 100)
     expect(onSwipe).not.toHaveBeenCalled()
   })
 
-  it(`端から ${EDGE_ZONE_PX}px より内側（30px・100px）から払うと、今までどおり前後の期間へ（onSwipe）`, () => {
+  it(`端から ${EDGE_ZONE_PX}px より内側（40px・60px・100px）から払うと、今までどおり前後の期間へ（onSwipe）`, () => {
     const { onSwipe, area } = setup()
-    flick(area, 30, 100)
+    flick(area, 40, 100)
+    flick(area, 60, 100)
     flick(area, 100, 100)
     flick(area, EDGE_ZONE_PX, 100)
+    flick(area, width() - 60, -100)
+    expect(onSwipe.mock.calls).toEqual([[-1], [-1], [-1], [-1], [1]])
+  })
+
+  it('設定の「開発」で端の幅を替えると、付けたまま（読み込み直さずに）次の指から効く（端からのフリックと同じ幅。1回の払いでモードと期間の両方が替わらない）', () => {
+    const { onSwipe, area } = setup()
+    setEdgeZonePx(20)
+    flick(area, 30, 100)
     flick(area, width() - 30, -100)
-    expect(onSwipe.mock.calls).toEqual([[-1], [-1], [-1], [1]])
+    expect(onSwipe.mock.calls).toEqual([[-1], [1]])
+    flick(area, 19, 100)
+    expect(onSwipe).toHaveBeenCalledTimes(2)
+    setEdgeZonePx(44)
+    flick(area, 40, 100)
+    flick(area, width() - 40, -100)
+    expect(onSwipe).toHaveBeenCalledTimes(2)
+    flick(area, 50, 100)
+    expect(onSwipe).toHaveBeenCalledTimes(3)
   })
 
   it('ブラウザに取られた（pointercancel）後も touch の出来事で追うのは内側の指だけ（端の指は初めから追わない）', () => {
@@ -91,12 +115,12 @@ describe('iPhone・iPad の画面の端の指は端からのフリック（こ�
     })
     expect(onSwipe).not.toHaveBeenCalled()
     act(() => {
-      fireEvent(area, finger('pointerdown', 40, 300))
-      document.dispatchEvent(finger('pointermove', 49, 306))
-      document.dispatchEvent(finger('pointercancel', 49, 306))
-      touch('touchmove', 100, 310, true)
-      touch('touchmove', 180, 318, true)
-      touch('touchend', 200, 320, false)
+      fireEvent(area, finger('pointerdown', 60, 300))
+      document.dispatchEvent(finger('pointermove', 69, 306))
+      document.dispatchEvent(finger('pointercancel', 69, 306))
+      touch('touchmove', 120, 310, true)
+      touch('touchmove', 200, 318, true)
+      touch('touchend', 220, 320, false)
     })
     expect(onSwipe.mock.calls).toEqual([[-1]])
   })
@@ -128,12 +152,16 @@ describe('iPhone・iPad の画面の端の指は端からのフリック（こ�
 })
 
 describe('Android・PC（OS の戻る）は今までどおり', () => {
-  it('画面の端から払っても前後の期間へ（onSwipe）。文字を打っている間はなぞっても移らない', () => {
+  it('画面の端から払っても前後の期間へ（onSwipe。端の幅を替えても同じ）。文字を打っている間はなぞっても移らない', () => {
     vi.mocked(device.currentPopSource).mockReturnValue('os-back')
+    const read = vi.spyOn(Storage.prototype, 'getItem')
     const { onSwipe, area } = setup()
     flick(area, 5, 100)
     flick(area, width() - 5, -100)
     expect(onSwipe.mock.calls).toEqual([[-1], [1]])
+    // 端の幅は読みもしない（Android・PC には端からのフリックが無い）
+    expect(read.mock.calls.filter(([k]) => k === 'diary-studio:edge-zone')).toEqual([])
+    read.mockRestore()
     act(() => (screen.getByTestId('field') as HTMLInputElement).focus())
     flick(area, 5, 100)
     expect(onSwipe).toHaveBeenCalledTimes(2)

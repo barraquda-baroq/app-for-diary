@@ -1490,6 +1490,13 @@ h4 {
   display: inline-block;
 }
 
+/* 選択肢に添える小さな字（開発の「端の幅」の「前」「初め」。src/features/appSettings/DevSettings.tsx） */
+.aset-seg-note {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .aset-switch-state {
   min-width: 2.5em;
   font-size: 13px;

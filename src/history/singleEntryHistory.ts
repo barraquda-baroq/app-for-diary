@@ -33,6 +33,7 @@
 // - 何をしたかは、設定で記録を取る時だけ控える（src/history/swipeLog.ts。開いた時の start に、ブラウザの履歴の数）
 import { createPath, NavigationType, parsePath, type Location } from 'react-router-dom'
 import type { AppHistoryOptions, DsHistory, HistoryHandlers, HistoryWindow, LeaveResult } from './appHistory'
+import { edgeZonePx } from './edgeZone'
 import {
   encodeHashLocation,
   hashHref,
@@ -219,6 +220,7 @@ export class SingleEntryHistory implements DsHistory {
       nav,
       depth: this.stack.length,
       screen: this.screen(current),
+      zone: edgeZonePx(),
     })
   }
 

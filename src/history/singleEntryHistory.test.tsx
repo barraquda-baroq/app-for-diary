@@ -751,7 +751,7 @@ describe('iPhone・iPad の1つの履歴の形（SingleEntryHistory）', () => {
     expectSingle(s)
   })
 
-  it('記録を取る時は、開いた時（start: ブラウザの履歴の数・idx・前の版の印か）と払い（flick: 向き・画面・したこと）と行き先の動きを控える', async () => {
+  it('記録を取る時は、開いた時（start: ブラウザの履歴の数・idx・前の版の印か・端の幅）と払い（flick: 向き・画面・したこと）と行き先の動きを控える', async () => {
     setSwipeLogEnabled(true)
     clearSwipeLog()
     const s = setup('#/week/2026-11-08')
@@ -761,6 +761,7 @@ describe('iPhone・iPad の1つの履歴の形（SingleEntryHistory）', () => {
     await settle(s)
     const lines = swipeLogText().split('\n')
     expect(lines[0]).toMatch(/ start \{"len":1,"idx":0,"old":false/)
+    expect(lines[0]).toMatch(/"zone":36\}$/)
     expect(lines.some((l) => / flick \{"side":-1,"screen":"calendar","action":"ring\+1"\}/.test(l))).toBe(true)
     expect(lines.some((l) => / flick \{"side":1,"screen":"other","action":"back"\}/.test(l))).toBe(true)
     for (const kind of ['vreplace', 'vpush', 'vpop'])

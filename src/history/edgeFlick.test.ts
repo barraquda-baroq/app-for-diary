@@ -1,8 +1,10 @@
 // 画面の端からのフリックを受け取る所（src/history/edgeFlick.ts。docs/SPEC.md の 3.1・3.7。22. の ■31〜■33）: iPhone・iPad では
 // ブラウザの履歴を1つのままにしているので、画面の端から払った指はブラウザの身振りにならず、ページに来る。それを window の
-// 捕まえる段の touch の出来事で受け取り、画面の左右の端から EDGE_ZONE_PX（20px）の中で押して、内へ払って離した指だけを flick に
-// 渡す（-1 = 左の端から右へ、1 = 右の端から左へ）。決まり（60px・30°・払い始めが横なら 45°・400ms の長押し）は swipe.ts と同じ。
-// 入力欄・横にスクロールできる所の上から押した指・ドラッグの途中・押した後に前の版の履歴への身振り（popstate）が来た指は渡さない。
+// 捕まえる段の touch の出来事で受け取り、画面の左右の端から端の幅（初めは EDGE_ZONE_PX の 36px。設定の「開発」の「端の幅」で
+// 20・28・36・44px から選ぶ。src/history/edgeZone.ts）の中で押して、内へ払って離した指だけを flick に渡す（-1 = 左の端から右へ、
+// 1 = 右の端から左へ）。決まり（60px・30°・払い始めが横なら 45°・400ms の長押し）は swipe.ts と同じ。横にスクロールできる所・
+// フォーカスのある入力欄の上から押した指・ドラッグの途中・押した後に前の版の履歴への身振り（popstate）が来た指は渡さない
+// （フォーカスの無い入力欄の上から押した指は渡す。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）。
 // 渡した後 300ms の間の click は打ち消す。付けるのは iPhone・iPad の1つの履歴の形（SingleEntryHistory）の時だけ
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
@@ -11,6 +13,7 @@ import { FakeWindow } from '../test/fakeHistoryWindow'
 import { AppHistory } from './appHistory'
 import { attachEdgeFlick, edgeOfScreen, installEdgeFlick } from './edgeFlick'
 import { SingleEntryHistory } from './singleEntryHistory'
+import { setEdgeZonePx } from './edgeZone'
 import { clearSwipeLog, setSwipeLogEnabled, swipeLogText } from './swipeLog'
 
 /** テストの時計（installEdgeFlick の now。押した時刻・長押し・click を打ち消す間を決める） */
@@ -68,22 +71,40 @@ afterEach(() => {
   for (const d of disposers.splice(0)) d()
   setSwipeLogEnabled(false)
   clearSwipeLog()
+  setEdgeZonePx(EDGE_ZONE_PX)
   localStorage.clear()
   document.body.innerHTML = ''
   vi.restoreAllMocks()
 })
 
 describe('画面の端から内へ払った指を受け取る（installEdgeFlick）', () => {
-  it('左の端（5px）から右へ 100px を 0.2秒の内に払うと flick(-1)、右の端（幅 − 5px）から左へ 100px は flick(1)。端から 25px の所からは何もしない', () => {
+  it('左の端（5px）から右へ 100px を 0.2秒の内に払うと flick(-1)、右の端（幅 − 5px）から左へ 100px は flick(1)。端から 30px（初めの端の幅 36px の中）からも渡し、36px・40px の所からは何もしない', () => {
     const flick = install()
     swipe(5, 100)
     expect(flick.mock.calls).toEqual([[-1]])
     swipe(width() - 5, -100)
     expect(flick.mock.calls).toEqual([[-1], [1]])
-    swipe(25, 100)
-    swipe(width() - 25, -100)
+    swipe(30, 100)
+    swipe(width() - 30, -100)
+    expect(flick.mock.calls).toEqual([[-1], [1], [-1], [1]])
     swipe(EDGE_ZONE_PX, 100)
-    expect(flick).toHaveBeenCalledTimes(2)
+    swipe(40, 100)
+    swipe(width() - 40, -100)
+    expect(flick).toHaveBeenCalledTimes(4)
+  })
+
+  it('設定の「開発」で端の幅を替えると、付けたまま（読み込み直さずに）次の指から効く: 20px なら 30px の所からは何もせず、44px なら 40px の所からも渡す', () => {
+    const flick = install()
+    setEdgeZonePx(20)
+    swipe(30, 100)
+    swipe(width() - 30, -100)
+    expect(flick).not.toHaveBeenCalled()
+    swipe(19, 100)
+    expect(flick.mock.calls).toEqual([[-1]])
+    setEdgeZonePx(44)
+    swipe(40, 100)
+    swipe(width() - 40, -100)
+    expect(flick.mock.calls).toEqual([[-1], [-1], [1]])
   })
 
   it('外へ払った指・短い指（50px）・縦寄りの指・2本の指・止まってから動かした指（400ms。ドラッグの掴み方）・端末が取った指（touchcancel）では何もしない', () => {
@@ -146,20 +167,58 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(flick).toHaveBeenCalledTimes(1)
   })
 
-  it('入力欄・横にスクロールできる所の上から押した指は渡さない。ほかの所の入力欄にフォーカスがあっても（すばやく足す・キーボードが出ている）、端から払えば渡す', () => {
+  it('フォーカスの無い入力欄（件名・メモの欄。端から 16px ほどまで届く）の上から押した指は渡す（開発。端を甘くする）。ほかの所の入力欄にフォーカスがあっても（すばやく足す・キーボードが出ている）、端から払えば渡す', () => {
     const flick = install()
     document.body.innerHTML =
-      '<input data-testid="field" /><div data-testid="pad">余白</div><textarea data-testid="memo"></textarea>'
+      '<input data-testid="field" /><div data-testid="pad">余白</div><textarea data-testid="memo"></textarea><select data-testid="pick"><option>a</option></select>'
     const field = document.querySelector('[data-testid="field"]')!
     const memo = document.querySelector('[data-testid="memo"]')!
     const pad = document.querySelector('[data-testid="pad"]')!
-    swipe(5, 100, { target: field })
-    swipe(width() - 5, -100, { target: memo })
-    expect(flick).not.toHaveBeenCalled()
+    const pick = document.querySelector('[data-testid="pick"]')!
+    swipe(24, 100, { target: field })
+    swipe(width() - 24, -100, { target: memo })
+    swipe(5, 100, { target: pick })
+    expect(flick.mock.calls).toEqual([[-1], [1], [-1]])
     ;(field as HTMLInputElement).focus()
     expect(document.activeElement).toBe(field)
     swipe(5, 100, { target: pad })
+    swipe(width() - 5, -100, { target: memo })
+    expect(flick.mock.calls).toEqual([[-1], [1], [-1], [-1], [1]])
+  })
+
+  it('フォーカスのある入力欄（カーソル・字を選ぶつまみがある）の上から押した指は渡さない。書ける要素（contenteditable）は、フォーカスのある要素の中の物の上からも渡さない', () => {
+    const flick = install()
+    document.body.innerHTML =
+      '<input data-testid="field" /><textarea data-testid="memo"></textarea><div data-testid="note" contenteditable="true" tabindex="0"><span data-testid="word">字</span></div>'
+    const field = document.querySelector('[data-testid="field"]') as HTMLInputElement
+    const memo = document.querySelector('[data-testid="memo"]') as HTMLTextAreaElement
+    const note = document.querySelector('[data-testid="note"]') as HTMLElement
+    const word = document.querySelector('[data-testid="word"]')!
+    // jsdom は contenteditable の isContentEditable を持たないので、ブラウザと同じく中の物も書ける物にする
+    for (const el of [note, word]) Object.defineProperty(el, 'isContentEditable', { value: true })
+    field.focus()
+    swipe(24, 100, { target: field })
+    memo.focus()
+    swipe(width() - 24, -100, { target: memo })
+    note.focus()
+    swipe(5, 100, { target: word })
+    expect(flick).not.toHaveBeenCalled()
+    // フォーカスを外せば渡す
+    note.blur()
+    swipe(5, 100, { target: word })
     expect(flick.mock.calls).toEqual([[-1]])
+  })
+
+  it('横にスクロールできる所・範囲（スライダー）の上から押した指は、フォーカスが無くても渡さない', () => {
+    const flick = install()
+    document.body.innerHTML =
+      '<div data-testid="wide" style="overflow-x: auto"><div data-testid="inner">横に長い物</div></div><input type="range" data-testid="slider" />'
+    const wide = document.querySelector('[data-testid="wide"]') as HTMLElement
+    Object.defineProperty(wide, 'scrollWidth', { value: 800 })
+    Object.defineProperty(wide, 'clientWidth', { value: 300 })
+    swipe(5, 100, { target: document.querySelector('[data-testid="inner"]')! })
+    swipe(5, 100, { target: document.querySelector('[data-testid="slider"]')! })
+    expect(flick).not.toHaveBeenCalled()
   })
 
   it(`渡した後 ${SWIPE_CLICK_GUARD_MS}ms の間に、離した所（${SWIPE_SLOP_PX}px の内）に来た click は1つだけ打ち消す（払った指で、離した所のボタンを押さない）。その後の click は効く`, () => {
@@ -231,20 +290,23 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     expect(flick).not.toHaveBeenCalled()
   })
 
-  it('記録を取る時は、端で押した指（edge-down）と離した指（edge-up: 動き・長さ・向き・どうしたか）を控える。端でない指は控えない', () => {
+  it('記録を取る時は、端で押した指（edge-down: 位置・端・見えている所の幅・端の幅）と離した指（edge-up: 動き・長さ・向き・どうしたか）を控える。端でない指は控えない', () => {
     setSwipeLogEnabled(true)
     install()
     swipe(5, 100)
     swipe(width() - 5, 100)
     swipe(200, 100)
+    setEdgeZonePx(20)
+    swipe(6, 100)
     const log = swipeLogText()
-    expect(log).toMatch(/ edge-down \{"x":5,"y":300,"side":-1,"w":\d+\}/)
+    expect(log).toMatch(/ edge-down \{"x":5,"y":300,"side":-1,"w":\d+,"zone":36\}/)
+    expect(log).toMatch(/ edge-down \{"x":6,"y":300,"side":-1,"w":\d+,"zone":20\}/)
     expect(log).toMatch(/ edge-up \{"x0":5,"dx":100,"dy":0,"ms":120,"dir":-1,"result":"flick"\}/)
     expect(log).toMatch(/ edge-up \{"x0":\d+,"dx":100,"dy":0,"ms":120,"dir":-1,"result":"outward"\}/)
-    expect(log.split('\n').filter((l) => / edge-down /.test(l))).toHaveLength(2)
+    expect(log.split('\n').filter((l) => / edge-down /.test(l))).toHaveLength(3)
   })
 
-  it('押した時にドラッグの途中なら、その指は追わずに数えなかった訳（edge-skip drag）を控える。入力欄の上は sideways', () => {
+  it('押した時にドラッグの途中なら、その指は追わずに数えなかった訳（edge-skip drag）を控える。フォーカスのある入力欄の上は focused、横にスクロールできる所の上は sideways', () => {
     setSwipeLogEnabled(true)
     let dragging = true
     const flick = install({ dragging: () => dragging })
@@ -254,11 +316,18 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     send(document.body, 'touchmove', 105, 300, 1)
     send(document.body, 'touchend', 105, 300, 0)
     expect(flick).not.toHaveBeenCalled()
-    document.body.innerHTML = '<input data-testid="field" />'
-    swipe(5, 100, { target: document.querySelector('[data-testid="field"]')! })
+    document.body.innerHTML = '<input data-testid="field" /><div data-testid="wide" style="overflow-x: scroll">横</div>'
+    const field = document.querySelector('[data-testid="field"]') as HTMLInputElement
+    field.focus()
+    swipe(5, 100, { target: field })
+    const wide = document.querySelector('[data-testid="wide"]') as HTMLElement
+    Object.defineProperty(wide, 'scrollWidth', { value: 800 })
+    Object.defineProperty(wide, 'clientWidth', { value: 300 })
+    swipe(5, 100, { target: wide })
     const lines = swipeLogText().split('\n')
     expect(lines.filter((l) => / edge-skip /.test(l)).map((l) => l.replace(/^\d+ /, ''))).toEqual([
       'edge-skip {"why":"drag"}',
+      'edge-skip {"why":"focused"}',
       'edge-skip {"why":"sideways"}',
     ])
     expect(lines.some((l) => / edge-up /.test(l))).toBe(false)
@@ -266,11 +335,13 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
 })
 
 describe('画面の端の決め方（edgeOfScreen）', () => {
-  it(`見えている所（visualViewport）の左右の端から ${EDGE_ZONE_PX}px の中: 左 -1・右 1、ほか null。拡大している時は、見えている所の端で決める`, () => {
+  it(`見えている所（visualViewport）の左右の端から端の幅（初めは ${EDGE_ZONE_PX}px）の中: 左 -1・右 1、ほか null。拡大している時は、見えている所の端で決める`, () => {
     const win = { innerWidth: 390 } as unknown as Window
     expect(edgeOfScreen(5, win)).toBe(-1)
     expect(edgeOfScreen(385, win)).toBe(1)
-    expect(edgeOfScreen(30, win)).toBeNull()
+    expect(edgeOfScreen(30, win)).toBe(-1)
+    expect(edgeOfScreen(40, win)).toBeNull()
+    expect(edgeOfScreen(350, win)).toBeNull()
     const zoomed = { innerWidth: 390, visualViewport: { offsetLeft: 100, width: 195 } } as unknown as Window
     expect(edgeOfScreen(105, zoomed)).toBe(-1)
     expect(edgeOfScreen(290, zoomed)).toBe(1)

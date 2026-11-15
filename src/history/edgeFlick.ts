@@ -4,21 +4,24 @@
 // 詳細の画面・その上の確かめ・設定・MIM・すばやく足すを開いている時）この1か所で受け取り、内へ払って離した指を履歴の flick に渡す
 // （何をするかは src/history/popRules.ts の decidePop: カレンダーではモードを回し、ほかの画面では1つ戻る）。動く絵は無く、指を離した
 // 時に替わる（作者「iphone版に合わせてもらっていいです」■33）。
-// - 受け取る指: 1本の指で、見えている所（visualViewport。拡大していても、見えている所の端）の左右の端から EDGE_ZONE_PX（20px）の
-//   中で押し、内へ払って離した指。払いの決まり（60px・30°・払い始めが横なら 45°・押してから 400ms 止まってから動かした指は数えない）は
-//   swipe.ts と同じ
-// - 受け取らない指: 入力欄・横にスクロールできる所の上から押した指（src/ui/textEntry.ts）・ドラッグの途中・外へ払った指・押した後に
-//   前の版が残した履歴への身振り（popstate）が来た指（userPopSince。その時は履歴の方で1回だけ受け取る）・2本目の指が触れた指・端末が
-//   取った指（touchcancel）。ほかの所の入力欄にフォーカスがあっても（キーボードが出ていても）受け取る
+// - 受け取る指: 1本の指で、見えている所（visualViewport。拡大していても、見えている所の端）の左右の端から端の幅（初めは
+//   EDGE_ZONE_PX の 36px。設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ。src/history/edgeZone.ts。押すたびに読む）の中で押し、
+//   内へ払って離した指。払いの決まり（60px・30°・払い始めが横なら 45°・押してから 400ms 止まってから動かした指は数えない）は swipe.ts と
+//   同じ。フォーカスの無い入力欄（登録・詳細の画面の件名・メモの欄など）の上から押した指も受け取る（開発。22. の「端からのフリックの
+//   3回目の直した版（788e842）を試した答え」の「端を甘く」）
+// - 受け取らない指: フォーカスのある入力欄（カーソル・字を選ぶつまみがある）・横にスクロールできる所・範囲（スライダー）の上から
+//   押した指（src/ui/textEntry.ts の edgeFlickBlocked）・ドラッグの途中・外へ払った指・押した後に前の版が残した履歴への身振り
+//   （popstate）が来た指（userPopSince。その時は履歴の方で1回だけ受け取る）・2本目の指が触れた指・端末が取った指（touchcancel）。
+//   ほかの所の入力欄にフォーカスがあっても（キーボードが出ていても）受け取る
 // - pointer の出来事でなく touch の出来事で追う（iPhone は、ページが縦に少しでも動くと pointer を取り消すが、touch の出来事は離す
 //   まで来る）。どれも passive で、縦のスクロール・キーボード・字の選び方を邪魔しない。押した要素でも聞く（払っている間に画面が
 //   替わって押した要素が外れると、touch の出来事は外れた要素へ送られ、window まで伝わらない。useSwipe.ts と同じ）
 // - 渡した後 SWIPE_CLICK_GUARD_MS の間に、離した所（SWIPE_SLOP_PX の内）に来た click は1つだけ打ち消す（払った指で、離した所の
 //   ボタンを押さない）。離れた所の click（すぐ次に押した別の所・キーボード）は打ち消さない
-// - 端の指は、なぞって前後の期間へ移る所（src/features/calendar/common/useSwipe.ts）では数えない（同じ edgeOfScreen で決める。
-//   1回の払いでモードと期間の両方が替わらない）
-// - 設定で記録を取る時は、端で押した指（edge-down）・数えなかった訳（edge-skip）・離した指（edge-up: 動き・長さ・向き・どうしたか）を
-//   控える（src/history/swipeLog.ts。何をしたかは履歴の側の flick）
+// - 端の指は、なぞって前後の期間へ移る所（src/features/calendar/common/useSwipe.ts）では数えない（同じ edgeOfScreen・同じ端の幅で
+//   決める。1回の払いでモードと期間の両方が替わらない）
+// - 設定で記録を取る時は、端で押した指（edge-down: 位置・端・見えている所の幅・端の幅）・数えなかった訳（edge-skip: focused・
+//   sideways・drag）・離した指（edge-up: 動き・長さ・向き・どうしたか）を控える（src/history/swipeLog.ts。何をしたかは履歴の側の flick）
 // src/App.tsx が、iPhone・iPad の1つの履歴の形の時だけ付ける（attachEdgeFlick。Android・PC には付けない）
 import {
   edgeSide,
@@ -29,8 +32,9 @@ import {
   SWIPE_SLOP_PX,
   type SwipeTrack,
 } from '../features/calendar/common/swipe'
-import { needsSideways } from '../ui/textEntry'
+import { edgeFlickBlocked } from '../ui/textEntry'
 import type { DsHistory } from './appHistory'
+import { edgeZonePx } from './edgeZone'
 import { swipeLog } from './swipeLog'
 
 /** 見えている所の大きさ（visualViewport の物） */
@@ -54,12 +58,13 @@ function viewportOf(win: ScreenLike): { left: number; width: number } {
 }
 
 /**
- * 押した所（clientX）が画面の端か: 見えている所（visualViewport）の左の端から EDGE_ZONE_PX の中は -1、右の端の中は 1、ほかは null
- * （拡大している時も、見えている所の端で決める）
+ * 押した所（clientX）が画面の端か: 見えている所（visualViewport）の左の端から端の幅（今の物。src/history/edgeZone.ts）の中は -1、
+ * 右の端の中は 1、ほかは null（拡大している時も、見えている所の端で決める）。端を決める所はどれもこれを使う（端からのフリック・
+ * なぞり・すばやく足す。1つの幅で決める）
  */
 export function edgeOfScreen(x: number, win: ScreenLike = window): -1 | 1 | null {
   const { left, width } = viewportOf(win)
-  return edgeSide(x - left, width)
+  return edgeSide(x - left, width, edgeZonePx())
 }
 
 export interface EdgeFlickOptions {
@@ -128,9 +133,12 @@ export function installEdgeFlick(win: Window, opts: EdgeFlickOptions): () => voi
       y: Math.round(t.clientY),
       side: edge,
       w: Math.round(viewportOf(win).width),
+      zone: edgeZonePx(),
     })
-    if (needsSideways(e.target, win.document.body)) {
-      swipeLog('edge-skip', { why: 'sideways' })
+    // フォーカスのある入力欄・横にスクロールできる所の上は数えない（フォーカスの無い入力欄の上は数える）
+    const blocked = edgeFlickBlocked(e.target, win.document.body, win.document.activeElement)
+    if (blocked) {
+      swipeLog('edge-skip', { why: blocked })
       return
     }
     if (opts.dragging?.()) {

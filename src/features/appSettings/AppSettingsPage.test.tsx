@@ -1,10 +1,12 @@
 // 設定の画面（docs/SPEC.md の 18.1。段階0は「表示」と「同期」のログアウトだけ）: 別のページで右の列は出さず、ヘッダーの［MIM］は出す。
-// ［‹ 戻る］・［MIM］からの行き来と、ログアウトでログインの画面へ戻ること。iPhone・iPad だけの「開発」（端からのフリックの記録。3.1）
+// ［‹ 戻る］・［MIM］からの行き来と、ログアウトでログインの画面へ戻ること。iPhone・iPad だけの「開発」（端からのフリックの記録・
+// 端の幅。3.1）
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { routes } from '../../App'
+import { edgeZonePx, setEdgeZonePx } from '../../history/edgeZone'
 import { setSwipeLogEnabled, swipeLog, swipeLogEnabled, swipeLogText } from '../../history/swipeLog'
 import { DEFAULT_PREFS, usePrefs } from '../../store/uiStore'
 import { fakeSignInForTest, resetSyncForTests } from '../../sync/controller'
@@ -81,8 +83,38 @@ describe('AppSettingsPage', () => {
   })
 })
 
-describe('開発（iPhone・iPad だけ。端からのフリックの記録。3.1・18.1）', () => {
+describe('開発（iPhone・iPad だけ。端からのフリックの記録・端の幅。3.1・18.1）', () => {
   const onIPhone = () => vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
+  afterEach(() => setEdgeZonePx(36))
+
+  it('「端の幅」は 20・28・36・44 の4つから選ぶ（初めは 36。20 は前の幅、36 は初めの幅と添える）。押すとすぐ効き、端末に覚える（開き直しても選んだまま）', async () => {
+    onIPhone()
+    const user = userEvent.setup()
+    renderAt('/settings')
+    const group = await screen.findByTestId('edge-zone')
+    expect(group.getAttribute('role')).toBe('group')
+    const choice = (px: number) => screen.getByTestId(`edge-zone-${px}`)
+    expect([20, 28, 36, 44].map((px) => choice(px).textContent)).toEqual(['20前', '28', '36初め', '44'])
+    expect([20, 28, 36, 44].map((px) => choice(px).getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false'])
+    expect(screen.getByTestId('dev-settings').textContent).toContain('端の幅')
+    await user.click(choice(20))
+    expect(edgeZonePx()).toBe(20)
+    expect(localStorage.getItem('diary-studio:edge-zone')).toBe('20')
+    expect(choice(20).getAttribute('aria-pressed')).toBe('true')
+    expect(choice(36).getAttribute('aria-pressed')).toBe('false')
+    cleanup()
+    renderAt('/settings')
+    expect((await screen.findByTestId('edge-zone-20')).getAttribute('aria-pressed')).toBe('true')
+    await user.click(screen.getByTestId('edge-zone-44'))
+    expect(edgeZonePx()).toBe(44)
+    expect(localStorage.getItem('diary-studio:edge-zone')).toBe('44')
+  })
+
+  it('Android・PC には「端の幅」を出さない（端からのフリックが無い）', async () => {
+    renderAt('/settings')
+    expect(await screen.findByTestId('app-settings')).toBeTruthy()
+    expect(screen.queryByTestId('edge-zone')).toBeNull()
+  })
 
   it('iPhone・iPad だけ「開発」を出す（Android・PC には出さない）', async () => {
     renderAt('/settings')
