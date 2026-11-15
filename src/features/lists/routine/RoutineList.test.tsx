@@ -10,7 +10,7 @@ import { mkCheck, mkRoutine } from '../../../domain/testData'
 import type { AppData, RoutineCycle } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData, useApp } from '../../../store/appStore'
-import { usePrefs, useToasts } from '../../../store/uiStore'
+import { useCalendarUi, usePrefs, useToasts } from '../../../store/uiStore'
 import { renderAt, setupCalendarTests } from '../../../test/renderCalendar'
 import { discardListDraft } from '../common/listDraft'
 import { draftKey } from '../common/listInputModel'
@@ -114,6 +114,14 @@ describe('S3 かたまりと行（14.1・14.2。S3-ROUTINE-100〜105・S3-ROUTIN
 })
 
 describe('S3 チェックと外す（14.3・3.9。S3-ROUTINE-040・043・107・109・110）', () => {
+  it('「済み n件」を開いている時にチェックすると、済みへ移った行を目立たせる', async () => {
+    const { user } = await open()
+    await user.click(within(byId(listTestIds.routineDone('daily'))).getByRole('button'))
+    await user.click(checkOf(I.stretch))
+    expect(useCalendarUi.getState().flash?.keys).toEqual([`list:routine:${I.stretch}`])
+    expect(rowOf(I.stretch)?.getAttribute('data-done')).toBe('true')
+  })
+
   it('チェックすると今日を記録し、行は「済み n件」へ。お知らせは出さず、数が替わる。外すと記録を消して元の所へ', async () => {
     const { user } = await open()
     await user.click(checkOf(I.stretch))
@@ -123,10 +131,13 @@ describe('S3 チェックと外す（14.3・3.9。S3-ROUTINE-040・043・107・1
     expect(titlesIn('daily')).toEqual([])
     expect(byId(listTestIds.routineDone('daily')).textContent).toMatch(/済み 2件/)
     expect(useToasts.getState().toasts).toEqual([])
-    // 開いて外す
+    // 行は畳んだ「済み n件」へ隠れたので、その区切りを目立たせる
+    expect(useCalendarUi.getState().flash?.keys).toEqual(['list:routine:done:daily'])
+    // 開いて外す（戻った行を目立たせる）
     await user.click(within(byId(listTestIds.routineDone('daily'))).getByRole('button'))
     await user.click(checkOf(I.stretch))
     expect(datesOf(I.stretch)).toEqual([])
+    expect(useCalendarUi.getState().flash?.keys).toEqual([`list:routine:${I.stretch}`])
     expect(titlesIn('daily')).toEqual(['ストレッチ', '植物に水をやる'])
     expect(countText('daily')).toBe('1/2')
     expect(useToasts.getState().toasts).toEqual([])
