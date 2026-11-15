@@ -1,4 +1,5 @@
-// 依頼者の候補（docs/SPEC.md の 12.2・13.2・AMB-ITEMS-28）。登録・詳細の依頼者の欄と、段階3の Task List の［依頼者］が使う。
+// 依頼者の候補（docs/SPEC.md の 12.2・13.2・13.3・AMB-ITEMS-28）。登録・詳細の依頼者の欄と、Task List の入力欄の下の［依頼者］・行の
+// 依頼者をその場で直す欄が使う。
 // 画面は表示用に直した記録（useData().items）を渡す。ゴミ箱の物は data.items に無いので数えない。
 import type { ID, Item } from './types'
 import { DAY_MS, compareStr } from './util'

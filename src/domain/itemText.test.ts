@@ -1,19 +1,25 @@
-// 予定の表記と文（docs/SPEC.md の 3.9・4.11・4.12・7.7・7.11・11.2・12.3・12.5・12.7・12.8）: 時刻・期間の表記の表の全部、
-// デイリーのリストの右の端、list 生まれの4つの文、お知らせの文、マスと丸の読み上げ
+// 予定の表記と文（docs/SPEC.md の 3.9・4.11・4.12・7.7・7.11・11.2・12.3・12.5・12.7・12.8・13.〜15.）: 時刻・期間の表記の表の全部、
+// デイリーのリストの右の端、list 生まれの4つの文、お知らせの文、マスと丸の読み上げ、3つのリストの断る文・メニューの字・年まで入れた日付
 import { describe, expect, it } from 'vitest'
 import { calendarItems, type CalItem } from './calendar'
 import {
+  REQUESTER_LIMIT_TEXT,
+  TITLE_RANGE_TEXT,
   doneLabel,
+  fullDateLabel,
   listStatusLine,
   listTail,
   monthCellLabel,
   monthCountLabel,
+  taskDateMenuText,
   timeLabel,
   toastText,
   undoDoneText,
   undoText,
 } from './itemText'
-import { mkItem, mkTask } from './testData'
+import { itemProblems } from './items'
+import { routineProblems } from './routines'
+import { mkItem, mkRoutine, mkTask } from './testData'
 import type { Item } from './types'
 import type { UndoStep } from './undo'
 
@@ -249,5 +255,37 @@ describe('読み上げ（4.11・4.12）', () => {
   it('完了の丸・●: 「『件名』を完了にする」／「『件名』の完了を外す」', () => {
     expect(doneLabel('定例会議', false)).toBe('『定例会議』を完了にする')
     expect(doneLabel('定例会議', true)).toBe('『定例会議』の完了を外す')
+  })
+})
+
+describe('3つのリストの文（13.〜15.）', () => {
+  it('［済みを片付ける］・［Task List へ移す］のお知らせ（15.3・15.4。S3-FRAME-286 の字）', () => {
+    expect(toastText.clearedDone(3)).toBe('済みの 3件をゴミ箱へ移しました')
+    expect(toastText.movedToTask).toBe('Task List へ移しました')
+  })
+
+  it('件名・依頼者の断る文は items.ts・routines.ts の決まりの文と同じ（S3-FRAME-093・S3-ROUTINE-020）', () => {
+    expect(TITLE_RANGE_TEXT).toBe('件名は1〜200字で入れてください')
+    expect(itemProblems(mkTask({ title: 'あ'.repeat(201) })).map((p) => p.message)).toContain(TITLE_RANGE_TEXT)
+    expect(routineProblems(mkRoutine({ title: '' })).map((p) => p.message)).toEqual([TITLE_RANGE_TEXT])
+    expect(REQUESTER_LIMIT_TEXT).toBe('依頼者は60字までです')
+    expect(itemProblems(mkTask({ requester: 'あ'.repeat(61) })).map((p) => p.message)).toEqual([REQUESTER_LIMIT_TEXT])
+  })
+
+  it('日付の列のメニューの字（13.5。S3-TASK-130 の字）', () => {
+    expect(taskDateMenuText).toEqual({
+      today: '今日',
+      tomorrow: '明日',
+      pick: '日付を選ぶ',
+      none: 'なし',
+      oneDay: '1日の予定にする（締め切り日を消す）',
+      show: 'カレンダーで見る',
+    })
+  })
+
+  it('年まで入れた日付（日付の列の読み上げ。D32）', () => {
+    expect(fullDateLabel('2026-11-10')).toBe('2026年11月10日（火）')
+    expect(fullDateLabel('2027-01-05')).toBe('2027年1月5日（火）')
+    expect(fullDateLabel('x')).toBe('x')
   })
 })
