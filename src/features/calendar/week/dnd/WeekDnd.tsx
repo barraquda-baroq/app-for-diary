@@ -1,14 +1,17 @@
 // ウィークリーのドラッグ（docs/SPEC.md の 7.10・7.11・10.4・4.9・3.9。@dnd-kit/react・@dnd-kit/dom 0.5.3。CALENDAR-155）。
-// dnd-kit を読み込むのは week/dnd だけ。WeekDnd は週を包む（段階2はウィークリーだけ。段階3で TopPage へ上げ、Task List の行からも
-// 落とせるようにする。D52）。WP11s の試しで確かめた作り（wp11s-verdict の G1〜G12）:
-// - 掴み方: マウスは 5px を超えて動かす、指・ペンは 0.4秒（8px 以内）押し続ける（gesture.ts の値。CALENDAR-158・159）。すぐ動かした
-//   指はスクロール（CALENDAR-160）。キーボードでは掴まない（Enter・Space は詳細を開く。詳細の日付の欄で同じことができる。G2・CALENDAR-183）
+// dnd-kit を読み込むのは week/dnd と features/dnd だけ。ドラッグの入れ物（dnd-kit の DragDropProvider）は、トップの画面を包む1つの
+// features/dnd の TopDnd（S3-FRAME-200・S3-TASK-184）。WeekDnd は週を包み、TopDnd へ掴んだ物の種類 'week-item'（ウィークリーの予定）の
+// 受け持ち（掴み始め・動き・離した時）を届ける（controllers.ts の useDragController）。TopDnd の外で描いた時（ウィークリーだけを描く
+// テスト）は、自分を TopDnd で包む。WP11s の試しで確かめた作り（wp11s-verdict の G1〜G12）:
+// - 掴み方: マウスは 5px を超えて動かす、指・ペンは 0.4秒（8px 以内）押し続ける（gesture.ts の値。TopDnd の SENSORS。CALENDAR-158・159）。
+//   すぐ動かした指はスクロール（CALENDAR-160）。キーボードでは掴まない（Enter・Space は詳細を開く。詳細の日付の欄で同じことができる。
+//   G2・CALENDAR-183）
 // - カードの中の点線の丸・AI の札の上から押しても掴める（どれもカードの入れ物の中。dnd-kit の初めの決まりは、中のボタンからは掴まない）
 // - 掴むと、見ている週の落とせる日すべてに印（地 --accent-soft と 1px の --accent の点線、上にある日は線。D25・CALENDAR-166）。
-//   区分は掴んだ物と同じ段だけ（CALENDAR-165・ITEMS-098）。指で掴んだ時は 15ms 振動（CALENDAR-163）。文字を打っている欄
-//   （すばやく足す）からはフォーカスを外す（指で動かし始めた時に、週がその欄の所へ飛ばないように）。開いているすばやく足すには
-//   ドラッグを始めたと伝える（離した後に、打った字を足さずに閉じる。12.1）
-// - 浮いた見た目は dnd.css（1.03倍・--shadow-lift・0.95・120ms。G1）。読み上げの案内（英語）は出さない（Accessibility を外す。G2）
+//   区分は掴んだ物と同じ段だけ（CALENDAR-165・ITEMS-098）。どの種類のドラッグでも TopDnd が、掴んだ時に画面の状態 dragging を true にし、
+//   指で掴んだ時は 15ms 振動（CALENDAR-163）、文字を打っている欄（すばやく足す）からはフォーカスを外し（指で動かし始めた時に、週が
+//   その欄の所へ飛ばないように）、開いているすばやく足すにはドラッグを始めたと伝える（離した後に、打った字を足さずに閉じる。12.1）
+// - 浮いた見た目は dnd.css（1.03倍・--shadow-lift・0.95・120ms。G1）。読み上げの案内（英語）は出さない（TopDnd の PLUGINS。G2）
 // - 画面の端（edges.ts・edgeDriver.ts。dnd-kit の自動のスクロールは使わない）: 上下の端の 60px では週の中（S は週、L・M は段の中）
 //   だけを自動でスクロールする（ページは動かさない。G3・G4・CALENDAR-167・ITEMS-099）。左右の端の帯（週の端の内側と、その外の画面の
 //   端までの余白。L の右はカレンダーの領域まで）に 0.6秒留まると前・次の週へ移る（［‹］［›］と同じ移り方。置き換える。ページをめくる
@@ -23,19 +26,14 @@
 //   離したのに日へ落ちた。プライベートの段の上で離して隠れた仕事の日へか、右の列で離して通った日へかは、CI の記録から決められない）
 // - 落とした時は drop.ts（動かす・お知らせ・目立たせる・収める）。動かさなかった時は、浮いたカードが元の場所へ 160ms で戻る
 import {
-  Accessibility,
-  AutoScroller,
-  defaultPreset,
   Feedback,
-  PointerActivationConstraints,
-  PointerSensor,
   type DragDropManager,
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
   type Droppable,
 } from '@dnd-kit/dom'
-import { DragDropProvider, useDraggable, useDroppable, type UseDroppableInput } from '@dnd-kit/react'
+import { useDraggable, useDroppable, type UseDroppableInput } from '@dnd-kit/react'
 import {
   createContext,
   useCallback,
@@ -52,12 +50,11 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { canGrab, dropDays, dropPatch } from '../../../../domain/drag'
-import { quickAddDragStarted } from '../../common/parts/QuickAdd'
+import { TopDnd, useDragController } from '../../../dnd'
 import { skipTurnTo } from '../../common/pageTurnDom'
 import type { Item, ItemKind } from '../../../../domain/types'
 import { useCalendarUi } from '../../../../store/uiStore'
 import { ChevronLeftIcon, ChevronRightIcon } from '../../../../ui/icons'
-import { vibrate15 } from '../../../../ui/motion'
 import { scrollIntoViewWithin, toastInset } from '../../../../ui/scrollWithin'
 import { testIds } from '../../common/testIds'
 import type { WidthClass } from '../../common/types'
@@ -66,7 +63,6 @@ import { useWeekScroller } from '../weekScroller'
 import { applyDrop, settle, SETTLE_BACK } from './drop'
 import { EdgeDriver, type DropArea, type EdgeCue } from './edgeDriver'
 import { dropHit, inDropArea, insideBand, intersect, TO_SCREEN, type Box, type Outer, type Point, type Side } from './edges'
-import { activationOf, pointerKind } from './gesture'
 import { useLockGesture } from './lockGesture'
 import {
   asDragData,
@@ -82,31 +78,6 @@ import {
   type WeekCtx,
 } from './types'
 import './dnd.css'
-
-/** 掴み方（マウスは距離、指・ペンは長押し）。中のボタン（点線の丸・AI の札・詳細を開くボタン）の上から押しても掴む */
-const SENSORS = [
-  PointerSensor.configure({
-    activationConstraints: (event: PointerEvent) => {
-      const a = activationOf(event.pointerType)
-      return a.kind === 'distance'
-        ? [new PointerActivationConstraints.Distance({ value: a.px })]
-        : [new PointerActivationConstraints.Delay({ value: a.ms, tolerance: a.slopPx })]
-    },
-    preventActivation: () => false,
-  }),
-]
-
-type PluginEntry = (typeof defaultPreset.plugins)[number]
-
-/**
- * 使う plugin: カーソル（grabbing）・浮いた見た目（落とす時の動きは落とすたびに決める）・文字の選択を止める。自動のスクロールは
- * edgeDriver.ts が受け持つ（AutoScroller を外す）
- */
-const PLUGINS = defaultPreset.plugins.flatMap((p): PluginEntry[] => {
-  if (p === Feedback) return [Feedback.configure({ dropAnimation: null })]
-  if (p === Accessibility || p === AutoScroller) return []
-  return [p]
-})
 
 // ---------- 掴んでいる間の落とせる日・目印の帯（変わった時だけ、それを使う所を描き直す） ----------
 
@@ -305,20 +276,6 @@ function recountEachFrame(m: DragDropManager): () => void {
   return () => cancelAnimationFrame(id)
 }
 
-// ---------- 入力欄のフォーカス ----------
-
-/**
- * 掴んだ時に、文字を打っている欄（すばやく足すの入力欄など）からフォーカスを外す。指で掴むとフォーカスは欄に残ったままで、Chromium は
- * 指を動かし始めた時に、その欄を見える所へ出そうと週をスクロールする（欄が見えていない時は、掴んだカードの下の日が飛ぶ）。マウスは
- * 押した時にフォーカスがカードへ移るので同じになる。欄は閉じない（すばやく足すは、押し終わってから、打った字を足さずに閉じる。
- * quickAddDragStarted・QuickAdd・12.1）
- */
-function blurTextField(): void {
-  const el = document.activeElement
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable))
-    el.blur()
-}
-
 // ---------- 週の入れ物（掴んだまま別の週へ移った間は、掴んだ週を見えないまま残す） ----------
 
 /** 見えないまま残している掴んだ週の中か（その週の落とす所は止める） */
@@ -418,8 +375,19 @@ export interface WeekDndProps {
   renderWeek: (week: WeekCtx, frozen: boolean) => ReactNode
 }
 
-/** ウィークリーを包む（ドラッグの受け持ち。段階2はウィークリーだけ、段階3で TopPage へ上げる。D52） */
-export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): ReactElement {
+/**
+ * ウィークリーを包む（ウィークリーの予定のドラッグの受け持ち。ドラッグの入れ物はトップの画面の TopDnd。その外で描いた時は、自分を
+ * TopDnd で包む。TopDnd の中の TopDnd は何も足さない）
+ */
+export function WeekDnd(props: WeekDndProps): ReactElement {
+  return (
+    <TopDnd>
+      <WeekDndInner {...props} />
+    </TopDnd>
+  )
+}
+
+function WeekDndInner({ week, viewed, width, renderWeek }: WeekDndProps): ReactElement {
   const scroller = useWeekScroller()
   const nav = useCalendarNav()
   const [store] = useState(() => new ActiveDragStore(null))
@@ -495,7 +463,8 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
     if (!rekey.current && origin.current?.week.from === week.from) origin.current = null
   }, [week, store, driver])
 
-  // 描き終えずに外れた時（掴んだままモードを替えたなど）は止める
+  // 描き終えずに外れた時（掴んだまま幅・モードを替えたなど）は止める（掴んでいる間に外れた時は、その前に TopDnd がやめたこととして
+  // onDragEnd を canceled で呼んでいる。controllers.ts）
   useEffect(
     () => () => {
       driver.stop()
@@ -521,15 +490,11 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
       dragging.current = data
       const { week: shown, viewed: day } = latest.current
       origin.current = { week: data.week, viewed: day }
-      useCalendarUi.getState().setDragging(true)
+      // 画面の状態 dragging・入力欄のフォーカス・すばやく足すへの知らせ・指の振動は、この前に TopDnd がどの種類でもしている
       store.set(activeOf(data, shown))
       judge.begin()
       stopRecount.current?.()
       stopRecount.current = recountEachFrame(m)
-      blurTextField()
-      quickAddDragStarted()
-      const activator = event.operation.activatorEvent
-      if (activator instanceof PointerEvent && pointerKind(activator.pointerType) === 'touch') vibrate15()
       driver.start(event.operation.position.current)
     },
     [store, driver, judge, settleStage],
@@ -593,31 +558,33 @@ export function WeekDnd({ week, viewed, width, renderWeek }: WeekDndProps): Reac
     [store, driver, judge, settleStage],
   )
 
+  // TopDnd へ、ウィークリーの予定（'week-item'）を掴んだ時の受け持ちを届ける（外れると外す）
+  const controller = useMemo(() => ({ onDragStart, onDragMove, onDragEnd }), [onDragStart, onDragMove, onDragEnd])
+  useDragController('week-item', controller)
+
   const live = week
   // 掴んだ週の入れ物（掴んだまま別の週へ移った間）。描いている間に読む ref だが、変わるのは週が替わる（行き先が替わって描き直す）時と、
   // 別の週へ落として片付ける（liveKey を進めて描き直す）時だけ
   const o = origin.current
   const frozen = o && o.week.from !== live.from ? o.week : null
   return (
-    <DragDropProvider sensors={SENSORS} plugins={PLUGINS} onDragStart={onDragStart} onDragMove={onDragMove} onDragEnd={onDragEnd}>
-      <ActiveDragContext.Provider value={store}>
-        <DropJudgeContext.Provider value={judge}>
-          <div ref={stageEl} className="wk-stage">
-            {/* 掴んだ週（掴んだまま別の週へ移った間だけ。見えないまま残す）。入れ物の key は、掴んだ時の今の週の入れ物と同じにして、
+    <ActiveDragContext.Provider value={store}>
+      <DropJudgeContext.Provider value={judge}>
+        <div ref={stageEl} className="wk-stage">
+          {/* 掴んだ週（掴んだまま別の週へ移った間だけ。見えないまま残す）。入れ物の key は、掴んだ時の今の週の入れ物と同じにして、
                 掴んだカードを外さない */}
-            {frozen ? (
-              <WeekSlot key={`w${liveKey}`} frozen>
-                {renderWeek(frozen, true)}
-              </WeekSlot>
-            ) : null}
-            <WeekSlot key={`w${frozen ? liveKey + 1 : liveKey}`} frozen={false}>
-              {renderWeek(live, false)}
+          {frozen ? (
+            <WeekSlot key={`w${liveKey}`} frozen>
+              {renderWeek(frozen, true)}
             </WeekSlot>
-            <EdgeCueView key="cue" cue={cue} />
-          </div>
-        </DropJudgeContext.Provider>
-      </ActiveDragContext.Provider>
-    </DragDropProvider>
+          ) : null}
+          <WeekSlot key={`w${frozen ? liveKey + 1 : liveKey}`} frozen={false}>
+            {renderWeek(live, false)}
+          </WeekSlot>
+          <EdgeCueView key="cue" cue={cue} />
+        </div>
+      </DropJudgeContext.Provider>
+    </ActiveDragContext.Provider>
   )
 }
 
