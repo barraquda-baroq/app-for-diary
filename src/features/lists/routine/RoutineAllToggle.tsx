@@ -1,7 +1,8 @@
-// Routine List の見出しの右の［すべて開く］／［すべて畳む］（docs/SPEC.md の 14.2。D26）: 種類ごとのかたまり（毎日・毎週…）を1つの
-// ボタンで切り替える（どれか1つでも畳んでいれば「すべて開く」）。ルーチンの無いかたまり（項目の無い種類）は数えない。見出しそのものは
-// 畳まない。畳むかたまりが1つも無い間は出さない（押しても画面が何も変わらないので）。畳んだ・開いたは端末ごとに覚える
-// （diary-studio:prefs の collapsed.routineGroups。どの幅でも同じ。6.13）。トップの画面が見出しの headerExtra に置く（開いている間だけ出る）
+// Routine List の見出しの右の［すべて開く］／［すべて畳む］（docs/SPEC.md の 14.2）: 種類ごとのかたまり（毎日・毎週…）を1つのボタンで
+// 切り替える（どれか1つでも畳んでいれば「すべて開く」）。ルーチンの無いかたまり（項目の無い種類。名前と＋だけで畳む・開くの山形が
+// 無い）は数えず、書き換えもしない（開発）。見出しそのものは畳まない。押しても画面が何も変わらない間は出さない: ルーチンのある
+// かたまりが1つも無い間（どの種類も空）。畳んだ・開いたは端末ごとに覚える（diary-studio:prefs の collapsed.routineGroups。どの幅でも
+// 同じ。6.13）。トップの画面が見出しの headerExtra に置く（リストを開いている間だけ出る）
 import { useMemo } from 'react'
 import { toYmd } from '../../../domain/dates'
 import { ROUTINE_CYCLES, usePrefs, type RoutineCycle, type RoutineFlags } from '../../../store/uiStore'

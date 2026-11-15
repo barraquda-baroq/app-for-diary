@@ -2,8 +2,8 @@
 // data.routineChecks。useData() と同じ記録。6.12）・今日から src/domain/routineList.ts の routineListView を作る。2つの表・today が
 // 同じ間は作り直さない（ほかの表が替わっても）。作り直しても、行に出す物が前と同じ行は前と同じ物を返し、行が1つも替わらない種類の
 // かたまりも前と同じ物を返す（common/stableRows。行とかたまりは React.memo）。
-// today は Routine List の中身の部品が1つの useToday() から渡す（0時を過ぎると変わり、チェックの記録を書き換えずに行が戻る。14.3。
-// 掴んでいる間はその日のまま。D37）
+// today は Routine List の中身の部品（routine/RoutineListBody）が1つの useToday() から渡す（0時を過ぎると変わり、チェックの記録を
+// 書き換えずに行が戻る。14.3）
 import { useMemo } from 'react'
 import { routineListView, type RoutineGroupView, type RoutineListView, type RoutineRowView } from '../../../domain/routineList'
 import type { Routine, RoutineCycle } from '../../../domain/types'
