@@ -17,7 +17,10 @@ import {
 } from '../../store/uiStore'
 import { useSync } from '../../sync/controller'
 import { setTestWidth, TEST_WIDTHS } from '../../test/width'
-import { ListPanel } from './ListPanel'
+import { resetListDraftsForTests } from '../lists/common/listDraft'
+import { draftKey } from '../lists/common/listInputModel'
+import { ListSection } from '../lists/common/ListSection'
+import { RoutineAllButton } from '../lists/routine/RoutineAllToggle'
 
 const saved = () => JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null') as { collapsed?: Record<string, unknown> } | null
 
@@ -36,7 +39,8 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 10, 10, 9, 0))
   localStorage.clear()
   usePrefs.setState(DEFAULT_PREFS)
-  useStackedLists.setState({ collapsed: { routine: true, task: true, favorite: true } })
+  useStackedLists.setState({ collapsed: { routine: true, task: true, favorite: true }, shown: 'calendar', layout: null })
+  resetListDraftsForTests()
   useToasts.setState({ toasts: [] })
   useCalendarUi.setState(initialCalendarUi())
   useSync.setState({
@@ -157,8 +161,12 @@ describe('L の並べ方（3.4）', () => {
 
   it('Routine List の［すべて畳む］／［すべて開く］で種類ごとのかたまりを切り替える（見出しは畳まない）', async () => {
     const user = userEvent.setup()
-    // 種類のかたまりがある時（段階3でルーチンの中身から数える）
-    render(<ListPanel listKey="routine" stacked={false} groupCount={2} />)
+    // 種類のかたまりがある時（見出しの右に置く物。ルーチンのあるかたまりを数えて出すのは routine/RoutineAllToggle）
+    render(
+      <ListSection list="routine" stacked={false} count={0} headerExtra={<RoutineAllButton />}>
+        {null}
+      </ListSection>,
+    )
     const toggle = screen.getByTestId('routine-toggle-all')
     expect(toggle.textContent).toBe('すべて畳む')
     await user.click(toggle)
@@ -169,11 +177,14 @@ describe('L の並べ方（3.4）', () => {
     expect(Object.values(usePrefs.getState().collapsed.routineGroups)).toEqual([false, false, false, false, false])
   })
 
-  it('入力欄で Enter を押すと、まだ作っていない（段階3）ことを知らせる', async () => {
+  it('入力欄で Enter を押しても、まだ足さず（行と足す処理は各リストの中身が作る）、打った字は欄と書きかけに残る（お知らせも出さない）', async () => {
     const user = userEvent.setup()
     renderAt('/')
-    await user.type(screen.getByTestId('list-favorite-input'), 'あれを見る{Enter}')
-    expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Favorite List に足すのは段階3で作ります'])
+    const input = screen.getByTestId('list-favorite-input') as HTMLTextAreaElement
+    await user.type(input, 'あれを見る{Enter}')
+    expect(input.value).toBe('あれを見る')
+    expect(useToasts.getState().toasts).toEqual([])
+    await vi.waitFor(() => expect(localStorage.getItem(draftKey('favorite'))).toBe('あれを見る'))
   })
 })
 

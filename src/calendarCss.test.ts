@@ -18,8 +18,10 @@ const ALL_CSS: readonly (readonly [string, string])[] = readdirSync(SRC_DIR, { r
   .map((f) => [f, readFileSync(`${SRC_DIR}${f}`, 'utf8')] as const)
 /** カレンダーの画面の CSS（src/features/calendar の下。年・月・週・日・共通の部品・ドラッグ） */
 const CALENDAR_CSS = ALL_CSS.filter(([name]) => name.startsWith('features/calendar/'))
-/** カレンダーと、登録・詳細の画面の CSS（src/features/calendar・src/features/item の下） */
-const SCREEN_CSS = ALL_CSS.filter(([name]) => name.startsWith('features/calendar/') || name.startsWith('features/item/'))
+/** 画面の CSS（src/features/calendar・src/features/item・src/features/lists の下。3つのリストは段階3から。4.8・D21） */
+const SCREEN_CSS = ALL_CSS.filter(([name]) =>
+  ['features/calendar/', 'features/item/', 'features/lists/'].some((dir) => name.startsWith(dir)),
+)
 
 /** 画面と部品の TS・TSX（テストを除く。src/features と src/ui） */
 const CODE = import.meta.glob(['./features/**/*.{ts,tsx}', './ui/**/*.{ts,tsx}', '!./**/*.test.{ts,tsx}'], {
@@ -306,6 +308,10 @@ describe('差し色は決まった所だけ（FRAME-160・4.4-7）', () => {
     expect(SCREEN_CSS.map(([name]) => name)).toEqual(
       expect.arrayContaining(['features/calendar/week/week.css', 'features/item/item.css']),
     )
+  })
+
+  it('S3 3つのリストの CSS も見張る（差し色・余白の 4px。S3-FRAME-299・302・S3-TASK-249・250・S3-ROUTINE-162）', () => {
+    expect(SCREEN_CSS.map(([name]) => name)).toEqual(expect.arrayContaining(['features/lists/common/lists.css']))
   })
 
   it.each(SCREEN_CSS)(

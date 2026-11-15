@@ -82,3 +82,18 @@ describe('詳細の画面の中で消す（7.13）', () => {
     expect(getData().items.t).toMatchObject({ title: '買い物', memo: task.memo })
   })
 })
+
+describe('S3 Task List から消す時は並びに積まない（stack: false。7.13・D2・S3-TASK-210）', () => {
+  it('ウィークリー・デイリーを出していても積まず、お知らせの［元に戻す］でゴミ箱から戻す', async () => {
+    await start(dataWith({ items: [task] }))
+    expect(await deleteItem(getData().items.t!, Date.now(), { stack: false })).toBe(true)
+    expect(getData().items.t).toBeUndefined()
+    expect(labels()).toEqual([])
+    const toast = useToasts.getState().toasts.at(-1)
+    expect(toast?.message).toBe('『買い物』を削除しました')
+    expect(toast?.action?.label).toBe('元に戻す')
+    toast?.action?.run()
+    await vi.waitFor(() => expect(getData().items.t?.title).toBe('買い物'))
+    expect(labels()).toEqual([])
+  })
+})

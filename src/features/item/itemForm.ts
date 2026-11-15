@@ -96,6 +96,29 @@ export function hasDraftText(f: Pick<ItemForm, 'title' | 'requester' | 'memo'>):
   return f.title.trim() !== '' || f.requester.trim() !== '' || f.memo.trim() !== ''
 }
 
+/** 登録の画面の欄の名前（formChanged が比べる物） */
+const FORM_KEYS = [
+  'title',
+  'kind',
+  'label',
+  'requester',
+  'start',
+  'due',
+  'startTime',
+  'endTime',
+  'locked',
+  'listed',
+  'memo',
+] as const satisfies readonly (keyof ItemForm)[]
+
+/**
+ * 開いた時の値から、どれかの欄を変えたか（Favorite List の［予定にする］で件名・メモを入れて開いた登録の画面の書きかけ。
+ * 入れて開いたままなら、閉じる時に確かめない。D4）
+ */
+export function formChanged(initial: ItemForm, now: ItemForm): boolean {
+  return FORM_KEYS.some((k) => initial[k] !== now[k])
+}
+
 /**
  * list 生まれのタスクが今カレンダーに出ていないか（①④。締め切り日が無い）。時刻の欄と「Task List にも出す」を押せなくする
  * （12.3・D37・6.3。ITEMS-212・214）

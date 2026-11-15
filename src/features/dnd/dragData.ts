@@ -1,10 +1,10 @@
 // 掴んだ物に持たせる値（dnd-kit の draggable の data）の形と見分け方（docs/SPEC.md の 7.11・13.6・14.2・15.2。D52）。
 // 1つのドラッグの入れ物（TopDnd）の中で、ウィークリーの予定・Task List の行・リストの並べ替えの3つを掴む。違う物を読み違えない:
 // ウィークリーの落とす所は並べ替えの物を受けず、並べ替えはカレンダーの日を受けない（FRAME-224）。
-// 契約の形だけ（S3-STUB）: 型はこれで決まり。見分ける関数は今はどれも null を返すだけ（中身は段階3の WP0 が入れる。
-// ウィークリーの予定は今までどおり week/dnd の asDragData が形で見分け、それは替えない）
+// Task List の行と並べ替えは type の印（'task-row'・'sort'）で、ウィークリーの予定は今までどおり week/dnd の asDragData の形で見分ける
+// （ウィークリーの予定の値には印を付けていない。印の付いた物はウィークリーの予定と読まない）。見分けるのは dragTypeOf の1か所
 import type { ID, Item } from '../../domain/types'
-import type { DragData } from '../calendar/week/dnd/types'
+import { asDragData, type DragData } from '../calendar/week/dnd/types'
 
 /** 掴んだ物の種類（TopDnd が掴み始め・動き・離した時を、その種類の受け持ち（controllers.ts）へ渡す） */
 export type DragType = 'week-item' | 'task-row' | 'sort'
@@ -35,20 +35,33 @@ export interface SortDragData {
 
 export type AnyDragData = WeekDragData | TaskRowDragData | SortDragData
 
+const isRecord = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
+
+const REORDER_TABLES: readonly ReorderTable[] = ['routines', 'favorites', 'mimNotes']
+
 /** dnd-kit から受け取った data が Task List の行か（違えば null） */
 export function asTaskRowDrag(data: unknown): TaskRowDragData | null {
-  void data
-  return null
+  if (!isRecord(data) || data.type !== 'task-row') return null
+  return isRecord(data.item) && typeof data.item.id === 'string' ? (data as unknown as TaskRowDragData) : null
 }
 
 /** dnd-kit から受け取った data がリストの並べ替えか（違えば null） */
 export function asSortDrag(data: unknown): SortDragData | null {
-  void data
-  return null
+  if (!isRecord(data) || data.type !== 'sort') return null
+  const { table, group, id, index } = data
+  return REORDER_TABLES.includes(table as ReorderTable) &&
+    typeof group === 'string' &&
+    typeof id === 'string' &&
+    Number.isInteger(index) &&
+    (index as number) >= 0
+    ? (data as unknown as SortDragData)
+    : null
 }
 
-/** 掴んだ物の種類（知らない物は null） */
+/** 掴んだ物の種類（知らない物は null。印の付いた物はウィークリーの予定と読まない） */
 export function dragTypeOf(data: unknown): DragType | null {
-  void data
-  return null
+  if (asTaskRowDrag(data)) return 'task-row'
+  if (asSortDrag(data)) return 'sort'
+  if (isRecord(data) && 'type' in data) return null
+  return asDragData(data) ? 'week-item' : null
 }

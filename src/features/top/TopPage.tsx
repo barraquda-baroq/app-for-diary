@@ -3,38 +3,57 @@
 // 保つ。src/App.tsx の行き先の木）。
 // - L（900px 以上。3.4）: 左にカレンダーの領域（残りの幅）、右に右の列（300px）。ページ全体はスクロールせず、それぞれの中だけで
 //   スクロールする。MIM を開いた時は、カレンダーの領域が MIM に替わる（右の列はそのまま）。
-// - S・M（3.5）: ヘッダーの下に切り替えの列（カレンダー｜Routine｜Task｜Favorite。押すとその先頭へスクロールする）、
-//   その下にカレンダー → Routine List → Task List → Favorite List を縦に積む。3つのリストはアプリを開くたびに畳んで始まる。
-//   MIM は、M ではカレンダーの区切りが MIM に替わり、S ではカレンダーとリストと切り替えの列の代わりに全面で開く。
-// カレンダーの領域は src/features/calendar/common/CalendarView（行き先・操作の列・モードの画面）、登録・詳細の小さな画面は
-// SheetHost（履歴の state.sheet）。裏から戻って6時間たった時に今日へ移す決まり（6.4）もここで見張る。
-// リストの中身と数（段階3）・MIM（段階4）はまだ無い
-import { useEffect, useId, useRef, useState } from 'react'
+// - S・M（3.5）: ヘッダーの下に切り替えの列（カレンダー｜Routine 2｜Task 3｜Favorite 12。数はまだ済んでいない数。押すとその先頭へ
+//   スクロールする）、その下にカレンダー → Routine List → Task List → Favorite List を縦に積む。3つのリストはアプリを開くたびに畳んで
+//   始まる。MIM は、M ではカレンダーの区切りが MIM に替わり、S ではカレンダーとリストと切り替えの列の代わりに全面で開く。
+// 3つのリストは src/features/lists の枠（common/ListSection: 見出し・数・畳む・開く）に各リストの中身（*ListBody）を置く。まだ済んで
+// いない数は lists/counts.ts の useListCounts で1回だけ数えて、見出しと切り替えの列に渡す（畳んでいるリストも数える）。
+// S・M では、切り替えの列で選ばれている物（見ている所）と積んだ所の形（幅・S の全面の MIM か）を useStackedLists の shown・layout に
+// 出し（■34 の「開いているリスト」を決める。src/features/top/listBack.ts）、その場で畳む関数（stackedFold.ts）を届ける。
+// ドラッグの入れ物（features/dnd の TopDnd）は L と S・M の両方を包む（幅が替わっても同じ物が残る）。
+// カレンダーの領域は src/features/calendar/common/CalendarView（行き先・操作の列・モードの画面）、小さな画面は、カレンダーから開いた
+// 登録・詳細が SheetHost（MIM を開いている間は置かない）、リストから開いた物（「タスク」の詳細・ルーチンとやりたいことの［詳しく］・
+// ［予定にする］の登録）が ListSheetHost（どの幅でも・MIM を開いている時も）。裏から戻って6時間たった時に今日へ移す決まり（6.4）も
+// ここで見張る。MIM（段階4）はまだ無い
+import { useEffect, useId, useRef, useState, type ComponentType } from 'react'
 import { useLocation } from 'react-router-dom'
 import { calendarModeOf, isMimPath } from '../../routes'
-import { useCalendarUi, usePrefs, useStackedLists, type ListKey } from '../../store/uiStore'
+import { useCalendarUi, usePrefs, useStackedLists, type ListKey, type PaneKey } from '../../store/uiStore'
 import { useDocumentTitle, useWidthClass, type WidthClass } from '../../ui/hooks'
 import { AppHeader } from '../../ui/Layout'
 import { scrollBehavior } from '../../ui/motion'
 import { CalendarView } from '../calendar/common/CalendarView'
 import { SheetHost } from '../calendar/common/SheetHost'
 import { useReturnToToday } from '../calendar/common/useReturnToToday'
-import { FOLD_MS, LIST_INFO, LIST_ORDER, ListPanel } from './ListPanel'
+import { TopDnd } from '../dnd'
+import { ListSection, releaseFocusBeforeFold } from '../lists/common/ListSection'
+import { useListCounts } from '../lists/counts'
+import { FavoriteListBody } from '../lists/favorite/FavoriteListBody'
+import { FOLD_MS, LIST_INFO, LIST_ORDER } from '../lists/listInfo'
+import { ListSheetHost } from '../lists/ListSheetHost'
+import { RoutineAllToggle } from '../lists/routine/RoutineAllToggle'
+import { RoutineListBody } from '../lists/routine/RoutineListBody'
+import { TaskListBody } from '../lists/task/TaskListBody'
+import type { ListBodyProps, ListCounts } from '../lists/types'
 import { MimPlaceholder } from './MimPlaceholder'
+import { foldScrollTop, provideStackedFold } from './stackedFold'
 import './top.css'
-
-type PaneKey = 'calendar' | ListKey
 
 const PANES: readonly PaneKey[] = ['calendar', ...LIST_ORDER]
 
-/** まだ済んでいない数（段階3でリストの中身から数える） */
-const COUNTS: Record<ListKey, number> = { routine: 0, task: 0, favorite: 0 }
+/** 各リストの中身と、開いている間だけ見出しの右に出す物（Routine List の［すべて開く／畳む］） */
+const LIST_PARTS: Record<ListKey, { Body: ComponentType<ListBodyProps>; HeaderExtra?: ComponentType }> = {
+  routine: { Body: RoutineListBody, HeaderExtra: RoutineAllToggle },
+  task: { Body: TaskListBody },
+  favorite: { Body: FavoriteListBody },
+}
 
 export function TopPage() {
   const width = useWidthClass()
   const { pathname } = useLocation()
   const lastMode = usePrefs((s) => s.lastMode)
   const mimOpen = isMimPath(pathname)
+  const counts = useListCounts()
   useDocumentTitle(mimOpen ? 'MIM' : undefined)
   useReturnToToday()
   // トップ #/ は前回のモードに置き換わる
@@ -42,8 +61,15 @@ export function TopPage() {
   return (
     <>
       <AppHeader />
-      {width === 'L' ? <WideTop mimOpen={mimOpen} /> : <StackedTop width={width} mimOpen={mimOpen} />}
+      <TopDnd>
+        {width === 'L' ? (
+          <WideTop mimOpen={mimOpen} counts={counts} />
+        ) : (
+          <StackedTop width={width} mimOpen={mimOpen} counts={counts} />
+        )}
+      </TopDnd>
       {mimOpen ? null : <SheetHost />}
+      <ListSheetHost />
     </>
   )
 }
@@ -59,8 +85,37 @@ function useEndOffMode(mode: string | null): void {
   useEffect(() => () => useCalendarUi.getState().setOffMode(false), [])
 }
 
+/** 1つのリスト（枠と中身） */
+function ListPane({
+  list,
+  width,
+  count,
+  id,
+  headingId,
+}: {
+  list: ListKey
+  width: WidthClass
+  count: number
+  id?: string
+  headingId?: string
+}) {
+  const { Body, HeaderExtra } = LIST_PARTS[list]
+  return (
+    <ListSection
+      list={list}
+      stacked={width !== 'L'}
+      count={count}
+      id={id}
+      headingId={headingId}
+      headerExtra={HeaderExtra ? <HeaderExtra /> : null}
+    >
+      <Body width={width} />
+    </ListSection>
+  )
+}
+
 /** L の並べ方（docs/SPEC.md の 3.4） */
-function WideTop({ mimOpen }: { mimOpen: boolean }) {
+function WideTop({ mimOpen, counts }: { mimOpen: boolean; counts: ListCounts }) {
   return (
     <main className="top top-wide" data-testid="top-page" data-width="L">
       <section className="top-calendar" aria-label={mimOpen ? 'MIM' : 'カレンダー'} data-testid="calendar-area">
@@ -68,7 +123,7 @@ function WideTop({ mimOpen }: { mimOpen: boolean }) {
       </section>
       <aside className="top-side" aria-label="リスト" data-testid="side-column">
         {LIST_ORDER.map((key) => (
-          <ListPanel key={key} listKey={key} stacked={false} count={COUNTS[key]} />
+          <ListPane key={key} list={key} width="L" count={counts[key]} />
         ))}
       </aside>
     </main>
@@ -76,7 +131,7 @@ function WideTop({ mimOpen }: { mimOpen: boolean }) {
 }
 
 /** S・M の並べ方（docs/SPEC.md の 3.5） */
-function StackedTop({ width, mimOpen }: { width: WidthClass; mimOpen: boolean }) {
+function StackedTop({ width, mimOpen, counts }: { width: 'S' | 'M'; mimOpen: boolean; counts: ListCounts }) {
   const baseId = useId()
   const paneId = (k: PaneKey) => `${baseId}-pane-${k}`
   const headingId = (k: PaneKey) => `${baseId}-head-${k}`
@@ -88,12 +143,14 @@ function StackedTop({ width, mimOpen }: { width: WidthClass; mimOpen: boolean })
   const pinned = useRef<PaneKey | null>(null)
   const timer = useRef(0)
   const spacer = useRef<HTMLDivElement>(null)
+  /** スクロールの位置から表示中を決め直す（下の見張りが入れる） */
+  const update = useRef<() => void>(() => {})
 
   // どれを表示中かはスクロールの位置で決める（その区切りの見出しが切り替えの列のすぐ下にある物）
   useEffect(() => {
     if (fullMim) return
     let raf = 0
-    const update = () => {
+    const decide = () => {
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
         if (pinned.current) {
@@ -110,20 +167,22 @@ function StackedTop({ width, mimOpen }: { width: WidthClass; mimOpen: boolean })
         setCurrent(next)
       })
     }
+    update.current = decide
     const release = () => {
       pinned.current = null
     }
-    update()
-    window.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
+    decide()
+    window.addEventListener('scroll', decide, { passive: true })
+    window.addEventListener('resize', decide)
     window.addEventListener('wheel', release, { passive: true })
     window.addEventListener('touchstart', release, { passive: true })
     window.addEventListener('pointerdown', release, { passive: true })
     window.addEventListener('keydown', release)
     return () => {
       cancelAnimationFrame(raf)
-      window.removeEventListener('scroll', update)
-      window.removeEventListener('resize', update)
+      update.current = () => {}
+      window.removeEventListener('scroll', decide)
+      window.removeEventListener('resize', decide)
       window.removeEventListener('wheel', release)
       window.removeEventListener('touchstart', release)
       window.removeEventListener('pointerdown', release)
@@ -133,6 +192,47 @@ function StackedTop({ width, mimOpen }: { width: WidthClass; mimOpen: boolean })
   }, [fullMim])
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  // 見ている所と積んだ所の形を出す（■34 の「開いているリスト」。L・ほかの画面へ移ると、見ている所はカレンダー・形は無しに戻す）
+  useEffect(() => {
+    useStackedLists.getState().setShown(fullMim ? 'calendar' : current)
+  }, [current, fullMim])
+  useEffect(() => {
+    useStackedLists.getState().setLayout({ width, fullMim })
+  }, [width, fullMim])
+  useEffect(
+    () => () => {
+      const lists = useStackedLists.getState()
+      lists.setShown('calendar')
+      lists.setLayout(null)
+    },
+    [],
+  )
+
+  // その場で畳む（■34。stackedFold.ts の foldListInPlace）
+  useEffect(
+    () =>
+      provideStackedFold((k) => {
+        if (fullMim) return
+        const lists = useStackedLists.getState()
+        if (lists.collapsed[k]) return
+        const pane = document.getElementById(paneId(k))
+        if (!pane) return
+        // フォーカスがこのリストの中にあれば、見出しの畳む・開くボタンへ（カレンダーの見出しへは移さない）
+        releaseFocusBeforeFold(pane)
+        // 見出しが切り替えの列の下に隠れていれば、切り替えの列のすぐ下（飛んだ時と同じ所）まで戻すだけ（カレンダーへは戻さない）
+        const margin = Number.parseFloat(getComputedStyle(pane).scrollMarginTop) || 0
+        const top = foldScrollTop(pane.getBoundingClientRect().top, margin, window.scrollY)
+        if (top !== null) window.scrollTo({ top, behavior: 'auto' })
+        pinned.current = null
+        window.clearTimeout(timer.current)
+        lists.setCollapsed(k, true)
+        // 畳む動き（180ms）でページが縮んでから、見ている所を決め直す
+        update.current()
+        timer.current = window.setTimeout(() => update.current(), FOLD_MS + 40)
+      }),
+    [fullMim],
+  )
 
   const jumpTo = (k: PaneKey) => {
     pinned.current = k
@@ -193,8 +293,8 @@ function StackedTop({ width, mimOpen }: { width: WidthClass; mimOpen: boolean })
                 <>
                   <span className="top-switcher-name">{LIST_INFO[k].short}</span>
                   <span className="top-switcher-count">
-                    <span aria-hidden="true">{COUNTS[k]}</span>
-                    <span className="visually-hidden">（まだ済んでいない {COUNTS[k]}件）</span>
+                    <span aria-hidden="true">{counts[k]}</span>
+                    <span className="visually-hidden">（まだ済んでいない {counts[k]}件）</span>
                   </span>
                 </>
               )}
@@ -217,7 +317,7 @@ function StackedTop({ width, mimOpen }: { width: WidthClass; mimOpen: boolean })
         </section>
         {!fullMim
           ? LIST_ORDER.map((key) => (
-              <ListPanel key={key} listKey={key} stacked id={paneId(key)} headingId={headingId(key)} count={COUNTS[key]} />
+              <ListPane key={key} list={key} width={width} count={counts[key]} id={paneId(key)} headingId={headingId(key)} />
             ))
           : null}
       </div>

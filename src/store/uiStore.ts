@@ -179,7 +179,8 @@ export const usePrefs = create<PrefsState>((set, get) => ({
 
 /**
  * S・M の積んだ所の今の形（StackedTop を出している間だけ。L・設定・ログインなどでは null）。width は幅の区分、fullMim は S で MIM を
- * 全面で開いている（リストと切り替えの列を隠している）。「開いているリスト」（docs/SPEC.md の 3.1・D1・■34）を決めるのに読む
+ * 全面で開いている（リストと切り替えの列を隠している）。「開いているリスト」（docs/SPEC.md の 3.1・D1・■34。src/features/top/listBack.ts）を
+ * 決めるのに読む（履歴の決まりの中から DOM・行き先・matchMedia を読まずに済むように）
  */
 export interface StackedLayout {
   width: 'S' | 'M'
@@ -191,12 +192,12 @@ interface StackedListsState {
   collapsed: Record<ListKey, boolean>
   setCollapsed: (key: ListKey, collapsed: boolean) => void
   /**
-   * 切り替えの列で選ばれている物（見ている所。スクロールの位置で決め、押した直後は押した物。3.5）。開いている間だけ保つ。
-   * 契約の形だけ（S3-STUB）: 今はまだ誰も書かず、いつも 'calendar'（StackedTop が書くのは段階3の WP0）
+   * 切り替えの列で選ばれている物（見ている所。スクロールの位置で決め、押した直後は押した物。3.5）。S・M のトップの画面
+   * （StackedTop）が出している間に書き、L・ほかの画面・S の全面の MIM では 'calendar'。開いている間だけ保つ（端末に覚えない）
    */
   shown: PaneKey
   setShown: (shown: PaneKey) => void
-  /** 積んだ所の今の形（StackedLayout）。契約の形だけ（S3-STUB）: 今はまだ誰も書かず、いつも null（StackedTop が書くのは段階3の WP0） */
+  /** 積んだ所の今の形（StackedLayout。StackedTop が出している間に書き、外れると null）。端末に覚えない */
   layout: StackedLayout | null
   setLayout: (layout: StackedLayout | null) => void
 }

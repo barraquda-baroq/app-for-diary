@@ -153,6 +153,28 @@ describe('S・M の縦に積んだリスト（useStackedLists）', () => {
     expect(again.useStackedLists.getState().collapsed).toEqual({ routine: true, task: true, favorite: true })
     expect(localStorage.getItem(PREFS_KEY)).toBe(stored)
   })
+
+  it('S3 見ている所（shown）と積んだ所の形（layout）は、初めはカレンダーと無し。替えても端末に覚えない（S3-FRAME-051・S3-TASK-243）', async () => {
+    vi.resetModules()
+    const { useStackedLists, usePrefs } = await import('./uiStore')
+    expect(useStackedLists.getState().shown).toBe('calendar')
+    expect(useStackedLists.getState().layout).toBeNull()
+    usePrefs.getState().setPrefs({ lastMode: 'week' })
+    const stored = localStorage.getItem(PREFS_KEY)
+    useStackedLists.getState().setShown('task')
+    useStackedLists.getState().setLayout({ width: 'S', fullMim: false })
+    for (const k of ['routine', 'task', 'favorite'] as const) useStackedLists.getState().setCollapsed(k, false)
+    expect(useStackedLists.getState()).toMatchObject({ shown: 'task', layout: { width: 'S', fullMim: false } })
+    expect(localStorage.getItem(PREFS_KEY)).toBe(stored)
+    expect(JSON.parse(stored ?? '{}')).not.toHaveProperty('shown')
+    vi.resetModules()
+    const again = await import('./uiStore')
+    expect(again.useStackedLists.getState()).toMatchObject({
+      shown: 'calendar',
+      layout: null,
+      collapsed: { routine: true, task: true, favorite: true },
+    })
+  })
 })
 
 describe('お知らせ（トースト）', () => {

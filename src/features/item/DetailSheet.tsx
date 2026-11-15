@@ -1,5 +1,8 @@
 // 予定の詳細の画面（docs/SPEC.md の 12.3。カレンダーから開いた時の題は「予定」。L は真ん中の小さな画面、M・S は下からのシート。3.8）。
 // カード・行を押すと開く（common/sheets.ts の openDetail）。画面の地はその予定の区分の色、上の辺はラベルの色の帯（ItemSheet。X2・4.3）。
+// Task List の［詳しく］で開いた時（from 'task'。openTaskDetail）は、題を「タスク」にし（calendar 生まれの予定も。D46）、L は右の列の
+// 上のパネルにする（placement side。3.6・3.8）。直した所も、中の［複製］［削除］も、元に戻す・やり直すの並びに積まない（リストから
+// 開いた物。7.13・D2。複製・削除はお知らせの［元に戻す］で戻す）。複製のお知らせの［開く］も「タスク」の詳細で開く（D35）
 // - 上の列: 点線の丸と「完了にする」（完了なら「完了」。押すと切り替え、お知らせは出さない。12.5）、右に［複製］・「…」（［削除］）
 //   （［×］は小さな画面の題の列）
 // - 欄: 登録の画面と同じ並び（DetailForm）で、どの欄もいつも出す（畳む所は無い。22. の段階2の見本の確かめの 8.・10.）。
@@ -17,7 +20,7 @@
 //   上の物だけが閉じる（AMB-ITEMS-32）
 // - 開いてから閉じるまでに直した所（欄・完了・ロック）は、元に戻す・やり直すの並びに1つにまとめて積む（ウィークリー・デイリーから
 //   開いた時。中の［複製］・［削除］は別の1つ。閉じた時の文字の欄の保存も入るよう、閉じた後（部品の後片付けが全部済んだ後）に積む。
-//   7.13）
+//   7.13）。Task List から開いた時は積まない（上）
 // 予定が無い時（ほかの端末で消した・ゴミ箱へ移した・消した後に「進む」で戻った）は閉じる（onClose。履歴を1つ戻す）。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { editDates, editTimes } from '../../domain/itemInput'
@@ -51,12 +54,14 @@ import {
 } from './itemForm'
 import { ItemSheet } from './ItemSheet'
 
-/** 詳細の画面の題（カレンダーから開いた時。Task List から開いた時の「タスク」は段階3。D46・D48） */
-const TITLE = '予定'
+/** 詳細の画面の題（カレンダーから開いた時は「予定」、Task List から開いた時は「タスク」。12.3・D46・D48） */
+export const DETAIL_TITLES = { calendar: '予定', task: 'タスク' } as const
 /** 「…」のメニューの data-testid */
 export const MORE_MENU_TEST_ID = 'item-more-menu'
 
-export function DetailSheet({ id, onClose }: DetailSheetProps) {
+export function DetailSheet({ id, onClose, from }: DetailSheetProps) {
+  const title = from === 'task' ? DETAIL_TITLES.task : DETAIL_TITLES.calendar
+  const placement = from === 'task' ? 'side' : undefined
   const item = useRecord('items', id)
   /** この画面で出していた予定の id（開いている間に予定が無くなった時は、何も出さずに閉じる） */
   const shown = useRef<string | null>(null)
@@ -69,17 +74,17 @@ export function DetailSheet({ id, onClose }: DetailSheetProps) {
     if (shown.current === id) return null
     // 初めから無い（消した後に「進む」で戻った）時は、閉じるまでの間だけそう出す
     return (
-      <ItemSheet title={TITLE} kind="work" label={null} onClose={onClose}>
+      <ItemSheet title={title} kind="work" label={null} onClose={onClose} placement={placement}>
         <p className="it-missing" data-testid={testIds.itemTitle}>
           この予定は見つかりません
         </p>
       </ItemSheet>
     )
   }
-  return <DetailBody key={item.id} item={item} onClose={onClose} />
+  return <DetailBody key={item.id} item={item} onClose={onClose} from={from} />
 }
 
-function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
+function DetailBody({ item, onClose, from }: { item: Item; onClose: () => void; from?: 'task' }) {
   const id = item.id
   const labelNames = useApp((s) => s.data.labelNames)
   // 欄の値は保存した記録から（直すとすぐ保存し、保存した値がここに戻る。文字の欄は打っている間の下書きを欄の中に持つ）。件名が空かは
@@ -94,11 +99,13 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const offCalendar = offCalendarTask(form)
 
-  // 開いてから閉じるまでを1つにまとめる（閉じた時の文字の欄の保存（子の後片付け）の後に積む）
+  // 開いてから閉じるまでを1つにまとめる（閉じた時の文字の欄の保存（子の後片付け）の後に積む）。Task List から開いた時は積まない
+  const listOrigin = from === 'task'
   useEffect(() => {
+    if (listOrigin) return
     const end = beginItemSession(id)
     return () => queueMicrotask(end)
-  }, [id])
+  }, [id, listOrigin])
 
   /** 直した物を保存する（予定が無くなった後は書かない）。list 生まれの締め切り日を消して Task List に戻した時は知らせる（6.3） */
   const save = (patch: ItemPatch) => {
@@ -144,15 +151,16 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
 
   const remove = async () => {
     const latest = getData().items[id]
-    if (latest && (await deleteItem(latest))) onClose()
+    if (latest && (await deleteItem(latest, Date.now(), listOrigin ? { stack: false } : undefined))) onClose()
   }
 
   return (
     <ItemSheet
-      title={TITLE}
+      title={listOrigin ? DETAIL_TITLES.task : DETAIL_TITLES.calendar}
       kind={form.kind}
       label={form.label}
       onClose={onClose}
+      placement={listOrigin ? 'side' : undefined}
       // 件名の欄にはフォーカスしない（スマホでキーボードが開かないように。登録の画面だけ件名へ）。上の列に置き、Tab で次の物へ
       initialFocus=".it-toprow"
     >
@@ -226,7 +234,7 @@ function DetailBody({ item, onClose }: { item: Item; onClose: () => void }) {
           testId={MORE_MENU_TEST_ID}
         />
       ) : null}
-      {duplicating ? <DuplicateDialog item={item} onClose={() => setDuplicating(false)} /> : null}
+      {duplicating ? <DuplicateDialog item={item} onClose={() => setDuplicating(false)} from={from} /> : null}
     </ItemSheet>
   )
 }

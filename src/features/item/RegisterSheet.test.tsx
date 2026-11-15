@@ -11,6 +11,7 @@ import type { LabelName } from '../../domain/types'
 import { createAppHistory } from '../../history/appHistory'
 import { useApp } from '../../store/appStore'
 import { useCalendarUi, useToasts } from '../../store/uiStore'
+import { enterUndoScope, useUndo } from '../../store/undoStore'
 import { FakeWindow } from '../../test/fakeHistoryWindow'
 import { renderView, setupCalendarTests } from '../../test/renderCalendar'
 import { testIds } from '../calendar/common/testIds'
@@ -587,5 +588,60 @@ describe('iPhone・iPad の登録の画面（3.1・■27）', () => {
     )
     expect(css).not.toMatch(/touch-action/)
     expect(css).not.toMatch(/it-edge-guard/)
+  })
+})
+
+describe('S3 Favorite List の［予定にする］で開いた登録（from favorite。12.2・7.13・D4・S3-FRAME-228）', () => {
+  const discardDialog = () => screen.queryByRole('dialog', { name: '書きかけを捨てますか？' })
+  const prefill: RegisterInit = { start: '2026-11-10', kind: 'work', title: '近所のパン屋を調べる', memo: '駅の北口のあたり' }
+
+  async function openFavorite(init: RegisterInit = prefill) {
+    const onClose = vi.fn()
+    const r = await renderView(RegisterSheet, { init, onClose, from: 'favorite' as const }, {})
+    return { ...r, onClose, user: userEvent.setup() }
+  }
+
+  it('件名・メモを入れて開き、そのまま閉じる時（［やめる］・「戻る」）は確かめない', async () => {
+    const { user, onClose, router } = await openFavorite()
+    expect((byId(testIds.itemTitle) as HTMLTextAreaElement).value).toBe('近所のパン屋を調べる')
+    await user.click(byId(testIds.itemCancel))
+    expect(discardDialog()).toBeNull()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await act(() => router.navigate('/month/2026-11'))
+    await act(() => router.navigate(-1))
+    expect(discardDialog()).toBeNull()
+    expect(router.state.location.pathname).toBe('/')
+  })
+
+  it.each([
+    ['件名', async (user: ReturnType<typeof userEvent.setup>) => user.type(byId(testIds.itemTitle), '（土曜）')],
+    ['区分', async (user: ReturnType<typeof userEvent.setup>) => user.click(byId(testIds.itemKind('private')))],
+  ])('入れて開いた値から%sを変えた時は、閉じる・「戻る」で確かめる（D4）', async (_name, edit) => {
+    const { user, onClose, router } = await openFavorite()
+    await act(() => router.navigate('/month/2026-11'))
+    await edit(user)
+    await act(() => router.navigate(-1))
+    expect(discardDialog()).not.toBeNull()
+    await user.click(byId(DISCARD_TEST_IDS.keep))
+    expect(router.state.location.pathname).toBe('/month/2026-11')
+    await user.click(byId(testIds.itemCancel))
+    expect(discardDialog()).not.toBeNull()
+    await user.click(byId(DISCARD_TEST_IDS.discard))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('登録しても、ウィークリー・デイリーを出していても並びに積まない（ふつうの登録の画面は積む）', async () => {
+    const leave = enterUndoScope()
+    const labels = () => useUndo.getState().stack.past.map((st) => st.label)
+    const fav = await openFavorite()
+    await fav.user.click(byId(testIds.itemRegister))
+    expect(Object.values(useApp.getState().data.items).map((i) => i.title)).toEqual(['近所のパン屋を調べる'])
+    expect(labels()).toEqual([])
+    fav.unmount()
+    const plain = await open()
+    await plain.user.type(byId(testIds.itemTitle), '会議')
+    await plain.user.click(byId(testIds.itemRegister))
+    expect(labels()).toEqual(['『会議』を登録した'])
+    leave()
   })
 })

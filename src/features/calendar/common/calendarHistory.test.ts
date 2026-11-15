@@ -21,7 +21,50 @@ describe('screenOf', () => {
   })
 
   it('MIM・設定・ログイン・見つかりませんは、ほかの画面', () => {
-    for (const p of ['/mim', '/settings', '/login', '/month/2026-11/x', '/month'])
+    // MIM は小さな画面の印が無い時（印がある時は下の S3 の確かめ。#/mim の上の［詳しく］）
+    expect(screenOf({ pathname: '/mim', state: null })).toBe('other')
+    for (const p of ['/settings', '/login', '/month/2026-11/x', '/month'])
       expect(screenOf({ pathname: p, state: detail })).toBe('other')
+  })
+})
+
+describe('S3 リストから開く小さな画面（3.1・D51・S3-FRAME-004・S3-FRAME-018）', () => {
+  const task = { sheet: { kind: 'detail', id: 'i1', from: 'task' } }
+  const routine = { sheet: { kind: 'routine', id: 'r1' } }
+  const favorite = { sheet: { kind: 'favorite', id: 'f1' } }
+  const fromFavorite = { sheet: { kind: 'register', init: { start: '2026-11-10', title: '店を調べる' }, from: 'favorite' } }
+
+  it('カレンダーの行き先の上の「タスク」の詳細・ルーチンとやりたいことのパネルは詳細、［予定にする］の登録は登録', () => {
+    expect(screenOf({ pathname: '/week/2026-11-08', state: task })).toBe('detail')
+    expect(screenOf({ pathname: '/month/2026-11', state: routine })).toBe('detail')
+    expect(screenOf({ pathname: '/', state: favorite })).toBe('detail')
+    expect(screenOf({ pathname: '/day/2026-11-10', state: fromFavorite })).toBe('register')
+  })
+
+  it('#/mim の上でも印を先に見る（L・M の MIM の横のリストから開いた物。［予定にする］は端からのフリックで捨てる ■27）', () => {
+    expect(screenOf({ pathname: '/mim', state: task })).toBe('detail')
+    expect(screenOf({ pathname: '/mim', state: routine })).toBe('detail')
+    expect(screenOf({ pathname: '/mim', state: detail })).toBe('detail')
+    expect(screenOf({ pathname: '/mim', state: fromFavorite })).toBe('register')
+    expect(screenOf({ pathname: '/mim', state: register })).toBe('register')
+  })
+
+  it('設定・ログイン・見つかりませんは、印があってもほかの画面のまま', () => {
+    for (const p of ['/settings', '/login', '/month/2026-11/x'])
+      for (const state of [task, routine, favorite, fromFavorite, register])
+        expect(screenOf({ pathname: p, state })).toBe('other')
+  })
+
+  it('形の正しくない印（id が無い・from が決まった字でない・知らない kind）は印でない', () => {
+    for (const sheet of [
+      { kind: 'routine' },
+      { kind: 'favorite', id: 3 },
+      { kind: 'detail', id: 'i1', from: 'routine' },
+      { kind: 'register', init: { start: '2026-11-10' }, from: 'task' },
+      { kind: 'trash', id: 'x' },
+    ]) {
+      expect(screenOf({ pathname: '/month/2026-11', state: { sheet } }), JSON.stringify(sheet)).toBe('calendar')
+      expect(screenOf({ pathname: '/mim', state: { sheet } }), JSON.stringify(sheet)).toBe('other')
+    }
   })
 })

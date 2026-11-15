@@ -39,8 +39,8 @@ export type { RegisterInit }
  * - register の from 'favorite': Favorite List の［予定にする］で開いた登録の画面（元に戻す・やり直すの並びに積まない。D2・D4）
  * - detail の from 'task': Task List の［詳しく］で開いた詳細（題は「タスク」・L は右の列の上のパネル・並びに積まない。D2）
  * - routine・favorite: Routine List・Favorite List の［詳しく］のパネル（ルーチン・やりたいことの id）
- * 契約の形だけ（S3-STUB）: from と routine・favorite は型だけで、sheets.ts の sheetOf はまだ読まない（印があっても今までどおり
- * register・detail だけを開き、routine・favorite は開かない。読むのは段階3の WP0）
+ * from の無い register・detail はカレンダーから開いた物（common/SheetHost が出す）、リストから開いた物は src/features/lists の
+ * ListSheetHost が出す（sheets.ts の isListSheet で分ける）
  */
 export type SheetState =
   | { kind: 'register'; init: RegisterInit; from?: 'favorite' }
@@ -57,10 +57,20 @@ export interface SheetLocationState {
 export interface RegisterSheetProps {
   init: RegisterInit
   onClose: () => void
+  /**
+   * 'favorite' は Favorite List の［予定にする］で開いた物（件名・メモを入れて開く。登録しても元に戻す・やり直すの並びに積まず、
+   * 書きかけの確かめは入れて開いた値から変えた時だけ。D2・D4）
+   */
+  from?: 'favorite'
 }
 
 /** 詳細の画面（src/features/item/DetailSheet.tsx）が受け取る物。onClose は ×・Esc・背景・削除の後に呼ぶ（履歴を1つ戻す） */
 export interface DetailSheetProps {
   id: ID
   onClose: () => void
+  /**
+   * 'task' は Task List の［詳しく］で開いた物（題は「タスク」・L は右の列の上のパネル・直した所も中の複製・削除も並びに積まない。
+   * 12.3・D2・D35）
+   */
+  from?: 'task'
 }

@@ -7,7 +7,8 @@
 // - 写す時刻で 1日の予定の終了 < 開始になる日付は［複製する］を押せなくし、6.4 の理由（DATE_REFUSED）を出す（ITEMS-259）
 // - ［複製する］で新しい項目を作り（src/domain/ops.ts の duplicateItem。完了は写さない）、閉じて「11/17（火）に複製しました［開く］」
 //   （6秒。期間の初めの日。カレンダーに出ない list 生まれは「Task List に複製しました［開く］」）。［開く］で新しい予定の詳細へ。
-//   複製したことは元に戻す・やり直すの並びに積む（詳細の中で直していた所は、その前に1つにまとめて積む。7.13）
+//   複製したことは元に戻す・やり直すの並びに積む（詳細の中で直していた所は、その前に1つにまとめて積む。7.13）。Task List から開いた
+//   詳細の中の複製（from 'task'）は積まず（7.13・D2）、お知らせの［開く］も「タスク」の詳細で開く（作った所と同じ形と題。D35）
 import { useState } from 'react'
 import { duplicateDates, editDates } from '../../domain/itemInput'
 import { periodOf } from '../../domain/items'
@@ -36,12 +37,14 @@ export const DUP_NEED_START = '開始日を選ぶと複製できます'
 export interface DuplicateDialogProps {
   item: Item
   onClose: () => void
+  /** 'task' は Task List から開いた詳細の中（並びに積まず、［開く］も「タスク」の詳細で開く） */
+  from?: 'task'
 }
 
 type Dates = { start: string | null; due: string | null }
 
-export function DuplicateDialog({ item, onClose }: DuplicateDialogProps) {
-  const { openDetail } = useItemSheets()
+export function DuplicateDialog({ item, onClose, from }: DuplicateDialogProps) {
+  const { openDetail, openTaskDetail } = useItemSheets()
   const [dates, setDates] = useState<Dates>({ start: null, due: null })
   const src = whenOf(item)
   // 写す時刻とこの日付で、決まりに合うか（1日の予定で終了 < 開始なら DATE_REFUSED）
@@ -70,10 +73,16 @@ export function DuplicateDialog({ item, onClose }: DuplicateDialogProps) {
     if (!canSubmit) return
     const newId = attempt(() => actions.duplicateItem(item.id, dates))
     if (newId === undefined) return
-    recordStep(undoText.duplicated(displayTitle(item)), [itemChange(newId, null, getData().items[newId])])
+    const fromTask = from === 'task'
+    recordStep(
+      undoText.duplicated(displayTitle(item)),
+      [itemChange(newId, null, getData().items[newId])],
+      undefined,
+      fromTask ? { stack: false } : undefined,
+    )
     onClose()
     const first = periodOf({ origin: item.origin, ...dates })?.from ?? null
-    notify(toastText.duplicated(first), { label: OPEN_LABEL, run: () => openDetail(newId) })
+    notify(toastText.duplicated(first), { label: OPEN_LABEL, run: () => (fromTask ? openTaskDetail : openDetail)(newId) })
   }
 
   return (

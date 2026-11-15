@@ -1,6 +1,6 @@
 // 予定の登録の画面（docs/SPEC.md の 12.2。題は「予定を登録」。L は真ん中の小さな画面、M・S は下からのシート。3.8）。
-// 開く所は操作の列の［＋ 登録］とデイリーのタイムスケジュールの空いた所（common/sheets.ts の openRegister。段階3は Favorite の
-// 「予定にする」から件名・メモも）。欄は 件名 → 区分 → 依頼者 → 日付 → 時刻 → メモ → ロック・Task List にも出す → ラベルの色で、
+// 開く所は操作の列の［＋ 登録］とデイリーのタイムスケジュールの空いた所と、Favorite List の［予定にする］（common/sheets.ts の
+// openRegister。［予定にする］は from 'favorite' で、件名・メモも入れて開く。12.2・D4）。欄は 件名 → 区分 → 依頼者 → 日付 → 時刻 → メモ → ロック・Task List にも出す → ラベルの色で、
 // どれもいつも出す（DetailForm。畳む所は無い）。開くと件名にフォーカスする。S・M のシートで入り切らない下の欄は、シートの中のスクロールで届く。
 // 画面の地は選んでいる区分の色、上の辺は選んでいるラベルの色の帯で、選び替えるとその場で替わる（ItemSheet。X2・4.3）。
 // - 日付の欄は決めた時に editDates でそろえる（そろえると 1日の予定で終了 < 開始になる日付にはできない。6.3・6.4）
@@ -10,8 +10,9 @@
 // - ボタンは［やめる］［登録］（件名が空・空白だけの間は［登録］を押せない）。Ctrl+Enter・⌘+Enter でも登録（3.10。どの欄の中でも。
 //   打ちかけの時刻は先に決める）。登録すると 12.4 の決まりを当ててから足し（ITEMS-194）、閉じて、新しいカード（見えていれば）を
 //   1.2秒目立たせる（4.9。お知らせは出さない）。登録したことは元に戻す・やり直すの並びに積む（ウィークリー・デイリーから開いた時。
-//   戻すとゴミ箱へ、やり直すとゴミ箱から戻る。7.13）
-// - 書きかけ（件名・依頼者・メモのどれかに字がある）のまま閉じようとした時（［やめる］・［×］・Esc・背景・「戻る」）は「書きかけを捨てますか？
+//   戻すとゴミ箱へ、やり直すとゴミ箱から戻る。7.13）。Favorite List の［予定にする］で開いた物は積まない（リストから開いた物。7.13・D2）
+// - 書きかけ（件名・依頼者・メモのどれかに字がある。Favorite List の［予定にする］で開いた物は、入れて開いた値からどれかの欄を変えた
+//   時。D4）のまま閉じようとした時（［やめる］・［×］・Esc・背景・「戻る」）は「書きかけを捨てますか？
 //   ［捨てる］［戻る］」と確かめる。「戻る」（Android・PC の OS の戻る）は履歴を戻すのを止めて（useBlocker）確かめ、［戻る］なら画面を
 //   開いたままにする（D03・AMB-ITEMS-10）。iPhone・iPad の端からのフリック（左右どちら）は、詳細の画面と同じく、書きかけでも確かめずに
 //   捨てて閉じる（■27。3.1）: アプリの履歴（src/history/appHistory.ts）が、ルーターに渡す前に flickDiscard を呼ぶので、止めない。
@@ -33,7 +34,7 @@ import { sheetOf } from '../calendar/common/sheets'
 import { testIds } from '../calendar/common/testIds'
 import type { RegisterSheetProps } from '../calendar/common/types'
 import { DetailForm } from './DetailForm'
-import { hasDraftText, registerForm, type DatePatch, type ItemForm, type TimePatch } from './itemForm'
+import { formChanged, hasDraftText, registerForm, type DatePatch, type ItemForm, type TimePatch } from './itemForm'
 import { ItemSheet } from './ItemSheet'
 
 /** 書きかけを捨てるかの確かめのボタンの data-testid */
@@ -55,13 +56,18 @@ async function confirmDiscard(): Promise<boolean> {
   return choice === 'discard'
 }
 
-export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
+export function RegisterSheet({ init, onClose, from }: RegisterSheetProps) {
   const [form, setForm] = useState<ItemForm>(() => registerForm(init))
+  /** 開いた時の値（Favorite List の［予定にする］は、ここから変えた時だけ書きかけとして確かめる。D4） */
+  const initial = useRef(form)
   /**
    * 今の欄の値。描き直しを待たずに持つ（Ctrl/⌘+Enter で、打ちかけの時刻を決めた直後に、その値で登録する。閉じる時の書きかけの確かめも
    * これを見る）
    */
   const current = useRef(form)
+  const fromFavorite = from === 'favorite'
+  /** 閉じる時に確かめる書きかけか（ふつうは字のある欄があるか、［予定にする］は入れて開いた値から変えたか） */
+  const dirty = () => (fromFavorite ? formChanged(initial.current, current.current) : hasDraftText(current.current))
   const update = (patch: Partial<ItemForm>) => {
     current.current = { ...current.current, ...patch }
     setForm(current.current)
@@ -130,7 +136,13 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
     )
     if (id === undefined) return
     const added = getData().items[id]
-    if (added) recordStep(undoText.registered(added.title), [itemChange(id, null, added)])
+    if (added)
+      recordStep(
+        undoText.registered(added.title),
+        [itemChange(id, null, added)],
+        undefined,
+        fromFavorite ? { stack: false } : undefined,
+      )
     leaving.current = true
     useCalendarUi.getState().flashTarget(flashKey.item(id))
     onClose()
@@ -139,7 +151,7 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
   /** ［やめる］・［×］・Esc・背景: 書きかけなら確かめてから閉じる */
   const requestClose = () => {
     if (asking.current) return
-    if (!hasDraftText(current.current)) {
+    if (!dirty()) {
       leaving.current = true
       onClose()
       return
@@ -157,7 +169,8 @@ export function RegisterSheet({ init, onClose }: RegisterSheetProps) {
   // 止めて確かめる（［捨てる］で戻る・替える、［戻る］・Esc なら開いたまま）。小さな画面を閉じる・ほかの行き先へ移るのは止めない
   const shouldBlock = useCallback<BlockerFunction>(
     ({ historyAction, nextLocation }) =>
-      (historyAction === 'POP' || sheetOf(nextLocation.state) !== null) && !leaving.current && hasDraftText(current.current),
+      (historyAction === 'POP' || sheetOf(nextLocation.state) !== null) && !leaving.current && dirty(),
+    // dirty は ref だけを読む（初めに描いた時の物でよい）
     [],
   )
   const blocker = useBlocker(shouldBlock)

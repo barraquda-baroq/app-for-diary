@@ -1,0 +1,277 @@
+/* ===== 3つのリストの共通の形（docs/SPEC.md の 3.5・3.6・4.4・4.7〜4.11・12.1） =====
+   色・大きさは src/styles.css のトークン（4.5・4.8）だけを使い、余白は 4px を単位にする（src/calendarCss.test.ts が見張る）。
+   各リストの中身の形は task/・routine/・favorite/ の CSS */
+
+/* ---------- 枠と見出し（3.6） ---------- */
+.list-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* S・M の縦に積んだリストは、1つずつ面に載せる */
+.list-panel.is-stacked {
+  padding: 0 var(--side-pad);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* 見出し（高さ 44px）: 英語の名前＋下に小さく日本語、右にまだ済んでいない数と畳む・開くの山形。見出しを押しても畳む・開く */
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.list-panel.is-stacked.is-collapsed .list-head {
+  border-bottom-color: transparent;
+}
+
+.list-head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.list-head-title:focus {
+  outline: none;
+}
+
+.list-head-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.list-head-all {
+  flex: none;
+}
+
+.list-head-count {
+  flex: none;
+  min-width: 1ch;
+  font-size: 12px;
+  text-align: right;
+  color: var(--text-faint);
+}
+
+/* 山形（34px 四方）の中の印（18px）の右の端を、見出しの右の端にそろえる */
+.list-head-fold {
+  margin-right: -8px;
+}
+
+.list-head-fold .icon {
+  transition: rotate var(--dur-fold) ease;
+}
+
+.list-panel.is-collapsed .list-head-fold .icon {
+  rotate: -90deg;
+}
+
+/* 見出しの［すべて開く］などは、見出し・入力欄より控えめに */
+.btn.list-head-all {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* 畳む・開くの中身（.fold は src/styles.css）。入力欄のフォーカスの影（3px）が切れないよう、左右に 4px のゆとりを取る */
+.list-fold-inner {
+  margin-inline: -4px;
+  padding-inline: 4px;
+}
+
+.list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0 16px;
+}
+
+/* ---------- 入力欄と［足す］（✓）（3.6・12.1。common/ListInput.tsx） ---------- */
+.list-input-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.list-input-above,
+.list-input-below {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.list-input-field {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+/* 右の 34px（［足す］の分）には打った字が掛からない */
+.list-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding-right: var(--tap);
+  resize: none;
+  overflow: hidden;
+}
+
+/* ［足す］: 入力欄の右の端の中、1行目の枠の内側（L のマウスの端末 34px、S・M と指の端末 38px）。伸びた欄でも1行目の右に置く */
+.icon-btn.list-input-add {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  height: 34px;
+}
+
+.icon-btn.list-input-add:not([aria-disabled='true']) {
+  color: var(--text);
+}
+
+/* S・M と指の端末は入力欄が 40px なので、［足す］は 38px */
+@media (max-width: 899px), (pointer: coarse) {
+  .icon-btn.list-input-add {
+    height: 38px;
+  }
+}
+
+/* Routine List の種類の切り替え［日｜週｜月｜四半期｜年］（入力欄の上の段。14.2・D3） */
+.segmented.list-cycle {
+  padding: 2px;
+}
+
+.segmented.list-cycle button {
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* ---------- 行（3.6。common/ListRow.tsx） ---------- */
+.list-rows {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 箱で囲まず、行の下に 1px の --rule。高さは最小 40px、字は 14px・400・行の高さ 1.45 */
+.list-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  min-height: 40px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.45;
+  /* 字を選ぶ・長押しの吹き出しは、その場で直している間だけ（0.4秒の並べ替えとぶつけない。D48） */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.list-row.is-editing {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* 件名の右上の置き場（段階5の提案の印。行の地・字の色は変えない） */
+.list-row-corner {
+  position: absolute;
+  top: 4px;
+  right: var(--tap);
+  color: var(--text-muted);
+  pointer-events: auto;
+}
+
+/* 点線の丸のチェック（見える丸 18px・押せる所は 40px 四方を目安に、行の外にははみ出さない。.dot-check は src/styles.css） */
+.dot-check.list-check {
+  --dot-hit: 40px;
+}
+
+/* 「…」: PC（マウス）は行に乗せた時・行の中にフォーカスがある時に出し、指の端末はいつも出す（D22・P15） */
+.icon-btn.list-row-more {
+  flex: none;
+  margin-top: 4px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list-row .list-row-more {
+    opacity: 0;
+  }
+
+  .list-row:hover .list-row-more,
+  .list-row:focus-within .list-row-more,
+  .list-row .list-row-more[aria-expanded='true'] {
+    opacity: 1;
+  }
+}
+
+/* 済んだ行（斜線と✓で分かる。色だけに頼らない。4.12） */
+.list-row[data-done='true'] {
+  color: var(--done-text);
+}
+
+/* ---------- 「済み n件」（3.6。common/DoneSection.tsx） ---------- */
+.list-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.list-done-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.list-done-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.list-done-chevron {
+  transition: rotate var(--dur-fold) ease;
+}
+
+.list-done.is-collapsed .list-done-chevron {
+  rotate: -90deg;
+}
+
+.list-done-footer {
+  margin-left: auto;
+}
+
+/* ---------- ［詳しく］のパネル（ルーチン・やりたいこと。地は --surface。common/ListSheet.tsx） ---------- */
+.modal.list-sheet {
+  background: var(--surface);
+}
