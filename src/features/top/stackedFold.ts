@@ -1,6 +1,7 @@
 // S・M の積んだ所で、リストをページの位置を跳ばさずに畳む（docs/SPEC.md の 3.1・3.5・■34 の作者の答え「上まで戻さなくて良いです。
 // リストから出るだけで構いません」）。■34 で、開いているリストを端からのフリック・OS の［戻る］で畳む時に使う口（呼ぶ所は
-// src/features/top/listBack.ts の closeShownList で、打ちかけを捨てた後に呼ぶ。closeShownList は今はまだどこからも呼ばれない）。
+// src/features/top/listBack.ts の closeShownList で、打ちかけを捨てた後に呼ぶ。closeShownList は、履歴の決まり（src/history/popRules.ts
+// の close-list）から src/App.tsx が置いた handlers.closeList として呼ばれる）。
 // - そのリストを畳む（useStackedLists）。いちばん上のカレンダーへスクロールで戻さない: 畳んだリストの見出しの行が画面の中に残るように、
 //   今の位置からいちばん近い所にとどめる（見出しが切り替えの列の下に隠れていれば、切り替えの列のすぐ下（切り替えの列で飛んだ時と同じ
 //   所）まで戻すだけ。見えていれば動かさない。畳んで下の物が上がってきても、見出しはその所に残る）。ページの終わりが近くて、畳んで

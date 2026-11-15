@@ -12,7 +12,8 @@
 //   印の履歴へ移った所から土台へ戻し（ルーターには渡さない。途中の行き先を描かない）、Android のブラウザのタブ・PC では閉じるかを
 //   聞き（handlers.askExit）、ホーム画面から開いた Android のアプリでは聞かずに、もう一度［戻る］で閉じる所にする（handlers.armExit が
 //   書きかけを保存してから armExit を呼ぶ。下）。ほかの画面の「戻る」は1つ戻り（登録の画面の書きかけは、ルーターの所で確かめる）、
-//   「進む」は何もしない
+//   「進む」は何もしない。S・M で開いているリストを見ている時のカレンダーの「戻る」は、聞かずにそのリストを畳む（handlers.closeList。
+//   土台へ戻すだけで、積まない。■34）
 // - 自分で戻る・進む（history.go）間に来た popstate は、ルーターに渡さない。書き込み・戻る・進むは1つずつ順に行い、動いている間に
 //   来たものは待たせる。すばやく続けた「戻る」「進む」のうち、戻している間に来た物は捨てる（積み上がらず、行ったり来たりしない）
 // - 印の履歴を作るのは、押し終えた・キーを打った直後だけ（開いた直後はまだ作らず、最初に押し終えた時（指・マウスを離した時。ドラッグ
@@ -119,6 +120,13 @@ export interface HistoryHandlers {
    * src/features/item/RegisterSheet.tsx が置き、src/history/singleEntryHistory.ts が呼ぶ。Android・PC の OS の戻るは呼ばない）
    */
   flickDiscard?: () => void
+  /**
+   * S・M のカレンダーの画面で、見ている所が開いているリストか（docs/SPEC.md の 3.1・■34。src/features/top/listBack.ts の
+   * listOpenNow を src/App.tsx が置く）。true の時の「戻る」（iPhone・iPad は左右どちらのフリックも）は closeList
+   */
+  listOpen?: () => boolean
+  /** 見ている開いたリストを、ページの位置を跳ばさずに畳む（入力欄の打ちかけは捨てる。listBack.ts の closeShownList。履歴は動かさない） */
+  closeList?: () => void
 }
 
 export interface AppHistoryOptions {
@@ -1010,11 +1018,13 @@ export class AppHistory implements DsHistory {
       this.rush(() => this.travelTo(shownIdx))
       return
     }
+    const screen = this.screen(this.shown)
     const action = decidePop(
       this.opts.source,
-      this.screen(this.shown),
+      screen,
       idx < this.shownIdx ? 'back' : 'forward',
       this.opts.exit ?? 'ask',
+      screen === 'calendar' && (this.handlers.listOpen?.() ?? false),
     )
     const shownIdx = this.shownIdx
     // 出していた所へ戻す（rush: 押し終えるのを待っている物があっても、待たない）。モードを回す（ring）は端からのフリックだけで、
@@ -1033,6 +1043,12 @@ export class AppHistory implements DsHistory {
         this.rush(() => this.travelTo(shownIdx))
         this.armBack = { held: this.pressing(), pressed: false }
         this.handlers.armExit?.()
+        return
+      case 'close-list':
+        // S・M で見ている開いたリストを畳む（■34）: 出していた所（土台）へ戻し、閉じるかを聞かない・もう一度［戻る］で閉じる所にも
+        // しない。積まない（履歴の形は「戻る」の前と同じ）
+        this.rush(() => this.travelTo(shownIdx))
+        this.handlers.closeList?.()
         return
       case 'back-one': {
         // 登録の画面の書きかけは、ルーターに渡した所で確かめる（useBlocker）

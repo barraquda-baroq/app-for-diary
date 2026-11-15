@@ -13,7 +13,8 @@
 // - 画面の端からのフリック（flick。-1 = 左の端から右へ＝戻る、1 = 右の端から左へ＝進む）は popRules.ts の decidePop の通り:
 //   カレンダーではモードを1つ回し（handlers.ring）、登録・詳細の画面・ほかの画面では1つ戻る（登録の画面は、書きかけでも聞かずに捨てる:
 //   戻る前に handlers.flickDiscard。■27）。確かめのダイアログが出ていればそれだけを閉じ（handlers.consumePop）、ドラッグの途中と
-//   ログインの画面では何もしない
+//   ログインの画面では何もしない。S・M で開いているリストを見ている時のカレンダーでは、左右どちらでもそのリストを畳む
+//   （handlers.closeList。並びは動かさない。■34）
 // - 読み込み直す・裏で閉じられて開き直す（WebKit がページを捨てた時）時のために、今の物の下の行き先を履歴の state（ds1.below）に置く
 //   （設定・MIM・詳細の画面の下の、見ていたカレンダーが戻る）。無い時（前の版の state・直接開いた）は、小さな画面なら同じ行き先の
 //   小さな画面の無い所、設定・MIM・見つからないならトップを下に置く（ログインには置かない）
@@ -572,7 +573,8 @@ export class SingleEntryHistory implements DsHistory {
 
   /**
    * 端からのフリック（と、前の版が残した履歴への身振り）ですること（記録に書く名前を返す）: ドラッグの途中は何もせず、確かめの
-   * ダイアログはそれだけを閉じ、ログインの画面では何もしない。ほかは decidePop の通り（カレンダーはモードを回す・ほかは1つ戻る）
+   * ダイアログはそれだけを閉じ、ログインの画面では何もしない。ほかは decidePop の通り（カレンダーはモードを回す・ほかは1つ戻る。
+   * S・M で開いているリストを見ている時のカレンダーは、そのリストを畳む: 記録の名前は list）
    */
   private respond(direction: PopDirection): string {
     if (this.handlers.dragging?.()) return 'drag'
@@ -580,7 +582,13 @@ export class SingleEntryHistory implements DsHistory {
     const location = this.location
     if (this.isLogin(location.pathname)) return 'nothing'
     const screen = this.screen(location)
-    const action = decidePop('edge-flick', screen, direction)
+    const action = decidePop(
+      'edge-flick',
+      screen,
+      direction,
+      'ask',
+      screen === 'calendar' && (this.handlers.listOpen?.() ?? false),
+    )
     switch (action.kind) {
       case 'ring':
         // モードを回す所がまだ無い（読み込み中・設定を直接開いてカレンダーがまだ無い）: 何もしなかった（同じ払いの popstate は使う）
@@ -592,6 +600,10 @@ export class SingleEntryHistory implements DsHistory {
         if (screen === 'register') this.handlers.flickDiscard?.()
         this.backOne()
         return screen === 'register' ? 'discard' : screen === 'detail' ? 'close' : 'back'
+      case 'close-list':
+        // S・M で見ている開いたリストを、左右どちらでもその場で畳む（打ちかけは捨てる。■34）。アプリの中の並びも動かさない
+        this.handlers.closeList?.()
+        return 'list'
       default:
         return 'nothing'
     }

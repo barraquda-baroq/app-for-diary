@@ -1,0 +1,26 @@
+/* L の右の列の上に重ねるパネル（src/ui/Modal.tsx の placement side。docs/SPEC.md の 3.6・3.8・4.9）: Task List の「タスク」の詳細・
+   ルーチン・やりたいことの［詳しく］。右の列（[data-testid=side-column]）と同じ所・幅（300px）・高さに置き（Modal が --panel-top・
+   left・width・height を右の列に合わせる）、右から 180ms で出る（--dur-panel・.panel-in。視差効果を減らす設定では styles.css の
+   決まりで動かさない）。角は右の列と同じ --radius。地はほかの小さな画面と同じく出す側の物（区分の色・--surface）。
+   後ろの背景は画面いっぱいの透明な物（暗くしない）: 外を押すと閉じ、押した出来事は背景が受ける（下の物は押されない）。
+   重なりはほかの小さな画面と同じ z-index 100（.modal-backdrop。メニュー 110・お知らせ 200 の下）。
+   S・M は Modal が is-side を付けないので、ほかと同じ下からのシート */
+.modal-backdrop.is-side {
+  display: block;
+  padding: 0;
+  background: transparent;
+  animation: none;
+}
+
+.modal.is-side {
+  position: fixed;
+  top: var(--panel-top, 0px);
+  left: var(--panel-left, auto);
+  right: auto;
+  width: var(--panel-width, 300px);
+  height: var(--panel-height, 100dvh);
+  /* iPad の横向きでキーボードが出た時は、見えている所の下の端まで（中でスクロールする） */
+  max-height: calc(100dvh - var(--panel-top, 0px) - var(--kb, 0px));
+  border-radius: var(--radius);
+  animation: slide-in-right var(--dur-panel) ease-out;
+}
