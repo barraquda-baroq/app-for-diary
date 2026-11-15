@@ -1538,6 +1538,8 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
     await page.keyboard.press('Enter')
     await expect(input).toBeFocused()
     await input.fill('端で掴む前に打った字')
+    // 掴む所は端から 30px ほど（初めの 44px でも、前の 36px でも端の幅の中）。端を押した指でも外を押した指でも、掴んで動かした後は
+    // 同じ（足さずに閉じ、書きかけに残る）なので、広げた 36〜44px の所の指を端の指として待つことは QuickAdd.test.tsx の (g) で確かめる
     const grab = await grabPoint(endDot(page, I.training))
     expect(grab.x).toBeLessThan(44)
     drag = await startLongPress(page, grab, { via: 'synthetic' })

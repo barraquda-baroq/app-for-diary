@@ -21,7 +21,8 @@ describe('端の幅（edgeZonePx・setEdgeZonePx）', () => {
     expect(edgeZonePx()).toBe(44)
   })
 
-  it.each(['20', '28', '36', '44'])(
+  // 覚えた '44' は今の初めの幅と同じで、覚えた値を読んだのか分からないので入れない（読んだかは 20・28・36 で確かめる）
+  it.each(['20', '28', '36'])(
     '前に覚えた幅（%s）は、初めの幅を 44px に替えてもそのまま（前の初めの 36 を選んだ端末は 36 のまま）',
     (raw) => {
       localStorage.setItem('diary-studio:edge-zone', raw)
