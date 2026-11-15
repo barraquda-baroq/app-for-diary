@@ -96,7 +96,16 @@ describe('開発（iPhone・iPad だけ。端からのフリックの記録・�
     const choice = (px: number) => screen.getByTestId(`edge-zone-${px}`)
     expect([20, 28, 36, 44].map((px) => choice(px).textContent)).toEqual(['20前', '28', '36初め', '44'])
     expect([20, 28, 36, 44].map((px) => choice(px).getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false'])
-    expect(screen.getByTestId('dev-settings').textContent).toContain('端の幅')
+    // 読み上げの名前は「20（前の幅）」「36（初めの幅）」（添えた字だけでは何のことか分からないので）
+    expect(screen.getByRole('button', { name: '20（前の幅）' })).toBe(choice(20))
+    expect(screen.getByRole('button', { name: '36（初めの幅）' })).toBe(choice(36))
+    expect(screen.getByRole('button', { name: '28' })).toBe(choice(28))
+    const card = screen.getByTestId('dev-settings').textContent ?? ''
+    expect(card).toContain('端の幅')
+    expect(card).toContain(
+      '画面の端からのフリックを受け取る幅を選ぶ所と、うまくいかなかった時に何が起きたかを調べるための物です。',
+    )
+    expect(card).toContain('初めは 36、前の幅は 20 です。この端末だけに覚え、押すとすぐ効きます。')
     await user.click(choice(20))
     expect(edgeZonePx()).toBe(20)
     expect(localStorage.getItem('diary-studio:edge-zone')).toBe('20')

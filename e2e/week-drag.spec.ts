@@ -1509,7 +1509,9 @@ test.describe('落とした後の［元に戻す］（指。S・M）', { tag: ['
 // やめる（e2e/helpers.ts の armHistory。CI 48 で、掴む前の scrollIntoViewIfNeeded が文書を 5px スクロールする3つが落ちたのは、これと
 // 見ている。落ちた時の page-diagnostics の1行目に mouse@… と MOVE1m が出れば、これ）
 test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
-  test('長押しで1日のカードと終点の●を動かせる', async ({ page }) => {
+  test('長押しで1日のカードと終点の●を動かせる。すばやく足すに字を打ったまま、画面の端の幅（初めは 36px）の中の●を掴んで動かしても、打った字は足さずに閉じ、書きかけに残る', async ({
+    page,
+  }) => {
     await openWeek(page, { arm: false })
     let drag = await startLongPress(page, await grabPoint(card(page, I.meeting)), { via: 'synthetic' })
     await lifted(page)
@@ -1527,6 +1529,32 @@ test.describe('iPhone（WebKit・合成した指）', { tag: ['@ios'] }, () => {
     await drag.drop()
     await expect(toast(page, '締め切り日を 11/13（金）にしました')).toBeVisible()
     expect(await itemOf(page, I.nightBus)).toMatchObject({ start: '2026-11-11', due: '2026-11-13' })
+
+    // すばやく足すを開いて字を打ち（WebKit で本物のマウスを使わないように、キーで開く）、研修（11/5〜11/10）の終点の●（仕事の左の
+    // 端のレールの中。画面の端の幅の中）を 11/9 へ。端を押した指でも、外を押してドラッグした時と同じく、打った字は足さずに閉じ、
+    // 書きかけに残る（掴んだ時に入力欄のフォーカスが外れても足さない。12.1・7.11）
+    const input = page.getByTestId('quick-add-input')
+    await page.getByTestId('week-add-2026-11-12-work').focus()
+    await page.keyboard.press('Enter')
+    await expect(input).toBeFocused()
+    await input.fill('端で掴む前に打った字')
+    const grab = await grabPoint(endDot(page, I.training))
+    expect(grab.x).toBeLessThan(36)
+    drag = await startLongPress(page, grab, { via: 'synthetic' })
+    await lifted(page)
+    await drag.moveTo(await visiblePoint(halfS(page, 'work', '2026-11-09')))
+    await overDropDay(halfS(page, 'work', '2026-11-09'))
+    await drag.drop()
+    await expect(toast(page, '締め切り日を 11/9（月）にしました')).toBeVisible()
+    expect(await itemOf(page, I.training)).toMatchObject({ start: '2026-11-05', due: '2026-11-09' })
+    await expect(input).toHaveCount(0)
+    await expect(toast(page, '足しました')).toHaveCount(0)
+    expect(
+      await page.evaluate(() => Object.values(window.__ds.getData().items).some((it) => it.title === '端で掴む前に打った字')),
+    ).toBe(false)
+    expect(await page.evaluate(() => localStorage.getItem('diary-studio:draft:quick:2026-11-12:work'))).toBe(
+      '端で掴む前に打った字',
+    )
   })
 
   test('ロック中のカードは長押しで揺れるだけ。カードは文字の選択と長押しのメニューを止めている', async ({ page }) => {

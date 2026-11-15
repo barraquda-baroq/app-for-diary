@@ -51,9 +51,12 @@
 //   （788e842）を試した答え」）。外を押して押し終わりを待っていた分も足さない。変換を決める前に［足す］で押し終えた分（変換の終わりを
 //   待っている間）は、押した時に決めたので足す。iPhone・iPad で画面の端（左右の端の幅の中。初めは 36px。設定の「開発」で選ぶ。
 //   edgeOfScreen で、端からのフリックと同じ幅で決める）を指で押した時は、外を押したとはまだ扱わず、離した時に決める（端からのフリックの
-//   指: 動かさずに離せば外を押した時と同じく押し終わってから足して閉じ、払って離せば閉じず足さない。12.1）。前の版が残した履歴へ
-//   iPhone の身振りが始まって（アプリを閉じて開き直すまで。3.1）、入力欄と窓からフォーカスが外れた時も、窓の切り替えと同じく足さず
-//   閉じない
+//   指: 動かさずに離せば外を押した時と同じく押し終わってから足して閉じ、払って離せば閉じず足さない。12.1）。端を押している間に
+//   入力欄から外れたフォーカス（キーボードの✓・ドラッグを掴んだ時に画面が外した）も、離した時に決める（払って離した時は、押さずに
+//   外れた時と同じく少し待ってから決める）。端を押した指のまま長押しでカード・●を掴んだ（quickAddDragStarted）時は、外を押して
+//   ドラッグした時と同じく、離した後に足さずに閉じる（書きかけは残る。端の幅を広げて、端の幅の中にもカード・●が来るため）。前の版が
+//   残した履歴へ iPhone の身振りが始まって（アプリを閉じて開き直すまで。3.1）、入力欄と窓からフォーカスが外れた時も、窓の切り替えと
+//   同じく足さず閉じない
 // - ツールバーの元に戻す・やり直す（7.13）を押しても、開いている入力欄は閉じない（外を押したとは扱わない。フォーカスも入力欄に
 //   残る。押した時に字を足してから戻すと、戻るのが今足した物になるため）。戻した・やり直したお知らせの［OK］（3.9・■26）も同じ
 //   （閉じず、字も足さない。［OK］を押すのはお知らせを読み終えた時で、打っている字を決めた時ではないため）。どちらも KEEP_QUICK_ADD の
@@ -249,7 +252,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   const addButton = useRef<HTMLButtonElement>(null)
   /**
    * iPhone・iPad で画面の端を指で押した分（端からのフリックの指。id は押した指、x・y は押した所）。外を押したとはまだ扱わず、離した時に
-   * 決める（前の版が残した履歴へ iPhone の身振りが始まって、離す出来事が来なかった指は、次に押すまで残る）
+   * 決める。この間に入力欄から外れたフォーカスも離した時に決め、この指でドラッグを始めたら外を押してドラッグした分にする（前の版が
+   * 残した履歴へ iPhone の身振りが始まって、離す出来事も取り消しも来なかった指は、次に押すまで残る）
    */
   const edge = useRef<{ id: number; x: number; y: number } | null>(null)
 
@@ -434,12 +438,24 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
         settleTimer.current = window.setTimeout(settle, BLUR_SETTLE_MS)
       }
     }
+    // 画面の端を押した指を、閉じずに終えた（払って離した・ブラウザが取った）: 押している間に入力欄・［足す］から外れたフォーカスは、
+    // 押さずに外れた時と同じく、少し待ってから決める（キーボードの✓。入力欄に残っていれば何もしない）
+    const edgeEnded = () => {
+      const active = document.activeElement
+      if (closing.current || (active && box.current?.contains(active))) return
+      window.clearTimeout(settleTimer.current)
+      settleTimer.current = window.setTimeout(settle, BLUR_SETTLE_MS)
+    }
     // ブラウザが指を受け取った（なぞってスクロール・拡大した）: 外を押したとは扱わない。フォーカスが入力欄に残っていれば（指で
     // なぞってもフォーカスは動かない）、閉じるのをやめて開いたまま（足さない）。外れていれば（ドラッグした・マウスで押した物へ
     // フォーカスが移った）、押し終わった時と同じ
     const cancelPress = (e: PointerEvent) => {
-      // 画面の端を押した指をブラウザが受け取った（縦のスクロール）: 外を押したとは扱わない
-      if (edge.current?.id === e.pointerId) edge.current = null
+      // 画面の端を押した指をブラウザが受け取った（縦のスクロール）: 外を押したとは扱わない（押している間に外れたフォーカスは、ここで
+      // 決める）
+      if (edge.current?.id === e.pointerId) {
+        edge.current = null
+        edgeEnded()
+      }
       const p = press.current
       if (!p) return
       const active = document.activeElement
@@ -475,8 +491,11 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       const g = edge.current
       if (g && g.id === e.pointerId) {
         edge.current = null
-        // 画面の端を押して払った（モードが替わらなかった）: 閉じず足さない
-        if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > SWIPE_SLOP_PX) return
+        // 画面の端を押して払った（モードが替わらなかった）: 閉じず足さない（押している間に外れたフォーカスは、ここで決める）
+        if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > SWIPE_SLOP_PX) {
+          edgeEnded()
+          return
+        }
         // 動かさずに離した（端を押しただけ）: 外を押した時と同じく、押し終わってから足して閉じる
         if (!press.current) {
           dragged.current = false
@@ -555,6 +574,15 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     window.addEventListener('pagehide', leave)
     document.addEventListener('visibilitychange', onVisibility)
     const onDrag = () => {
+      // 画面の端を押した指のまま長押しでカード・●を掴んだ（端の幅の中にもカード・●がある）: 外を押してそのままドラッグした時と同じ
+      // （押し終わってから足さずに閉じる。書きかけは残る。掴んだ時に画面が外したフォーカスでも足さない）
+      if (edge.current) {
+        edge.current = null
+        if (!press.current) press.current = {}
+        dragged.current = true
+        close('press')
+        return
+      }
       if (press.current) dragged.current = true
     }
     dragListeners.add(onDrag)
@@ -684,7 +712,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
    */
   const settle = () => {
     settleTimer.current = undefined
-    if (closing.current || press.current || away.current) return
+    // 画面の端を押している間は、離した時に決める（edgeEnded）
+    if (closing.current || press.current || edge.current || away.current) return
     const active = document.activeElement
     if (active && box.current?.contains(active)) return
     if (document.visibilityState !== 'visible' || !document.hasFocus()) return
@@ -710,6 +739,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       return
     }
     if (away.current) return
+    // 画面の端を押している間（端からのフリックの指）は、離した時に決める（払って離した時は edgeEnded。端の幅の中のカード・●を掴んだ
+    // 時に画面が外したフォーカスもここ: 掴んだ後は、外を押してドラッグした時と同じ）
+    if (edge.current) return
     // 押さずに外れた（iPhone のキーボードの上の✓・キーボードを閉じた）: 少し待ってから、字があれば足して閉じる
     window.clearTimeout(settleTimer.current)
     settleTimer.current = window.setTimeout(settle, BLUR_SETTLE_MS)

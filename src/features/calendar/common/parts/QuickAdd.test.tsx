@@ -1285,7 +1285,8 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBeNull()
   })
 
-  it('(e) Android・PC は今までどおり: 画面の端を押しても入力欄の外を押した時と同じく、押し終わってから足して閉じる', async () => {
+  it('(e) Android・PC は今までどおり: 画面の端を押しても入力欄の外を押した時と同じく、押し終わってから足して閉じる（端の幅は読みもしない）', async () => {
+    const read = vi.spyOn(Storage.prototype, 'getItem')
     const { input, onClose } = await open()
     typeText(input, 'アンドロイド')
     const outside = screen.getByTestId('outside')
@@ -1294,6 +1295,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     fireEvent.click(outside)
     expect(onClose).toHaveBeenCalledWith('press')
     expect(items().map((i) => i.title)).toEqual(['アンドロイド'])
+    expect(read.mock.calls.filter(([k]) => k === 'diary-studio:edge-zone')).toEqual([])
   })
 
   it('(f) 変換を決める前に［足す］で押し終えた分（変換の終わりを待っている間）は、その後にモードが替わっても1回だけ足す（押した時に決めた分）。ほかは足さない', async () => {
@@ -1331,11 +1333,73 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     const second = await open()
     typeText(second.input, '端の幅')
     const out2 = screen.getByTestId('outside')
+    // 動かして離しても（端の指なら閉じない所）、外を押した時と同じく押し終わってから足して閉じる（端は今の端の幅で決めている）
     edgeDown(out2, 30)
-    edgeUp(out2, 30)
+    edgeUp(out2, 130)
     fireEvent.click(out2)
     expect(second.onClose).toHaveBeenCalledWith('press')
     expect(items().map((i) => i.title)).toEqual(['端の幅'])
+  })
+
+  it('(h) 画面の端（端の幅の中）を押した指のまま長押しでカード・終点の●を掴んだ（掴んだ時にドラッグが入力欄のフォーカスを外してから quickAddDragStarted）時も、外を押してドラッグした時と同じく、掴んでいる間は足さず閉じず、離した後に足さずに閉じ（drag）、書きかけを残す', async () => {
+    onIPhone()
+    const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
+    fakeTimers()
+    typeText(input, '端で掴んだ')
+    const card = screen.getByTestId('outside')
+    edgeDown(card, 30)
+    // WeekDnd の onDragStart: blurTextField（行き先の無い blur）の後に quickAddDragStarted
+    pageFocused(true)
+    act(() => input.blur())
+    act(() => quickAddDragStarted())
+    advance(BLUR_SETTLE_MS * 3)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(items()).toHaveLength(0)
+    // 動かして離した（落とした）。ドラッグの指には click が来ない
+    edgeUp(card, 30, 100)
+    advance(CLICK_WAIT_MS * 2)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('drag')
+    expect(items()).toHaveLength(0)
+    expect(toasts()).toHaveLength(0)
+    expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('端で掴んだ')
+  })
+
+  it('(i) 画面の端を押している間に入力欄からフォーカスが外れた（キーボードの✓など）時は、離した時に決める: 動かさずに離せば、外を押した時と同じく押し終わってから足して閉じる', async () => {
+    onIPhone()
+    const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
+    fakeTimers()
+    typeText(input, '押したまま外れた')
+    const outside = screen.getByTestId('outside')
+    edgeDown(outside, 30)
+    pageFocused(true)
+    act(() => input.blur())
+    advance(BLUR_SETTLE_MS * 3)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(items()).toHaveLength(0)
+    edgeUp(outside, 31, 301)
+    fireEvent.click(outside)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('press')
+    expect(items().map((i) => i.title)).toEqual(['押したまま外れた'])
+  })
+
+  it('(j) 画面の端を押している間に入力欄からフォーカスが外れ、払って離した（モードは替わらなかった）時は、押さずに外れた時と同じく、少し待ってから字を足して閉じる（blur）', async () => {
+    onIPhone()
+    const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
+    fakeTimers()
+    typeText(input, '払った後')
+    const outside = screen.getByTestId('outside')
+    edgeDown(outside, 30)
+    pageFocused(true)
+    act(() => input.blur())
+    advance(BLUR_SETTLE_MS * 3)
+    expect(onClose).not.toHaveBeenCalled()
+    edgeUp(outside, 130)
+    advance(BLUR_SETTLE_MS * 3)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledWith('blur')
+    expect(items().map((i) => i.title)).toEqual(['払った後'])
   })
 
   it('押し終わりを待っている（入力欄の外を押した）間にモードが替わっても、足さずに閉じる（後から来る click でも足さない。書きかけも捨てる）', async () => {

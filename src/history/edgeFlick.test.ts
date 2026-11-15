@@ -4,7 +4,8 @@
 // 20・28・36・44px から選ぶ。src/history/edgeZone.ts）の中で押して、内へ払って離した指だけを flick に渡す（-1 = 左の端から右へ、
 // 1 = 右の端から左へ）。決まり（60px・30°・払い始めが横なら 45°・400ms の長押し）は swipe.ts と同じ。横にスクロールできる所・
 // フォーカスのある入力欄の上から押した指・ドラッグの途中・押した後に前の版の履歴への身振り（popstate）が来た指は渡さない
-// （フォーカスの無い入力欄の上から押した指は渡す。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）。
+// （フォーカスの無い入力欄の上から押した指は渡す。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」。拡大している
+// 時は、フォーカスの無い入力欄の上からも渡さず、端の幅も画面の上の長さで決める）。
 // 渡した後 300ms の間の click は打ち消す。付けるのは iPhone・iPad の1つの履歴の形（SingleEntryHistory）の時だけ
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
@@ -52,6 +53,11 @@ function swipe(x0: number, dx: number, { dy = 0, ms = 120, steps = 4, holdMs = 0
   send(target, 'touchend', x0 + dx, y0 + dy, 0)
 }
 
+/** 拡大した見えている所（visualViewport）を window に持たせる（jsdom には無い。後で外す） */
+function zoomTo(vv: { offsetLeft: number; width: number; scale: number }) {
+  Object.defineProperty(window, 'visualViewport', { configurable: true, value: vv })
+}
+
 let uninstall: (() => void) | null = null
 const disposers: (() => void)[] = []
 
@@ -73,6 +79,7 @@ afterEach(() => {
   clearSwipeLog()
   setEdgeZonePx(EDGE_ZONE_PX)
   localStorage.clear()
+  delete (window as { visualViewport?: unknown }).visualViewport
   document.body.innerHTML = ''
   vi.restoreAllMocks()
 })
@@ -184,6 +191,26 @@ describe('画面の端から内へ払った指を受け取る（installEdgeFlick
     swipe(5, 100, { target: pad })
     swipe(width() - 5, -100, { target: memo })
     expect(flick.mock.calls).toEqual([[-1], [1], [-1], [-1], [1]])
+  })
+
+  it('拡大している時（2本の指で広げた・ダブルタップ。visualViewport.scale）は、端の幅を画面の上の長さで決め（2倍なら見えている所の端から 18px）、フォーカスの無い入力欄の上から押した指も渡さない（拡大した画面を動かす指と分ける。788e842 と同じ）。欄の外の端からは渡す', () => {
+    setSwipeLogEnabled(true)
+    const flick = install()
+    zoomTo({ offsetLeft: 0, width: width() / 2, scale: 2 })
+    document.body.innerHTML = '<input data-testid="field" /><textarea data-testid="memo"></textarea>'
+    const field = document.querySelector('[data-testid="field"]')!
+    const memo = document.querySelector('[data-testid="memo"]')!
+    swipe(5, 100, { target: field })
+    swipe(width() / 2 - 5, -100, { target: memo })
+    // 見えている所の端から 25px（画面の上で 50px。端の幅 36px の外）は、欄の外でも端の指ではない
+    swipe(25, 100)
+    expect(flick).not.toHaveBeenCalled()
+    swipe(5, 100)
+    swipe(width() / 2 - 5, -100)
+    expect(flick.mock.calls).toEqual([[-1], [1]])
+    const log = swipeLogText()
+    expect(log.split('\n').filter((l) => / edge-skip \{"why":"zoomed"\}/.test(l))).toHaveLength(2)
+    expect(log).toMatch(/ edge-down \{"x":5,"y":300,"side":-1,"w":\d+,"zone":36,"scale":2\}/)
   })
 
   it('フォーカスのある入力欄（カーソル・字を選ぶつまみがある）の上から押した指は渡さない。書ける要素（contenteditable）は、フォーカスのある要素の中の物の上からも渡さない', () => {
@@ -342,11 +369,28 @@ describe('画面の端の決め方（edgeOfScreen）', () => {
     expect(edgeOfScreen(30, win)).toBe(-1)
     expect(edgeOfScreen(40, win)).toBeNull()
     expect(edgeOfScreen(350, win)).toBeNull()
-    const zoomed = { innerWidth: 390, visualViewport: { offsetLeft: 100, width: 195 } } as unknown as Window
+    const zoomed = { innerWidth: 390, visualViewport: { offsetLeft: 100, width: 195, scale: 2 } } as unknown as Window
     expect(edgeOfScreen(105, zoomed)).toBe(-1)
     expect(edgeOfScreen(290, zoomed)).toBe(1)
     expect(edgeOfScreen(5 + 0, { innerWidth: 390, visualViewport: { offsetLeft: 0, width: 390 } } as unknown as Window)).toBe(-1)
     expect(edgeOfScreen(200, zoomed)).toBeNull()
+  })
+
+  it('拡大している時は、端の幅を画面の上の長さ（拡大する前の px）で決める: 2倍なら見えている所の端から 18px（44px を選んでいれば 22px）の中だけ。倍率が無い・おかしい時は 1倍', () => {
+    const zoomed = { innerWidth: 390, visualViewport: { offsetLeft: 100, width: 195, scale: 2 } } as unknown as Window
+    expect(edgeOfScreen(100 + 17, zoomed)).toBe(-1)
+    expect(edgeOfScreen(100 + 19, zoomed)).toBeNull()
+    expect(edgeOfScreen(100 + 30, zoomed)).toBeNull()
+    expect(edgeOfScreen(100 + 195 - 17, zoomed)).toBe(1)
+    expect(edgeOfScreen(100 + 195 - 19, zoomed)).toBeNull()
+    setEdgeZonePx(44)
+    expect(edgeOfScreen(100 + 21, zoomed)).toBe(-1)
+    expect(edgeOfScreen(100 + 23, zoomed)).toBeNull()
+    for (const scale of [NaN, 0, -1, undefined]) {
+      const odd = { innerWidth: 390, visualViewport: { offsetLeft: 0, width: 390, scale } } as unknown as Window
+      expect(edgeOfScreen(40, odd)).toBe(-1)
+      expect(edgeOfScreen(50, odd)).toBeNull()
+    }
   })
 })
 

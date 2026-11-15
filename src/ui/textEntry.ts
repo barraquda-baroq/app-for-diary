@@ -5,7 +5,8 @@
 //   フォーカスのある入力欄（カーソル・字を選ぶつまみがある）の上から押した物だけを数えない（edgeFlickBlocked）。フォーカスの無い入力欄
 //   （登録・詳細の画面の件名・メモの欄は、画面の端から 16px ほどまで届く）の上から押した指は、端からのフリックに数える（開発。端を
 //   甘くする。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）。フォーカスの無い欄へは、押して動かさずに離した時
-//   （押した物の click）にフォーカスが移るので、払う指ではカーソルも字を選ぶつまみも出ない
+//   （押した物の click）にフォーカスが移るので、払う指ではカーソルも字を選ぶつまみも出ない。拡大している時（2本の指で広げた・
+//   ダブルタップ）は、フォーカスの無い欄の上からも数えない（拡大した画面を動かす指と分ける。788e842 と同じ）
 
 /** 文字・値を打つ・選ぶ欄でない input の種類（押すだけの物。この上から押してもなぞれる） */
 const PRESS_ONLY_INPUTS = new Set(['button', 'checkbox', 'radio', 'submit', 'reset', 'image', 'color', 'file', 'hidden'])
@@ -36,21 +37,25 @@ export function needsSideways(target: EventTarget | null, root: Element): boolea
 
 /**
  * 画面の端からのフリックで、押した所から root まで（root は含めない）に数えない訳があるか: 横にスクロールできる所・範囲
- * （スライダー。フォーカスが無くても横に動かす）は 'sideways'、フォーカスのある入力欄（active がその欄。書ける要素は、active が押した
- * 所を含む）は 'focused'。無ければ null（フォーカスの無い入力欄の上も null）
+ * （スライダー。フォーカスが無くても横に動かす）は 'sideways'、フォーカスのある入力欄（active がその欄。書ける要素
+ * （contenteditable）の中の物を押した時は、たどった先の、フォーカスのある書ける要素）は 'focused'、拡大している時（zoomed）の
+ * フォーカスの無い入力欄は 'zoomed'（たどった先に、ほかの訳があればそちら）。無ければ null（拡大していない時は、フォーカスの無い
+ * 入力欄の上も null）
  */
 export function edgeFlickBlocked(
   target: EventTarget | null,
   root: Element,
   active: Element | null,
-): 'sideways' | 'focused' | null {
-  const pressed = target instanceof Node ? target : null
+  zoomed = false,
+): 'sideways' | 'focused' | 'zoomed' | null {
+  let overField = false
   for (let el = target instanceof Element ? target : null; el && el !== root; el = el.parentElement) {
     if (isTextEntry(el)) {
       if (el instanceof HTMLInputElement && el.type === 'range') return 'sideways'
-      if (active === el || (isTextEntry(active) && pressed && active?.contains(pressed))) return 'focused'
+      if (active === el) return 'focused'
+      overField = true
     }
     if (scrollsSideways(el)) return 'sideways'
   }
-  return null
+  return zoomed && overField ? 'zoomed' : null
 }

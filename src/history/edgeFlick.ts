@@ -6,11 +6,13 @@
 // 時に替わる（作者「iphone版に合わせてもらっていいです」■33）。
 // - 受け取る指: 1本の指で、見えている所（visualViewport。拡大していても、見えている所の端）の左右の端から端の幅（初めは
 //   EDGE_ZONE_PX の 36px。設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ。src/history/edgeZone.ts。押すたびに読む）の中で押し、
-//   内へ払って離した指。払いの決まり（60px・30°・払い始めが横なら 45°・押してから 400ms 止まってから動かした指は数えない）は swipe.ts と
-//   同じ。フォーカスの無い入力欄（登録・詳細の画面の件名・メモの欄など）の上から押した指も受け取る（開発。22. の「端からのフリックの
-//   3回目の直した版（788e842）を試した答え」の「端を甘く」）
+//   内へ払って離した指。端の幅は画面の上の長さ（拡大する前の px）で、拡大していても指で同じ幅（2倍なら、見えている所の端から
+//   18px。開発。拡大すると端の幅も広がって、拡大した画面を動かす指を受け取らないように）。払いの決まり（60px・30°・払い始めが横なら
+//   45°・押してから 400ms 止まってから動かした指は数えない）は swipe.ts と同じ。フォーカスの無い入力欄（登録・詳細の画面の件名・メモの
+//   欄など）の上から押した指も受け取る（開発。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」の「端を甘く」）
 // - 受け取らない指: フォーカスのある入力欄（カーソル・字を選ぶつまみがある）・横にスクロールできる所・範囲（スライダー）の上から
-//   押した指（src/ui/textEntry.ts の edgeFlickBlocked）・ドラッグの途中・外へ払った指・押した後に前の版が残した履歴への身振り
+//   押した指と、拡大している時（ZOOMED_SCALE より大きい倍率）のフォーカスの無い入力欄の上から押した指（拡大した画面を動かす指。
+//   788e842 と同じ。src/ui/textEntry.ts の edgeFlickBlocked）・ドラッグの途中・外へ払った指・押した後に前の版が残した履歴への身振り
 //   （popstate）が来た指（userPopSince。その時は履歴の方で1回だけ受け取る）・2本目の指が触れた指・端末が取った指（touchcancel）。
 //   ほかの所の入力欄にフォーカスがあっても（キーボードが出ていても）受け取る
 // - pointer の出来事でなく touch の出来事で追う（iPhone は、ページが縦に少しでも動くと pointer を取り消すが、touch の出来事は離す
@@ -20,8 +22,9 @@
 //   ボタンを押さない）。離れた所の click（すぐ次に押した別の所・キーボード）は打ち消さない
 // - 端の指は、なぞって前後の期間へ移る所（src/features/calendar/common/useSwipe.ts）では数えない（同じ edgeOfScreen・同じ端の幅で
 //   決める。1回の払いでモードと期間の両方が替わらない）
-// - 設定で記録を取る時は、端で押した指（edge-down: 位置・端・見えている所の幅・端の幅）・数えなかった訳（edge-skip: focused・
-//   sideways・drag）・離した指（edge-up: 動き・長さ・向き・どうしたか）を控える（src/history/swipeLog.ts。何をしたかは履歴の側の flick）
+// - 設定で記録を取る時は、端で押した指（edge-down: 位置・端・見えている所の幅・端の幅。拡大している時は倍率も）・数えなかった訳
+//   （edge-skip: focused・sideways・zoomed・drag）・離した指（edge-up: 動き・長さ・向き・どうしたか）を控える（src/history/swipeLog.ts。
+//   何をしたかは履歴の側の flick）
 // src/App.tsx が、iPhone・iPad の1つの履歴の形の時だけ付ける（attachEdgeFlick。Android・PC には付けない）
 import {
   edgeSide,
@@ -37,10 +40,11 @@ import type { DsHistory } from './appHistory'
 import { edgeZonePx } from './edgeZone'
 import { swipeLog } from './swipeLog'
 
-/** 見えている所の大きさ（visualViewport の物） */
+/** 見えている所の大きさと倍率（visualViewport の物） */
 interface ViewportLike {
   readonly offsetLeft: number
   readonly width: number
+  readonly scale?: number
 }
 
 /** 画面の端を決めるのに使う window の物 */
@@ -49,22 +53,31 @@ export interface ScreenLike {
   readonly visualViewport?: ViewportLike | null
 }
 
-/** 見えている所の幅（visualViewport が無ければ窓の幅） */
-function viewportOf(win: ScreenLike): { left: number; width: number } {
+/** 拡大しているとみなす倍率（visualViewport.scale がこれより大きい時。2本の指で広げた・ダブルタップで拡大した） */
+export const ZOOMED_SCALE = 1.05
+
+/** 見えている所の左の端・幅と倍率（visualViewport が無ければ窓の幅で 1倍。倍率が無い・1 より小さい・おかしい時も 1倍） */
+function viewportOf(win: ScreenLike): { left: number; width: number; scale: number } {
   const vv = win.visualViewport
-  if (vv && Number.isFinite(vv.width) && vv.width > 0)
-    return { left: Number.isFinite(vv.offsetLeft) ? vv.offsetLeft : 0, width: vv.width }
-  return { left: 0, width: win.innerWidth }
+  if (vv && Number.isFinite(vv.width) && vv.width > 0) {
+    const s = vv.scale
+    return {
+      left: Number.isFinite(vv.offsetLeft) ? vv.offsetLeft : 0,
+      width: vv.width,
+      scale: typeof s === 'number' && Number.isFinite(s) && s > 1 ? s : 1,
+    }
+  }
+  return { left: 0, width: win.innerWidth, scale: 1 }
 }
 
 /**
  * 押した所（clientX）が画面の端か: 見えている所（visualViewport）の左の端から端の幅（今の物。src/history/edgeZone.ts）の中は -1、
- * 右の端の中は 1、ほかは null（拡大している時も、見えている所の端で決める）。端を決める所はどれもこれを使う（端からのフリック・
- * なぞり・すばやく足す。1つの幅で決める）
+ * 右の端の中は 1、ほかは null（拡大している時も、見えている所の端で決める。端の幅は画面の上の長さなので、2倍に拡大していれば
+ * ページの px で半分）。端を決める所はどれもこれを使う（端からのフリック・なぞり・すばやく足す。1つの幅で決める）
  */
 export function edgeOfScreen(x: number, win: ScreenLike = window): -1 | 1 | null {
-  const { left, width } = viewportOf(win)
-  return edgeSide(x - left, width, edgeZonePx())
+  const { left, width, scale } = viewportOf(win)
+  return edgeSide((x - left) * scale, width * scale, edgeZonePx())
 }
 
 export interface EdgeFlickOptions {
@@ -128,15 +141,17 @@ export function installEdgeFlick(win: Window, opts: EdgeFlickOptions): () => voi
     const t = touches[0]
     const edge = edgeOfScreen(t.clientX, win)
     if (edge === null) return
+    const view = viewportOf(win)
     swipeLog('edge-down', {
       x: Math.round(t.clientX),
       y: Math.round(t.clientY),
       side: edge,
-      w: Math.round(viewportOf(win).width),
+      w: Math.round(view.width),
       zone: edgeZonePx(),
+      ...(view.scale !== 1 ? { scale: Math.round(view.scale * 100) / 100 } : {}),
     })
-    // フォーカスのある入力欄・横にスクロールできる所の上は数えない（フォーカスの無い入力欄の上は数える）
-    const blocked = edgeFlickBlocked(e.target, win.document.body, win.document.activeElement)
+    // フォーカスのある入力欄・横にスクロールできる所の上は数えない（フォーカスの無い入力欄の上は数える。拡大している時は数えない）
+    const blocked = edgeFlickBlocked(e.target, win.document.body, win.document.activeElement, view.scale > ZOOMED_SCALE)
     if (blocked) {
       swipeLog('edge-skip', { why: blocked })
       return
