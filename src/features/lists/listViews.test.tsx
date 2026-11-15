@@ -190,7 +190,7 @@ describe('S3 見出し・切り替えの列の数（useListCounts。S3-FRAME-044
   })
 })
 
-describe('S3 Routine List の［すべて開く／畳む］（routine/RoutineAllToggle。14.2・D26）', () => {
+describe('S3 Routine List の［すべて開く／畳む］（routine/RoutineAllToggle。14.2・開発）', () => {
   it('ルーチンが無い間は出さず、あるとルーチンのある種類のかたまりだけを切り替える', async () => {
     const user = userEvent.setup()
     put({})

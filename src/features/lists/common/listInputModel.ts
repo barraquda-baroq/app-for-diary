@@ -10,7 +10,7 @@ import type { TaskEntry } from '../../../domain/taskList'
 export type ListName = 'routine' | 'task' | 'favorite'
 
 /**
- * 入力欄の書きかけ（D23）。Task List は件名の字と［開始日］［締め切り日］［依頼者］、Routine List・Favorite List は字だけを持つ
+ * 入力欄の書きかけ（開発）。Task List は件名の字と［開始日］［締め切り日］［依頼者］、Routine List・Favorite List は字だけを持つ
  * （start・due は null、requester は '' のまま。Routine List の種類は端末の設定 routineAddCycle に覚え、［指定］は足すたびに戻す）。
  * 形は Task List の入力（src/domain/taskList.ts の TaskEntry）と同じ（足す時にそのまま taskInputOf へ渡せる）
  */

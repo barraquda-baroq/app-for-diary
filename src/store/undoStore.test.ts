@@ -708,7 +708,7 @@ describe('詳細の画面は開いてから閉じるまでを1つに', () => {
   })
 })
 
-describe('S3 リストの操作は並びに積まない（stack: false。7.13・D2・S3-FRAME-225・S3-TASK-210・S3-ROUTINE-260）', () => {
+describe('S3 リストの操作は並びに積まない（stack: false。7.13・開発・S3-FRAME-225・S3-TASK-210・S3-ROUTINE-260）', () => {
   it('ウィークリー・デイリーを出していても積まず、お知らせの［元に戻す］だけで戻す（ボタン・キーの元に戻すは並びの物だけ）', async () => {
     await start(dataWith({ items: [meeting] }))
     expect(undoScopeActive()).toBe(true)

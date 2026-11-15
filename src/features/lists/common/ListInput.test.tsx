@@ -164,7 +164,7 @@ describe('S3 ［足す］（✓。12.1・S3-FRAME-081〜089・S3-TASK-031〜033�
   })
 })
 
-describe('S3 Enter（13.2・14.2・15.1・D6・S3-TASK-034・035・S3-ROUTINE-172・173）', () => {
+describe('S3 Enter（13.2・14.2・15.1・開発・S3-TASK-034・035・S3-ROUTINE-172・173）', () => {
   it('Task List: Enter で足す。PC の Shift+Enter は改行', async () => {
     const user = userEvent.setup()
     const { input, added } = await open('task')
@@ -381,7 +381,7 @@ describe('S3 変換を決める前に［足す］を押した時（12.1・■15�
   })
 })
 
-describe('S3 書きかけ（6.13・D16・D23・S3-FRAME-095・096・S3-TASK-042・S3-ROUTINE-092）', () => {
+describe('S3 書きかけ（6.13・開発・S3-FRAME-095・096・S3-TASK-042・S3-ROUTINE-092）', () => {
   it('打った字とチップを diary-studio:draft:task に控え（少し待ってまとめる）、作り直しても戻す', async () => {
     const user = userEvent.setup()
     const first = await open('task')

@@ -21,7 +21,7 @@ import {
   startLongPress,
   tapSize,
 } from './helpers'
-import { listAdd, listInput, listTestIds, openLists, openStackedList, storedDraft } from './listHelpers'
+import { listAdd, listInput, listTestIds, openLists, openRowMenu, openStackedList, storedDraft } from './listHelpers'
 
 collectDiagnosticsOnFailure()
 
@@ -126,7 +126,7 @@ test.describe('S3 Task List（13.・6.3。PC）', { tag: ['@pc'] }, () => {
     await openLists(page, '/week/2026-11-08')
     const { printDocs, quoteReply, roomBooking } = LIST_IDS
     // ［日付を決める］: ①の締め切り日を 11/12 にするとカレンダーに出る
-    await page.getByTestId(listTestIds.rowMore('task', printDocs)).click()
+    await openRowMenu(page, 'task', printDocs)
     await page.getByRole('menuitem', { name: '日付を決める' }).click()
     await page
       .getByTestId('item-date-picker')
@@ -141,7 +141,7 @@ test.describe('S3 Task List（13.・6.3。PC）', { tag: ['@pc'] }, () => {
     await expect(page.getByTestId(testIds.weekCard(quoteReply))).toHaveCount(0)
     await expect(page.getByTestId(listTestIds.taskDate(quoteReply))).toHaveText('—')
     // ［Task List から外す］: ③は行が消え、カードは残る
-    await page.getByTestId(listTestIds.rowMore('task', roomBooking)).click()
+    await openRowMenu(page, 'task', roomBooking)
     await page.getByRole('menuitem', { name: 'Task List から外す' }).click()
     await expect(row(page, roomBooking)).toHaveCount(0)
     await expect(page.getByTestId(testIds.weekStart(roomBooking))).toBeVisible()
@@ -161,7 +161,7 @@ test.describe('S3 Task List（13.・6.3。PC）', { tag: ['@pc'] }, () => {
   }) => {
     await openLists(page, '/week/2026-11-08')
     const { libraryBooks, quoteReply } = LIST_IDS
-    await page.getByTestId(listTestIds.rowMore('task', libraryBooks)).click()
+    await openRowMenu(page, 'task', libraryBooks)
     await page.getByRole('menuitem', { name: '削除' }).click()
     await expect(row(page, libraryBooks)).toHaveCount(0)
     const toast = page.locator('.toast').filter({ hasText: '『図書館の本を返す』を削除しました' })
@@ -169,7 +169,7 @@ test.describe('S3 Task List（13.・6.3。PC）', { tag: ['@pc'] }, () => {
     await toast.getByRole('button', { name: '元に戻す' }).click()
     await expect(row(page, libraryBooks)).toBeVisible()
     // カレンダーに出ている物
-    await page.getByTestId(listTestIds.rowMore('task', quoteReply)).click()
+    await openRowMenu(page, 'task', quoteReply)
     await page.getByRole('menuitem', { name: '削除' }).click()
     const dialog = page.getByRole('dialog', { name: '『見積もりの返事』を削除しますか？' })
     await expect(dialog).toContainText('Task List からも消えます。')
@@ -204,7 +204,7 @@ test.describe('S3 Task List（13.・6.3。PC）', { tag: ['@pc'] }, () => {
     await expect(row(page, shelfTidy)).toBeVisible()
     await expect(row(page, oldPapers)).toHaveCount(0)
     // カレンダー生まれの物の［詳しく］も「タスク」の題
-    await page.getByTestId(listTestIds.rowMore('task', dentist)).click()
+    await openRowMenu(page, 'task', dentist)
     await page.getByRole('menuitem', { name: '詳しく' }).click()
     await expect(page.getByRole('dialog', { name: 'タスク' })).toBeVisible()
   })
@@ -291,7 +291,7 @@ test.describe('S3 Task List（M・S の2行の行。スマホ）', { tag: ['@s']
     await expect(line(LIST_IDS.printDocs)).toHaveCount(0)
     await expect(page.getByTestId(listTestIds.taskDate(LIST_IDS.quoteReply))).toHaveCount(0)
     // 日付のメニューは「…」の［日付…］から
-    await page.getByTestId(listTestIds.rowMore('task', LIST_IDS.printDocs)).click()
+    await openRowMenu(page, 'task', LIST_IDS.printDocs)
     await page.getByRole('menuitem', { name: '日付を直す' }).click()
     await expect(page.getByTestId(listTestIds.taskDateMenu)).toBeVisible()
     await page.getByRole('menuitem', { name: '締め切り日を明日にする' }).click()

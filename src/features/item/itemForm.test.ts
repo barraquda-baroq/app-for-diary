@@ -107,7 +107,7 @@ describe('詳細の画面で保存する日付・時刻の差分', () => {
   })
 })
 
-describe('S3 開いた時の値からどれかの欄を変えたか（formChanged。Favorite List の［予定にする］の登録。12.2・D4）', () => {
+describe('S3 開いた時の値からどれかの欄を変えたか（formChanged。Favorite List の［予定にする］の登録。12.2・開発）', () => {
   const initial = registerForm({ start: '2026-11-10', title: '店を調べる', memo: '駅の近く' })
   it.each([
     ['title', { title: '店を調べる。' }],

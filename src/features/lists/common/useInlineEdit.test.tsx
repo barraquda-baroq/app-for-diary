@@ -1,4 +1,4 @@
-// その場で直す欄（src/features/lists/common/useInlineEdit.ts。docs/SPEC.md の 3.6・13.3・14.2・15.2。D40・D48・P3・P16）: 押した出来事の中で
+// その場で直す欄（src/features/lists/common/useInlineEdit.ts。docs/SPEC.md の 3.6・13.3・14.2・15.2。開発・P3・P16）: 押した出来事の中で
 // 欄を出してフォーカスする、Enter・離れた時に保存（変換中の Enter は除く）、空は元に戻す、Esc はやめる、複数行の Enter、止まった時の保存、
 // 閉じる・裏に回る時の保存
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -34,7 +34,7 @@ function open(over: Partial<InlineEditOptions> = {}) {
   return { ...r, onSave, field: () => screen.getByLabelText('直す') as HTMLInputElement }
 }
 
-describe('S3 その場で直す（P3・D40・D48）', () => {
+describe('S3 その場で直す（P3・開発）', () => {
   it('押した出来事の中で欄を出してフォーカスし（iPhone でキーボードが出る）、カーソルは字の終わり', () => {
     const { field } = open()
     expect(document.activeElement).toBe(field())

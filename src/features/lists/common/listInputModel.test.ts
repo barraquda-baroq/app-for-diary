@@ -36,7 +36,7 @@ const click = (fromPress: boolean, hasText = true): AddPressEvent => ({ type: 'c
 const end: AddPressEvent = { type: 'compositionend' }
 const timeout: AddPressEvent = { type: 'timeout' }
 
-describe('S3 Enter（13.2・14.2・15.1・D6）', () => {
+describe('S3 Enter（13.2・14.2・15.1・開発）', () => {
   it.each([
     // [リスト, Shift, 指の端末, 答え]
     ['task', false, false, 'add'],
@@ -61,7 +61,7 @@ describe('S3 Enter（13.2・14.2・15.1・D6）', () => {
   })
 })
 
-describe('S3 書きかけの形（6.13・D23・S3-FRAME-095・096）', () => {
+describe('S3 書きかけの形（6.13・開発・S3-FRAME-095・096）', () => {
   it('キーは diary-studio:draft:{routine,task,favorite}', () => {
     expect([draftKey('routine'), draftKey('task'), draftKey('favorite')]).toEqual([
       'diary-studio:draft:routine',

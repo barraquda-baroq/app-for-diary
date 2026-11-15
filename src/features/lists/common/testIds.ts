@@ -60,7 +60,7 @@ export const listTestIds = {
   // ----- Routine List（14.） -----
   routineGroup: (cycle: RoutineCycle) => `routine-group-${cycle}`,
   routineGroupFold: (cycle: RoutineCycle) => `routine-group-fold-${cycle}`,
-  /** 空のかたまりの＋（押すと入力欄へ、その種類を選んで。D26） */
+  /** 空のかたまりの＋（押すと入力欄へ、その種類を選んで。開発） */
   routineGroupAdd: (cycle: RoutineCycle) => `routine-group-add-${cycle}`,
   /** 行の指定の字（'月・木' など） */
   routineSpecLabel: (id: ID) => `routine-spec-label-${id}`,

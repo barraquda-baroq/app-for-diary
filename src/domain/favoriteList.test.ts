@@ -11,8 +11,8 @@ import { UNTITLED } from './repair'
 
 const TODAY = '2026-11-10'
 
-describe('並び（15.1・15.3・D10）', () => {
-  it('まだの物は order の小さい順（同じなら id の小さい順）、済みは済んだ新しい順（同じなら id。S3-ROUTINE-031・D10）', () => {
+describe('並び（15.1・15.3・開発）', () => {
+  it('まだの物は order の小さい順（同じなら id の小さい順）、済みは済んだ新しい順（同じなら id。S3-ROUTINE-031・開発）', () => {
     const favs = [
       mkFavorite({ id: 'b', order: 0 }),
       mkFavorite({ id: 'a', order: 0 }),
@@ -68,7 +68,7 @@ describe('並び（15.1・15.3・D10）', () => {
   })
 })
 
-describe('1行に出す物（15.2・D41）', () => {
+describe('1行に出す物（15.2・開発）', () => {
   it('1行だけは太くしない（multiLine false）', () => {
     const row = favoriteRowView(mkFavorite({ id: 'f', text: '近所のパン屋に行ってみる' }), TODAY)
     expect(row).toMatchObject({
@@ -107,7 +107,7 @@ describe('1行に出す物（15.2・D41）', () => {
   })
 })
 
-describe('足した日（15.2・D32）', () => {
+describe('足した日（15.2・開発）', () => {
   it('createdAt の端末の暦の日付を「11/10」で（S3-FRAME-278・S3-ROUTINE-182）', () => {
     expect(addedLabel(T0, TODAY)).toBe('11/10')
     expect(addedLabel(new Date(2026, 10, 9, 23, 59).getTime(), TODAY)).toBe('11/9')
@@ -126,7 +126,7 @@ describe('足した日（15.2・D32）', () => {
   })
 })
 
-describe('［Task List へ移す］（favoriteToTask。15.4・D25）', () => {
+describe('［Task List へ移す］（favoriteToTask。15.4・開発）', () => {
   /** そのまま Task List の入力欄の決まりに通して足す */
   const asTask = (text: string) => {
     const r = taskInputOf(favoriteToTask(text))
@@ -157,7 +157,7 @@ describe('［Task List へ移す］（favoriteToTask。15.4・D25）', () => {
     })
   })
 
-  it('件名が 200字を超える分はメモの頭へ回す（足せる件名にする。D25・D29）', () => {
+  it('件名が 200字を超える分はメモの頭へ回す（足せる件名にする。開発）', () => {
     const head = 'あ'.repeat(200)
     const t = asTask(`${head}いう\n二行目`)
     expect(t.title).toBe(head)
@@ -178,7 +178,7 @@ describe('［Task List へ移す］（favoriteToTask。15.4・D25）', () => {
   })
 })
 
-describe('［予定にする］（favoriteToRegister。15.4・12.2・D4）', () => {
+describe('［予定にする］（favoriteToRegister。15.4・12.2・開発）', () => {
   it('開始日は今日・仕事・件名に1行目・メモに2行目から（元の項目は残す。S3-FRAME-284・S3-FRAME-285）', () => {
     expect(favoriteToRegister('旅行で行きたい所\n海の見える公園\n山の上の展望台', TODAY)).toEqual({
       start: TODAY,
@@ -188,13 +188,13 @@ describe('［予定にする］（favoriteToRegister。15.4・12.2・D4）', () 
     })
   })
 
-  it('件名は 200字まで、あふれた分はメモの頭へ（D29）', () => {
+  it('件名は 200字まで、あふれた分はメモの頭へ（開発）', () => {
     const r = favoriteToRegister(`${'あ'.repeat(205)}\n続き`, TODAY)
     expect(r.title).toBe('あ'.repeat(200))
     expect(r.memo).toBe('あああああ\n続き')
   })
 
-  it('200字の切れ目がちょうど空白の時は、件名の終わりに空白を残さない（その空白はメモにも入れない。D29）', () => {
+  it('200字の切れ目がちょうど空白の時は、件名の終わりに空白を残さない（その空白はメモにも入れない。開発）', () => {
     const text = `${'あ'.repeat(199)} い\n次`
     const r = favoriteToRegister(text, TODAY)
     expect(r.title).toBe('あ'.repeat(199))

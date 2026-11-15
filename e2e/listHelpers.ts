@@ -63,6 +63,24 @@ export async function openStackedList(page: Page, list: ListName): Promise<void>
   await expect(page.getByTestId(`top-jump-${list}`)).toHaveAttribute('aria-current', 'true')
 }
 
+/**
+ * 行の「…」のメニューを開く。メニューはページのどこかがスクロールすると閉じる（src/ui/PopupMenu）ので、押す前に行へ乗せて見える
+ * 所へ出し、少し待ってもまだ開いていることを見る。出した時のスクロール（S・M は切り替えの列で移った時のスクロールも）の出来事が
+ * 開いた後に届いて閉じた時は、もう一度押す
+ */
+export async function openRowMenu(page: Page, list: ListName, id: string): Promise<Locator> {
+  const menu = page.getByTestId(listTestIds.rowMenu(list))
+  await expect(async () => {
+    if (!(await menu.isVisible())) {
+      await page.getByTestId(listTestIds.row(list, id)).hover()
+      await page.getByTestId(listTestIds.rowMore(list, id)).click()
+    }
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(menu).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: 10_000 })
+  return menu
+}
+
 /** 端末に控えた書きかけ（diary-studio:draft:{リスト}。無ければ null） */
 export function storedDraft(page: Page, list: ListName): Promise<string | null> {
   return page.evaluate((key) => localStorage.getItem(key), draftKey(list))

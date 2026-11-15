@@ -591,7 +591,7 @@ describe('iPhone・iPad の登録の画面（3.1・■27）', () => {
   })
 })
 
-describe('S3 Favorite List の［予定にする］で開いた登録（from favorite。12.2・7.13・D4・S3-FRAME-228）', () => {
+describe('S3 Favorite List の［予定にする］で開いた登録（from favorite。12.2・7.13・開発・S3-FRAME-228）', () => {
   const discardDialog = () => screen.queryByRole('dialog', { name: '書きかけを捨てますか？' })
   const prefill: RegisterInit = { start: '2026-11-10', kind: 'work', title: '近所のパン屋を調べる', memo: '駅の北口のあたり' }
 
@@ -616,7 +616,7 @@ describe('S3 Favorite List の［予定にする］で開いた登録（from fav
   it.each([
     ['件名', async (user: ReturnType<typeof userEvent.setup>) => user.type(byId(testIds.itemTitle), '（土曜）')],
     ['区分', async (user: ReturnType<typeof userEvent.setup>) => user.click(byId(testIds.itemKind('private')))],
-  ])('入れて開いた値から%sを変えた時は、閉じる・「戻る」で確かめる（D4）', async (_name, edit) => {
+  ])('入れて開いた値から%sを変えた時は、閉じる・「戻る」で確かめる（開発）', async (_name, edit) => {
     const { user, onClose, router } = await openFavorite()
     await act(() => router.navigate('/month/2026-11'))
     await edit(user)

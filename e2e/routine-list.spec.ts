@@ -12,7 +12,7 @@ import { listTestIds } from '../src/features/lists/common/testIds'
 import { routinePanelTestIds } from '../src/features/lists/routine/routineTestIds'
 import { LIST_IDS } from './fixtures/listData'
 import { noHorizontalScroll, tapSize } from './helpers'
-import { listInput, openLists, openStackedList } from './listHelpers'
+import { listInput, openLists, openRowMenu, openStackedList } from './listHelpers'
 
 const I = LIST_IDS
 
@@ -33,19 +33,6 @@ async function rawChecks(page: Page): Promise<unknown> {
 async function press(target: Locator, touch: boolean): Promise<void> {
   if (touch) await target.tap()
   else await target.click()
-}
-
-/** 行の「…」のメニューを開く（押した直後にページがスクロールして閉じた時は、もう一度押す） */
-async function openRowMenu(page: Page, id: string): Promise<Locator> {
-  const menu = page.getByTestId(listTestIds.rowMenu('routine'))
-  await expect(async () => {
-    if (!(await menu.isVisible())) {
-      await row(page, id).hover()
-      await page.getByTestId(listTestIds.rowMore('routine', id)).click()
-    }
-    await expect(menu).toBeVisible({ timeout: 1000 })
-  }).toPass({ timeout: 10_000 })
-  return menu
 }
 
 test.describe(
@@ -142,7 +129,7 @@ test.describe('S3 Routine List（PC。14.2・6.13・6.15）', { tag: ['@pc'] }, 
     await openLists(page, '/week/2026-11-08')
     await page.getByTestId(listTestIds.routineDone('daily')).getByRole('button').click()
     // 植物に水をやる（毎日・今日チェック済み）を毎月へ
-    const menu = await openRowMenu(page, I.waterPlants)
+    const menu = await openRowMenu(page, 'routine', I.waterPlants)
     await menu.getByRole('menuitem', { name: '詳しく' }).click()
     const panel = page.getByTestId(listTestIds.routinePanel)
     await expect(panel).toBeVisible()
@@ -155,7 +142,7 @@ test.describe('S3 Routine List（PC。14.2・6.13・6.15）', { tag: ['@pc'] }, 
 
     // 削除（確かめない）と［元に戻す］
     await page.getByTestId(listTestIds.routineDone('monthly')).getByRole('button').click()
-    const del = await openRowMenu(page, I.waterPlants)
+    const del = await openRowMenu(page, 'routine', I.waterPlants)
     await del.getByRole('menuitem', { name: '削除' }).click()
     await expect(row(page, I.waterPlants)).toHaveCount(0)
     const toast = page.locator('.toast').filter({ hasText: '『植物に水をやる』を削除しました' })
@@ -181,7 +168,7 @@ test.describe('S3 Routine List（スマホ。14.2・3.8・4.11）', { tag: ['@s'
   test('［詳しく］は下からのシート（毎週の曜日を選んである）。［×］で閉じる', async ({ page }) => {
     await openLists(page, '/week/2026-11-08')
     await openStackedList(page, 'routine')
-    const menu = await openRowMenu(page, I.garbage)
+    const menu = await openRowMenu(page, 'routine', I.garbage)
     await menu.getByRole('menuitem', { name: '詳しく' }).tap()
     const panel = page.getByTestId(listTestIds.routinePanel)
     await expect(panel).toBeVisible()

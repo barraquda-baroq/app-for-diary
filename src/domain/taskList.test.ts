@@ -153,7 +153,7 @@ describe('Task List に出る物（6.3・13.1・13.4）', () => {
   })
 })
 
-describe('並び（13.4・D10。2.10 の単体: Task List の並び。S3-FRAME-342）', () => {
+describe('並び（13.4・開発。2.10 の単体: Task List の並び。S3-FRAME-342）', () => {
   it('カレンダーに出ている物を to の早い順（期限切れが上）、その下に①④を作った新しい順。仕事とプライベートは混ぜる（S3-FRAME-174・S3-TASK-110）', () => {
     const items = [
       mkTask({ id: 'n-old', createdAt: T0 - 5 * DAY }), // ① 古い
@@ -187,7 +187,7 @@ describe('並び（13.4・D10。2.10 の単体: Task List の並び。S3-FRAME-3
     expect(ids(view(items).open)).toEqual(['x', 'y'])
   })
 
-  it('済みの行は済んだ新しい順、同じなら id の小さい順（doneAt の無い物は下。S3-TASK-119・D10）', () => {
+  it('済みの行は済んだ新しい順、同じなら id の小さい順（doneAt の無い物は下。S3-TASK-119・開発）', () => {
     const items = [
       mkTask({ id: 'd1', done: true, doneAt: T0 - 3 * HOUR }),
       mkTask({ id: 'd3', done: true, doneAt: T0 - HOUR }),
@@ -229,7 +229,7 @@ describe('並び（13.4・D10。2.10 の単体: Task List の並び。S3-FRAME-3
   })
 })
 
-describe('期限切れと今日（to で決める。13.3・D17）', () => {
+describe('期限切れと今日（to で決める。13.3・開発）', () => {
   it('to が今日より前で済んでいない物は期限切れ、今日の物は今日（S3-FRAME-161・S3-TASK-078）', () => {
     const v = view([
       mkTask({ id: 'past', due: '2026-11-09' }),
@@ -270,7 +270,7 @@ describe('期限切れと今日（to で決める。13.3・D17）', () => {
   })
 })
 
-describe('L の日付の列の字（13.3・D32）', () => {
+describe('L の日付の列の字（13.3・開発）', () => {
   it.each([
     ['② 1日', due, { sub: null, main: '11/20', faint: false, aria: '2026年11月20日（金）' }],
     ['③ 開始日 = 締め切り日は1日', sameDay, { sub: null, main: '11/20', faint: false, aria: '2026年11月20日（金）' }],
@@ -288,7 +288,7 @@ describe('L の日付の列の字（13.3・D32）', () => {
     expect(taskRowView(item, TODAY).date).toEqual(want)
   })
 
-  it('よその年の日付も列には月日だけ、読み上げに年まで（D32）', () => {
+  it('よその年の日付も列には月日だけ、読み上げに年まで（開発）', () => {
     expect(taskDateText(mkTask({ due: '2027-01-05' }))).toEqual({
       sub: null,
       main: '1/5',
@@ -303,7 +303,7 @@ describe('L の日付の列の字（13.3・D32）', () => {
   })
 })
 
-describe('M・S の上の行（13.3・D27）', () => {
+describe('M・S の上の行（13.3・開発）', () => {
   it.each([
     ['② 1日（〆を付ける）', due, '〆11/20', '〆11/20・営業部'],
     ['③ 開始日 = 締め切り日（1日なので〆）', sameDay, '〆11/20', '〆11/20・営業部'],
@@ -318,14 +318,14 @@ describe('M・S の上の行（13.3・D27）', () => {
     expect(taskRowView({ ...item, requester: '営業部' }, TODAY).stackedLine).toBe(withRequester)
   })
 
-  it('日付の所と依頼者を分けて返す（期限切れの色・太字は日付の所だけに付ける。D27）', () => {
+  it('日付の所と依頼者を分けて返す（期限切れの色・太字は日付の所だけに付ける。開発）', () => {
     expect(taskStackedParts({ ...due, requester: '  総務 ' })).toEqual({ date: '〆11/20', requester: '総務' })
     expect(taskStackedParts(none)).toEqual({ date: '', requester: '' })
     expect(taskStackedParts({ ...none, requester: 7 } as unknown as Item)).toEqual({ date: '', requester: '' })
   })
 })
 
-describe('入力欄から足す物（taskInputOf。13.2・12.4・D29）', () => {
+describe('入力欄から足す物（taskInputOf。13.2・12.4・開発）', () => {
   it('Task List 生まれ・仕事・Task List に出す・ラベルなし・時刻なし・ロックなし（S3-TASK-001・S3-FRAME-151）', () => {
     expect(taskInputOf(entry())).toEqual({
       ok: true,
@@ -535,10 +535,10 @@ describe('日付を直す時（taskDateEdit。6.3・6.4・13.5）', () => {
   })
 })
 
-describe('日付の列のメニュー（taskDateMenu。13.5・D30）', () => {
+describe('日付の列のメニュー（taskDateMenu。13.5・開発）', () => {
   const labels = (opts: { label: string }[]) => opts.map((o) => o.label)
 
-  it('list 生まれ（②）: 締め切り日は 今日・明日・今週金曜・日付を選ぶ・なし、開始日は 日付を選ぶ、［カレンダーで見る］は to の日（S3-TASK-129・D24）', () => {
+  it('list 生まれ（②）: 締め切り日は 今日・明日・今週金曜・日付を選ぶ・なし、開始日は 日付を選ぶ、［カレンダーで見る］は to の日（S3-TASK-129・開発）', () => {
     const m = taskDateMenu(due, TODAY)
     expect(m.due).toEqual([
       { label: '今日', action: { type: 'set', field: 'due', date: '2026-11-10' }, refused: false },
@@ -580,7 +580,7 @@ describe('日付の列のメニュー（taskDateMenu。13.5・D30）', () => {
     expect(fri).toEqual({ label: '来週金曜', action: { type: 'set', field: 'due', date: '2026-11-20' }, refused: false })
   })
 
-  it('6.4 で断られる速い選び・なしに印を付ける（押しても値は変えない。D30・S3-TASK-025）', () => {
+  it('6.4 で断られる速い選び・なしに印を付ける（押しても値は変えない。開発・S3-TASK-025）', () => {
     // ④ 11/10 23:00〜01:00（時刻は残っているがカレンダーに出ていない）: 今日にすると1日で終了 < 開始
     const night = mkTask({ id: 'n', start: TODAY, startTime: '23:00', endTime: '01:00' })
     const m = taskDateMenu(night, TODAY)

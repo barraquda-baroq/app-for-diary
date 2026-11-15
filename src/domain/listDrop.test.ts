@@ -1,4 +1,4 @@
-// Task List の行をカレンダーへ落とす決まり（docs/SPEC.md の 13.6・7.11・6.4。D28）: ①④・カレンダーに出ている1日の物（生まれごと）・
+// Task List の行をカレンダーへ落とす決まり（docs/SPEC.md の 13.6・7.11・6.4。開発）: ①④・カレンダーに出ている1日の物（生まれごと）・
 // 複数日の物、今の日は何もしない、違う区分・日付でない・ロック中は落とせない、6.4 で断る日と終了時刻を消す日、時刻は変えない、
 // お知らせの字、6週のマンスリーのマス目の落とせる日（2.10 の単体: ドラッグで動かせる日）、drag.ts の fitTimes
 import { describe, expect, it } from 'vitest'
@@ -22,7 +22,7 @@ const cal = mkItem({ id: 'cal', start: '2026-11-10', listed: true }) // カレ�
 const calDue = mkItem({ id: 'cal-due', start: '2026-11-10', due: '2026-11-10', listed: true })
 const calSpan = mkItem({ id: 'cal-span', start: '2026-11-09', due: '2026-11-12', listed: true })
 
-describe('落とすと変わる物（13.6・7.11。D28）', () => {
+describe('落とすと変わる物（13.6・7.11。開発）', () => {
   it.each([
     ['① → 締め切り日を D に', none, '2026-11-14', patch(null, '2026-11-14')],
     ['④（開始日が D 以前）→ 締め切り日を D に（期間になる）', startOnly, '2026-11-15', patch('2026-11-12', '2026-11-15')],
@@ -73,7 +73,7 @@ describe('落とすと変わる物（13.6・7.11。D28）', () => {
     expect(drop({ ...due, done: true, doneAt: T0, doneOn: '2026-11-10' }, '2026-11-11')).toEqual(patch(null, '2026-11-11'))
   })
 
-  it('時刻は変えない（日付だけ。S3-TASK-191・D27）', () => {
+  it('時刻は変えない（日付だけ。S3-TASK-191・開発）', () => {
     const timed = mkTask({ id: 't', due: '2026-11-10', startTime: '10:00', endTime: '11:00' })
     const r = drop(timed, '2026-11-12') as DatePatch
     expect(Object.keys(r).sort()).toEqual(['clearEnd', 'due', 'start'])

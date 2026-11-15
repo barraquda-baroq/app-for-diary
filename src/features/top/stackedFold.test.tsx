@@ -210,7 +210,7 @@ describe('S3 その場で畳む（foldListInPlace。■34）', () => {
     expect((screen.getByTestId(listTestIds.input('task')) as HTMLTextAreaElement).value).toBe('')
   })
 
-  it('見出しの［▾］で畳んだ時は、打ちかけを残す（3.6・D16）', async () => {
+  it('見出しの［▾］で畳んだ時は、打ちかけを残す（3.6・開発）', async () => {
     await renderAt('/month/2026-11', { width: 'S' })
     await openTask()
     const input = screen.getByTestId(listTestIds.input('task')) as HTMLTextAreaElement

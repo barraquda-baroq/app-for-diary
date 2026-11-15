@@ -2,7 +2,7 @@
 // この区切りへ沈む。ふだんは畳んでおき（初めは畳む）、押すと開く。開いた・畳んだは、どの幅でも端末ごとに覚える
 // （diary-studio:prefs の collapsed.taskDone・favoriteDone・routineDone.{種類}）。済んだ物が無い間は出さない。
 // 区切りは済んだ行を包まない: 行は1つの平らな並び（まだの行 → この区切り → 済んだ行。畳んでいる間は済んだ行を出さない）に置き、
-// チェックで行が区切りをまたいでも作り直さない（フォーカス・開いたメニューが残る。§3.7・P11）。footer は区切りの右に出す物
+// チェックで行が区切りをまたいでも作り直さない（フォーカス・開いたメニューが残る。開発・P11）。footer は区切りの右に出す物
 // （Favorite List の［済みを片付ける］。15.3）。flash は目立たせるキー（済みへ移した時に区切りを目立たせる。common/listFlash.ts）
 import type { ReactNode } from 'react'
 import { usePrefs, type RoutineCycle } from '../../../store/uiStore'

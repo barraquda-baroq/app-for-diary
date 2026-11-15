@@ -1,4 +1,4 @@
-// 3つのリストの行の並び（src/features/lists/common/ListRows.tsx・ListRow.tsx・DoneSection.tsx。docs/SPEC.md の 3.6・§3.7・P11）: まだの行 →
+// 3つのリストの行の並び（src/features/lists/common/ListRows.tsx・ListRow.tsx・DoneSection.tsx。docs/SPEC.md の 3.6。開発・P11）: まだの行 →
 // 「済み n件」→ 済んだ行の1つの平らな並び。チェックで行が区切りをまたいでも作り直さない（フォーカスが残る）。「済み n件」は畳んだ状態を
 // 端末に覚え（どの幅でも）、畳んでいる間は済んだ行を出さない。済んだ物が無い間は区切りを出さない
 import { act, fireEvent, render, screen } from '@testing-library/react'
@@ -50,7 +50,7 @@ function Harness() {
   )
 }
 
-describe('S3 行の並び（§3.7・P11・S3-FRAME-070〜074・S3-FRAME-289〜292）', () => {
+describe('S3 行の並び（開発・P11・S3-FRAME-070〜074・S3-FRAME-289〜292）', () => {
   it('済みにした行は「済み n件」の下へ沈み、作り直さない（フォーカスが残る）。済んだ物が無い間は区切りを出さない', () => {
     usePrefs.getState().setCollapsed({ taskDone: false })
     render(<Harness />)

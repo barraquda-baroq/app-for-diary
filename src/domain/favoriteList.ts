@@ -17,15 +17,15 @@ export interface FavoriteRowView {
   firstLine: string
   /** 2行目から */
   rest: string
-  /** 改行で分けた行が2行以上（折り返しでなく。D41） */
+  /** 改行で分けた行が2行以上（折り返しでなく。開発） */
   multiLine: boolean
-  /** 足した日（'11/10'。年が今日と違う時は年も。D32） */
+  /** 足した日（'11/10'。年が今日と違う時は年も。開発） */
   added: string
   /** お知らせ・読み上げに出す名前（listText.name20） */
   name: string
 }
 
-/** Favorite List の中身: まだの行（order の小さい順・id。新しい物が上: ops.addFavorite が topOrder で足す）・済みの行（doneAt の新しい順・id。D10） */
+/** Favorite List の中身: まだの行（order の小さい順・id。新しい物が上: ops.addFavorite が topOrder で足す）・済みの行（doneAt の新しい順・id。開発） */
 export interface FavoriteListView {
   open: FavoriteRowView[]
   done: FavoriteRowView[]
@@ -50,8 +50,8 @@ export function favoriteListView(favorites: Iterable<Favorite>, today: string): 
 const ms = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
 /**
- * 1行に出す物: 中身の前後の空白（空の行も）を除き、改行（CRLF も）で分けた1行目と2行目から（D41: 折り返しでなく改行で数える）。
- * 足した日は createdAt の端末の暦の日付（'11/10'。年が今日と違う時は '2025/11/10'。D32）
+ * 1行に出す物: 中身の前後の空白（空の行も）を除き、改行（CRLF も）で分けた1行目と2行目から（開発: 折り返しでなく改行で数える）。
+ * 足した日は createdAt の端末の暦の日付（'11/10'。年が今日と違う時は '2025/11/10'。開発）
  */
 export function favoriteRowView(favorite: Favorite, today: string): FavoriteRowView {
   const text = toLf(typeof favorite.text === 'string' ? favorite.text : '').trim()
@@ -67,7 +67,7 @@ export function favoriteRowView(favorite: Favorite, today: string): FavoriteRowV
   }
 }
 
-/** 足した日の字（'11/10'。年が今日と違う時は '2025/11/10'。D32） */
+/** 足した日の字（'11/10'。年が今日と違う時は '2025/11/10'。開発） */
 export function addedLabel(createdAt: number, today: string): string {
   const day = ymdOfMs(ms(createdAt))
   const v = parseYmd(day)!
@@ -76,7 +76,7 @@ export function addedLabel(createdAt: number, today: string): string {
 }
 
 /**
- * 件名とメモに分ける（［Task List へ移す］・［予定にする］。D25・D29）: 最初の空でない行を 200字までの件名に、あふれた分をメモの頭に、
+ * 件名とメモに分ける（［Task List へ移す］・［予定にする］。開発）: 最初の空でない行を 200字までの件名に、あふれた分をメモの頭に、
  * その後ろに2行目から（あふれた分と2行目からの間は改行）。200字の切れ目が空白の時は、件名の終わりの空白を落とす（メモにも入れない）。
  * どの行も空なら件名もメモも ''
  */
@@ -91,14 +91,14 @@ function titleAndMemo(text: string): { title: string; memo: string } {
 
 /**
  * ［Task List へ移す］で足すタスク（最初の空でない行を 200字までの件名に、あふれた分と残りをメモに。日付・依頼者なし。済みにはしない。
- * D25）。taskInputOf に渡すと、件名がこの件名・メモがこのメモのタスク（list 生まれ・仕事・Task List に出す）になる
+ * 開発）。taskInputOf に渡すと、件名がこの件名・メモがこのメモのタスク（list 生まれ・仕事・Task List に出す）になる
  */
 export function favoriteToTask(text: string): TaskEntry {
   const { title, memo } = titleAndMemo(text)
   return { text: memo ? `${title}\n${memo}` : title, start: null, due: null, requester: '' }
 }
 
-/** ［予定にする］で開く登録の画面の初めの値（開始日は今日・仕事・件名 200字まで・あふれた分と残りはメモ。12.2・D4・D29） */
+/** ［予定にする］で開く登録の画面の初めの値（開始日は今日・仕事・件名 200字まで・あふれた分と残りはメモ。12.2・開発） */
 export function favoriteToRegister(text: string, today: string): RegisterInit {
   const { title, memo } = titleAndMemo(text)
   return { start: today, kind: 'work', title, memo }

@@ -7,7 +7,7 @@
 // 中の小さな画面（削除の確かめ・複製・日付や時刻の一覧）は積まない（WP9）。小さな画面を出すのは common/SheetHost.tsx（カレンダーから
 // 開いた登録・詳細）と src/features/lists/ListSheetHost.tsx（リストから開いた物: Task List の「タスク」の詳細・Routine List と
 // Favorite List の［詳しく］のパネル・Favorite List の［予定にする］の登録。docs/SPEC.md の 3.1・3.6・12.2・12.3）。
-// リストから開く物も、開け閉めと履歴はカレンダーから開く物と同じ（iPhone・iPad はアプリの中の行き先の並びに積むだけ。D43・D51）
+// リストから開く物も、開け閉めと履歴はカレンダーから開く物と同じ（iPhone・iPad はアプリの中の行き先の並びに積むだけ。開発）
 import { useContext, useMemo } from 'react'
 import { UNSAFE_DataRouterContext, useNavigate, type Location } from 'react-router-dom'
 import type { ID } from '../../../domain/types'
@@ -78,7 +78,7 @@ const POP_GUARD_MS = 1000
 export interface ItemSheets {
   /**
    * 登録の画面を開く（12.2。初めの値: 開始日・区分・時刻・件名・メモ）。from 'favorite' は Favorite List の［予定にする］
-   * （並びに積まない・書きかけの確かめは入れて開いた値から変えた時だけ。D4）
+   * （並びに積まない・書きかけの確かめは入れて開いた値から変えた時だけ。開発）
    */
   openRegister: (init: RegisterInit, opts?: { from?: 'favorite' }) => void
   /** 予定の詳細の画面を開く（12.3。カレンダーから。題は「予定」） */
@@ -87,7 +87,7 @@ export interface ItemSheets {
   openTaskDetail: (id: ID) => void
   /** Routine List の［詳しく］のパネルを開く（14.2） */
   openRoutineDetail: (id: ID) => void
-  /** Favorite List の［詳しく］のパネルを開く（15.4。D5） */
+  /** Favorite List の［詳しく］のパネルを開く（15.4。開発） */
   openFavoriteDetail: (id: ID) => void
   /** 開いている小さな画面を閉じる（［×］・Esc・背景・登録・削除の後。履歴を1つ戻す） */
   closeSheet: () => void

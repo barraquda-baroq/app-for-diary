@@ -13,7 +13,7 @@ export function toLf(text: string): string {
 /**
  * 入れた字を件名とメモに分ける（13.2・15.4）: 改行は CRLF を LF にそろえ、頭の空の行（空白だけの行も）を飛ばし、最初の空でない行の
  * 前後の空白を除いた物が件名、その後ろ（終わりの空白を除く）がメモ。どの行も空なら null（足さない）。件名の字数はここでは見ない
- * （上限を超えた時に足さないか切るかは呼ぶ側が決める。D29）
+ * （上限を超えた時に足さないか切るかは呼ぶ側が決める。開発）
  */
 export function splitEntry(text: string): { title: string; memo: string } | null {
   const lines = toLf(text).split('\n')
@@ -30,7 +30,7 @@ export function splitEntry(text: string): { title: string; memo: string } | null
 
 /**
  * 件名を上限（既定 200字）で切る。あふれた分は overflow で返す（Favorite から Task List へ移す・［予定にする］で、メモの頭へ回す。
- * D25・D29）。上限に収まる時は overflow が ''
+ * 開発）。上限に収まる時は overflow が ''
  */
 export function fitTitle(title: string, max: number = LIMITS.title): { title: string; overflow: string } {
   const chars = Array.from(title)

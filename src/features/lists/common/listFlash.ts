@@ -1,8 +1,8 @@
-// 3つのリストの目立たせる所（docs/SPEC.md の 4.9・13.2・14.2・15.1。D9・D20・P12）。カレンダーと同じ仕組み（useCalendarUi の flash と
+// 3つのリストの目立たせる所（docs/SPEC.md の 4.9・13.2・14.2・15.1。開発・P12）。カレンダーと同じ仕組み（useCalendarUi の flash と
 // calendar/common/parts/useFlashTarget）に、リストのキーを足した物: 足した行・済みへ移った行・済みへ移った時の「済み n件」の区切りを
 // 1.2秒の 2px の --accent の枠で目立たせる。目立たせられる側（common/ListRow・DoneSection）は、L は右の列（.top-side）の中だけで
 // スクロールして見える所まで出す（scrollIntoViewWithin。ページは動かさない）。S・M はページがスクロールするので動かさず、見えていれば
-// 目立つ（足した後も入力欄をキーボードの上から動かさない。D9）
+// 目立つ（足した後も入力欄をキーボードの上から動かさない。開発）
 import type { ID } from '../../../domain/types'
 import { useCalendarUi, type ListKey, type RoutineCycle } from '../../../store/uiStore'
 

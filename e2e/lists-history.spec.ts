@@ -8,7 +8,8 @@
 // iPhone は Chromium に iPhone の UA（ブラウザの履歴は1つのまま: history.length が開いた時のまま・積む・戻る・進むを一度も呼ばない）。
 // 端の幅はいちばん狭い選べる幅と初めの幅の両方で払う（どちらも定数は src から読む）。Android は Pixel 7（ブラウザのタブと、表示の形を
 // standalone にしたホーム画面のアプリ）、PC は Desktop Chrome。データは作り物（e2e/fixtures/listData.ts）。
-// リストの行・「…」の［詳しく］・［予定にする］が要るテストは、その行が出ている時だけ流す（行は各リストの中身が出す）
+// リストの行・「…」の［詳しく］・［予定にする］が要るテストは、先にその行が出ていることを確かめる（出ていなければ失敗にする。行は
+// 各リストの中身が出す）
 import { devices, expect, test, type Locator, type Page } from '@playwright/test'
 import { EDGE_ZONE_CHOICES, EDGE_ZONE_PX } from '../src/features/calendar/common/swipe'
 import { FOLD_MS } from '../src/features/lists/listInfo'
@@ -130,9 +131,9 @@ const bodyHeight = (page: Page, list: ListName) =>
     .first()
     .evaluate((e) => e.getBoundingClientRect().height)
 
-/** その物が出ている時だけ流す（リストの行・「…」は各リストの中身が出す） */
+/** その物が出ていること（リストの行・「…」は各リストの中身が出す。出ていなければ飛ばさずに失敗にする） */
 async function needs(target: Locator, what: string) {
-  test.skip((await target.count()) === 0, `${what}が出ていない`)
+  await expect(target, `${what}が出ていない`).not.toHaveCount(0)
 }
 
 /** 行の「…」→［詳しく］ */

@@ -20,16 +20,16 @@ export interface RoutineRowView {
   done: boolean
   /** 次に戻る日（nextResetDay） */
   nextReset: string
-  /** '11/16（月）に戻ります'（年が今日と違う時は年も。D32） */
+  /** '11/16（月）に戻ります'（年が今日と違う時は年も。開発） */
   returnText: string
 }
 
-/** 種類ごとのかたまり（見出し 32px・'済み数/全部'・畳む・開く。空のかたまりは名前と＋だけを淡く。D26） */
+/** 種類ごとのかたまり（見出し 32px・'済み数/全部'・畳む・開く。空のかたまりは名前と＋だけを淡く。開発） */
 export interface RoutineGroupView {
   cycle: RoutineCycle
   /** 毎日・毎週・毎月・四半期・毎年 */
   name: string
-  /** まだの行・済みの行（どちらも order の小さい順・id。済みの行も手で並べた順のまま。D10） */
+  /** まだの行・済みの行（どちらも order の小さい順・id。済みの行も手で並べた順のまま。開発） */
   open: RoutineRowView[]
   done: RoutineRowView[]
   doneCount: number
@@ -99,7 +99,7 @@ export function routineSpecLabel(r: Pick<Routine, 'cycle' | 'weekdays' | 'monthD
 }
 
 /**
- * 済みの行の戻る日の字（14.2）: '11/16（月）に戻ります'。年が今日と違う時は年も '2027/1/1（金）に戻ります'（D32）。
+ * 済みの行の戻る日の字（14.2）: '11/16（月）に戻ります'。年が今日と違う時は年も '2027/1/1（金）に戻ります'（開発）。
  * PC で済んだ行に乗せた時と、［詳しく］のパネルの戻る日の行に出す
  */
 export function returnText(nextReset: string, today: string): string {

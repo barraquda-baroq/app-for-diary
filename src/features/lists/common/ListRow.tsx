@@ -2,10 +2,10 @@
 // 行の高さ 1.45（Task List の M・S の件名など、節の値が勝つ）。中身（チェック・件名・日付など）は各リストの行が children に置き、
 // 「…」（common/RowMenu）は menu に渡す（行の右に置く）。corner は件名の右上の置き場（段階5の提案の印 ProposalIcon。3.6・18.6）。
 // - 目立たせる（足した行・済みへ移った行。1.2秒の 2px の --accent の枠。4.9）: flash に common/listFlash.ts のキーを渡す。L は右の列の
-//   中だけでスクロールして見える所まで出し、S・M はページを動かさない（見えていれば目立つ。D9・P12）
-// - 字を選ぶ・iOS の長押しの吹き出しは、その場で直している間（editing）のほかは出さない（0.4秒の並べ替えとぶつけない。D48・P7）
+//   中だけでスクロールして見える所まで出し、S・M はページを動かさない（見えていれば目立つ。開発・P12）
+// - 字を選ぶ・iOS の長押しの吹き出しは、その場で直している間（editing）のほかは出さない（0.4秒の並べ替えとぶつけない。開発・P7）
 // - dragRef は掴む物の ref（features/dnd の useTaskRowDrag・useReorder の ref）。rowProps などほかの属性は ...rest で行に付く
-// 行は1つの平らな並びに id を key にして置く（チェックで並びが替わっても作り直さない。§3.7）。各リストの行は React.memo で包む
+// 行は1つの平らな並びに id を key にして置く（チェックで並びが替わっても作り直さない。開発）。各リストの行は React.memo で包む
 import { useCallback, type HTMLAttributes, type ReactNode } from 'react'
 import type { ID } from '../../../domain/types'
 import type { ListKey } from '../../../store/uiStore'

@@ -113,7 +113,7 @@ const FORM_KEYS = [
 
 /**
  * 開いた時の値から、どれかの欄を変えたか（Favorite List の［予定にする］で件名・メモを入れて開いた登録の画面の書きかけ。
- * 入れて開いたままなら、閉じる時に確かめない。D4）
+ * 入れて開いたままなら、閉じる時に確かめない。開発）
  */
 export function formChanged(initial: ItemForm, now: ItemForm): boolean {
   return FORM_KEYS.some((k) => initial[k] !== now[k])

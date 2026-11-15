@@ -7,7 +7,7 @@
 //   #/mim の上に積んだ詳細、［予定にする］の登録は端からのフリックで書きかけを捨てて閉じる ■27）。カレンダーから開いた印（SheetHost は
 //   MIM を開いている間は置かないので見えない）と印が無い時は、今までどおり「ほかの画面」
 // - ほか（設定・ログイン・見つかりません）は印があっても「ほかの画面」（小さな画面を開くのはトップの画面だけなので、設定・ログインに
-//   印は来ない。D51）
+//   印は来ない。開発）
 import type { ScreenKind } from '../../../history/popRules'
 import { isCalendarPath, isMimPath } from '../../../routes'
 import { isListSheet, sheetOf } from './sheets'

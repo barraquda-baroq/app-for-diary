@@ -36,8 +36,8 @@ export type { RegisterInit }
 /**
  * 小さな画面（登録・詳細）を開いている印。行き先は変えず、履歴の state.sheet に置く（「戻る」で閉じる。D03）。
  * 詳細は予定の id だけを持つ（中身はデータから読む）。リストから開く物（docs/SPEC.md の 3.6・12.2・12.3）:
- * - register の from 'favorite': Favorite List の［予定にする］で開いた登録の画面（元に戻す・やり直すの並びに積まない。D2・D4）
- * - detail の from 'task': Task List の［詳しく］で開いた詳細（題は「タスク」・L は右の列の上のパネル・並びに積まない。D2）
+ * - register の from 'favorite': Favorite List の［予定にする］で開いた登録の画面（元に戻す・やり直すの並びに積まない。開発）
+ * - detail の from 'task': Task List の［詳しく］で開いた詳細（題は「タスク」・L は右の列の上のパネル・並びに積まない。開発）
  * - routine・favorite: Routine List・Favorite List の［詳しく］のパネル（ルーチン・やりたいことの id）
  * from の無い register・detail はカレンダーから開いた物（common/SheetHost が出す）、リストから開いた物は src/features/lists の
  * ListSheetHost が出す（sheets.ts の isListSheet で分ける）
@@ -59,7 +59,7 @@ export interface RegisterSheetProps {
   onClose: () => void
   /**
    * 'favorite' は Favorite List の［予定にする］で開いた物（件名・メモを入れて開く。登録しても元に戻す・やり直すの並びに積まず、
-   * 書きかけの確かめは入れて開いた値から変えた時だけ。D2・D4）
+   * 書きかけの確かめは入れて開いた値から変えた時だけ。開発）
    */
   from?: 'favorite'
 }
@@ -70,7 +70,7 @@ export interface DetailSheetProps {
   onClose: () => void
   /**
    * 'task' は Task List の［詳しく］で開いた物（題は「タスク」・L は右の列の上のパネル・直した所も中の複製・削除も並びに積まない。
-   * 12.3・D2・D35）
+   * 12.3・開発）
    */
   from?: 'task'
 }

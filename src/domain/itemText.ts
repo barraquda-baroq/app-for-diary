@@ -99,7 +99,7 @@ export const toastText = {
 
 // ---------- リスト（13.〜15.） ----------
 
-/** 件名が空・長すぎる時の文（足さない・保存しない。字は欄に残す。6.2・6.7・12.4・D29。items.ts・routines.ts の決まりと同じ文） */
+/** 件名が空・長すぎる時の文（足さない・保存しない。字は欄に残す。6.2・6.7・12.4・開発。items.ts・routines.ts の決まりと同じ文） */
 export const TITLE_RANGE_TEXT = `件名は1〜${LIMITS.title}字で入れてください`
 
 /** 依頼者が長すぎる時の文（6.2。items.ts の決まりと同じ文） */
@@ -117,7 +117,7 @@ export const taskDateMenuText = {
 } as const
 
 /**
- * 年まで入れた日付「2026年11月10日（火）」（Task List の日付の列の読み上げ。列には年を出さないので、読み上げで年まで言う。D32）。
+ * 年まで入れた日付「2026年11月10日（火）」（Task List の日付の列の読み上げ。列には年を出さないので、読み上げで年まで言う。開発）。
  * 形の正しくない日付はそのまま返す
  */
 export function fullDateLabel(date: string): string {

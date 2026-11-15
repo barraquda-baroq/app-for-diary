@@ -159,7 +159,7 @@ textarea.list-grow {
   }
 }
 
-/* Routine List の種類の切り替え［日｜週｜月｜四半期｜年］（入力欄の上の段。14.2・D3） */
+/* Routine List の種類の切り替え［日｜週｜月｜四半期｜年］（入力欄の上の段。14.2・■35） */
 .segmented.list-cycle {
   padding: 2px;
 }
@@ -189,7 +189,7 @@ textarea.list-grow {
   font-size: 14px;
   font-weight: 400;
   line-height: 1.45;
-  /* 字を選ぶ・長押しの吹き出しは、その場で直している間だけ（0.4秒の並べ替えとぶつけない。D48） */
+  /* 字を選ぶ・長押しの吹き出しは、その場で直している間だけ（0.4秒の並べ替えとぶつけない。開発） */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -215,7 +215,7 @@ textarea.list-grow {
   --dot-hit: 40px;
 }
 
-/* 「…」: PC（マウス）は行に乗せた時・行の中にフォーカスがある時に出し、指の端末はいつも出す（D22・P15） */
+/* 「…」: PC（マウス）は行に乗せた時・行の中にフォーカスがある時に出し、指の端末はいつも出す（開発・P15） */
 .icon-btn.list-row-more {
   flex: none;
   margin-top: 4px;

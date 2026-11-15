@@ -28,7 +28,7 @@ export function taskCaseOf(item: Pick<Item, 'origin' | 'start' | 'due'>): TaskCa
 
 /**
  * L の日付の列（40px）の字。1日の物は to の 'M/D'、複数日は sub に 'M/D〜'・main に 'M/D'、④は 'M/D〜'、①は '—'（faint: 淡い字）。
- * 年は列に出さず、aria に年まで入れた日付を持つ（D32）
+ * 年は列に出さず、aria に年まで入れた日付を持つ（開発）
  */
 export interface TaskDateText {
   sub: string | null
@@ -48,7 +48,7 @@ export interface TaskRowView {
   to: string | null
   /** L の日付の列 */
   date: TaskDateText
-  /** M・S の上の行（'' の時は行を出さない。D27） */
+  /** M・S の上の行（'' の時は行を出さない。開発） */
   stackedLine: string
   /** 期限切れ（to が今日より前で、まだ済んでいない） */
   overdue: boolean
@@ -70,7 +70,7 @@ export interface TaskListView {
 
 /**
  * Task List に出す行（isInTaskList の物。済んで 168時間を過ぎた物は出さない: ちょうど 168時間はまだ出し、168時間と 1ミリ秒で隠す）。
- * まだの行の並び（D10）: カレンダーに出ている物を to の早い順（期限切れが上）、同じ to は作った順・id、その後に①④を作った新しい順・id。
+ * まだの行の並び（開発）: カレンダーに出ている物を to の早い順（期限切れが上）、同じ to は作った順・id、その後に①④を作った新しい順・id。
  * 仕事とプライベートは混ぜる。済みの行は doneAt の新しい順・id
  */
 export function taskListView(items: Iterable<Item>, today: string, nowMs: number): TaskListView {
@@ -143,7 +143,7 @@ export function taskDateText(item: Item): TaskDateText {
 }
 
 /**
- * M・S の上の行の2つの部分（日付の所と依頼者）。期限切れの色と太字は日付の所だけに付ける（D27）ので、画面はこれで分けて出す。
+ * M・S の上の行の2つの部分（日付の所と依頼者）。期限切れの色と太字は日付の所だけに付ける（開発）ので、画面はこれで分けて出す。
  * どちらも無ければ ''
  */
 export function taskStackedParts(item: Item): { date: string; requester: string } {
@@ -159,7 +159,7 @@ export function taskStackedParts(item: Item): { date: string; requester: string 
 }
 
 /**
- * M・S の上の行（D27）: Task List 生まれの1日 '〆11/20'、複数日 '11/10〜11/20'、④ '11/10〜'、①は依頼者だけか ''、
+ * M・S の上の行（開発）: Task List 生まれの1日 '〆11/20'、複数日 '11/10〜11/20'、④ '11/10〜'、①は依頼者だけか ''、
  * カレンダー生まれは '11/20'・'11/10〜11/20'（〆を付けない）。依頼者があれば '・{依頼者}' を足す
  */
 export function taskStackedLine(item: Item): string {
@@ -167,7 +167,7 @@ export function taskStackedLine(item: Item): string {
   return [date, requester].filter((x) => x !== '').join('・')
 }
 
-/** Task List の入力欄で入れた物（件名の字と［開始日］［締め切り日］［依頼者］。書きかけも同じ形。D23） */
+/** Task List の入力欄で入れた物（件名の字と［開始日］［締め切り日］［依頼者］。書きかけも同じ形。開発） */
 export interface TaskEntry {
   text: string
   start: string | null
@@ -176,9 +176,9 @@ export interface TaskEntry {
 }
 
 /**
- * 入力欄から足す物（13.2）: Task List 生まれ・仕事・Task List に出す・ラベルなし（D33）。開始日と締め切り日は editDates と同じに
+ * 入力欄から足す物（13.2）: Task List 生まれ・仕事・Task List に出す・ラベルなし（開発）。開始日と締め切り日は editDates と同じに
  * そろえる。件名（最初の空でない行。前後の空白を除いて数える）が空・200字を超える時、依頼者が 60字を超える時は足さずに理由を返す
- * （字は欄に残す。D29）。2行目からはメモ（listText.splitEntry）
+ * （字は欄に残す。開発）。2行目からはメモ（listText.splitEntry）
  */
 export function taskInputOf(entry: TaskEntry): { ok: true; input: ItemInput } | { ok: false; message: string } {
   const parts = splitEntry(entry.text)
@@ -254,7 +254,7 @@ export type TaskDateField = 'start' | 'due'
 /**
  * 日付の列のメニューの1つを押した時にすること: set はその日にする（今日・明日・今週金曜／来週金曜）、pick は小さな月の暦を開く
  * （［日付を選ぶ］。断られる日は選べない）、clear は消す（［なし］・カレンダー生まれの締め切り日の「1日の予定にする（締め切り日を消す）」）、
- * show は ［カレンダーで見る］（その日のデイリーへ、置き換えで移る。D24）
+ * show は ［カレンダーで見る］（その日のデイリーへ、置き換えで移る。開発）
  */
 export type TaskDateAction =
   | { type: 'set'; field: TaskDateField; date: string }
@@ -262,7 +262,7 @@ export type TaskDateAction =
   | { type: 'clear'; field: TaskDateField }
   | { type: 'show'; date: string }
 
-/** 日付の列のメニューの1つ（refused: 押すと 6.4 で断られる速い選び。押すと DATE_REFUSED を4秒出して値は変えない。D30） */
+/** 日付の列のメニューの1つ（refused: 押すと 6.4 で断られる速い選び。押すと DATE_REFUSED を4秒出して値は変えない。開発） */
 export interface TaskDateOption {
   label: string
   action: TaskDateAction
@@ -272,11 +272,11 @@ export interface TaskDateOption {
 /**
  * 日付の列のメニュー（13.5）。締め切り日: 今日・明日・今週金曜（土曜は来週金曜）・日付を選ぶ・なし（カレンダー生まれは
  * 「1日の予定にする（締め切り日を消す）」）。開始日: 日付を選ぶ・なし（カレンダー生まれは「なし」を出さない）。show は
- * ［カレンダーで見る］（カレンダーに出ている時だけ。to の日へ。無ければ null）。M・S は「…」の［日付…］から開く（D46）。
+ * ［カレンダーで見る］（カレンダーに出ている時だけ。to の日へ。無ければ null）。M・S は「…」の［日付…］から開く（開発）。
  * 項目ごとに字と押した時にすること（TaskDateAction）と断られるかを持つ。
  * 「なし」（clear）はその日付がある時だけ、カレンダー生まれの「1日の予定にする」は複数日の時だけ出す（消しても何も変わらない物は
  * 出さない。開発）。refused は今日・明日・金曜・なしを
- * taskDateEdit に通して断られる物（1日の予定で終了 < 開始になる。6.4・D30）。［日付を選ぶ］は断られる日を暦の側で選べなくする
+ * taskDateEdit に通して断られる物（1日の予定で終了 < 開始になる。6.4・開発）。［日付を選ぶ］は断られる日を暦の側で選べなくする
  */
 export interface DateMenuModel {
   due: TaskDateOption[]

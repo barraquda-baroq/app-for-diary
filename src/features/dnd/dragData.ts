@@ -1,4 +1,4 @@
-// 掴んだ物に持たせる値（dnd-kit の draggable の data）の形と見分け方（docs/SPEC.md の 7.11・13.6・14.2・15.2。D52）。
+// 掴んだ物に持たせる値（dnd-kit の draggable の data）の形と見分け方（docs/SPEC.md の 7.11・13.6・14.2・15.2。開発）。
 // 1つのドラッグの入れ物（TopDnd）の中で、ウィークリーの予定・Task List の行・リストの並べ替えの3つを掴む。違う物を読み違えない:
 // ウィークリーの落とす所は並べ替えの物を受けず、並べ替えはカレンダーの日を受けない（FRAME-224）。
 // Task List の行と並べ替えは type の印（'task-row'・'sort'）で、ウィークリーの予定は今までどおり week/dnd の asDragData の形で見分ける

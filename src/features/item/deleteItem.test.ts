@@ -83,7 +83,7 @@ describe('詳細の画面の中で消す（7.13）', () => {
   })
 })
 
-describe('S3 Task List から消す時は並びに積まない（stack: false。7.13・D2・S3-TASK-210）', () => {
+describe('S3 Task List から消す時は並びに積まない（stack: false。7.13・開発・S3-TASK-210）', () => {
   it('ウィークリー・デイリーを出していても積まず、お知らせの［元に戻す］でゴミ箱から戻す', async () => {
     await start(dataWith({ items: [task] }))
     expect(await deleteItem(getData().items.t!, Date.now(), { stack: false })).toBe(true)

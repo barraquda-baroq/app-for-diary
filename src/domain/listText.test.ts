@@ -20,7 +20,7 @@ describe('件名とメモに分ける（splitEntry。13.2・15.4）', () => {
     expect(toLf('a\r\nb\rc\nd')).toBe('a\nb\nc\nd')
   })
 
-  it('頭の空の行（空白だけの行も）を飛ばし、件名の前後の空白を除く（S3-FRAME-092・D29）', () => {
+  it('頭の空の行（空白だけの行も）を飛ばし、件名の前後の空白を除く（S3-FRAME-092・開発）', () => {
     expect(splitEntry('\n   \n\t 件名 　\nメモ')).toEqual({ title: '件名', memo: 'メモ' })
   })
 
@@ -40,7 +40,7 @@ describe('件名とメモに分ける（splitEntry。13.2・15.4）', () => {
   })
 })
 
-describe('件名を 200字で切る（fitTitle。D25・D29）', () => {
+describe('件名を 200字で切る（fitTitle。開発）', () => {
   it('200字までは切らない（overflow は空）', () => {
     const t = 'あ'.repeat(200)
     expect(fitTitle(t)).toEqual({ title: t, overflow: '' })

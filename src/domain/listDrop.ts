@@ -1,11 +1,11 @@
-// Task List の行をカレンダーへ落とす決まり（docs/SPEC.md の 13.6。ウィークリーのドラッグの 7.11・drag.ts と合わせる。D28）: 掴めるか、
+// Task List の行をカレンダーへ落とす決まり（docs/SPEC.md の 13.6。ウィークリーのドラッグの 7.11・drag.ts と合わせる。開発）: 掴めるか、
 // どの日のどの区分に落とせるか、落とすと何が変わるか、落とした後のお知らせの字。ドラッグの部品（src/features/dnd）はここだけを見て決める。
 // - 区分の違う所へは落とせない（null）。カレンダーに出ていない物: ①は締め切り日を D に、④は締め切り日を D に（開始日が D より後なら
 //   開始日も D に）
 // - カレンダーに出ている1日の物は 7.11 と同じく丸ごと動かす。今の日（D === from）は 'same'（何もしない）
 // - 複数日の物は締め切り日だけ: D が開始日より前は null、D === to は 'same'、D === from は1日の物になる
 // - 6.4（drag.ts の fitTimes）: 1日の物で終わりの時刻が始まりより前になる時は null、同じ時刻なら終わりの時刻を消す
-// - ロック中は掴めず（canGrabTaskRow）、落としても null。時刻は変えない（日だけ。D27）。完了した物も動かせる（7.11 と同じ）
+// - ロック中は掴めず（canGrabTaskRow）、落としても null。時刻は変えない（日だけ。開発）。完了した物も動かせる（7.11 と同じ）
 // 画面は表示用に直した記録（useData()。6.12）を渡す。日付は 'YYYY-MM-DD' の文字のまま比べる
 import { isYmd } from './dates'
 import { fitTimes, type DatePatch } from './drag'
@@ -25,7 +25,7 @@ export function listDropPatch(item: Item, target: { date: string; kind: ItemKind
   const p = periodOf(item)
   // カレンダーに出ていない物（①④）: 締め切り日を D に（④で開始日が D より後なら開始日も D に）
   if (!p) return fitTimes(item, isYmd(item.start) && item.start > D ? D : item.start, D)
-  // カレンダーに出ている1日の物: 7.11 の1日の予定のカードと同じく丸ごと動かす（D28）
+  // カレンダーに出ている1日の物: 7.11 の1日の予定のカードと同じく丸ごと動かす（開発）
   if (p.from === p.to) {
     if (D === p.from) return 'same'
     return item.origin === 'list'

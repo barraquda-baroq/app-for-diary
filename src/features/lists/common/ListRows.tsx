@@ -1,4 +1,4 @@
-// 3つのリストの行の並び（docs/SPEC.md の 3.6・13.4・14.2・15.3。§3.7・P11）: まだの行 → 「済み n件」の区切り（common/DoneSection）→ 済んだ行
+// 3つのリストの行の並び（docs/SPEC.md の 3.6・13.4・14.2・15.3。開発・P11）: まだの行 → 「済み n件」の区切り（common/DoneSection）→ 済んだ行
 // （区切りを畳んでいる間は出さない）を、1つの平らな並びに記録の id を key にして置く。チェックで行が区切りをまたいでも同じ親の中で
 // 動くだけなので、行の部品は作り直さない（フォーカス・開いたメニュー・その場で直している欄が残る）。各リストの中身が使う:
 //   <ListRows open={view.open} done={view.done} doneSection={{ collapsed, onToggle, testId }}

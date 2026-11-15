@@ -71,7 +71,7 @@ describe('5つのかたまり（14.2）', () => {
     expect(v.groups[1].done.map((r) => r.id)).toEqual(['w1', 'w3'])
   })
 
-  it('ルーチンが全部済んだかたまりは空のかたまりでない（見出しの数・山形を出したまま。済みも全部に数える。14.2・D26。S3-FRAME-241・S3-ROUTINE-081）', () => {
+  it('ルーチンが全部済んだかたまりは空のかたまりでない（見出しの数・山形を出したまま。済みも全部に数える。14.2・開発。S3-FRAME-241・S3-ROUTINE-081）', () => {
     const routines = [mkRoutine({ id: 'd1', cycle: 'daily' }), mkRoutine({ id: 'm1', cycle: 'monthly' })]
     const routineChecks = [mkCheck('d1', '2026-11', [TODAY]), mkCheck('m1', '2026-11', ['2026-11-02'])]
     const v = routineListView(dataWith({ routines, routineChecks }), TODAY)
@@ -84,7 +84,7 @@ describe('5つのかたまり（14.2）', () => {
     expect(v.undone).toBe(0)
   })
 
-  it('かたまりの中は order の小さい順、同じなら id の小さい順。済みの行も手で並べた順のまま（S3-ROUTINE-024・S3-ROUTINE-031・D10）', () => {
+  it('かたまりの中は order の小さい順、同じなら id の小さい順。済みの行も手で並べた順のまま（S3-ROUTINE-024・S3-ROUTINE-031・開発）', () => {
     const routines = [
       mkRoutine({ id: 'c', order: 2 }),
       mkRoutine({ id: 'b', order: 1 }),
@@ -147,7 +147,7 @@ describe('指定の字（14.1）', () => {
   })
 })
 
-describe('戻る日の字（returnText。14.2・D32）', () => {
+describe('戻る日の字（returnText。14.2・開発）', () => {
   it('「11/16（月）に戻ります」', () => {
     expect(returnText('2026-11-16', TODAY)).toBe('11/16（月）に戻ります')
   })

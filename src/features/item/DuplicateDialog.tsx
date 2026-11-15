@@ -8,7 +8,7 @@
 // - ［複製する］で新しい項目を作り（src/domain/ops.ts の duplicateItem。完了は写さない）、閉じて「11/17（火）に複製しました［開く］」
 //   （6秒。期間の初めの日。カレンダーに出ない list 生まれは「Task List に複製しました［開く］」）。［開く］で新しい予定の詳細へ。
 //   複製したことは元に戻す・やり直すの並びに積む（詳細の中で直していた所は、その前に1つにまとめて積む。7.13）。Task List から開いた
-//   詳細の中の複製（from 'task'）は積まず（7.13・D2）、お知らせの［開く］も「タスク」の詳細で開く（作った所と同じ形と題。D35）
+//   詳細の中の複製（from 'task'）は積まず（7.13・開発）、お知らせの［開く］も「タスク」の詳細で開く（作った所と同じ形と題。開発）
 import { useState } from 'react'
 import { duplicateDates, editDates } from '../../domain/itemInput'
 import { periodOf } from '../../domain/items'

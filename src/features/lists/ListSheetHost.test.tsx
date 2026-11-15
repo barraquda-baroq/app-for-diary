@@ -1,4 +1,4 @@
-// リストから開く小さな画面を出す所（src/features/lists/ListSheetHost.tsx。docs/SPEC.md の 3.1・3.6・12.2・12.3。D31・D51）:
+// リストから開く小さな画面を出す所（src/features/lists/ListSheetHost.tsx。docs/SPEC.md の 3.1・3.6・12.2・12.3。開発）:
 // リストから開いた印だけを出し（カレンダーから開いた物は SheetHost）、読み込み直した後は、登録は1つ戻って閉じ、「タスク」の詳細・
 // ルーチンとやりたいことのパネルは記録があれば同じ形で開き直す（無ければ1つ戻って閉じる）。開く物は押した時の今の行き先で決める
 import { act, screen, within } from '@testing-library/react'
@@ -96,7 +96,7 @@ describe('S3 リストから開く（S3-FRAME-004・S3-FRAME-018・S3-TASK-141�
   })
 })
 
-describe('S3 読み込み直した後（D31）', () => {
+describe('S3 読み込み直した後（開発）', () => {
   const before = (sheet: object, path = '/month/2026-11') => [path, { pathname: path, state: { sheet } }]
 
   it('「タスク」の詳細は、予定があれば同じ題で開き直す（このページの印に替える）', async () => {
@@ -139,7 +139,7 @@ describe('S3 読み込み直した後（D31）', () => {
     expect(router.state.location.pathname).toBe('/year/2026')
   })
 
-  it('L・M の MIM（#/mim）の上の印も同じく開き直す（MIM の横・下のリストから開いた物。D51）', async () => {
+  it('L・M の MIM（#/mim）の上の印も同じく開き直す（MIM の横・下のリストから開いた物。開発）', async () => {
     const { router } = await renderAt(before({ kind: 'detail', id: 'a', from: 'task' }, '/mim'), { data: { items } })
     expect(within(screen.getByTestId('item-sheet')).getByRole('heading').textContent).toBe('タスク')
     expect(router.state.location.pathname).toBe('/mim')

@@ -1,5 +1,5 @@
 // 段階3のリストの約束（契約）の確かめ: 段階0からある data-testid の名前を替えていないこと、E2E と見本の画面が使う作り物のデータ
-// （e2e/fixtures/listData.ts）が今の決まり（6.2〜6.4・6.7）に合い、見せたい形（PLAN の 6.1）になっていること
+// （e2e/fixtures/listData.ts）が今の決まり（6.2〜6.4・6.7）に合い、見せたい形（listData.ts の頭の「中身」）になっていること
 import { describe, expect, it } from 'vitest'
 import { LIST_IDS, LIST_TODAY, listData } from '../../../e2e/fixtures/listData'
 import { isInTaskList, isOnCalendar, itemProblems } from '../../domain/items'

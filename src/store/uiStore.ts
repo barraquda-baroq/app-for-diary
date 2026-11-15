@@ -179,7 +179,7 @@ export const usePrefs = create<PrefsState>((set, get) => ({
 
 /**
  * S・M の積んだ所の今の形（StackedTop を出している間だけ。L・設定・ログインなどでは null）。width は幅の区分、fullMim は S で MIM を
- * 全面で開いている（リストと切り替えの列を隠している）。「開いているリスト」（docs/SPEC.md の 3.1・D1・■34。src/features/top/listBack.ts）を
+ * 全面で開いている（リストと切り替えの列を隠している）。「開いているリスト」（docs/SPEC.md の 3.1・■34。src/features/top/listBack.ts）を
  * 決めるのに読む（履歴の決まりの中から DOM・行き先・matchMedia を読まずに済むように）
  */
 export interface StackedLayout {

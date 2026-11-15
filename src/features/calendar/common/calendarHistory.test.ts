@@ -26,7 +26,7 @@ describe('screenOf', () => {
   })
 })
 
-describe('S3 リストから開く小さな画面（3.1・D51・S3-FRAME-004・S3-FRAME-018）', () => {
+describe('S3 リストから開く小さな画面（3.1・開発・S3-FRAME-004・S3-FRAME-018）', () => {
   const task = { sheet: { kind: 'detail', id: 'i1', from: 'task' } }
   const routine = { sheet: { kind: 'routine', id: 'r1' } }
   const favorite = { sheet: { kind: 'favorite', id: 'f1' } }

@@ -1,4 +1,4 @@
-// 掴んだ物の値の見分け方（src/features/dnd/dragData.ts。docs/SPEC.md の 7.11・13.6・14.2・15.2。D52・S3-FRAME-224）: Task List の行・並べ替え・
+// 掴んだ物の値の見分け方（src/features/dnd/dragData.ts。docs/SPEC.md の 7.11・13.6・14.2・15.2。開発・S3-FRAME-224）: Task List の行・並べ替え・
 // ウィークリーの予定を読み違えない（並べ替えの物をカレンダーの日へ落とせる物と読まない）
 import { describe, expect, it } from 'vitest'
 import { mkItem } from '../../domain/testData'

@@ -283,7 +283,7 @@ describe('3つのリストの文（13.〜15.）', () => {
     })
   })
 
-  it('年まで入れた日付（日付の列の読み上げ。D32）', () => {
+  it('年まで入れた日付（日付の列の読み上げ。開発）', () => {
     expect(fullDateLabel('2026-11-10')).toBe('2026年11月10日（火）')
     expect(fullDateLabel('2027-01-05')).toBe('2027年1月5日（火）')
     expect(fullDateLabel('x')).toBe('x')

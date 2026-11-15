@@ -1,14 +1,14 @@
-// 3つのリストの行の、その場で直す欄（docs/SPEC.md の 3.6・13.3・14.2・15.2。D40・D48・P3・P16）: Task List の件名・依頼者、Routine List の
+// 3つのリストの行の、その場で直す欄（docs/SPEC.md の 3.6・13.3・14.2・15.2。開発・P3・P16）: Task List の件名・依頼者、Routine List の
 // 件名、Favorite List の本文。各リストの行が使う:
 //   const edit = useInlineEdit({ value: item.title, onSave: (t) => attempt(() => actions.updateItem(id, { title: t })) })
 //   <button onClick={edit.start}>{title}</button>   →   edit.editing なら <textarea {...edit.inputProps} />
 // - start は押した出来事の中で呼ぶ: 欄を出す描き直しをその場で済ませ（flushSync）、同じ出来事の中でフォーカスする（iPhone はそうで
 //   ないとキーボードが出ない。P3）。カーソルは字の終わり
 // - 保存するのは Enter（変換中の Enter は除く。P16）と、欄から離れた時（blur）。保存のボタンは無い（3.6）。複数行の欄（Favorite）は
-//   PC の Enter が保存・Shift+Enter が改行、指の端末の Enter は改行（D40。multiline）。autosaveMs を渡すと、止まってからその長さで
-//   打っている間も保存する（Favorite は 0.6秒。D40）
-// - 空・空白だけにして離れた・Enter を押した時は保存せずに元に戻す（D40・D48）。Esc は保存せずに元に戻して閉じる。前後の空白は落として
-//   保存する（trim。Favorite の本文も。D39）。保存した値が今と同じ時は書かない
+//   PC の Enter が保存・Shift+Enter が改行、指の端末の Enter は改行（開発。multiline）。autosaveMs を渡すと、止まってからその長さで
+//   打っている間も保存する（Favorite は 0.6秒。開発）
+// - 空・空白だけにして離れた・Enter を押した時は保存せずに元に戻す（開発）。Esc は保存せずに元に戻して閉じる。前後の空白は落として
+//   保存する（trim。Favorite の本文も。開発）。保存した値が今と同じ時は書かない
 // - 打っている間の字（まだ保存していない物）は src/store/draftRegistry に届け、画面を閉じる・裏に回る時にも保存する（保存する物は
 //   保存する。■34 の打ちかけを捨てる時も、その場の直しは捨てない）
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -24,7 +24,7 @@ export interface InlineEditOptions {
   onSave: (text: string) => void
   /** 複数行の欄（PC の Enter が保存・Shift+Enter が改行、指の端末の Enter は改行。Favorite の本文） */
   multiline?: boolean
-  /** 打っている間も、止まってからこの長さ（ms）で保存する（Favorite の本文は 600。D40） */
+  /** 打っている間も、止まってからこの長さ（ms）で保存する（Favorite の本文は 600。開発） */
   autosaveMs?: number
 }
 

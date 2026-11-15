@@ -1,6 +1,6 @@
-// 3つのリストの入力欄の書きかけ（docs/SPEC.md の 3.6・6.13・13.2・14.2・15.1。D16・D23・FRAME-095・096）と、■34 で打ちかけを捨てること。
+// 3つのリストの入力欄の書きかけ（docs/SPEC.md の 3.6・6.13・13.2・14.2・15.1。開発・FRAME-095・096）と、■34 で打ちかけを捨てること。
 // - 書きかけは diary-studio:draft:{routine,task,favorite} に控える（common/listInputModel.ts の draftKey・形は parseDraft・serializeDraft）。
-//   閉じる・読み込み直す・畳む・端からのフリックでモードが替わる・幅が替わって作り直されても消えない（すばやく足すと違う。D16）。
+//   閉じる・読み込み直す・畳む・端からのフリックでモードが替わる・幅が替わって作り直されても消えない（すばやく足すと違う。開発）。
 //   足したら消す。localStorage が使えない時も、入力・足すは動く（src/store/localDrafts.ts の readLocal・writeLocal）
 // - 打つたびの書き込みは少し待ってまとめ（DRAFT_WRITE_MS）、待っている間は src/store/draftRegistry に「まだ控えていない」と届ける
 //   （画面を閉じる・裏に回る時（pagehide・visibilitychange）と［更新する］の前に、まとめて控える。src/store/lifecycle.ts）
@@ -12,7 +12,7 @@
 //   （変換の途中なら決めずに捨てる。欄にフォーカスがあれば、先にそのリストの見出しの畳む・開くボタンへ移してから空にする。
 //   common/useListInput.ts）、端末の書きかけを消し、まだ控えていない書きかけも控えずに捨てる（後で pagehide に書き戻さない）。
 //   聞かない・足さない。行の中で直している途中の件名・本文（その場の直し）は捨てない（保存する物は保存する）。
-//   見出しの［▾］で畳む・切り替えの列で別のリストへ移る・幅が L になる時は呼ばない（打ちかけは残す。3.6・6.13・D16）
+//   見出しの［▾］で畳む・切り替えの列で別のリストへ移る・幅が L になる時は呼ばない（打ちかけは残す。3.6・6.13・開発）
 import { markDraftClean, markDraftDirty } from '../../../store/draftRegistry'
 import { readLocal, writeLocal } from '../../../store/localDrafts'
 import type { ListKey } from '../../../store/uiStore'

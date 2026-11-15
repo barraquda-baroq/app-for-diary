@@ -6,7 +6,7 @@
 // 何度作っても同じデータになる（seedData(page, listData()) で置く。window.__ds.replaceAllData を通るので、画面には直した後の物（6.12）が
 // 出る）。カレンダーの見本（demoData）と一緒に置く時は表ごとに混ぜる（items は両方の物を1つの表に）。
 //
-// 中身（見本の画面ごとに見せたい物。PLAN の 6.1）:
+// 中身（見本の画面ごとに見せたい物）:
 // - Task List: ② 締め切り日だけ（明日・依頼者 営業部）、③ 開始日と締め切り日（今日〜3日後・依頼者 総務）、① 日付なし、④ 開始日だけ
 //   （プライベート）、期限切れ（昨日）、今日が締め切り、済み2件（2日前は出る・8日前は 168時間を過ぎて出ない）、カレンダー生まれで
 //   Task List にも出した物（プライベート・2日後の 10:00〜11:00）
@@ -139,7 +139,7 @@ export function listData(today: string = LIST_TODAY): Pick<AppData, 'items' | 'r
     { id: I.garbage, title: 'ゴミ出し', cycle: 'weekly', weekdays: [1, 4] },
     { id: I.weekReview, title: '週の振り返り', cycle: 'weekly' },
     { id: I.rentCheck, title: '家賃の確認', cycle: 'monthly', monthDay: 25 },
-    // 四半期は空のかたまり（名前と＋だけを淡く出す。D26）
+    // 四半期は空のかたまり（名前と＋だけを淡く出す。開発）
     { id: I.taxPapers, title: '確定申告の書類', cycle: 'yearly', yearMonth: 3, yearDay: 15 },
   ]
   const routines: Record<string, Routine> = {}

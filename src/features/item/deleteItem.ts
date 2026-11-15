@@ -5,7 +5,7 @@
 // - カレンダーに出ていないタスク（Task List だけ）は確かめずに消し、「『件名』を削除しました［元に戻す］」（6秒）。［元に戻す］でゴミ箱から戻す
 // どちらもゴミ箱へ移す（カレンダーと Task List の両方から消え、戻すと両方に戻る。同じ1件）。消せた時 true（確かめで［やめる］・失敗は false）。
 // どちらも元に戻す・やり直すの並びに積む（ウィークリー・デイリーから開いた詳細の時。お知らせの［元に戻す］も同じ並び。7.13）。
-// Task List の［削除］と、Task List から開いた詳細の［削除］は積まない（stack: false。お知らせの［元に戻す］だけで戻す。7.13・D2）。
+// Task List の［削除］と、Task List から開いた詳細の［削除］は積まない（stack: false。お知らせの［元に戻す］だけで戻す。7.13・開発）。
 // 詳細の画面で消す前に直した所は、その前に別の1つとして積む（消せなかった時は分けない）
 import { isInTaskList, isOnCalendar } from '../../domain/items'
 import { toastText, undoText } from '../../domain/itemText'
@@ -29,7 +29,7 @@ export function deleteConfirmText(item: Pick<Item, 'title' | 'listed' | 'done' |
   }
 }
 
-/** 消す（上の決まり）。opts は積み方（RecordOptions。Task List の［削除］は stack: false で並びに積まない。7.13・D2） */
+/** 消す（上の決まり）。opts は積み方（RecordOptions。Task List の［削除］は stack: false で並びに積まない。7.13・開発） */
 export async function deleteItem(item: Item, nowMs: number = Date.now(), opts?: RecordOptions): Promise<boolean> {
   if (isOnCalendar(item)) {
     const ok = await confirmDialog({

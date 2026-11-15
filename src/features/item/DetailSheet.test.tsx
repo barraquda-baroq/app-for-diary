@@ -970,7 +970,7 @@ describe('元に戻す・やり直す（7.13）: 開いてから閉じるまで�
   })
 })
 
-describe('S3 Task List から開いた詳細（from task。12.3・7.13・D35・D46・S3-FRAME-191・S3-TASK-141・S3-FRAME-226）', () => {
+describe('S3 Task List から開いた詳細（from task。12.3・7.13・D46・開発・S3-FRAME-191・S3-TASK-141・S3-FRAME-226）', () => {
   const labels = () => useUndo.getState().stack.past.map((st) => st.label)
 
   async function openTask(items: Item[], id = items[0].id) {
@@ -999,7 +999,7 @@ describe('S3 Task List から開いた詳細（from task。12.3・7.13・D35・D
     leave()
   })
 
-  it('中の［複製］は並びに積まず、お知らせの［開く］も「タスク」の詳細で開く（D35）', async () => {
+  it('中の［複製］は並びに積まず、お知らせの［開く］も「タスク」の詳細で開く（開発）', async () => {
     const leave = enterUndoScope()
     const task = mkTask({ id: 't', title: '見積もり', start: null, due: null })
     const { user, router } = await openTask([task])
