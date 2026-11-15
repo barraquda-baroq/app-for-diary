@@ -2,17 +2,18 @@
 // たびに畳んで始まり（読み込み直しても）、開いた状態は端末に覚えない。L の右の列の畳んだ状態は端末に覚える。幅を替えて行き来しても、
 // それぞれの状態を使う。見出しと切り替えの列の数は同じ（まだ済んでいない数。畳んでいても数える）。入力欄はいつも出ていて、Enter・
 // ［足す］ではまだ足さず（足すのは各リストの中身）、打った字は書きかけに残る。データは作り物（e2e/fixtures/listData.ts）
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { favoriteListView } from '../src/domain/favoriteList'
 import { routineListView } from '../src/domain/routineList'
 import { taskListView } from '../src/domain/taskList'
-import { listData } from './fixtures/listData'
+import { LIST_IDS, listData } from './fixtures/listData'
 import { E2E_NOW, noHorizontalScroll } from './helpers'
 import {
   expectCollapsed,
   headCount,
   LIST_NAMES,
   LIST_TODAY,
+  type ListName,
   listAdd,
   listFold,
   listInput,
@@ -166,15 +167,38 @@ test.describe(
   },
 )
 
-test.describe('S3 まだ済んでいない数（作り物のデータから。3.5・3.6）', { tag: ['@pc', '@s'] }, () => {
-  test('見出し（と S・M の切り替えの列）に、各リストの決まりで数えた数を出す', async ({ page, isMobile }) => {
-    const want = expectedCounts()
-    test.skip(want.task === 0, '各リストの決まり（src/domain の taskListView など）が入るまでは数がいつも 0')
-    expect(want).toEqual({ routine: 5, task: 7, favorite: 4 })
-    await openLists(page)
-    for (const list of LIST_NAMES) {
-      expect(await headCount(page, list), list).toBe(want[list])
-      if (isMobile) expect(await switchCount(page, list), list).toBe(want[list])
+test.describe(
+  'S3 まだ済んでいない数（作り物のデータから。3.5・3.6。S3-FRAME-044・S3-ROUTINE-081）',
+  { tag: ['@pc', '@s'] },
+  () => {
+    /** 見出し（S・M は切り替えの列も）の数が want になるまで待つ */
+    async function expectCounts(page: Page, isMobile: boolean, want: Record<ListName, number>): Promise<void> {
+      for (const list of LIST_NAMES) {
+        await expect.poll(() => headCount(page, list), { message: list }).toBe(want[list])
+        if (isMobile) await expect.poll(() => switchCount(page, list), { message: list }).toBe(want[list])
+      }
     }
-  })
-})
+
+    test('見出し（と S・M の切り替えの列）に、各リストの決まりで数えた数を出し、記録が替わるとすぐ数え直す（畳んでいても）', async ({
+      page,
+      isMobile,
+    }) => {
+      const want = expectedCounts()
+      // 作り物のデータ: ルーチン6つのうち今日済んだ1つを除く5つ、Task List に出る8つ（済んで8日たった1つは出ない）のうち済んだ1つを
+      // 除く7つ（カレンダー生まれの1つも数える）、やりたいこと5つのうち済んだ1つを除く4つ
+      expect(want).toEqual({ routine: 5, task: 7, favorite: 4 })
+      await openLists(page)
+      await expectCounts(page, isMobile, want)
+      // 画面の外（window.__ds の操作）で、ルーチンを1つ済みにし、タスクを1つ済みにし、やりたいことを1つ足す
+      await page.evaluate(
+        async ({ routine, task, today }) => {
+          await window.__ds.actions.checkRoutine(routine, today)
+          await window.__ds.actions.setItemDone(task, true)
+          await window.__ds.actions.addFavorite('駅前の本屋をのぞく')
+        },
+        { routine: LIST_IDS.stretch, task: LIST_IDS.printDocs, today: LIST_TODAY },
+      )
+      await expectCounts(page, isMobile, { routine: 4, task: 6, favorite: 5 })
+    })
+  },
+)

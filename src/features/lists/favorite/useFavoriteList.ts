@@ -1,12 +1,22 @@
-// Favorite List の中身（docs/SPEC.md の 15.）を記録から作るフック: 表示用に直したやりたいこと（useData()。6.12）・今日から
-// src/domain/favoriteList.ts の favoriteListView を作り、同じ物を渡されている間は同じ物を返す（行は React.memo で浅く比べる）。
-// today は Favorite List の中身の部品が1つの useToday() から渡す（足した日の年を出すか。掴んでいる間はその日のまま。D37）。
-// 契約の形だけ（S3-STUB）: 今は空の中身を返すだけ（中身は段階3の WP4 が入れる）。使わない引数は void で読む（名前を契約のまま残すため）
-import type { FavoriteListView } from '../../../domain/favoriteList'
+// Favorite List の中身（docs/SPEC.md の 15.）を記録から作るフック: 表示用に直したやりたいこと（useApp の data.favorites。useData() と
+// 同じ記録。6.12）・今日から src/domain/favoriteList.ts の favoriteListView を作る。表・today が同じ間は作り直さない（ほかの表が
+// 替わっても）。作り直しても、行に出す物が前と同じ行は前と同じ物を返す（common/stableRows。行は記録ごとの React.memo）。
+// today は Favorite List の中身の部品が1つの useToday() から渡す（足した日の年を出すか。掴んでいる間はその日のまま。D37）
+import { useMemo } from 'react'
+import { favoriteListView, type FavoriteListView, type FavoriteRowView } from '../../../domain/favoriteList'
+import type { Favorite } from '../../../domain/types'
+import { useApp } from '../../../store/appStore'
+import { keep } from '../common/stableRows'
 
-const EMPTY: FavoriteListView = { open: [], done: [], undone: 0 }
+/** 記録ごとの前の行 */
+const rowOf = new WeakMap<Favorite, FavoriteRowView>()
+
+const keepRow = (row: FavoriteRowView): FavoriteRowView => keep(rowOf, row.favorite, row)
 
 export function useFavoriteList(today: string): FavoriteListView {
-  void today
-  return EMPTY
+  const favorites = useApp((s) => s.data.favorites)
+  return useMemo(() => {
+    const view = favoriteListView(Object.values(favorites), today)
+    return { open: view.open.map(keepRow), done: view.done.map(keepRow), undone: view.undone }
+  }, [favorites, today])
 }

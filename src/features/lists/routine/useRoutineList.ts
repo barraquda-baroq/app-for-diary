@@ -1,14 +1,28 @@
-// Routine List の中身（docs/SPEC.md の 14.）を記録から作るフック: 表示用に直したルーチンとチェックの記録（useData()。6.12）・今日から
-// src/domain/routineList.ts の routineListView を作り、同じ物を渡されている間は同じ物を返す（行は React.memo で浅く比べる）。
+// Routine List の中身（docs/SPEC.md の 14.）を記録から作るフック: 表示用に直したルーチンとチェックの記録（useApp の data.routines・
+// data.routineChecks。useData() と同じ記録。6.12）・今日から src/domain/routineList.ts の routineListView を作る。2つの表・today が
+// 同じ間は作り直さない（ほかの表が替わっても）。作り直しても、行に出す物が前と同じ行は前と同じ物を返し、行が1つも替わらない種類の
+// かたまりも前と同じ物を返す（common/stableRows。行とかたまりは React.memo）。
 // today は Routine List の中身の部品が1つの useToday() から渡す（0時を過ぎると変わり、チェックの記録を書き換えずに行が戻る。14.3。
-// 掴んでいる間はその日のまま。D37）。
-// 契約の形だけ（S3-STUB）: 今は記録を読まず、ルーチンの無い時の中身（5つの空のかたまり）を返すだけ（中身は段階3の WP3 が入れる）
+// 掴んでいる間はその日のまま。D37）
 import { useMemo } from 'react'
-import { routineListView, type RoutineListView } from '../../../domain/routineList'
-import type { AppData } from '../../../domain/types'
+import { routineListView, type RoutineGroupView, type RoutineListView, type RoutineRowView } from '../../../domain/routineList'
+import type { Routine, RoutineCycle } from '../../../domain/types'
+import { useApp } from '../../../store/appStore'
+import { keep } from '../common/stableRows'
 
-const NO_ROUTINES: Pick<AppData, 'routines' | 'routineChecks'> = { routines: {}, routineChecks: {} }
+/** 記録ごとの前の行（チェックを付けた・外した・日が替わった時は、記録が同じでも済み・戻る日が替われば新しい行） */
+const rowOf = new WeakMap<Routine, RoutineRowView>()
+/** 種類ごとの前のかたまり */
+const groupOf = new Map<RoutineCycle, RoutineGroupView>()
+
+const keepRow = (row: RoutineRowView): RoutineRowView => keep(rowOf, row.routine, row)
 
 export function useRoutineList(today: string): RoutineListView {
-  return useMemo(() => routineListView(NO_ROUTINES, today), [today])
+  const routines = useApp((s) => s.data.routines)
+  const routineChecks = useApp((s) => s.data.routineChecks)
+  return useMemo(() => {
+    const view = routineListView({ routines, routineChecks }, today)
+    const groups = view.groups.map((g) => keep(groupOf, g.cycle, { ...g, open: g.open.map(keepRow), done: g.done.map(keepRow) }))
+    return { groups, undone: view.undone }
+  }, [routines, routineChecks, today])
 }
