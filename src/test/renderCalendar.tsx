@@ -31,6 +31,7 @@ import {
   type Prefs,
 } from '../store/uiStore'
 import { resetUndoForTests } from '../store/undoStore'
+import { resetListDraftsForTests } from '../features/lists/common/listDraft'
 import { WIDTH_M, type WidthClass } from '../ui/hooks'
 import type { ViewProps } from '../features/calendar/common/types'
 import { fakePersistence } from './fakePersistence'
@@ -133,7 +134,8 @@ export function setupCalendarTests({ now = T0 }: { now?: Date | number } = {}): 
     vi.setSystemTime(now)
     localStorage.clear()
     usePrefs.setState(DEFAULT_PREFS)
-    useStackedLists.setState({ collapsed: { routine: true, task: true, favorite: true } })
+    useStackedLists.setState({ collapsed: { routine: true, task: true, favorite: true }, shown: 'calendar', layout: null })
+    resetListDraftsForTests()
     useCalendarUi.setState(initialCalendarUi())
     useToasts.setState({ toasts: [] })
     resetUndoForTests()
