@@ -1,0 +1,182 @@
+/* ===== Favorite List の中身の形（docs/SPEC.md の 15.・3.6・4.4・4.7〜4.12） =====
+   色・大きさは src/styles.css のトークンだけを使い、余白は 4px を単位にする（src/calendarCss.test.ts が見張る）。
+   3つのリストに共通の形（行・「済み n件」・入力欄・パネルの外枠）は common/lists.css。分類・区分の色は付けない（15.2） */
+
+.fv-list {
+  min-width: 0;
+}
+
+/* ---------- 行（favorite/FavoriteRow） ---------- */
+
+/* 中身と、右上の足した日 */
+.fv-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.fv-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* 中身（押すとその場で直す。リンクの無い物はボタン、リンクのある物は押せる面） */
+.fv-text-box {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 0; /* 4.8 の例外: 中央に置く（40px の行に 14px × 1.45 の1行目を、点線の丸の真ん中に） */
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.fv-text-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 字は 14px。改行はそのまま、長い URL も枠の中で折り返す */
+.fv-text {
+  display: block;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 3行まで見せる（折り返した行も数える。超えた時だけ「続き」） */
+.fv-text.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+/* 改行で分けた行が2行以上の時の1行目 */
+.fv-first {
+  font-weight: 600;
+}
+
+/* リンク（色は src/styles.css の a）。下線で字と分ける。押せる所が細いので、指で押しやすいように字の高さいっぱいに */
+.fv-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* 済んだ行（斜線と灰色。色だけに頼らない。4.12） */
+.list-row[data-done='true'] .fv-text {
+  text-decoration: line-through;
+}
+
+/* 「続き」（中身の下の余白に掛けて、3行目のすぐ下に） */
+.fv-more {
+  min-height: 24px;
+  margin-top: -8px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.fv-more:hover {
+  color: var(--text);
+}
+
+.fv-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 足した日（等幅 10px・--text-faint。1行目の高さの真ん中に） */
+.fv-added {
+  flex: none;
+  padding-top: 12px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* その場で直す欄（自動で伸び、6行ほどで中でスクロール。common/lists.css の .list-grow） */
+.input.fv-edit {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-block: 2px;
+  resize: none;
+  overflow: hidden;
+}
+
+/* PC の並べ替えの掴む所（まだの行だけ。行に乗せた時に出す。features/dnd の useReorder） */
+.fv-grip {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0;
+}
+
+.list-row:is(:hover, :focus-within) .fv-grip {
+  opacity: 1;
+}
+
+/* 指で操作する端末: 「続き」も 34px の高さ（4.11）。掴む所は出さない（行を 0.4秒押し続けて掴む） */
+@media (pointer: coarse) {
+  .fv-more {
+    min-height: var(--tap);
+    margin-bottom: 4px;
+  }
+
+  .fv-grip {
+    display: none;
+  }
+}
+
+/* ---------- ［詳しく］のパネル（favorite/FavoritePanel。地は --surface。common/ListSheet） ---------- */
+.fv-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 開いた時のフォーカスの置き場（中身の欄にフォーカスすると、スマホでキーボードが開くため）。押す物ではないので枠を出さない */
+.fv-panel-top:focus {
+  outline: none;
+}
+
+.textarea.fv-panel-text {
+  white-space: pre-wrap;
+}
+
+.fv-panel-added {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.fv-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 段階5の Claude の提案の置き場（今は中身が無い） */
+.fv-panel-proposal:empty {
+  display: none;
+}

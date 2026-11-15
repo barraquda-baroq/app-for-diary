@@ -1,6 +1,7 @@
 /* ===== ヘッダーの中身（docs/SPEC.md の 3.3） =====
    ヘッダーの枠（.app-header: 高さ 52px＋ノッチの分・上に固定・--surface を 92% にしてぼかす・下に 1px の --rule）と
-   アイコン（26px・角丸 6px・--brand-filter）は src/styles.css。ここは名前と［MIM］のボタン */
+   アイコン（26px・角丸 6px・--brand-filter）は src/styles.css。ここは名前と［MIM］のボタン。余白は 4px を単位にする（4.8。
+   src/calendarCss.test.ts が見張る） */
 
 /* 幅 380px 未満ではアプリの名前を出さず、アイコンだけ */
 @media (max-width: 379px) {
@@ -9,12 +10,12 @@
   }
 }
 
-/* ［MIM］: 高さ 34px・左右 12px・角丸 999px・地 --surface-3・枠 1px --border。鍵のアイコン 16px と等幅の「MIM」 */
+/* ［MIM］: 高さ 34px・左右 12px・角丸 999px・地 --surface-3・枠 1px --border。鍵のアイコン 16px と等幅の「MIM」（間 8px） */
 .mim-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   flex: none;
   height: var(--tap);
   min-width: var(--tap);
