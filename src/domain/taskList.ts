@@ -221,8 +221,8 @@ export function taskEntryWithDates(entry: TaskEntry, edit: { start?: string | nu
 
 /**
  * 日付の列のメニュー・［日付を決める］・入力欄の下の日付で日を直す時（itemInput.editDates を包む。6.3 のそろえ方・6.4 で断る時は
- * DATE_REFUSED）。Task List 生まれで締め切り日を消して Task List から外れていた物は、listed を true に戻して relisted（6.3 のお知らせ）。
- * カレンダー生まれは開始日を消せない
+ * DATE_REFUSED）。Task List 生まれで締め切り日を消して Task List から外れていた物は、listed を true に戻して relisted（6.3 のお知らせ。
+ * 締め切り日がもともと無かった物は、listed を true にするだけでお知らせは出さない）。カレンダー生まれは開始日を消せない
  */
 export function taskDateEdit(
   item: Item,
@@ -237,10 +237,13 @@ export function taskDateEdit(
   }
   const r = editDates(when, edit)
   if (!r.ok) return r
-  const relisted = item.origin === 'list' && r.when.due === null && !item.listed
+  // 締め切り日の無い Task List 生まれは、いつも Task List に出す（どこにも出ない項目を作らない。ops.updateItem と同じ）
+  const back = item.origin === 'list' && r.when.due === null
+  // お知らせを出すのは、この直しで締め切り日が消えてカレンダーから外れ、Task List から外していた物を戻した時だけ
+  const relisted = back && isYmd(item.due) && !item.listed
   return {
     ok: true,
-    patch: { start: r.when.start, due: r.when.due, endTime: r.when.endTime, listed: relisted ? true : item.listed },
+    patch: { start: r.when.start, due: r.when.due, endTime: r.when.endTime, listed: back ? true : item.listed },
     relisted,
   }
 }
@@ -271,7 +274,8 @@ export interface TaskDateOption {
  * 「1日の予定にする（締め切り日を消す）」）。開始日: 日付を選ぶ・なし（カレンダー生まれは「なし」を出さない）。show は
  * ［カレンダーで見る］（カレンダーに出ている時だけ。to の日へ。無ければ null）。M・S は「…」の［日付…］から開く（D46）。
  * 項目ごとに字と押した時にすること（TaskDateAction）と断られるかを持つ。
- * 「なし」（clear）はその日付がある時だけ出す（無い日付を消しても何も変わらないため。開発）。refused は今日・明日・金曜・なしを
+ * 「なし」（clear）はその日付がある時だけ、カレンダー生まれの「1日の予定にする」は複数日の時だけ出す（消しても何も変わらない物は
+ * 出さない。開発）。refused は今日・明日・金曜・なしを
  * taskDateEdit に通して断られる物（1日の予定で終了 < 開始になる。6.4・D30）。［日付を選ぶ］は断られる日を暦の側で選べなくする
  */
 export interface DateMenuModel {
@@ -284,12 +288,14 @@ export interface DateMenuModel {
 export function taskDateMenu(item: Item, today: string): DateMenuModel {
   const list = item.origin === 'list'
   const opt = (label: string, action: TaskDateAction): TaskDateOption => ({ label, action, refused: refusedBy(item, action) })
+  const p = periodOf(item)
   const due = quickDueOptions(today).map((o) => opt(o.label, o.action))
   due.push(opt(taskDateMenuText.pick, { type: 'pick', field: 'due' }))
-  if (item.due !== null) due.push(opt(list ? taskDateMenuText.none : taskDateMenuText.oneDay, { type: 'clear', field: 'due' }))
+  // カレンダー生まれの「1日の予定にする」は、複数日の時だけ（締め切り日が開始日と同じ1日の物は、消しても何も変わらない）
+  if (item.due !== null && (list || (p !== null && p.from !== p.to)))
+    due.push(opt(list ? taskDateMenuText.none : taskDateMenuText.oneDay, { type: 'clear', field: 'due' }))
   const start = [opt(taskDateMenuText.pick, { type: 'pick', field: 'start' })]
   if (list && item.start !== null) start.push(opt(taskDateMenuText.none, { type: 'clear', field: 'start' }))
-  const p = periodOf(item)
   const show: TaskDateOption | null = p
     ? { label: taskDateMenuText.show, action: { type: 'show', date: p.to }, refused: false }
     : null

@@ -100,7 +100,8 @@ export const INITIAL_ADD_PRESS: AddPressState = { composing: false, commit: null
 
 /**
  * 入力欄・［足す］・window（捕まえる段階）で起きた出来事:
- * - down: ［足す］を押した（pointerdown。左のボタン）。composing は画面が見た変換中か、hasText は空白でない字があるか
+ * - down: ［足す］を押した（pointerdown。左のボタン）。composing は画面が渡す変換中か（今の画面 useListInput.ts は、この決まりが数えた
+ *   composing をそのまま渡す。すばやく足すと同じく変換中の印は1つ）、hasText は空白でない字があるか
  * - up: 押した指・マウスを離した（window の pointerup）。inside は［足す］の上で離したか（指は横の幅だけを見る。12.1 の横のゆとり）
  * - cancel: 押した指をブラウザが受け取った（pointercancel。押した指でスクロールした）
  * - windowdown: どこかを押した（window の pointerdown。［足す］の down より先に来る）。前に変換中に押した［足す］の click が来な
@@ -174,7 +175,7 @@ export function addPressStep(s: AddPressState, e: AddPressEvent): AddPressStep {
   switch (e.type) {
     case 'down': {
       // 変換していない時は外さない（mousedown を止めるだけ。iPhone のキーボードを閉じない）。待っている間の2回目も外さない。
-      // 変換中かは、この決まりが数えた物（compositionstart〜compositionend・focus）と画面が見た物の両方で決める
+      // 変換中かは、この決まりが数えた物（compositionstart〜compositionend・focus）と、画面が渡した composing の両方が変換中の時
       if (!s.composing || !e.composing || !e.hasText || s.commit) return { state: s, effects: [] }
       return { state: { ...startCommit(s), press: { pointer: e.pointer, up: false } }, effects: ['blur', 'startWait'] }
     }

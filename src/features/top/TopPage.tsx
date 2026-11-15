@@ -36,7 +36,7 @@ import { RoutineListBody } from '../lists/routine/RoutineListBody'
 import { TaskListBody } from '../lists/task/TaskListBody'
 import type { ListBodyProps, ListCounts } from '../lists/types'
 import { MimPlaceholder } from './MimPlaceholder'
-import { foldScrollTop, provideStackedFold } from './stackedFold'
+import { foldScrollTop, foldSpacerHeight, provideStackedFold } from './stackedFold'
 import './top.css'
 
 const PANES: readonly PaneKey[] = ['calendar', ...LIST_ORDER]
@@ -128,6 +128,23 @@ function WideTop({ mimOpen, counts }: { mimOpen: boolean; counts: ListCounts }) 
       </aside>
     </main>
   )
+}
+
+/**
+ * S・M でその場で畳む時（■34。stackedFold.ts）: 畳んで縮む分（リストの中身の高さ）で位置 y を保てなくなるなら、いちばん下の空き
+ * （space）を足りない分だけ足す
+ */
+function keepScrollOnFold(space: HTMLElement | null, pane: HTMLElement, y: number): void {
+  const body = pane.querySelector<HTMLElement>('.fold')
+  if (!space || !body) return
+  const height = foldSpacerHeight({
+    scrollY: y,
+    scrollHeight: document.documentElement.scrollHeight,
+    innerHeight: window.innerHeight,
+    spacer: space.offsetHeight,
+    lost: body.getBoundingClientRect().height,
+  })
+  if (height !== null) space.style.height = `${height}px`
 }
 
 /** S・M の並べ方（docs/SPEC.md の 3.5） */
@@ -224,6 +241,8 @@ function StackedTop({ width, mimOpen, counts }: { width: 'S' | 'M'; mimOpen: boo
         const margin = Number.parseFloat(getComputedStyle(pane).scrollMarginTop) || 0
         const top = foldScrollTop(pane.getBoundingClientRect().top, margin, window.scrollY)
         if (top !== null) window.scrollTo({ top, behavior: 'auto' })
+        // ページの終わりが近い時は、畳んで縮む分だけいちばん下の空きを先に足す（ブラウザに位置を上へ止め直させない）
+        keepScrollOnFold(spacer.current, pane, top ?? window.scrollY)
         pinned.current = null
         window.clearTimeout(timer.current)
         lists.setCollapsed(k, true)

@@ -79,6 +79,16 @@ function pressAdd(add: HTMLElement, between?: () => void) {
   fireEvent.click(add)
 }
 
+/**
+ * 指で［足す］を押して離す（pointerdown → pointerup。指は押した物に捕まえられるので、離した出来事は［足す］に来る）。clientX は
+ * 離した所の横の位置（jsdom の［足す］の大きさは 0、左の端は 0）。続く mousedown・click は呼んだ側で送る
+ */
+function touchAdd(add: HTMLElement, between?: () => void, clientX = 0) {
+  fireEvent.pointerDown(add, { button: 0, pointerType: 'touch', pointerId: 7 })
+  between?.()
+  fireEvent.pointerUp(add, { button: 0, pointerType: 'touch', pointerId: 7, clientX })
+}
+
 describe('S3 ［足す］（✓。12.1・S3-FRAME-081〜089・S3-TASK-031〜033・S3-ROUTINE-088）', () => {
   it('欄の右の端の中にある（読み上げ「足す」）。字が無い・空白だけの間は淡く（aria-disabled）、押しても足さない', async () => {
     const user = userEvent.setup()
@@ -125,6 +135,24 @@ describe('S3 ［足す］（✓。12.1・S3-FRAME-081〜089・S3-TASK-031〜033�
     await user.keyboard(' ')
     expect(added).toEqual(['ストレッチ'])
     expect(document.activeElement).toBe(input)
+  })
+
+  it('Tab で移った［足す］の Esc は何もしない（足さず・閉じず、フォーカスも［足す］に残る）。決まりに合わない字（201字）の Enter・Space も、フォーカスは［足す］に残る', async () => {
+    const user = userEvent.setup()
+    const { input, add, onAdd } = await open('task', { accept: false })
+    typeText(input, '見積もり')
+    add.focus()
+    await user.keyboard('{Escape}')
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(add)
+    expect(input.value).toBe('見積もり')
+    typeText(input, 'あ'.repeat(201))
+    add.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(onAdd).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(add)
+    expect(input.value).toBe('あ'.repeat(201))
   })
 
   it('決まりに合わずに足せなかった時（onAdd が false）は、字を残す', async () => {
@@ -187,6 +215,22 @@ describe('S3 いつも出ている欄なので、外れても足さず閉じな�
   })
 })
 
+describe('S3 変換中に外れた時（3.6・12.1・S3-FRAME-082・S3-FRAME-090）', () => {
+  it('変換中に外れた（キーボードを閉じた・外を押した）時も足さず、見えている字は欄と書きかけに残る（すばやく足すは足して閉じる。リストは閉じない欄なので足さない）', async () => {
+    const { input, onAdd } = await open('routine')
+    fakeTimers()
+    input.focus()
+    fireEvent.compositionStart(input)
+    typeText(input, 'すとれっち')
+    act(() => input.blur())
+    fireEvent.compositionEnd(input, { data: 'すとれっち' })
+    advance(DRAFT_WRITE_MS + COMMIT_WAIT_MS * 3)
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(input.value).toBe('すとれっち')
+    expect(localStorage.getItem(draftKey('routine'))).toBe('すとれっち')
+  })
+})
+
 describe('S3 変換を決める前に［足す］を押した時（12.1・■15・P1・S3-FRAME-087・S3-TASK-038・S3-ROUTINE-091）', () => {
   it('押した時に欄から外して変換を決めてもらい、変換の終わりの後、離した時に決まった字を1回だけ足して空に戻す。フォーカスは欄', async () => {
     const { input, add, added } = await open('task')
@@ -221,6 +265,97 @@ describe('S3 変換を決める前に［足す］を押した時（12.1・■15�
     expect(input.value).toBe('')
     advance(COMMIT_WAIT_MS * 2)
     expect(added).toEqual(['ぱんや'])
+  })
+
+  it('離した時にまだ変換が終わっていなければ、フォーカスは先に戻し、変換の終わりの後に、ブラウザが決まった字を書いてから足して空に戻す（それまでは空にしない。WebKit は compositionend の後に書く。すばやく足すと同じ）', async () => {
+    const { input, add, added } = await open('routine')
+    fakeTimers()
+    input.focus()
+    fireEvent.compositionStart(input)
+    typeText(input, 'すとれっち')
+    pressAdd(add)
+    expect(document.activeElement).toBe(input)
+    expect(added).toEqual([])
+    expect(input.value).toBe('すとれっち')
+    // 待っている間の Enter は、押した［足す］の分と重ねない
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(added).toEqual([])
+    // 変換の終わりが来てから、ブラウザが決まった字を書く
+    fireEvent.compositionEnd(input, { data: 'ストレッチ' })
+    expect(input.value).toBe('すとれっち')
+    typeText(input, 'ストレッチ')
+    expect(added).toEqual([])
+    advance(0)
+    expect(added).toEqual(['ストレッチ'])
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    // 変換の終わりがもう一度来ても・待つ長さがたっても、2回は足さない
+    fireEvent.compositionEnd(input)
+    advance(COMMIT_WAIT_MS * 2)
+    expect(added).toEqual(['ストレッチ'])
+  })
+
+  it('指で離した後の mousedown・click が、画面が動いて指の下に来た別の物に来ても、その物の操作にしない。［足す］の分は離した時に1回だけ足す（フォーカスは欄）。その後に押した物はふつうに押せる', async () => {
+    const { input, add, added } = await open('task')
+    fakeTimers()
+    input.focus()
+    fireEvent.compositionStart(input)
+    typeText(input, 'みつもり')
+    const other = screen.getByTestId('outside')
+    const otherClick = vi.fn()
+    other.addEventListener('click', otherClick)
+    touchAdd(add, () => fireEvent.compositionEnd(input, { data: 'みつもり' }))
+    expect(added).toEqual(['みつもり'])
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+    // 指の下の別の物（キーボードが閉じて画面が動いた）。フォーカスも動かない
+    expect(fireEvent.mouseDown(other)).toBe(false)
+    fireEvent.mouseUp(other)
+    expect(fireEvent.click(other)).toBe(false)
+    expect(otherClick).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(input)
+    advance(COMMIT_WAIT_MS * 3)
+    expect(added).toEqual(['みつもり'])
+    // その後の押した物は、ふつうに押せる
+    fireEvent.pointerDown(other, { button: 0 })
+    fireEvent.pointerUp(other, { button: 0 })
+    expect(fireEvent.mouseDown(other)).toBe(true)
+    fireEvent.click(other)
+    expect(otherClick).toHaveBeenCalledTimes(1)
+  })
+
+  it('離して欄へ戻した後、変換の終わりを待っている間にキーボードの✓で外れても、押した［足す］の分を待ち終えた時に1回だけ足す（欄は出たまま。閉じない）', async () => {
+    const { input, add, added } = await open('task')
+    fakeTimers()
+    input.focus()
+    fireEvent.compositionStart(input)
+    typeText(input, 'みつもり')
+    pressAdd(add)
+    expect(document.activeElement).toBe(input)
+    act(() => input.blur())
+    expect(added).toEqual([])
+    advance(COMMIT_WAIT_MS)
+    expect(added).toEqual(['みつもり'])
+    expect(screen.getByTestId(listTestIds.input('task'))).toBe(input)
+    expect(input.value).toBe('')
+    advance(COMMIT_WAIT_MS * 2)
+    expect(added).toEqual(['みつもり'])
+  })
+
+  it('変換の終わりを待っている間に欄が外れた（幅が替わって作り直された時など）も、押し終えた［足す］の分は1回だけ足す', async () => {
+    const { input, add, onAdd, unmount } = await open('favorite', { pointer: 'fine' })
+    fakeTimers()
+    input.focus()
+    fireEvent.compositionStart(input)
+    typeText(input, 'ぱんや')
+    pressAdd(add)
+    expect(onAdd).not.toHaveBeenCalled()
+    unmount()
+    expect(onAdd).toHaveBeenCalledTimes(1)
+    expect(onAdd.mock.calls[0][0].text).toBe('ぱんや')
+    advance(COMMIT_WAIT_MS * 2)
+    expect(onAdd).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem(draftKey('favorite'))).toBeNull()
   })
 
   it('押した指でスクロールした（pointercancel）・［足す］の外で離した時は足さず、字は欄に残る', async () => {
@@ -335,6 +470,56 @@ describe('S3 ■34 打ちかけを捨てる（discardListDraft。作者「打ち
     advance(COMMIT_WAIT_MS * 3)
     expect(onAdd).not.toHaveBeenCalled()
     expect(input.value).toBe('')
+  })
+
+  it('端末に控え終えた書きかけ（読み込み直した後など。チップも）も、捨てると消え、作り直しても空', async () => {
+    localStorage.setItem(draftKey('task'), JSON.stringify({ text: '前の字', start: '2026-11-20', due: null, requester: '総務' }))
+    resetListDraftsForTests()
+    const first = await open('task')
+    expect(first.input.value).toBe('前の字')
+    act(() => discardListDraft('task'))
+    expect(first.input.value).toBe('')
+    expect(localStorage.getItem(draftKey('task'))).toBeNull()
+    first.unmount()
+    resetListDraftsForTests()
+    const again = await open('task')
+    expect(again.input.value).toBe('')
+    expect(localStorage.getItem(draftKey('task'))).toBeNull()
+  })
+
+  it('変換の途中で欄にフォーカスがある時は、先に欄から外して（変換を終えてもらって）から空にする（変換中のまま空にしない。12.1）', async () => {
+    const { input, onAdd } = await open('routine')
+    fakeTimers()
+    input.focus()
+    fireEvent.compositionStart(input)
+    typeText(input, 'すとれっち')
+    const atBlur: string[] = []
+    input.addEventListener('blur', () => atBlur.push(input.value))
+    act(() => discardListDraft('routine'))
+    expect(atBlur).toEqual(['すとれっち'])
+    expect(document.activeElement).not.toBe(input)
+    expect(input.value).toBe('')
+    // 外れて決まった字は入れない
+    typeText(input, 'ストレッチ')
+    fireEvent.compositionEnd(input, { data: 'ストレッチ' })
+    advance(COMMIT_WAIT_MS * 3)
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(input.value).toBe('')
+  })
+
+  it('変換の終わりが来ないまま捨てた後、待ちの長さの間に欄へ戻って新しい字を打っても、捨てる前に押した［足す］の分は足さない', async () => {
+    const { input, add, onAdd } = await open('routine')
+    fakeTimers()
+    input.focus()
+    fireEvent.compositionStart(input)
+    typeText(input, 'すとれっち')
+    pressAdd(add)
+    act(() => discardListDraft('routine'))
+    input.focus()
+    typeText(input, 'ごみだし')
+    advance(COMMIT_WAIT_MS * 3)
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(input.value).toBe('ごみだし')
   })
 
   it('出している欄が届けた関数（Routine List の［指定］など）も呼ぶ。外した関数は呼ばない', async () => {

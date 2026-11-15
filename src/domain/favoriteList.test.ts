@@ -194,6 +194,16 @@ describe('［予定にする］（favoriteToRegister。15.4・12.2・D4）', () 
     expect(r.memo).toBe('あああああ\n続き')
   })
 
+  it('200字の切れ目がちょうど空白の時は、件名の終わりに空白を残さない（その空白はメモにも入れない。D29）', () => {
+    const text = `${'あ'.repeat(199)} い\n次`
+    const r = favoriteToRegister(text, TODAY)
+    expect(r.title).toBe('あ'.repeat(199))
+    expect(r.memo).toBe('い\n次')
+    const t = favoriteToTask(text)
+    expect(t.text).toBe(`${'あ'.repeat(199)}\nい\n次`)
+    expect(taskInputOf(t)).toMatchObject({ ok: true })
+  })
+
   it('登録の画面の初めの値になる（calendar 生まれ・締め切り日なし・時刻なし）', () => {
     expect(registerDefaults(favoriteToRegister('近所のパン屋に行ってみる', TODAY))).toEqual({
       origin: 'calendar',

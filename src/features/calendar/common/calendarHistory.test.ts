@@ -21,9 +21,7 @@ describe('screenOf', () => {
   })
 
   it('MIM・設定・ログイン・見つかりませんは、ほかの画面', () => {
-    // MIM は小さな画面の印が無い時（印がある時は下の S3 の確かめ。#/mim の上の［詳しく］）
-    expect(screenOf({ pathname: '/mim', state: null })).toBe('other')
-    for (const p of ['/settings', '/login', '/month/2026-11/x', '/month'])
+    for (const p of ['/mim', '/settings', '/login', '/month/2026-11/x', '/month'])
       expect(screenOf({ pathname: p, state: detail })).toBe('other')
   })
 })
@@ -41,12 +39,18 @@ describe('S3 リストから開く小さな画面（3.1・D51・S3-FRAME-004・S
     expect(screenOf({ pathname: '/day/2026-11-10', state: fromFavorite })).toBe('register')
   })
 
-  it('#/mim の上でも印を先に見る（L・M の MIM の横のリストから開いた物。［予定にする］は端からのフリックで捨てる ■27）', () => {
+  it('#/mim の上ではリストから開いた印を先に見る（L・M の MIM の横のリストから開いた物。［予定にする］は端からのフリックで捨てる ■27）', () => {
     expect(screenOf({ pathname: '/mim', state: task })).toBe('detail')
     expect(screenOf({ pathname: '/mim', state: routine })).toBe('detail')
-    expect(screenOf({ pathname: '/mim', state: detail })).toBe('detail')
+    expect(screenOf({ pathname: '/mim', state: favorite })).toBe('detail')
     expect(screenOf({ pathname: '/mim', state: fromFavorite })).toBe('register')
-    expect(screenOf({ pathname: '/mim', state: register })).toBe('register')
+    expect(screenOf({ pathname: '/mim', state: null })).toBe('other')
+  })
+
+  it('#/mim の上のカレンダーから開いた印（MIM を開いている間は SheetHost が無く見えない。複製のお知らせの［開く］を MIM で押した時など）は、今までどおりほかの画面', () => {
+    expect(screenOf({ pathname: '/mim', state: detail })).toBe('other')
+    expect(screenOf({ pathname: '/mim', state: register })).toBe('other')
+    expect(screenOf({ pathname: '/mim', state: { ...detail, mimFromCalendar: true } })).toBe('other')
   })
 
   it('設定・ログイン・見つかりませんは、印があってもほかの画面のまま', () => {

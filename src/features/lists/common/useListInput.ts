@@ -10,7 +10,8 @@
 //   欄と書きかけに残る。FRAME-082・100）
 // - 書きかけは打つたびに控え（少し待ってまとめる。閉じる・裏に回る時はまとめて控える）、開いた時に戻す。足したら消す
 // - ■34: 開いているリストを端からのフリック・OS の［戻る］で畳む時（discardListDraft）は、欄を空にし（変換の途中なら決めた字も
-//   入れない）、書きかけも消す
+//   入れない）、書きかけも消す。変換の途中で欄にフォーカスがあれば、先にフォーカスをそのリストの見出しの畳む・開くボタンへ移して
+//   （欄から外して変換を終えてもらって）から空にする（変換中のまま欄を空にすると、iPhone ではキーボードの変換候補が残り続けた。12.1）
 // - iPhone でキーボードが出た時は、欄をキーボードの上 16px まで送る（src/ui/keyboardInset.ts の useKeyboardInset が、打っている欄を
 //   見張る。ここでは何もしない。2.7）
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -24,6 +25,7 @@ import type { ListKey } from '../../../store/uiStore'
 import { useMediaQuery } from '../../../ui/hooks'
 import { SWIPE_SLOP_PX } from '../../calendar/common/swipe'
 import { flushListDraft, readListDraft, registerDraftClear, writeListDraft } from './listDraft'
+import { releaseFocusBeforeFold } from './ListSection'
 import {
   addPressStep,
   COMMIT_WAIT_MS,
@@ -213,7 +215,11 @@ export function useListInput({ list, onAdd }: ListInputOptions): ListInputApi {
           clearTimeout(dropTimer.current)
           dropTimer.current = setTimeout(() => (dropping.current = false), DROP_COMPOSITION_MS)
         }
-        if (field.current) field.current.value = ''
+        const el = field.current
+        // 変換の途中で欄にフォーカスがあれば、先に外して変換を終えてもらう（フォーカスは、畳む時と同じくそのリストの見出しの畳む・
+        // 開くボタンへ。リストの枠の外の欄なら外すだけ）。続いて決まる字は dropping の間なので入れない
+        if (el && composing && document.activeElement === el && !releaseFocusBeforeFold(el.closest('.list-panel'))) el.blur()
+        if (el) el.value = ''
         latest.current = { ...latest.current, draft: EMPTY_DRAFT }
         setDraftState(EMPTY_DRAFT)
       }),

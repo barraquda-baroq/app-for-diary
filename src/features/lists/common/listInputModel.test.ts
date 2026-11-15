@@ -195,12 +195,6 @@ describe('S3 変換を決める前に［足す］を押した時（12.1・■15�
     expect(run([click(false)], r.state).adds).toBe(1)
   })
 
-  it('離して入力欄へ戻した後、変換の終わりを待っている間にキーボードの✓で外れても、押した［足す］の分は足す（外れたことでは何も替えない）', () => {
-    // すばやく足すは外れた時に足して閉じる。リストは閉じない: 押した分だけを、待ち終えた時に1回足す
-    const r = run([typing, down(), up(), timeout])
-    expect(r.adds).toBe(1)
-  })
-
   it('外した時にブラウザが変換中の字を捨てても、足すのは押した時に見えていた字（画面が add で見えていた字を使う。ListInput.test）', () => {
     expect(run([typing, down(), up(), timeout]).all.at(-1)).toBe('add')
   })

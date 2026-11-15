@@ -450,6 +450,15 @@ describe('日付を直す時（taskDateEdit。6.3・6.4・13.5）', () => {
     expect(isInTaskList(data.items.due, NOW)).toBe(true)
   })
 
+  it('締め切り日がもともと無いのに listed false の物（直す前の古い記録）は、開始日を直すと listed を true にするだけで、お知らせは出さない（カレンダーから外れていないため）', () => {
+    const raw = mkTask({ id: 'raw', start: '2026-11-10', listed: false })
+    const r = taskDateEdit(raw, { start: '2026-11-12' })
+    expect(r).toEqual({ ok: true, patch: { start: '2026-11-12', due: null, endTime: null, listed: true }, relisted: false })
+    const data = updateItem(dataWith({ items: [raw] }), 'raw', r.ok ? r.patch : {}, T0)
+    expect(data.result.relisted).toBe(false)
+    expect(data.data.items.raw).toMatchObject({ listed: true, start: '2026-11-12' })
+  })
+
   it('開始日を締め切り日より後にすると締め切り日を、締め切り日を開始日より前にすると開始日をそろえる（S3-FRAME-139・S3-TASK-023）', () => {
     expect(taskDateEdit(span, { start: '2026-11-25' })).toMatchObject({
       ok: true,
@@ -559,8 +568,10 @@ describe('日付の列のメニュー（taskDateMenu。13.5・D30）', () => {
     expect(m.due[4].action).toEqual({ type: 'clear', field: 'due' })
     expect(labels(m.start)).toEqual(['日付を選ぶ'])
     expect(m.show?.action).toEqual({ type: 'show', date: '2026-11-12' })
-    // 締め切り日の無いカレンダー生まれは、もう1日の予定なので「1日の予定にする」を出さない
+    // 締め切り日の無いカレンダー生まれ・締め切り日が開始日と同じカレンダー生まれは、もう1日の予定なので「1日の予定にする」を出さない
     expect(labels(taskDateMenu(cal, TODAY).due)).toEqual(['今日', '明日', '今週金曜', '日付を選ぶ'])
+    const calSame = mkItem({ id: 'cs', start: '2026-11-10', due: '2026-11-10', listed: true })
+    expect(labels(taskDateMenu(calSame, TODAY).due)).toEqual(['今日', '明日', '今週金曜', '日付を選ぶ'])
     expect(taskDateMenu(cal, TODAY).show?.action).toEqual({ type: 'show', date: '2026-11-12' })
   })
 

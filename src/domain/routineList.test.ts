@@ -71,6 +71,19 @@ describe('5つのかたまり（14.2）', () => {
     expect(v.groups[1].done.map((r) => r.id)).toEqual(['w1', 'w3'])
   })
 
+  it('ルーチンが全部済んだかたまりは空のかたまりでない（見出しの数・山形を出したまま。済みも全部に数える。14.2・D26。S3-FRAME-241・S3-ROUTINE-081）', () => {
+    const routines = [mkRoutine({ id: 'd1', cycle: 'daily' }), mkRoutine({ id: 'm1', cycle: 'monthly' })]
+    const routineChecks = [mkCheck('d1', '2026-11', [TODAY]), mkCheck('m1', '2026-11', ['2026-11-02'])]
+    const v = routineListView(dataWith({ routines, routineChecks }), TODAY)
+    const daily = v.groups[0]
+    expect(daily).toMatchObject({ empty: false, doneCount: 1, total: 1 })
+    expect(daily.open).toEqual([])
+    expect(daily.done.map((r) => r.id)).toEqual(['d1'])
+    expect(v.groups[2]).toMatchObject({ empty: false, doneCount: 1, total: 1 })
+    expect(v.groups.map((g) => g.empty)).toEqual([false, true, false, true, true])
+    expect(v.undone).toBe(0)
+  })
+
   it('かたまりの中は order の小さい順、同じなら id の小さい順。済みの行も手で並べた順のまま（S3-ROUTINE-024・S3-ROUTINE-031・D10）', () => {
     const routines = [
       mkRoutine({ id: 'c', order: 2 }),
@@ -224,6 +237,36 @@ describe('14.3 の表（いちばん新しい戻る日・次の戻る日）を R
     // 次の戻る日（S3-FRAME-266・S3-ROUTINE-052..054）
     expect(nextResetDay(mkRoutine(spec as Spec), today)).toBe(next)
     expect(rowAt(spec as Spec, [latest], today).returnText).toMatch(/に戻ります$/)
+  })
+
+  it('毎年（m/d）の今日がその日の時: いちばん新しい戻る日は今日、次の戻る日は来年の同じ日（今年のその日は今日より後でない。14.3。S3-ROUTINE-051・S3-ROUTINE-054・S3-FRAME-266）', () => {
+    const spec: Spec = { cycle: 'yearly', yearMonth: 11, yearDay: 11 }
+    expect(latestResetDay(mkRoutine(spec), today)).toBe('2026-11-11')
+    expect(nextResetDay(mkRoutine(spec), today)).toBe('2027-11-11')
+    expect(rowAt(spec, [today], today)).toMatchObject({
+      done: true,
+      nextReset: '2027-11-11',
+      returnText: '2027/11/11（木）に戻ります',
+    })
+    expect(rowAt(spec, ['2026-11-10'], today).done).toBe(false)
+    // 3/15 の当日も同じ（今日に戻るとは出さない）
+    const ides: Spec = { cycle: 'yearly', yearMonth: 3, yearDay: 15 }
+    expect(rowAt(ides, ['2026-03-15'], '2026-03-15')).toMatchObject({
+      done: true,
+      nextReset: '2027-03-15',
+      returnText: '2027/3/15（月）に戻ります',
+    })
+  })
+
+  it('毎年（2/29）を閏年でない年の 2/28 に見た時: いちばん新しい戻る日はその 2/28、次の戻る日は次の閏年の 2/29（14.3。S3-ROUTINE-051・S3-ROUTINE-054）', () => {
+    const spec: Spec = { cycle: 'yearly', yearMonth: 2, yearDay: 29 }
+    expect(latestResetDay(mkRoutine(spec), '2027-02-28')).toBe('2027-02-28')
+    expect(nextResetDay(mkRoutine(spec), '2027-02-28')).toBe('2028-02-29')
+    expect(rowAt(spec, ['2027-02-28'], '2027-02-28')).toMatchObject({
+      done: true,
+      nextReset: '2028-02-29',
+      returnText: '2028/2/29（火）に戻ります',
+    })
   })
 
   it('指定はどれも任意（毎週・毎月・毎年の指定なしは日曜・1日・1月1日に戻る。S3-ROUTINE-017）', () => {
@@ -425,6 +468,21 @@ describe('［指定］で選ぶ物（specForCycle・specButtonLabel。14.2・6.7
       yearMonth: 4,
       yearDay: null,
     })
+    // 範囲の外の月（0・13）は月を空に、範囲の外の日（0・32）は日を空に
+    for (const yearMonth of [0, 13]) {
+      expect(specForCycle('yearly', { ...SPEC_NONE, yearMonth, yearDay: 10 }), String(yearMonth)).toEqual({
+        ...SPEC_NONE,
+        yearMonth: null,
+        yearDay: 10,
+      })
+    }
+    for (const yearDay of [0, 32]) {
+      expect(specForCycle('yearly', { ...SPEC_NONE, yearMonth: 1, yearDay }), String(yearDay)).toEqual({
+        ...SPEC_NONE,
+        yearMonth: 1,
+        yearDay: null,
+      })
+    }
     // 片方だけは決まりに合わない（足す時に断る。6.7）
     expect(routineProblems(mkRoutine({ cycle: 'yearly', yearMonth: 4, yearDay: null })).map((p) => p.message)).toEqual([
       '毎年の指定は月と日の両方を入れてください',

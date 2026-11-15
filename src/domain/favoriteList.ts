@@ -77,7 +77,8 @@ export function addedLabel(createdAt: number, today: string): string {
 
 /**
  * 件名とメモに分ける（［Task List へ移す］・［予定にする］。D25・D29）: 最初の空でない行を 200字までの件名に、あふれた分をメモの頭に、
- * その後ろに2行目から（あふれた分と2行目からの間は改行）。どの行も空なら件名もメモも ''
+ * その後ろに2行目から（あふれた分と2行目からの間は改行）。200字の切れ目が空白の時は、件名の終わりの空白を落とす（メモにも入れない）。
+ * どの行も空なら件名もメモも ''
  */
 function titleAndMemo(text: string): { title: string; memo: string } {
   const parts = splitEntry(text)

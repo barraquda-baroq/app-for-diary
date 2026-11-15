@@ -9,11 +9,24 @@ import { renderAt, setupCalendarTests } from '../../test/renderCalendar'
 import { discardListDraft } from '../lists/common/listDraft'
 import { draftKey } from '../lists/common/listInputModel'
 import { listTestIds } from '../lists/common/testIds'
-import { foldListInPlace, foldScrollTop } from './stackedFold'
+import { foldListInPlace, foldScrollTop, foldSpacerHeight } from './stackedFold'
 
 setupCalendarTests()
 
 const lists = () => useStackedLists.getState()
+
+/** window・document の大きさを仮に決める（jsdom は 0。終わったら戻す） */
+function fakeGeometry(p: { scrollY: number; scrollHeight: number; innerHeight: number }): () => void {
+  const innerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+  Object.defineProperty(window, 'scrollY', { configurable: true, value: p.scrollY })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: p.innerHeight })
+  Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: p.scrollHeight })
+  return () => {
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+    if (innerHeight) Object.defineProperty(window, 'innerHeight', innerHeight)
+    delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight
+  }
+}
 
 /** 区切りを開く（切り替えの列で飛ぶ） */
 async function openTask() {
@@ -92,6 +105,96 @@ describe('S3 その場で畳む（foldListInPlace。■34）', () => {
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
   })
 
+  it('見出しが見えている時は、畳んでもページを動かさない（scrollTo を呼ばない）。フォーカスはそのリストの畳む・開くボタンへ（カレンダーの見出しへは移さない）', async () => {
+    await renderAt('/month/2026-11', { width: 'S' })
+    await openTask()
+    const pane = screen.getByTestId(listTestIds.section('task'))
+    pane.style.scrollMarginTop = '96px'
+    const scrollTo = vi.fn()
+    window.scrollTo = scrollTo as typeof window.scrollTo
+    vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ top: 200, bottom: 900 } as DOMRect)
+    screen.getByTestId(listTestIds.input('task')).focus()
+    act(() => foldListInPlace('task'))
+    expect(lists().collapsed.task).toBe(true)
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(screen.getByTestId(listTestIds.fold('task')))
+  })
+
+  it('ページの終わりが近い時は、畳んで縮む分（中身の高さ）だけブラウザが位置を上へ止め直さないように、いちばん下の空きを足りない分だけ先に足す（位置も見出しも動かさない）。足りている時は空きを替えない', async () => {
+    await renderAt('/month/2026-11', { width: 'S' })
+    await openTask()
+    const pane = screen.getByTestId(listTestIds.section('task'))
+    pane.style.scrollMarginTop = '96px'
+    const scrollTo = vi.fn()
+    window.scrollTo = scrollTo as typeof window.scrollTo
+    vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ top: 200, bottom: 900 } as DOMRect)
+    vi.spyOn(screen.getByTestId(listTestIds.body('task')), 'getBoundingClientRect').mockReturnValue({
+      height: 300,
+    } as DOMRect)
+    const spacer = screen.getByTestId('top-stack-spacer')
+    // 畳む前: 1900 の高さで 800 の画面、位置は 1000（いちばん下は 1100）。畳むと 1600 になり、いちばん下は 800 まで
+    const restore = fakeGeometry({ scrollY: 1000, scrollHeight: 1900, innerHeight: 800 })
+    try {
+      act(() => foldListInPlace('task'))
+    } finally {
+      restore()
+    }
+    expect(lists().collapsed.task).toBe(true)
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(spacer.style.height).toBe('200px')
+
+    // 足りている時（畳んでもいちばん下が今の位置より下）は替えない
+    fireEvent.click(screen.getByTestId(listTestIds.fold('task')))
+    spacer.style.height = ''
+    const restore2 = fakeGeometry({ scrollY: 500, scrollHeight: 1900, innerHeight: 800 })
+    try {
+      act(() => foldListInPlace('task'))
+    } finally {
+      restore2()
+    }
+    expect(lists().collapsed.task).toBe(true)
+    expect(spacer.style.height).toBe('')
+  })
+
+  it('見出しを切り替えの列のすぐ下まで戻した時は、戻した位置を保つように空きを足す', async () => {
+    await renderAt('/month/2026-11', { width: 'S' })
+    await openTask()
+    const pane = screen.getByTestId(listTestIds.section('task'))
+    pane.style.scrollMarginTop = '96px'
+    window.scrollTo = vi.fn() as typeof window.scrollTo
+    vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ top: -200, bottom: 500 } as DOMRect)
+    vi.spyOn(screen.getByTestId(listTestIds.body('task')), 'getBoundingClientRect').mockReturnValue({
+      height: 600,
+    } as DOMRect)
+    const restore = fakeGeometry({ scrollY: 1500, scrollHeight: 2400, innerHeight: 800 })
+    try {
+      act(() => foldListInPlace('task'))
+    } finally {
+      restore()
+    }
+    // 戻した位置は 1500 − 200 − 96 = 1204。畳むといちばん下は 2400 − 600 − 800 = 1000 なので 204 足す
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 1204, behavior: 'auto' })
+    expect(screen.getByTestId('top-stack-spacer').style.height).toBe('204px')
+  })
+
+  it('変換の途中で入力欄にフォーカスがある時に打ちかけを捨てると、先にそのリストの畳む・開くボタンへフォーカスを移してから欄を空にする。続けて畳んでもフォーカスはそこ（closeShownList の順）', async () => {
+    await renderAt('/month/2026-11', { width: 'S' })
+    await openTask()
+    const input = screen.getByTestId(listTestIds.input('task')) as HTMLTextAreaElement
+    input.focus()
+    fireEvent.compositionStart(input)
+    fireEvent.change(input, { target: { value: 'すてる' } })
+    const atBlur: string[] = []
+    input.addEventListener('blur', () => atBlur.push(input.value))
+    act(() => discardListDraft('task'))
+    expect(atBlur).toEqual(['すてる'])
+    expect(document.activeElement).toBe(screen.getByTestId(listTestIds.fold('task')))
+    expect(input.value).toBe('')
+    act(() => foldListInPlace('task'))
+    expect(lists().collapsed.task).toBe(true)
+    expect(document.activeElement).toBe(screen.getByTestId(listTestIds.fold('task')))
+  })
+
   it('打ちかけを捨ててから畳む（closeShownList の順）: 欄も端末の書きかけも空になり、畳む・開くで開き直しても空', async () => {
     await renderAt('/month/2026-11', { width: 'S' })
     await openTask()
@@ -118,11 +221,23 @@ describe('S3 その場で畳む（foldListInPlace。■34）', () => {
   })
 })
 
-describe('S3 畳む前のスクロールの直し（foldScrollTop）', () => {
+describe('S3 畳む前のスクロールの直し（foldScrollTop・foldSpacerHeight）', () => {
   it('見出しが見える所の上の端より上なら、そこへ戻す位置。見えていれば null（動かさない）', () => {
     expect(foldScrollTop(-500, 96, 2000)).toBe(1404)
     expect(foldScrollTop(96, 96, 2000)).toBeNull()
     expect(foldScrollTop(300, 96, 2000)).toBeNull()
     expect(foldScrollTop(-500, 96, 100)).toBe(0)
+  })
+
+  it('畳んだ後のいちばん下（高さ − 縮む分 − 画面）より今の位置が下なら、足りない分を今の空きに足した高さ。足りていれば・縮まなければ null', () => {
+    const base = { scrollHeight: 1900, innerHeight: 800, spacer: 0, lost: 300 }
+    expect(foldSpacerHeight({ ...base, scrollY: 1000 })).toBe(200)
+    expect(foldSpacerHeight({ ...base, scrollY: 800 })).toBeNull()
+    expect(foldSpacerHeight({ ...base, scrollY: 1000, spacer: 40 })).toBe(240)
+    expect(foldSpacerHeight({ ...base, scrollY: 1000.4 })).toBe(201)
+    expect(foldSpacerHeight({ ...base, scrollY: 1000, lost: 0 })).toBeNull()
+    // ページが画面より短くなる時も、いちばん上（0）より下へは要らない
+    expect(foldSpacerHeight({ scrollY: 0, scrollHeight: 800, innerHeight: 839, spacer: 0, lost: 100 })).toBeNull()
+    expect(foldSpacerHeight({ scrollY: 50, scrollHeight: 900, innerHeight: 839, spacer: 0, lost: 100 })).toBe(50)
   })
 })

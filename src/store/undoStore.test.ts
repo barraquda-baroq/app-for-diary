@@ -784,6 +784,22 @@ describe('S3 リストの操作は並びに積まない（stack: false。7.13・
     expect(item()).toMatchObject({ title: '定例会議', memo: 'リストから' })
   })
 
+  it('出している画面の所（モードと見ている日）があっても、並びに積まないステップは所を持たない（積んだ物だけが所を覚える。■28）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    leave()
+    leave = enterUndoScope(() => ({ mode: 'week', date: '2026-11-10' }))
+    const b = item()
+    actions.updateItem('a', { title: 'リストで直した' })
+    const s = recordStep('リストで直した', [itemChange('a', b, item())], undefined, { stack: false })
+    expect(s).not.toBeNull()
+    expect(s).not.toHaveProperty('place')
+    // 同じ所で積んだ物は所を覚える（比べ）
+    const c = item()
+    actions.updateItem('a', { title: '積んだ' })
+    const stacked = recordStep('積んだ', [itemChange('a', c, item())])
+    expect(stacked?.place).toEqual({ mode: 'week', date: '2026-11-10' })
+  })
+
   it('何も変わらなかった時は stack: false でも null', async () => {
     await start(dataWith({ items: [meeting] }))
     expect(recordStep('同じ', [itemChange('a', item(), item())], undefined, { stack: false })).toBeNull()

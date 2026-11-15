@@ -172,6 +172,16 @@ describe('落とせる日の印（listDropDays。2.10 の単体: ドラッグで
     expect(days.size).toBe(42 - 17)
   })
 
+  it('プライベートの物も、仕事の物と同じ日に落とせる（その物の区分の段へ。S3-TASK-203）', () => {
+    const priv = mkTask({ id: 'p', kind: 'private' })
+    const days = listDropDays(priv, grid)
+    expect(days.size).toBe(42)
+    expect([...days.keys()]).toEqual([...listDropDays(none, grid).keys()])
+    expect(days.get('2027-01-15')).toEqual(patch(null, '2027-01-15'))
+    const privSpan = mkTask({ id: 'ps', kind: 'private', start: '2027-01-09', due: '2027-01-12' })
+    expect([...listDropDays(privSpan, grid).keys()]).toEqual([...listDropDays(jSpan, grid).keys()])
+  })
+
   it('日付でない値は飛ばす', () => {
     expect([...listDropDays(none, ['x', '2026-11-10']).keys()]).toEqual(['2026-11-10'])
   })

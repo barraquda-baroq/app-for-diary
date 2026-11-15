@@ -5,6 +5,7 @@ import { mkItem as mk } from '../../domain/testData'
 import { deleteConfirmText, IN_TASK_LIST_NOTE } from './deleteItem'
 import {
   detailForm,
+  formChanged,
   hasDraftText,
   memoParts,
   offCalendarTask,
@@ -103,6 +104,30 @@ describe('詳細の画面で保存する日付・時刻の差分', () => {
     expect(whenChanges(cur, cur)).toEqual({})
     expect(whenChanges(cur, { ...cur, due: '2026-11-11', endTime: '02:00' })).toEqual({ due: '2026-11-11', endTime: '02:00' })
     expect(whenChanges(cur, { ...cur, startTime: null })).toEqual({ startTime: null })
+  })
+})
+
+describe('S3 開いた時の値からどれかの欄を変えたか（formChanged。Favorite List の［予定にする］の登録。12.2・D4）', () => {
+  const initial = registerForm({ start: '2026-11-10', title: '店を調べる', memo: '駅の近く' })
+  it.each([
+    ['title', { title: '店を調べる。' }],
+    ['kind', { kind: 'private' }],
+    ['label', { label: 'sky-l' }],
+    ['requester', { requester: '総務' }],
+    ['start', { start: '2026-11-11' }],
+    ['due', { due: '2026-11-12' }],
+    ['startTime', { startTime: '10:00' }],
+    ['endTime', { endTime: '11:00' }],
+    ['locked', { locked: true }],
+    ['listed', { listed: true }],
+    ['memo', { memo: '駅の近く。' }],
+  ] as const)('%s を変えると true', (_name, patch) => {
+    expect(formChanged(initial, { ...initial, ...patch })).toBe(true)
+  })
+
+  it('入れて開いたままなら false（同じ値に戻した時も）', () => {
+    expect(formChanged(initial, { ...initial })).toBe(false)
+    expect(formChanged(initial, { ...initial, title: '店を調べる' })).toBe(false)
   })
 })
 
