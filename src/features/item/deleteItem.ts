@@ -5,6 +5,7 @@
 // - カレンダーに出ていないタスク（Task List だけ）は確かめずに消し、「『件名』を削除しました［元に戻す］」（6秒）。［元に戻す］でゴミ箱から戻す
 // どちらもゴミ箱へ移す（カレンダーと Task List の両方から消え、戻すと両方に戻る。同じ1件）。消せた時 true（確かめで［やめる］・失敗は false）。
 // どちらも元に戻す・やり直すの並びに積む（ウィークリー・デイリーから開いた詳細の時。お知らせの［元に戻す］も同じ並び。7.13）。
+// Task List の［削除］と、Task List から開いた詳細の［削除］は積まない（stack: false。お知らせの［元に戻す］だけで戻す。7.13・D2）。
 // 詳細の画面で消す前に直した所は、その前に別の1つとして積む（消せなかった時は分けない）
 import { isInTaskList, isOnCalendar } from '../../domain/items'
 import { toastText, undoText } from '../../domain/itemText'
@@ -28,12 +29,8 @@ export function deleteConfirmText(item: Pick<Item, 'title' | 'listed' | 'done' |
   }
 }
 
-/**
- * 消す（上の決まり）。opts は積み方（RecordOptions。Task List の［削除］は stack: false で並びに積まない。7.13・D2）。
- * 契約の形だけ（S3-STUB）: opts は今は受け取るだけで読まず、積み方は替えない（読むのは段階3の WP0）
- */
+/** 消す（上の決まり）。opts は積み方（RecordOptions。Task List の［削除］は stack: false で並びに積まない。7.13・D2） */
 export async function deleteItem(item: Item, nowMs: number = Date.now(), opts?: RecordOptions): Promise<boolean> {
-  void opts
   if (isOnCalendar(item)) {
     const ok = await confirmDialog({
       ...deleteConfirmText(item, nowMs),
@@ -42,9 +39,9 @@ export async function deleteItem(item: Item, nowMs: number = Date.now(), opts?: 
       danger: true,
     })
     if (!ok) return false
-    return (await trash(item)).ok
+    return (await trash(item, opts)).ok
   }
-  const r = await trash(item)
+  const r = await trash(item, opts)
   if (!r.ok) return false
   notifyUndoable(toastText.deleted(displayTitle(item)), r.step)
   return true
@@ -54,12 +51,13 @@ export async function deleteItem(item: Item, nowMs: number = Date.now(), opts?: 
  * ゴミ箱へ移して、元に戻す・やり直すの並びに積む（ok: 消せた。step: 積んだ物）。詳細の画面で直した所は、移せた時に、削除の前に
  * 1つにまとめて積む（移すと詳細の画面はすぐ閉じ、閉じた時には予定が無いので、まとめを積めない。移せなかった時は分けない。7.13）
  */
-async function trash(item: Item) {
+async function trash(item: Item, opts?: RecordOptions) {
   const edited = holdItemSession(item.id)
   // 消す前の記録は今の物（確かめを出している間に直っていても、まとめた所の後と同じ記録から戻す）
   const before = getData().items[item.id] ?? item
   const entry = await attemptAsync(() => actions.trashItem(item.id))
   if (entry === undefined) return { ok: false, step: null } as const
   edited()
-  return { ok: true, step: recordStep(undoText.deleted(displayTitle(item)), [itemChange(item.id, before, null, entry)]) } as const
+  const step = recordStep(undoText.deleted(displayTitle(item)), [itemChange(item.id, before, null, entry)], undefined, opts)
+  return { ok: true, step } as const
 }

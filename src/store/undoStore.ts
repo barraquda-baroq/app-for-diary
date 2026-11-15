@@ -2,7 +2,9 @@
 // src/domain/undo.ts（純粋な関数）、当てるのは画面と同じ actions（attempt と同じく、決まりで断られたらお知らせ。保存・同期はふつうに
 // 流れる）。端末には覚えない（アプリを開き直すと空）。
 // - 積むのは、ウィークリー・デイリーを出している間（その画面と、そこから開いた登録・詳細のシート）の、予定を変える操作だけ
-//   （enterUndoScope。年・月を出している間・設定などでした操作は積まない）。年・月へ替えても並びは消さない（■24 で作者「承諾」）
+//   （enterUndoScope。年・月を出している間・設定などでした操作は積まない）。年・月へ替えても並びは消さない（■24 で作者「承諾」）。
+//   3つのリストでした操作・Task List から開いた詳細・Favorite List の［予定にする］で開いた登録は、ウィークリー・デイリーを出して
+//   いても積まない（stack: false。L では右の列がウィークリー・デイリーの横に出ているため。お知らせの［元に戻す］だけで戻せる。7.13・D2）
 // - 積む時に、出している画面が教える所（ウィークリーかデイリーかと、見ている日。enterUndoScope に渡す）をステップに覚える
 //   （place。■28。戻した・やり直した時に、今のモードと違えばそのモードへ戻る）。詳細の画面のまとめは、開いた時の所
 // - 画面が操作の後に recordStep で積む（前・後の記録を渡す）。お知らせの［元に戻す］も同じステップを戻す（undoStep。後で同じ記録に
@@ -161,16 +163,18 @@ function flushSession(id: ID, cur: Item | null): void {
 export interface RecordOptions {
   /**
    * false はウィークリー・デイリーを出していても並びに積まない（お知らせの［元に戻す］だけで戻せる。3つのリストでした操作・
-   * Task List から開いた詳細・Favorite List の［予定にする］。docs/SPEC.md の 7.13・D2）。省く・true は今までどおり。
-   * 契約の形だけ（S3-STUB）: 今は受け取るだけで読まず、積み方は替えない（読むのは段階3の WP0）
+   * Task List から開いた詳細・Favorite List の［予定にする］。docs/SPEC.md の 7.13・D2）。省く・true は今までどおり
+   * （ウィークリー・デイリーを出している間だけ積む）
    */
   stack?: boolean
 }
 
 /**
- * 操作を積む（画面が操作の後に呼ぶ）。ウィークリー・デイリーを出していない時は積まない（お知らせの［元に戻す］だけで戻せる）。
- * 開いている詳細の画面があれば、それまでに直した所を先に積む（操作がその予定を変えたなら、その前の記録まで）。何も変わらなかった
- * 時は積まずに null。opts は RecordOptions（今は読まない）
+ * 操作を積む（画面が操作の後に呼ぶ）。ウィークリー・デイリーを出していない時と、opts.stack が false の時は積まない（お知らせの
+ * ［元に戻す］だけで戻せる。並びの中の後の操作は一緒に戻さず、後で同じ記録に触れた操作が並びにあれば断る: undoDetached）。
+ * 積む時は、開いている詳細の画面があれば、それまでに直した所を先に積む（操作がその予定を変えたなら、その前の記録まで）。
+ * 積まない操作が開いている詳細の画面の予定を変えた時も、その前の記録までのまとめを先に積む（まとめにこの操作を入れない）。
+ * 何も変わらなかった時は積まずに null
  */
 export function recordStep(
   label: string,
@@ -178,25 +182,27 @@ export function recordStep(
   stepHooks?: StepHooks,
   opts?: RecordOptions,
 ): U.UndoStep | null {
-  void opts
   // 何も変わらなかった操作（もう完了だった予定を完了にした・同じ日へ動かした）は積まない
   changes = changes.filter((c) => !U.isNoopChange(c))
   if (changes.length === 0) return null
+  const stacked = scopes.length > 0 && opts?.stack !== false
   if (scopes.length > 0) {
-    // 開いている詳細の画面のまとめを先に積む（番号を取る前に。まとめの番号を、この操作より前にする: 番号は積んだ順）
+    // 開いている詳細の画面のまとめを先に積む（番号を取る前に。まとめの番号を、この操作より前にする: 番号は積んだ順）。
+    // 積まない操作の時は、その操作が変えた予定のまとめだけ（ほかの詳細の画面のまとめは分けない）
     for (const [id, s] of sessions) {
       const ch = changes.find((c): c is U.ItemChange => c.table === 'items' && c.id === id)
       if (ch) {
         flushSession(id, ch.before)
         s.base = ch.after
-      } else flushSession(id, getData().items[id] ?? null)
+      } else if (stacked) flushSession(id, getData().items[id] ?? null)
     }
   }
   seq += 1
-  const place = placeNow()
+  // 積まない操作は、ウィークリー・デイリーでした操作ではないので所を覚えない（ボタン・キーでは戻さないので、モードへ戻ることも無い）
+  const place = stacked ? placeNow() : undefined
   const step: U.UndoStep = place ? { id: seq, label, changes, place } : { id: seq, label, changes }
   if (stepHooks) hooks.set(step.id, stepHooks)
-  if (scopes.length === 0) {
+  if (!stacked) {
     detached.set(step.id, step)
     // お知らせは 6秒で消えるので、古い物は覚えておかない
     for (const old of detached.keys()) {

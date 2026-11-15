@@ -707,3 +707,85 @@ describe('詳細の画面は開いてから閉じるまでを1つに', () => {
     expect(labels()).toEqual([])
   })
 })
+
+describe('S3 リストの操作は並びに積まない（stack: false。7.13・D2・S3-FRAME-225・S3-TASK-210・S3-ROUTINE-260）', () => {
+  it('ウィークリー・デイリーを出していても積まず、お知らせの［元に戻す］だけで戻す（ボタン・キーの元に戻すは並びの物だけ）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    expect(undoScopeActive()).toBe(true)
+    const b = item()
+    actions.updateItem('a', { title: 'リストで直した' })
+    const s = recordStep('リストで直した', [itemChange('a', b, item())], undefined, { stack: false })
+    expect(s).not.toBeNull()
+    expect(s?.place).toBeUndefined()
+    expect(labels()).toEqual([])
+    // ボタン・キーでは戻らない（並びに無い）
+    expect(await undo()).toBe(false)
+    expect(item()?.title).toBe('リストで直した')
+    // お知らせの［元に戻す］で戻る
+    expect(await undoStep(s!.id)).toBe(true)
+    expect(item()?.title).toBe('会議')
+    expect(labels()).toEqual([])
+    expect(futureLabels()).toEqual([])
+  })
+
+  it('省く・stack: true は今までどおり積む', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const b = item()
+    actions.moveItemDates('a', { start: '2026-11-12', due: null, clearEnd: false })
+    recordStep('移した', [itemChange('a', b, item())], undefined, { stack: true })
+    expect(labels()).toEqual(['移した'])
+  })
+
+  it('積まなかった操作の後に、並びに積んだ操作が同じ予定に触れていれば、お知らせの［元に戻す］は断る（S3-TASK-212・S3-FRAME-117）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    const b = item()
+    actions.updateItem('a', { title: 'リストで直した' })
+    const s = recordStep('リストで直した', [itemChange('a', b, item())], undefined, { stack: false })
+    moveTo('2026-11-12')
+    expect(await undoStep(s!.id)).toBe(false)
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(item()).toMatchObject({ title: 'リストで直した', start: '2026-11-12' })
+    // 並びの操作はそのまま戻せる
+    expect(labels()).toEqual(['移した'])
+    expect(await undo()).toBe(true)
+    expect(item()?.start).toBe('2026-11-10')
+  })
+
+  it('並びに積んだ操作の予定を、後でリストが直した時は、ボタンの元に戻すが断る（revOf。S3-FRAME-227・S3-TASK-211）', async () => {
+    await start(dataWith({ items: [meeting] }))
+    moveTo('2026-11-12')
+    const b = item()
+    actions.updateItem('a', { title: 'リストで直した' })
+    recordStep('リストで直した', [itemChange('a', b, item())], undefined, { stack: false })
+    expect(await undo()).toBe(false)
+    expect(toastTexts()).toContain(UNDO_CONFLICT)
+    expect(item()).toMatchObject({ title: 'リストで直した', start: '2026-11-12' })
+    expect(labels()).toEqual([])
+  })
+
+  it('開いている詳細の画面の予定を積まない操作が変えた時は、その前までのまとめを積み、まとめにその操作を入れない。ほかの詳細のまとめは分けない', async () => {
+    const other = mkItem({ id: 'b', title: '資料', start: '2026-11-11' })
+    await start(dataWith({ items: [meeting, other] }))
+    const endA = beginItemSession('a')
+    const endB = beginItemSession('b')
+    actions.updateItem('a', { title: '定例会議' })
+    actions.updateItem('b', { title: '資料の確認' })
+    const before = item()
+    actions.updateItem('a', { memo: 'リストから' })
+    recordStep('リストで直した', [itemChange('a', before, item())], undefined, { stack: false })
+    expect(labels()).toEqual(['『定例会議』を直した'])
+    endA()
+    endB()
+    expect(labels()).toEqual(['『定例会議』を直した', '『資料の確認』を直した'])
+    expect(await undo()).toBe(true)
+    expect(item('b')?.title).toBe('資料')
+    // a のまとめは、後でリストが直したので（中身が合わない）断る
+    expect(await undo()).toBe(false)
+    expect(item()).toMatchObject({ title: '定例会議', memo: 'リストから' })
+  })
+
+  it('何も変わらなかった時は stack: false でも null', async () => {
+    await start(dataWith({ items: [meeting] }))
+    expect(recordStep('同じ', [itemChange('a', item(), item())], undefined, { stack: false })).toBeNull()
+  })
+})
