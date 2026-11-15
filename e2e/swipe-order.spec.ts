@@ -2,9 +2,9 @@
 // 3.1・■27・12.2。src/history/appHistory.ts）。前の作りでは iPhone の身振りの popstate の後の順番もここで確かめていたが、iPhone・iPad は
 // ブラウザの履歴を1つのままにする形にした（src/history/singleEntryHistory.ts。22. の ■31〜■33）ので、そちらは e2e/edge-flick.spec.ts
 // （ブラウザの履歴が増えない・積む・戻る・進むを呼ばない）へ移した。ここでは popstate と、アプリが呼んだ history の物（積む・置き換える・
-// 動く）を順に控えて、Android の「戻る」では iPhone の身振りの後の置き換えをしないことを確かめる。「戻る」は page.goBack で、その
-// popstate だけ hasUAVisualTransition を true にする（PopStateEvent.prototype を差し替える）。今は 2026年11月10日（火）9:00
-// （e2e/helpers.ts の E2E_NOW）
+// 動く）を順に控えて、Android の「戻る」の後に今の履歴を同じ物で置き換えない（前の作りの iPhone が払いの後にしていた置き換え。今はどの
+// 端末もしない）ことを確かめる。「戻る」は page.goBack で、その popstate だけ hasUAVisualTransition を true にする
+// （PopStateEvent.prototype を差し替える）。今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
 import { expect, test, type Page } from '@playwright/test'
 import { collectDiagnosticsOnFailure, historySettled, openCalendar } from './helpers'
 

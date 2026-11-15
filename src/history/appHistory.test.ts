@@ -10,7 +10,7 @@ import type { Location } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
 import { FakeWindow, type HistoryCall } from '../test/fakeHistoryWindow'
-import { AppHistory, ARM_HOLD_MS, createAppHistory, PRESS_STALE_MS, type LeaveResult } from './appHistory'
+import { AppHistory, ARM_HOLD_MS, createAppHistory, PRESS_STALE_MS, TRAVEL_TIMEOUT_MS, type LeaveResult } from './appHistory'
 import type { ExitStyle } from './popRules'
 
 type Update = Parameters<Parameters<AppHistory['listen']>[0]>[0]
@@ -502,6 +502,15 @@ describe('印の履歴とスクロールの位置', () => {
     expect(s.win.describe()).toEqual(['[back]', '/day/2026-11-10', '*/settings'])
     expect(s.win.scrollModes()).toBe('maa')
   })
+
+  it('印の履歴を作る時に今の履歴がもう manual なら（ページやブラウザが先に manual にしていた）、そのまま作り、戻り終えた後も土台を auto に替えない', async () => {
+    const s = setup('#/day/2026-11-10', 'os-back')
+    s.win.history.scrollRestoration = 'manual'
+    await arm(s)
+    expect(s.win.describe()).toEqual(['[back]', '*/day/2026-11-10', '[fwd]'])
+    expect(s.win.scrollModes()).toBe('mmm')
+    expect(s.updates).toEqual([])
+  })
 })
 
 /** from 番目から後に、アプリが呼んだ履歴 */
@@ -605,7 +614,7 @@ describe('Android・PC（OS の戻る）', () => {
     expect(s.updates.length).toBe(1)
   })
 
-  it('ほかの端末（Android・PC）は、「戻る」「進む」が来ても今の履歴を置き換えず、閉じた後に自分で行き来しない。ウインドウを離れたら押している物は無い', async () => {
+  it('「戻る」「進む」が来ても（ブラウザが動きを見せる身振りの popstate でも）、今の履歴を置き換えず、閉じた後に自分で行き来しない。ウインドウを離れたら押している物は無い', async () => {
     const win = new FakeWindow('#/month/2026-11', { swipes: true })
     const s = setup('#/month/2026-11', 'os-back', { win })
     await arm(s)
@@ -689,6 +698,40 @@ describe('Android・PC（OS の戻る）', () => {
     expect(s.updates).toEqual([])
     expect(s.h.shape().busy).toBe(false)
   })
+
+  // 閉じ方 ask（Android のブラウザのタブ・PC）と press-again（ホーム画面から開いた Android のアプリ。■25）
+  for (const exit of ['ask', 'press-again'] as const) {
+    it(`出していた所へ戻せないまま（ブラウザが go を受け付けなかった）、利用者の「戻る」「進む」で出している所へ着いた時は、何もしない（確かめのダイアログ・掴んでいる間を片付けない・閉じるかを聞かない・ルーターに渡さない。閉じ方 ${exit}）`, async () => {
+      const s = setup('#/month/2026-11', 'os-back', { exit })
+      const consumePop = vi.fn(() => false)
+      const armExit = vi.fn()
+      s.h.handlers.consumePop = consumePop
+      s.h.handlers.armExit = armExit
+      await arm(s)
+      expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
+      // 「進む」で「進む」の印へ。アプリが土台へ戻す go は、ブラウザが3回とも受け付けない（印に残る）
+      const go = s.win.history.go
+      let drop = 3
+      s.win.history.go = (delta: number) => {
+        if (drop > 0) drop -= 1
+        else go(delta)
+      }
+      s.win.userGo(1)
+      await vi.advanceTimersByTimeAsync(TRAVEL_TIMEOUT_MS * 4)
+      expect(s.h.shape()).toMatchObject({ cur: 2, shownIdx: 1 })
+      expect(consumePop).toHaveBeenCalledTimes(1)
+      s.win.history.go = go
+      // 利用者の「戻る」で、出している土台へ着いた
+      s.win.userGo(-1)
+      await settle(s.h)
+      expect(s.h.shape()).toMatchObject({ cur: 1, shownIdx: 1 })
+      expect(consumePop).toHaveBeenCalledTimes(1)
+      expect(s.askExit).not.toHaveBeenCalled()
+      expect(armExit).not.toHaveBeenCalled()
+      expect(s.updates).toEqual([])
+      expect(s.win.describe()).toEqual(['[back]', '*/month/2026-11', '[fwd]'])
+    })
+  }
 })
 
 describe('ほかの画面とカレンダーの行き来', () => {
