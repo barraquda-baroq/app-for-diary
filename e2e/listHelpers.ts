@@ -56,11 +56,35 @@ export async function expectCollapsed(page: Page, list: ListName, collapsed: boo
   await expect(listSection(page, list)).toHaveAttribute('data-collapsed', String(collapsed))
 }
 
-/** S・M: 切り替えの列でそのリストを開き、その先頭へ（畳んでいれば開いてから。3.5） */
+/**
+ * S・M: 切り替えの列でそのリストを開き、その先頭へ（畳んでいれば開いてから。3.5）。先頭へのスクロールが止まるまで待つ（止まる前に
+ * 行の「…」・チップのメニューを開くと、残りのスクロールの出来事で閉じる。src/ui/PopupMenu）
+ */
 export async function openStackedList(page: Page, list: ListName): Promise<void> {
   await page.getByTestId(`top-jump-${list}`).click()
   await expectCollapsed(page, list, false)
   await expect(page.getByTestId(`top-jump-${list}`)).toHaveAttribute('aria-current', 'true')
+  await pageScrollStill(page)
+}
+
+/**
+ * ページの縦の位置が、続けて読んで2回同じになるまで待つ（ページの時計を偽物にしたテストでも使えるよう、待つのはテストの側の時計で、
+ * 位置だけをページから読む）
+ */
+export async function pageScrollStill(page: Page): Promise<void> {
+  let last = Number.NaN
+  let still = 0
+  await expect
+    .poll(
+      async () => {
+        const y = await page.evaluate(() => window.scrollY)
+        still = y === last ? still + 1 : 0
+        last = y
+        return still
+      },
+      { intervals: [60] },
+    )
+    .toBeGreaterThanOrEqual(2)
 }
 
 /**

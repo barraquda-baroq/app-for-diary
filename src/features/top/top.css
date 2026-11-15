@@ -41,8 +41,11 @@
   overflow: hidden;
 }
 
-/* 右の列: 上から Routine List → Task List → Favorite List。中の左右の余白は 16px、リストどうしの間は 24px（--list-gap。4.8） */
+/* 右の列: 上から Routine List → Task List → Favorite List。中の左右の余白は 16px、リストどうしの間は 24px（--list-gap。4.8）。
+   位置の基準にして、中の位置を決めた物（読み上げだけの字 .visually-hidden など）をこの列の中に収める（基準の無い物は列の外の
+   ページの高さを伸ばし、リストが長いと L でもページがスクロールしてしまう。3.4） */
 .top-side {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--list-gap);

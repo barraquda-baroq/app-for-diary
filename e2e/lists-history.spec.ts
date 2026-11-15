@@ -514,12 +514,16 @@ test.describe('S3 L の右の列の上のパネル（3.6・3.8。PC）', { tag: 
     page.getByTestId('item-sheet').evaluate((e) => Promise.all(e.getAnimations().map((a) => a.finished)))
 
   async function overSideColumn(page: Page) {
-    await shown(page)
-    const panel = await page.getByTestId('item-sheet').boundingBox()
-    const column = await page.getByTestId('side-column').boundingBox()
-    if (!panel || !column) throw new Error('パネル・右の列が見えていません')
-    expect(Math.round(panel.width)).toBe(300)
-    for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(panel[k] - column[k]), k).toBeLessThanOrEqual(1)
+    // 幅を替えた直後は、L の形に描き直して出る動きが始まるまでに少しかかる（その前に終わりを待つと、動いている途中を測る）ので、
+    // 揃うまで読み直す
+    await expect(async () => {
+      await shown(page)
+      const panel = await page.getByTestId('item-sheet').boundingBox()
+      const column = await page.getByTestId('side-column').boundingBox()
+      if (!panel || !column) throw new Error('パネル・右の列が見えていません')
+      expect(Math.round(panel.width)).toBe(300)
+      for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(panel[k] - column[k]), k).toBeLessThanOrEqual(1)
+    }).toPass({ timeout: 5000 })
   }
 
   test('「…」の［詳しく］で「タスク」のパネルが右の列の上に出て（履歴に1つ）、Esc・［×］・ブラウザの戻るで閉じる。「進む」で開き直さない（S3-FRAME-075・103・TASK-140・148・150）', async ({
@@ -586,6 +590,7 @@ test.describe('S3 L の右の列の上のパネル（3.6・3.8。PC）', { tag: 
     expect(Math.round(sheet.width)).toBe(412)
     expect(Math.abs(sheet.y + sheet.height - 860)).toBeLessThanOrEqual(1)
     await page.setViewportSize({ width: 1400, height: 900 })
+    await expect(page.getByTestId('top-page')).toHaveAttribute('data-width', 'L')
     await expect(page.getByTestId('item-sheet')).toBeVisible()
     await overSideColumn(page)
   })

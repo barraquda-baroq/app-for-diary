@@ -81,7 +81,7 @@ const SIDE_FALLBACK = { width: 300, gap: 16 }
 
 /**
  * パネル（.modal.is-side）を右の列の箱に合わせる（--panel-top・left・width・height。右の列が無ければ画面の右の端から SIDE_FALLBACK）。
- * 右の列の大きさ・ウインドウの大きさが替わるたびに合わせ直す。返す関数で見張るのをやめ、合わせた物を外す
+ * 右の列とそれを包む物の大きさ・ウインドウの大きさが替わるたびと、合わせた次の描画で合わせ直す。返す関数で見張るのをやめ、合わせた物を外す
  */
 function fitSidePanel(el: HTMLElement): () => void {
   const fit = () => {
@@ -102,8 +102,13 @@ function fitSidePanel(el: HTMLElement): () => void {
   const column = document.querySelector(SIDE_COLUMN)
   const observer = typeof ResizeObserver === 'undefined' || !column ? null : new ResizeObserver(fit)
   if (column) observer?.observe(column)
+  // 右の列の大きさは同じまま位置だけが動く時（幅の区分が替わった直後に、外の左右の余白が後から替わる）も合わせ直す: 右の列を包む物の
+  // 大きさも見て、次に描く時にももう一度合わせる
+  if (column?.parentElement) observer?.observe(column.parentElement)
+  const frame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fit) : 0
   window.addEventListener('resize', fit)
   return () => {
+    if (frame) cancelAnimationFrame(frame)
     observer?.disconnect()
     window.removeEventListener('resize', fit)
     for (const name of ['top', 'left', 'width', 'height']) el.style.removeProperty(`--panel-${name}`)

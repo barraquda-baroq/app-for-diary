@@ -118,6 +118,27 @@ test.describe('S3 L の右の列（3.6・6.13。S3-FRAME-066・067・S3-TASK-242
     await expectCollapsed(page, 'routine', false)
   })
 
+  test('リストが長くて窓が低くても、ページは縦にスクロールせず、右の列の中だけがスクロールする（3.4・S3-FRAME-039）', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1400, height: 560 })
+    await openLists(page, '/week/2026-11-08')
+    const overflow = () =>
+      page.evaluate(() => {
+        const side = document.querySelector<HTMLElement>('[data-testid="side-column"]')
+        if (!side) throw new Error('右の列がありません')
+        const doc = document.scrollingElement ?? document.documentElement
+        return { page: doc.scrollHeight - innerHeight, side: side.scrollHeight - side.clientHeight }
+      })
+    expect((await overflow()).page).toBeLessThanOrEqual(0)
+    expect((await overflow()).side).toBeGreaterThan(0)
+    // 右の列をいちばん下までスクロールしても、ページは動かない
+    await page.getByTestId('side-column').evaluate((e) => e.scrollTo(0, e.scrollHeight))
+    await page.evaluate(() => window.scrollTo(0, 500))
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+    expect((await overflow()).page).toBeLessThanOrEqual(0)
+  })
+
   test('入力欄と［足す］は 36px・34px（L のマウス。4.11）。字が無い間の［足す］は淡い', async ({ page }) => {
     await openLists(page)
     for (const list of LIST_NAMES) {

@@ -119,11 +119,12 @@ describe('S3 行（15.2。S3-FRAME-275〜280・S3-ROUTINE-035・170・179〜183�
   })
 
   it('足した日は、年が今日と違う時だけ年も出す（開発）', async () => {
+    // 足した日は端末の暦の日付なので、作った時刻も端末の時刻で置く（どの時間帯で流しても同じ日になる）
     await open({
       data: {
         favorites: {
-          old: mkFavorite({ id: 'old', text: '去年の物', createdAt: Date.parse('2025-11-10T09:00:00+09:00') }),
-          now: mkFavorite({ id: 'now', text: '今年の物', order: -1, createdAt: Date.parse('2026-11-09T09:00:00+09:00') }),
+          old: mkFavorite({ id: 'old', text: '去年の物', createdAt: new Date(2025, 10, 10, 9).getTime() }),
+          now: mkFavorite({ id: 'now', text: '今年の物', order: -1, createdAt: new Date(2026, 10, 9, 9).getTime() }),
         },
       },
     })
