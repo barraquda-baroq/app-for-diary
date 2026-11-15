@@ -24,6 +24,7 @@ import { LoginPage } from './features/login/LoginPage'
 import { startTestAuth } from './features/login/testAuth'
 import { useInteractionClock } from './features/calendar/common/useReturnToToday'
 import { armExitOnBack, askToCloseApp, consumeBackPress } from './features/top/closeApp'
+import { closeShownList, listOpenNow } from './features/top/listBack'
 import { TopPage } from './features/top/TopPage'
 import { createAppHistory, setHistoryHandler } from './history/appHistory'
 import { attachEdgeFlick } from './history/edgeFlick'
@@ -141,6 +142,9 @@ function createAppRouter() {
   setHistoryHandler('consumePop', consumeBackPress)
   // ドラッグの途中は、押し終えても落とし終えるまで、アプリから履歴を動かさない（印の履歴を作るのも後に回す）
   setHistoryHandler('dragging', dragActive)
+  // S・M で開いているリストを見ている時の「戻る」（iPhone・iPad は左右どちらのフリックも）: そのリストを畳む（履歴は動かさない。■34）
+  setHistoryHandler('listOpen', listOpenNow)
+  setHistoryHandler('closeList', closeShownList)
   // iPhone・iPad: 画面の端から払った指を window で受け取り、履歴の flick に渡す（どの画面の上でも。src/history/edgeFlick.ts。
   // ブラウザの履歴を1つのままにする形の時だけ付き、Android・PC には付かない）
   attachEdgeFlick(history, { dragging: dragActive })
