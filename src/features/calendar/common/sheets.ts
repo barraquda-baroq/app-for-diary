@@ -4,7 +4,10 @@
 // 同じく閉じる。iPhone・iPad の画面の端からのフリックでも左右どちらでも閉じる（登録の画面は書きかけでも聞かずに捨てる。■27。
 // src/history/popRules.ts が決める。3.1）。iPhone・iPad では、積む・戻るはアプリの中の行き先の並びだけで、ブラウザの履歴は1つのまま
 // （src/history/singleEntryHistory.ts）なので、開く時も待たずにすぐ開く。
-// 中の小さな画面（削除の確かめ・複製・日付や時刻の一覧）は積まない（WP9）。小さな画面を出すのは common/SheetHost.tsx
+// 中の小さな画面（削除の確かめ・複製・日付や時刻の一覧）は積まない（WP9）。小さな画面を出すのは common/SheetHost.tsx（カレンダーから
+// 開いた登録・詳細）と src/features/lists/ListSheetHost.tsx（リストから開いた物: Task List の「タスク」の詳細・Routine List と
+// Favorite List の［詳しく］のパネル・Favorite List の［予定にする］の登録。docs/SPEC.md の 3.1・3.6・12.2・12.3）。
+// リストから開く物も、開け閉めと履歴はカレンダーから開く物と同じ（iPhone・iPad はアプリの中の行き先の並びに積むだけ。D43・D51）
 import { useContext, useMemo } from 'react'
 import { UNSAFE_DataRouterContext, useNavigate, type Location } from 'react-router-dom'
 import type { ID } from '../../../domain/types'
@@ -22,14 +25,35 @@ export interface SheetHistoryState extends SheetLocationState {
   sheetPage?: string
 }
 
-/** 履歴の state から、開いている小さな画面（無ければ null） */
+/**
+ * 履歴の state から、開いている小さな画面（無ければ null）。形の正しくない印（id・開始日の無い物、from が決まった字でない物、
+ * 知らない kind）は印でない（null。カレンダーのまま）
+ */
 export function sheetOf(state: unknown): SheetState | null {
   if (!state || typeof state !== 'object') return null
-  const sheet = (state as SheetHistoryState).sheet
+  const sheet = (state as SheetHistoryState).sheet as (Partial<SheetState> & { from?: unknown }) | null | undefined
   if (!sheet || typeof sheet !== 'object') return null
-  if (sheet.kind === 'register' && sheet.init && typeof sheet.init.start === 'string') return sheet
-  if (sheet.kind === 'detail' && typeof sheet.id === 'string') return sheet
-  return null
+  switch (sheet.kind) {
+    case 'register':
+      if (!sheet.init || typeof sheet.init.start !== 'string') return null
+      return sheet.from === undefined || sheet.from === 'favorite' ? (sheet as SheetState) : null
+    case 'detail':
+      if (typeof sheet.id !== 'string') return null
+      return sheet.from === undefined || sheet.from === 'task' ? (sheet as SheetState) : null
+    case 'routine':
+    case 'favorite':
+      return typeof sheet.id === 'string' ? (sheet as SheetState) : null
+    default:
+      return null
+  }
+}
+
+/**
+ * リストから開いた小さな画面か（Task List の「タスク」の詳細・Routine List と Favorite List の［詳しく］・Favorite List の［予定にする］の
+ * 登録。src/features/lists/ListSheetHost.tsx が出す。そうでない物はカレンダーから開いた物で common/SheetHost が出す）
+ */
+export function isListSheet(sheet: SheetState): boolean {
+  return sheet.kind === 'routine' || sheet.kind === 'favorite' || sheet.from !== undefined
 }
 
 /** その小さな画面の印が、このページの読み込みの後に開いた物か（読み込み直す前の物でないか） */
@@ -52,10 +76,19 @@ let popping: { key: string; at: number } | null = null
 const POP_GUARD_MS = 1000
 
 export interface ItemSheets {
-  /** 登録の画面を開く（12.2。初めの値: 開始日・区分・時刻・件名・メモ） */
-  openRegister: (init: RegisterInit) => void
-  /** 予定の詳細の画面を開く（12.3） */
+  /**
+   * 登録の画面を開く（12.2。初めの値: 開始日・区分・時刻・件名・メモ）。from 'favorite' は Favorite List の［予定にする］
+   * （並びに積まない・書きかけの確かめは入れて開いた値から変えた時だけ。D4）
+   */
+  openRegister: (init: RegisterInit, opts?: { from?: 'favorite' }) => void
+  /** 予定の詳細の画面を開く（12.3。カレンダーから。題は「予定」） */
   openDetail: (id: ID) => void
+  /** Task List の［詳しく］: 予定の詳細の画面を「タスク」の題で開く（L は右の列の上のパネル。12.3・3.6） */
+  openTaskDetail: (id: ID) => void
+  /** Routine List の［詳しく］のパネルを開く（14.2） */
+  openRoutineDetail: (id: ID) => void
+  /** Favorite List の［詳しく］のパネルを開く（15.4。D5） */
+  openFavoriteDetail: (id: ID) => void
   /** 開いている小さな画面を閉じる（［×］・Esc・背景・登録・削除の後。履歴を1つ戻す） */
   closeSheet: () => void
 }
@@ -88,8 +121,12 @@ export function useItemSheets(): ItemSheets {
   const current = useCurrentLocation()
   return useMemo(
     () => ({
-      openRegister: (init) => open(navigate, current(), { kind: 'register', init }),
+      openRegister: (init, opts) =>
+        open(navigate, current(), opts?.from ? { kind: 'register', init, from: opts.from } : { kind: 'register', init }),
       openDetail: (id) => open(navigate, current(), { kind: 'detail', id }),
+      openTaskDetail: (id) => open(navigate, current(), { kind: 'detail', id, from: 'task' }),
+      openRoutineDetail: (id) => open(navigate, current(), { kind: 'routine', id }),
+      openFavoriteDetail: (id) => open(navigate, current(), { kind: 'favorite', id }),
       closeSheet: () => {
         const location = current()
         if (!sheetOf(location.state)) return

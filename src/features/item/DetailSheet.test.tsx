@@ -969,3 +969,70 @@ describe('元に戻す・やり直す（7.13）: 開いてから閉じるまで�
     leave()
   })
 })
+
+describe('S3 Task List から開いた詳細（from task。12.3・7.13・D35・D46・S3-FRAME-191・S3-TASK-141・S3-FRAME-226）', () => {
+  const labels = () => useUndo.getState().stack.past.map((st) => st.label)
+
+  async function openTask(items: Item[], id = items[0].id) {
+    const onClose = vi.fn()
+    const data = { items: Object.fromEntries(items.map((i) => [i.id, i])) }
+    const r = await renderView(DetailSheet, { id, onClose, from: 'task' as const }, { data })
+    return { ...r, onClose, user: userEvent.setup() }
+  }
+
+  it('題は「タスク」（calendar 生まれの予定も）。カレンダーから開いた時は「予定」のまま', async () => {
+    await openTask([materials])
+    expect(within(sheet()).getByRole('heading').textContent).toBe('タスク')
+  })
+
+  it('直して閉じても、ウィークリー・デイリーを出していても並びに積まない', async () => {
+    const leave = enterUndoScope()
+    const { user, unmount } = await openTask([materials])
+    await user.type(byId(testIds.itemTitle) as HTMLTextAreaElement, '（改）')
+    await user.click(byId(testIds.itemKind('private')))
+    unmount()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(useApp.getState().data.items.a).toMatchObject({ title: '資料づくり（改）', kind: 'private' })
+    expect(labels()).toEqual([])
+    leave()
+  })
+
+  it('中の［複製］は並びに積まず、お知らせの［開く］も「タスク」の詳細で開く（D35）', async () => {
+    const leave = enterUndoScope()
+    const task = mkTask({ id: 't', title: '見積もり', start: null, due: null })
+    const { user, router } = await openTask([task])
+    await user.click(byId(testIds.itemDuplicate))
+    await user.click(byId(testIds.dupSubmit))
+    expect(labels()).toEqual([])
+    const toast = useToasts.getState().toasts.at(-1)
+    expect(toast?.message).toBe('Task List に複製しました')
+    act(() => toast?.action?.run())
+    expect(router.state.location.state).toMatchObject({ sheet: { kind: 'detail', from: 'task' } })
+    leave()
+  })
+
+  it('中の［削除］（カレンダーに出ていないタスク）は並びに積まず、お知らせの［元に戻す］で戻す', async () => {
+    const leave = enterUndoScope()
+    const task = mkTask({ id: 't', title: '見積もり', start: null, due: null })
+    const trash = vi.spyOn(actions, 'trashItem').mockImplementation(async (id) => {
+      act(() =>
+        useApp.setState((st) => {
+          const { [id]: _gone, ...items } = st.data.items
+          void _gone
+          return { data: { ...st.data, items } }
+        }),
+      )
+      return 'entry-1'
+    })
+    const { user, onClose } = await openTask([task])
+    await user.click(byId(testIds.itemMore))
+    await user.click(byId(testIds.itemDelete))
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(labels()).toEqual([])
+    expect(useToasts.getState().toasts.at(-1)?.message).toBe('『見積もり』を削除しました')
+    trash.mockRestore()
+    leave()
+  })
+})

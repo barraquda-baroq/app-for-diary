@@ -3,19 +3,23 @@
 // 読み込み直した後に残っていた印（このページで開いた物でない）は: 登録の画面は開き直さずに閉じる（書きかけは残らないので）、
 // 詳細の画面は、端末の中のデータを読み終えてから、予定があれば開き直し（このページの印に替える）、無ければ閉じる。閉じるのは
 // ［×］と同じく履歴を1つ戻す（印を外して置き換えると、同じカレンダーの履歴が2つ並び、「戻る」を1回押しても何も変わらない。3.1）。
-// トップの画面（TopPage）がカレンダーを出している間だけ置く（幅の区分が替わってカレンダーが作り直されても閉じない）
+// トップの画面（TopPage）がカレンダーを出している間だけ置く（幅の区分が替わってカレンダーが作り直されても閉じない）。
+// リストから開いた物（Task List の「タスク」の詳細・Routine List と Favorite List の［詳しく］・Favorite List の［予定にする］の登録。
+// sheets.ts の isListSheet）は出さず、読み込み直した後の印も決めない（src/features/lists/ListSheetHost.tsx が受け持つ）
 import { useLayoutEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../../../store/appStore'
 import { DetailSheet } from '../../item/DetailSheet'
 import { RegisterSheet } from '../../item/RegisterSheet'
-import { openedOnThisPage, PAGE_ID, sheetOf, useItemSheets, type SheetHistoryState } from './sheets'
+import { isListSheet, openedOnThisPage, PAGE_ID, sheetOf, useItemSheets, type SheetHistoryState } from './sheets'
 
 export function SheetHost() {
   const location = useLocation()
   const navigate = useNavigate()
   const { closeSheet } = useItemSheets()
-  const sheet = sheetOf(location.state)
+  const marked = sheetOf(location.state)
+  // カレンダーから開いた登録・詳細だけ（リストから開いた物は ListSheetHost）
+  const sheet = marked && !isListSheet(marked) && (marked.kind === 'register' || marked.kind === 'detail') ? marked : null
   const fresh = openedOnThisPage(location.state)
   const ready = useApp((s) => s.status === 'ready')
   const exists = useApp((s) => (sheet?.kind === 'detail' ? Boolean(s.data.items[sheet.id]) : false))
