@@ -3,7 +3,9 @@
 // rel="noopener noreferrer"。アプリの中の行き先には使わない）。長い物は3行まで見せ（折り返した行も数える）、超えた時だけ「続き」を
 // 出して、押すと全部見せる（その行を出している間。読み込み直すとまた3行）。全部見せている間は同じボタンが「畳む」になり、押すと3行に
 // 戻して「続き」に戻る（ボタンは置き換えないので、フォーカスもそのまま）。畳んだ時に「続き」が見える所の上に隠れれば（長い物を下まで
-// 読み進めてから畳んだ時）、隠れた分だけすぐ送る（keepMoreInView。見えていれば送らない）。
+// 読み進めてから畳んだ時）、隠れた分だけすぐ送る（keepMoreInView。見えていれば送らない）。全部見せている間に3行に収まるようになれば
+// （幅が広がった・ほかの端末で短く直された）「畳む」も消し（開いたまま。また3行を超えれば「畳む」）、そのボタンにあったフォーカスは
+// 行の字へ移す（focusRowOf。ページの外へ落とさない）。
 // 字を押すと（リンクを除く）その場で直し始める（onEdit。押した出来事の中で呼ぶ。iPhone でもキーボードが出る）。リンクの無い物は字の
 // 全体がボタン（キーボードでも直せる）、リンクのある物はリンクを中に持つのでボタンにせず、リンクの外を押すと直す（キーボードでは
 // 行の「…」の［詳しく］のパネルで直す）。data-testid は list-favorite-title-{id}（字）・favorite-more-{id}（「続き」「畳む」）
@@ -51,6 +53,17 @@ function keepMoreInView(el: HTMLElement): void {
   else window.scrollTo({ top: window.scrollY - hidden, behavior: 'auto' })
 }
 
+/**
+ * 消える「続き」「畳む」にあったフォーカスを、ページの外へ落とさず、スクロールさせずに行の字（リンクの無い物はボタン）へ移す。リンクの
+ * ある物（字はボタンでない）は行のチェックへ
+ */
+function focusRowOf(el: HTMLElement): void {
+  const to =
+    el.parentElement?.querySelector<HTMLElement>('button.fv-text-box') ??
+    el.closest('.list-row')?.querySelector<HTMLElement>('.list-check')
+  to?.focus({ preventScroll: true })
+}
+
 export interface FavoriteTextProps {
   row: FavoriteRowView
   /** その場で直し始める */
@@ -65,15 +78,23 @@ export function FavoriteText({ row, onEdit }: FavoriteTextProps) {
   const more = useRef<HTMLButtonElement | null>(null)
   /** 「畳む」を押した（畳んだ後の描画で「続き」を見える所に残す） */
   const folding = useRef(false)
+  /** 3行の高さ（3行を超えて畳んでいる時に測った枠の高さ。全部見せている間は、中身の高さをこれと比べる） */
+  const clampH = useRef(0)
   const first = memoParts(row.firstLine)
   const rest = row.multiLine ? memoParts(row.rest) : []
   const hasLinks = [...first, ...rest].some((p) => 'url' in p)
 
-  // 3行を超えているかを測る（字が替わった時と、幅が替わって折り返しが替わった時）
+  // 3行を超えているかを測る（字が替わった時と、幅が替わって折り返しが替わった時。全部見せている間も）
   useLayoutEffect(() => {
     const el = text.current
-    if (!el || expanded) return
-    const measure = () => setOver(el.scrollHeight > el.clientHeight + 1)
+    if (!el) return
+    const measure = () => {
+      // 畳んでいる間は今の枠と、全部見せている間は畳んでいた時の枠と比べる（どちらも同じ3行の高さで、開いた途端に消えたりしない）
+      const next = el.scrollHeight > (expanded ? clampH.current : el.clientHeight) + 1
+      if (next && !expanded) clampH.current = el.clientHeight
+      if (!next && more.current && document.activeElement === more.current) focusRowOf(more.current)
+      setOver(next)
+    }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const o = new ResizeObserver(measure)

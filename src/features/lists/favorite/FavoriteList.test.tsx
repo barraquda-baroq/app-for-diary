@@ -13,7 +13,7 @@ import type { AppData } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData, useApp } from '../../../store/appStore'
 import { useCalendarUi, usePrefs, useToasts } from '../../../store/uiStore'
-import { renderAt, setupCalendarTests } from '../../../test/renderCalendar'
+import { renderAt, resizeObserved, setupCalendarTests } from '../../../test/renderCalendar'
 import { sheetOf } from '../../calendar/common/sheets'
 import { discardListDraft } from '../common/listDraft'
 import { draftKey } from '../common/listInputModel'
@@ -228,6 +228,66 @@ describe('S3 行（15.2。S3-FRAME-275〜280・S3-ROUTINE-035・170・179〜183�
     await user.click(more)
     expect(more.textContent).toBe('続き')
     expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('全部見せている間に3行に収まるようになれば（幅が広がった・ほかの端末で短く直された）「畳む」を消し、フォーカスは行の字（リンクのある物は行のチェック）へ移す。また3行を超えれば「畳む」', async () => {
+    // 中身の高さ（先頭の字で決める）を替えられるようにする。畳んでいる間の枠は3行の 60 まで
+    const h: Record<string, number> = { 旅行: 120, 気になる: 120 }
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('fv-text')) return 60
+      const key = Object.keys(h).find((k) => this.textContent?.startsWith(k))
+      return key ? h[key] : 40
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('fv-text')) return 0
+      return this.classList.contains('is-clamped') ? Math.min(60, this.scrollHeight) : this.scrollHeight
+    })
+    const { user } = await open()
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    const more = byId(listTestIds.favoriteMore(I.trips))
+    await user.click(more)
+    expect(more.textContent).toBe('畳む')
+    expect(document.activeElement).toBe(more)
+    const text = titleOf(I.trips).querySelector<HTMLElement>('.fv-text')!
+    // 幅が広がって2行に収まった: 「畳む」は消え、フォーカスはページの外へ落とさず行の字へ（スクロールさせない）
+    h.旅行 = 40
+    act(() => resizeObserved(600, 40, text))
+    expect(screen.queryByTestId(listTestIds.favoriteMore(I.trips))).toBeNull()
+    expect(document.activeElement).toBe(titleOf(I.trips))
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
+    // また狭まって3行を超えた: 開いたまま（全部見せたまま）「畳む」が出る
+    h.旅行 = 120
+    act(() => resizeObserved(300, 120, text))
+    const again = byId(listTestIds.favoriteMore(I.trips))
+    expect(again.textContent).toBe('畳む')
+    expect(again.getAttribute('aria-expanded')).toBe('true')
+    expect(clamped(I.trips)).toBe(false)
+    // フォーカスがほかにあれば、消えても動かさない
+    act(() => input().focus())
+    h.旅行 = 40
+    act(() => resizeObserved(600, 40, text))
+    expect(screen.queryByTestId(listTestIds.favoriteMore(I.trips))).toBeNull()
+    expect(document.activeElement).toBe(input())
+    // リンクのある物（字はボタンでない）をほかの端末で短く直された: フォーカスは行のチェックへ
+    const linkMore = byId(listTestIds.favoriteMore(I.article))
+    await user.click(linkMore)
+    expect(linkMore.textContent).toBe('畳む')
+    expect(document.activeElement).toBe(linkMore)
+    h.気になる = 40
+    act(() =>
+      useApp.setState((s) => ({
+        data: {
+          ...s.data,
+          favorites: {
+            ...s.data.favorites,
+            [I.article]: { ...s.data.favorites[I.article], text: '気になる記事\nhttps://example.com/a' },
+          },
+        },
+      })),
+    )
+    expect(screen.queryByTestId(listTestIds.favoriteMore(I.article))).toBeNull()
+    expect(document.activeElement).toBe(byId(listTestIds.rowCheck('favorite', I.article)))
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
   })
 })
 

@@ -36,6 +36,21 @@ function longFavorites(): Pick<ReturnType<typeof listData>, 'favorites'> {
   return { favorites }
 }
 
+/** 幅で行の数が替わる物（スマホの幅では3行を超え、M の 700px では3行に収まる。いちばん上。作り物） */
+const WIDE = 'list-f-wide-shop'
+function wideFavorites(): Pick<ReturnType<typeof listData>, 'favorites'> {
+  const base = listData()
+  const text =
+    '散歩の途中で見つけた小さな古本屋に、もう一度ゆっくり寄ってみたい。店の奥の棚も、二階の画集の棚も、時間をかけて見たい'
+  return { favorites: { ...base.favorites, [WIDE]: { ...base.favorites[I.bakery], id: WIDE, text, order: -100 } } }
+}
+
+/** 中身の字の行の数（折り返しも数える） */
+const lineCount = (page: Page, id: string) =>
+  title(page, id)
+    .locator('.fv-text')
+    .evaluate((el) => Math.round(el.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(el).lineHeight)))
+
 /**
  * 「続き」「畳む」の上下の端と、それを入れた所の見える所（PC は右の列 .top-side の中、スマホはヘッダーと切り替えの列の下から画面の
  * 下の端まで。画面の上からの位置）、その所のスクロールの位置
@@ -308,7 +323,7 @@ test.describe('S3 Favorite List（スマホ。15.1・3.6・4.11。S3-FRAME-273�
     await expect(listInput(page, 'favorite')).toHaveValue('あとで調べる')
   })
 
-  test('「続き」で全部見せて「畳む」に、押すと3行の高さに戻って「続き」（ページは動かない。直し始めない）', async ({ page }) => {
+  test('「続き」で「畳む」に、押すと3行に戻って「続き」（ページは動かない。直し始めない）', { tag: '@m' }, async ({ page }) => {
     await openLists(page, '/week/2026-11-08')
     await openStackedList(page, 'favorite')
     const before = (await title(page, I.trips).boundingBox())!.height
@@ -327,9 +342,7 @@ test.describe('S3 Favorite List（スマホ。15.1・3.6・4.11。S3-FRAME-273�
     await expect(page.getByTestId(listTestIds.rowEdit('favorite', I.trips))).toHaveCount(0)
   })
 
-  test('長い物を開いて下まで読み進めてから「畳む」と、「続き」が切り替えの列の下に隠れないよう、隠れた分だけすぐページを送る', async ({
-    page,
-  }) => {
+  test('長い物を下まで読んで「畳む」と、「続き」が切り替えの列の下に隠れた分だけすぐ送る', { tag: '@m' }, async ({ page }) => {
     await openLists(page, '/week/2026-11-08', { extra: longFavorites() })
     await openStackedList(page, 'favorite')
     await more(page, LONG).tap()
@@ -340,6 +353,33 @@ test.describe('S3 Favorite List（スマホ。15.1・3.6・4.11。S3-FRAME-273�
     await expect(more(page, LONG)).toHaveText('続き')
     await expectToggleAtTop(page, LONG, 'page')
     await expect(page.getByTestId(listTestIds.rowEdit('favorite', LONG))).toHaveCount(0)
+  })
+
+  test('全部見せている間に幅が広がって3行に収まると「畳む」は消え、フォーカスは行の字へ移る。また狭まると開いたまま「畳む」', async ({
+    page,
+  }) => {
+    const size = page.viewportSize()!
+    await openLists(page, '/week/2026-11-08', { extra: wideFavorites() })
+    await openStackedList(page, 'favorite')
+    await expect(more(page, WIDE)).toHaveText('続き')
+    await more(page, WIDE).tap()
+    await expect(more(page, WIDE)).toHaveText('畳む')
+    await expect(more(page, WIDE)).toBeFocused()
+    expect(await lineCount(page, WIDE)).toBeGreaterThan(3)
+    // M の幅（切り替えの列のまま）へ広げると3行に収まる: 「畳む」は消え、フォーカスはページの外へ落とさず行の字へ
+    await page.setViewportSize({ width: 700, height: size.height })
+    await expect.poll(() => lineCount(page, WIDE)).toBeLessThanOrEqual(3)
+    await expect(more(page, WIDE)).toHaveCount(0)
+    await expect(title(page, WIDE)).toBeFocused()
+    // 元の幅へ戻すと、開いたまま「畳む」が出る。押すと3行に戻って「続き」（フォーカスはボタンに）
+    await page.setViewportSize(size)
+    await expect(more(page, WIDE)).toHaveText('畳む')
+    await expect(more(page, WIDE)).toHaveAttribute('aria-expanded', 'true')
+    expect(await lineCount(page, WIDE)).toBeGreaterThan(3)
+    await more(page, WIDE).tap()
+    await expect(more(page, WIDE)).toHaveText('続き')
+    await expect(more(page, WIDE)).toBeFocused()
+    await expect(page.getByTestId(listTestIds.rowEdit('favorite', WIDE))).toHaveCount(0)
   })
 
   test('360px でも横にはみ出さず、「…」「続き」・点線の丸は指で押せる大きさ。字を押すとすぐ直す欄にフォーカスする', async ({
