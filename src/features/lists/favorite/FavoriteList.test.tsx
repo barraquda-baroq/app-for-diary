@@ -1,5 +1,5 @@
 // Favorite List（src/features/lists/favorite。docs/SPEC.md の 15.・3.6・6.8・6.13・6.15・12.2）をトップの画面の中で確かめる: 行（新しい物が
-// 上・2行以上なら1行目を太く・http(s) のリンク・リンクを押しても直さない・3行を超えたら「続き」・足した日・分類の無い行）、入力欄
+// 上・2行以上なら1行目を太く・http(s) のリンク・リンクを押しても直さない・3行を超えたら「続き」（開くと「畳む」）・足した日・分類の無い行）、入力欄
 // （PC の Enter で足す・Shift+Enter で改行・指の端末の Enter は改行で［足す］で足す・変換中は足さない）、その場で直す（PC の Enter で
 // 保存・指の端末の Enter は改行・止まって 0.6秒で保存・空は元に戻す・Esc でやめる）、済み・「済み n件」・［済みを片付ける］、「…」の
 // ［詳しく］［予定にする］［Task List へ移す］［削除］、［詳しく］のパネル。リンクの新しいタブ・3行の測り・キーボードの上の欄・高さの
@@ -164,24 +164,70 @@ describe('S3 行（15.2。S3-FRAME-275〜280・S3-ROUTINE-035・170・179〜183�
     expect(document.activeElement).toBe(byId(listTestIds.rowEdit('favorite', I.article)))
   })
 
-  it('3行を超える物だけ「続き」。押すと全部見せ、「続き」は消える', async () => {
-    // 3行に収まらない（測った高さが枠より高い）のは「旅行で行きたい所」だけにする（jsdom は描かないので測る値を決める）
+  /** 3行に収まらない（測った高さが枠より高い）のは「旅行で行きたい所」だけにする（jsdom は描かないので測る値を決める） */
+  const onlyTripsOver = () => {
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('fv-text') && this.textContent?.startsWith('旅行') ? 120 : 60
     })
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('fv-text') ? 60 : 0
     })
+  }
+  const clamped = (id: string) => titleOf(id).querySelector('.fv-text')?.classList.contains('is-clamped')
+
+  it('3行を超える物だけ「続き」。押すと全部見せて同じボタンが「畳む」に、もう一度押すと3行に戻って「続き」（直し始めず、フォーカスはボタンに残る）', async () => {
+    onlyTripsOver()
     const { user } = await open()
     expect(screen.queryByTestId(listTestIds.favoriteMore(I.recipes))).toBeNull()
     const more = byId(listTestIds.favoriteMore(I.trips))
     expect(more.textContent).toBe('続き')
-    expect(titleOf(I.trips).querySelector('.fv-text')?.classList.contains('is-clamped')).toBe(true)
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    expect(clamped(I.trips)).toBe(true)
     await user.click(more)
-    expect(screen.queryByTestId(listTestIds.favoriteMore(I.trips))).toBeNull()
-    expect(titleOf(I.trips).querySelector('.fv-text')?.classList.contains('is-clamped')).toBe(false)
-    // 「続き」を押しても直し始めない
+    // 同じボタンのまま「畳む」に替わる（置き換えないので、フォーカスもそのまま）
+    expect(byId(listTestIds.favoriteMore(I.trips))).toBe(more)
+    expect(more.textContent).toBe('畳む')
+    expect(more.getAttribute('aria-expanded')).toBe('true')
+    expect(clamped(I.trips)).toBe(false)
+    expect(document.activeElement).toBe(more)
+    await user.click(more)
+    expect(byId(listTestIds.favoriteMore(I.trips))).toBe(more)
+    expect(more.textContent).toBe('続き')
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    expect(clamped(I.trips)).toBe(true)
+    expect(document.activeElement).toBe(more)
+    // キーボード（Enter・Space）でも替わる
+    await user.keyboard('{Enter}')
+    expect(more.textContent).toBe('畳む')
+    await user.keyboard(' ')
+    expect(more.textContent).toBe('続き')
+    expect(clamped(I.trips)).toBe(true)
+    // 「続き」「畳む」を押しても直し始めない
     expect(screen.queryByTestId(listTestIds.rowEdit('favorite', I.trips))).toBeNull()
+    expect(getData().favorites[I.trips].text.startsWith('旅行で行きたい所')).toBe(true)
+  })
+
+  it('畳んだ時に「続き」が見える所の上に隠れれば、なめらかにせずすぐ、隠れた分だけページを送る。見えていれば送らない', async () => {
+    onlyTripsOver()
+    const { user } = await open()
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(900)
+    const more = byId(listTestIds.favoriteMore(I.trips))
+    // 開く時は送らない
+    await user.click(more)
+    expect(scrollTo).not.toHaveBeenCalled()
+    // 畳んだ後の「続き」が画面の上の端より 140px 上（jsdom は描かないので、畳んだ後に測る位置を決める）
+    const rect = vi.spyOn(more, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, -140, 40, 24))
+    await user.click(more)
+    expect(more.textContent).toBe('続き')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 760, behavior: 'auto' })
+    // 畳んだ後も見えていれば（画面の上の端より下）送らない
+    rect.mockReturnValue(new DOMRect(0, 300, 40, 24))
+    await user.click(more)
+    await user.click(more)
+    expect(more.textContent).toBe('続き')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
   })
 })
 
