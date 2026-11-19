@@ -74,7 +74,7 @@ describe('S3 closeShownList（■34 の作者の答え）', () => {
   })
 })
 
-describe('記録（list-decide。M1 の報告の調べ。開発）', () => {
+describe('記録（list-decide。■36 の時の作者の報告の調べ。開発）', () => {
   afterEach(() => {
     setSwipeLogEnabled(false)
     vi.restoreAllMocks()

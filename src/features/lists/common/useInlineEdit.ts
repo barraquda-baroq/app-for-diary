@@ -12,7 +12,8 @@
 // - 打っている間の字（まだ保存していない物）は src/store/draftRegistry に届け、画面を閉じる・裏に回る時にも保存する（保存する物は
 //   保存する。■34 の打ちかけを捨てる時も、その場の直しは捨てない）
 // - 直している間は、Esc と同じやめ方（cancel）を欄ごとに届ける（common/fieldCancel。iPhone・iPad で直している間の端からのフリックは、
-//   Esc と同じく保存せずにやめる。■36。Favorite の 0.6秒の自動保存で保存した分は、Esc と同じく残る）
+//   Esc と同じく保存せずにやめる。■36。Favorite の 0.6秒の自動保存で保存した分は、Esc と同じく残る）。やめた・終えた後に来た入力の字
+//   （外れた欄へブラウザが変換の途中の字を決めて書いた物）は入れない（保存も、自動保存も、閉じる時の保存もしない）
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import { flushSync } from 'react-dom'
@@ -132,6 +133,8 @@ export function useInlineEdit({ value, onSave, multiline = false, autosaveMs }: 
     },
     value: text,
     onChange: (e) => {
+      // やめた・終えた後（閉じる前に、外れた欄へブラウザが変換の途中の字を決めて書いた。WebKit）: 保存する字にしない（■36）
+      if (!latest.current.editing) return
       const next = e.target.value
       latest.current = { ...latest.current, text: next }
       setText(next)

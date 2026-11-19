@@ -95,7 +95,7 @@ describe('useKeyboardInset', () => {
     button.remove()
   })
 
-  it('キーボードが出たまま見えている所が縦に動いた（ページを指で動かした・iPhone が見えている所をずらした）だけでは送らない。--kb は今までどおり見えている所の下に隠れた高さ（M1 の報告。2.7）', () => {
+  it('キーボードが出たまま見えている所が縦に動いた（ページを指で動かした・iPhone が見えている所をずらした）だけでは送らない。--kb は今までどおり見えている所の下に隠れた高さ（■36 の時の作者の報告。2.7）', () => {
     const vv = fakeViewport(844)
     const scrollBy = vi.fn()
     document.documentElement.scrollBy = scrollBy as unknown as typeof document.documentElement.scrollBy

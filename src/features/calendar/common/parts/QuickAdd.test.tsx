@@ -1443,4 +1443,99 @@ describe('iPhone・iPad の端からのフリックで入力をやめる時（ca
     expect(items()).toHaveLength(0)
     expect(readLocal(quickDraftKey('2026-11-10', 'work'))).toBe('書きかけ')
   })
+
+  describe('(k) 変換中に画面の端の幅の中の［足す］（✓）を指で押した時（端からのフリックの指かもしれない。■36）', () => {
+    /** 右の端の幅の中（jsdom の窓の幅の端から 5px） */
+    const edgeX = () => window.innerWidth - 5
+    const touchAdd = (type: 'pointerDown' | 'pointerUp' | 'pointerCancel') =>
+      fireEvent[type](button(), {
+        pointerType: 'touch',
+        pointerId: 12,
+        isPrimary: true,
+        button: 0,
+        clientX: edgeX(),
+        clientY: 300,
+      })
+    /** 指を離した（touch の出来事。離した後は指が無い） */
+    const touchEnd = () =>
+      act(() => {
+        const ev = new Event('touchend', { bubbles: true, cancelable: true })
+        Object.defineProperty(ev, 'touches', { value: [] })
+        window.dispatchEvent(ev)
+      })
+
+    it('ブラウザが指を取った（pointercancel）後は、指を離すまで決めない。離してフリックにならなければ、キーボードを閉じた時と同じく少し待ってから足して閉じる（blur）', async () => {
+      onIPhone()
+      const { input, onClose } = await open()
+      fakeTimers()
+      pageFocused(true)
+      fireEvent.compositionStart(input)
+      typeText(input, 'かいぎ')
+      touchAdd('pointerDown')
+      expect(document.activeElement).not.toBe(input)
+      touchAdd('pointerCancel')
+      advance(BLUR_SETTLE_MS * 3)
+      expect(onClose).not.toHaveBeenCalled()
+      expect(items()).toHaveLength(0)
+      touchEnd()
+      expect(onClose).not.toHaveBeenCalled()
+      advance(BLUR_SETTLE_MS)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(onClose).toHaveBeenCalledWith('blur')
+      expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    })
+
+    it('離す前にフリックが来れば、足さずに閉じ、書きかけも捨てる（離した後にも足さない）', async () => {
+      onIPhone()
+      const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
+      fakeTimers()
+      pageFocused(true)
+      fireEvent.compositionStart(input)
+      typeText(input, 'かいぎ')
+      touchAdd('pointerDown')
+      touchAdd('pointerCancel')
+      advance(BLUR_SETTLE_MS * 2)
+      act(() => void cancelQuickAddByFlick())
+      touchEnd()
+      advance(BLUR_SETTLE_MS * 2)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(onClose).toHaveBeenCalledWith('flick')
+      expect(items()).toHaveLength(0)
+      expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBeNull()
+    })
+
+    it('押して離した（タップ）時は今までどおり: 変換を決めてから1回だけ足し、開いたまま入力欄へ戻す', async () => {
+      onIPhone()
+      const { input, onClose } = await open()
+      vi.spyOn(button(), 'getBoundingClientRect').mockReturnValue(
+        DOMRect.fromRect({ x: window.innerWidth - 40, y: 290, width: 34, height: 34 }),
+      )
+      fireEvent.compositionStart(input)
+      typeText(input, 'かいぎ')
+      touchAdd('pointerDown')
+      expect(document.activeElement).not.toBe(input)
+      fireEvent.compositionEnd(input)
+      touchAdd('pointerUp')
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, COMMIT_WAIT_MS + 20))
+      })
+      expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+      expect(onClose).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(input)
+    })
+
+    it('Android・PC（OS の戻る）は今までどおり: ブラウザが指を取ったら、離すのを待たずに少し待ってから足して閉じる', async () => {
+      vi.spyOn(device, 'currentPopSource').mockReturnValue('os-back')
+      const { input, onClose } = await open()
+      fakeTimers()
+      pageFocused(true)
+      fireEvent.compositionStart(input)
+      typeText(input, 'かいぎ')
+      touchAdd('pointerDown')
+      touchAdd('pointerCancel')
+      advance(BLUR_SETTLE_MS)
+      expect(onClose).toHaveBeenCalledWith('blur')
+      expect(items().map((i) => i.title)).toEqual(['かいぎ'])
+    })
+  })
 })

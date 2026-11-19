@@ -1,4 +1,4 @@
-// 打っている間の端からのフリック（docs/SPEC.md の 3.1・12.1・22. の ■36 の作者の答え）の E2E: iPhone・iPad で、カレンダーの画面の
+// 打っている間の端からのフリック（docs/SPEC.md の 3.1・12.1・22. の ■36 の作者の答え）の E2E: iPhone・iPad で、カレンダー・MIM の画面の
 // 3つのリストの入力欄・行の中で直している欄で打っている時と、すばやく足すを開いている時に画面の端から払うと、打っていた物をやめて
 // 欄（とキーボード）を閉じるだけ: 打ちかけ・チップ・端末の書きかけは消え、欄からフォーカスが外れ、行き先・モード・ページの位置・
 // ブラウザの履歴の数は替わらず、リストは開いたまま（作者「入力中の払いは、入力画面のキャンセルのみで、モード移行はなしでいいです」
@@ -9,7 +9,15 @@
 // しない。3.1）で払う。データは作り物（e2e/fixtures/listData.ts）
 import { devices, expect, test, type Locator, type Page } from '@playwright/test'
 import { LIST_IDS } from './fixtures/listData'
-import { collectDiagnosticsOnFailure, edgeFlick, goBack, historyCalls, historySettled, spyHistory } from './helpers'
+import {
+  collectDiagnosticsOnFailure,
+  edgeFlick,
+  goBack,
+  historyCalls,
+  historySettled,
+  iosCancelledTouch,
+  spyHistory,
+} from './helpers'
 import {
   expectCollapsed,
   listInput,
@@ -96,6 +104,29 @@ async function showList(page: Page, list: ListName, how: 'switch' | 'scroll') {
     }, listTestIds.section(list))
   }
   await pageScrollStill(page)
+}
+
+/** 端の幅（初めの 44px）の中で、target の上の点（右の端から 40px。target の右の端の 2px 内）。入らなければ落とす */
+async function rightEdgePointOn(page: Page, target: Locator): Promise<{ x: number; y: number }> {
+  const vw = page.viewportSize()?.width ?? 412
+  const box = await target.boundingBox()
+  if (!box) throw new Error('押す物が見えません')
+  const x = Math.max(box.x + 2, vw - 40)
+  expect(x, `右の端の幅（${vw - 44}px から）の中に押す物がある`).toBeLessThanOrEqual(box.x + box.width - 2)
+  return { x, y: Math.round(box.y + box.height / 2) }
+}
+
+/** その点から左へ 160px 払う（e2e/helpers.ts の iosCancelledTouch。iPhone と同じく少し動いた所で pointer を取り消す。pointer が先の順） */
+async function flickLeftFrom(page: Page, from: { x: number; y: number }, stepMs = 12) {
+  const points = Array.from({ length: 11 }, (_, i) => ({ x: from.x - 16 * i, y: from.y - i }))
+  await iosCancelledTouch(page, points, { stepMs })
+  await page.waitForTimeout(320)
+}
+
+/** Chromium の変換（IME）で、変換の途中の字を置く（決めていない字） */
+async function composeText(page: Page, text: string) {
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length })
 }
 
 // ---------- iPhone（Chromium に iPhone の UA。ブラウザの履歴は1つのまま） ----------
@@ -202,6 +233,108 @@ test.describe('■36 iPhone: 打っている間の端からのフリックは入
       expect(await historyCalls(page)).toEqual([])
     })
   }
+
+  test('Task List の入力欄で変換の途中に、右の端の幅の中の［足す］から払っても、打ちかけ（変換の途中の字も）を捨てて欄から外すだけ（［足す］が押した時に変換を決めるため欄から外していても。畳まない・ページも動かない）', async ({
+    page,
+  }) => {
+    await spyHistory(page)
+    await openLists(page, MONTH)
+    const length = await historyLength(page)
+    await showList(page, 'task', 'switch')
+    const input = listInput(page, 'task')
+    await input.click()
+    await page.keyboard.type('会議室')
+    await draftStored(page, 'task', '会議室')
+    await composeText(page, 'よやく')
+    await expect(input).toHaveValue('会議室よやく')
+    const before = { hash: await hashOf(page), y: await scrollY(page), length }
+    await flickLeftFrom(page, await rightEdgePointOn(page, page.getByTestId(listTestIds.add('task'))))
+    await onlyCancelled(page, 'task', before)
+    expect(await countByTitle(page, '会議室よやく')).toBe(0)
+    expect(await historyCalls(page)).toEqual([])
+  })
+
+  test('すばやく足すで変換の途中に、右の端の幅の中の［足す］（✓）から払っても、足さずに閉じて書きかけも消すだけ（指を取られてから離すまでが長くても。モードは回さない）', async ({
+    page,
+  }) => {
+    await spyHistory(page)
+    await openLists(page, WEEK)
+    const length = await historyLength(page)
+    // いちばん右の「＋」（その✓が右の端の幅に入る）
+    const plusId = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('[data-testid^="week-add-"]')]
+      all.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right)
+      return all[0]?.getAttribute('data-testid') ?? ''
+    })
+    const [, date, kind] = /^week-add-(\d{4}-\d{2}-\d{2})-(\w+)$/.exec(plusId) ?? []
+    expect(date).toBeTruthy()
+    const key = `diary-studio:draft:quick:${date}:${kind}`
+    const plus = page.getByTestId(plusId)
+    await plus.scrollIntoViewIfNeeded()
+    await plus.tap()
+    const input = page.getByTestId('quick-add-input')
+    await expect(input).toBeFocused()
+    await page.keyboard.type('かい')
+    await composeText(page, 'ぎ')
+    await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toBe('かいぎ')
+    const before = { hash: await hashOf(page), y: await scrollY(page) }
+    await flickLeftFrom(page, await rightEdgePointOn(page, page.getByTestId('quick-add-button')), 30)
+    await expect(input).toHaveCount(0)
+    await page.waitForTimeout(300)
+    expect(await countByTitle(page, 'かいぎ')).toBe(0)
+    await expect(page.locator('.toast', { hasText: '足しました' })).toHaveCount(0)
+    expect(await page.evaluate((k) => localStorage.getItem(k), key)).toBeNull()
+    await settled(page)
+    expect(await hashOf(page)).toBe(before.hash)
+    expect(Math.abs((await scrollY(page)) - before.y)).toBeLessThanOrEqual(1)
+    expect(await historyLength(page)).toBe(length)
+    expect(await historyCalls(page)).toEqual([])
+  })
+})
+
+// ---------- iPad の縦向き（M。リストは画面の下へ並ぶ） ----------
+test.describe('■36 iPad の縦向き（820×1180・M。Chromium に iPad の UA）', { tag: ['@s'] }, () => {
+  test.use({ userAgent: IPAD_UA, viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true })
+
+  test('Favorite List の入力欄に打ったまま払うと入力をやめるだけ。すばやく足す（週）も足さずに閉じるだけ（モードは回さない）。MIM の横のリストで打っている時も、MIM のまま入力をやめるだけ', async ({
+    page,
+  }) => {
+    await spyHistory(page)
+    await openLists(page, MONTH)
+    const length = await historyLength(page)
+    await expect(page.getByTestId('top-page')).toHaveAttribute('data-width', 'M')
+    await showList(page, 'favorite', 'switch')
+    await typeInto(page, 'favorite', 'iPad の縦で打つ')
+    const before = { hash: await hashOf(page), y: await scrollY(page), length }
+    await edgeFlick(page, 'left', { y: await flickY(page, listInput(page, 'favorite')) })
+    await onlyCancelled(page, 'favorite', before)
+
+    await openLists(page, WEEK)
+    const plus = page.getByTestId('week-add-2026-11-12-work')
+    await plus.tap()
+    const quick = page.getByTestId('quick-add-input')
+    await quick.fill('縦で捨てる字')
+    await edgeFlick(page, 'right', { y: await flickY(page, quick) })
+    await expect(quick).toHaveCount(0)
+    expect(await countByTitle(page, '縦で捨てる字')).toBe(0)
+    expect(await page.evaluate(() => localStorage.getItem('diary-studio:draft:quick:2026-11-12:work'))).toBeNull()
+    await settled(page)
+    expect(await hashOf(page)).toBe(WEEK)
+
+    await openLists(page, '/mim')
+    await showList(page, 'task', 'switch')
+    const task = listInput(page, 'task')
+    await task.click()
+    await page.keyboard.type('MIM の横で打つ')
+    await draftStored(page, 'task', 'MIM の横で打つ')
+    await edgeFlick(page, 'left', { y: await flickY(page, task) })
+    await expect(task).toHaveValue('')
+    expect(await focused(task)).toBe(false)
+    await expect.poll(() => storedDraft(page, 'task')).toBeNull()
+    await settled(page)
+    expect(await hashOf(page)).toBe('/mim')
+    expect(await historyCalls(page)).toEqual([])
+  })
 })
 
 // ---------- iPad の横向き（L。右の列） ----------
@@ -259,7 +392,7 @@ function fakeKeyboard(page: Page, by: number, top = 0, type: 'resize' | 'scroll'
 /** 欄の下の端（見えている所の上から） */
 const bottomOf = (target: Locator) => target.evaluate((e) => e.getBoundingClientRect().bottom)
 
-test.describe('■36 キーボードが出た時の送り方（作り物の visualViewport。M1 の報告の直し）', { tag: ['@s'] }, () => {
+test.describe('■36 キーボードが出た時の送り方（作り物の visualViewport。■36 の報告の直し）', { tag: ['@s'] }, () => {
   test.use({ userAgent: IPHONE_UA })
 
   test('キーボードが出た時は、打っているリストの入力欄・すばやく足すの入力欄をキーボードの上 16px まで送る。出たまま指で動かして見えている所も動いた時は、欄へ送り直さない（--kb は替わる）', async ({

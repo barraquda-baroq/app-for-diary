@@ -23,8 +23,9 @@
 //   離した時に決めるのは、外したのでキーボードが閉じ始め、画面が縦に動いて、click が指の下に来た別の物へ行くことがあるため
 //   （その click・mousedown は捨てる。指は押した［足す］に捕まえられているので、離した出来事は［足す］に来る）。マウスを［足す］の外で
 //   離した時と、指を横へなぞって［足す］の横の幅の外で離した時は、足さずに入力欄へ戻す。押した指でスクロールした
-//   （pointercancel）時は、キーボードを閉じた時と同じ。押した出来事の無い click（読み上げの操作など）は、その中で外して戻す
-//   （iPhone ではキーボードへ伝わらないことがある。できるだけの扱い）
+//   （pointercancel）時は、キーボードを閉じた時と同じ（iPhone・iPad で画面の端の幅の中の［足す］を押した指は、端からのフリックの
+//   指かもしれないので、指を離した後に決める。フリックなら下のとおり足さずに閉じる。■36）。押した出来事の無い click（読み上げの
+//   操作など）は、その中で外して戻す（iPhone ではキーボードへ伝わらないことがある。できるだけの扱い）
 // - 足さずに閉じるのは Esc と、キーボード（Tab）でフォーカスを外の物へ移した時（書きかけは残り、次に開くと出る。［足す］へは Tab で
 //   移れ、その次の Tab で外へ出ると閉じる）と、iPhone・iPad の端からのフリックの時（下。この時だけ書きかけも捨てる）と、
 //   外を押してそのままカードをドラッグした時（WeekDnd が quickAddDragStarted で伝える。
@@ -48,10 +49,11 @@
 //   iPhone の身振りも同じ）は、入力をやめるだけ: 字があっても足さずに閉じ（flick。作者「入力確定前の内容で払ったものは登録しない」。
 //   22. の a228a81 を試した答え）、打った字も捨て（その日・その区分の書きかけを消す。同じ日・同じ区分で開き直すと空。聞かない。作者
 //   「文字残しは必要ないです」。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）、入力欄からフォーカスを外す
-//   （キーボードを閉じる）。モードは替えず、ページも動かさない（そのフリックは使い切る。作者「カレンダーのクイック入力（年月週日の右の
-//   ＋ではない方）も、入力画面をキャンセルするだけでモード移行は必要ないです、画面の上下移動もなし」。22. の ■36。前の版は、閉じてから
-//   モードを回していた）。外を押して押し終わりを待っていた分も足さない。変換を決める前に［足す］で押し終えた分（変換の終わりを
-//   待っている間）は、押した時に決めたので足す。iPhone・iPad で画面の端（左右の端の幅の中。初めは 44px。設定の「開発」で選ぶ。
+//   （キーボードを閉じる。外れた時にブラウザが変換の途中の字を決めて書いても、書きかけには入れない）。モードは替えず、ページも
+//   動かさない（そのフリックは使い切る。作者「カレンダーのクイック入力（年月週日の右の＋ではない方）も、入力画面をキャンセルする
+//   だけでモード移行は必要ないです、画面の上下移動もなし」。22. の ■36。前の版は、閉じてからモードを回していた）。外を押して
+//   押し終わりを待っていた分も足さない。変換を決める前に［足す］で押し終えた分（変換の終わりを待っている間）は、押した時に決めた
+//   ので足す。iPhone・iPad で画面の端（左右の端の幅の中。初めは 44px。設定の「開発」で選ぶ。
 //   edgeOfScreen で、端からのフリックと同じ幅で決める）を指で押した時は、外を押したとはまだ扱わず、離した時に決める（端からのフリックの
 //   指: 動かさずに離せば外を押した時と同じく押し終わってから足して閉じ、払って離せば、ここでは閉じず足さない（フリックになれば上の
 //   とおり閉じる）。12.1）。端を押している間に
@@ -257,8 +259,15 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
    * 変換中に［足す］を押した分（pointerdown から、離した後の click か CLICK_WAIT_MS まで。id は押した指・マウス、up は離した）。
    * この間の mousedown・click は、どこに来ても押した物の操作にしない
    */
-  const addPress = useRef<{ id: number; up: boolean } | null>(null)
+  const addPress = useRef<{ id: number; up: boolean; edge: boolean } | null>(null)
   const addButton = useRef<HTMLButtonElement>(null)
+  /**
+   * 変換中に画面の端の幅の中の［足す］を指で押し、離さずにブラウザが指を取った（端からのフリックの指かもしれない）: 外れたフォーカスを
+   * 決めるのは、指を離した後（touchend・touchcancel）。フリックになれば、その前に cancelQuickAddByFlick で足さずに閉じる
+   */
+  const edgeHeld = useRef(false)
+  /** 端からのフリックでやめた（この後に来る入力の字は書きかけに入れない） */
+  const discarded = useRef(false)
   /**
    * iPhone・iPad で画面の端を指で押した分（端からのフリックの指。id は押した指、x・y は押した所）。外を押したとはまだ扱わず、離した時に
    * 決める。この間に入力欄から外れたフォーカスも離した時に決め、この指でドラッグを始めたら外を押してドラッグした分にする（前の版が
@@ -437,11 +446,21 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       if (pending.current) finish(pending.current)
       else if (a && !a.up) {
         // 変換中に押した［足す］を、離さずに終えた（ブラウザが指を受け取った: 押した指でスクロールした）: 外れたままなので
-        // （フォーカスを戻せる出来事が無い）、キーボードを閉じた時と同じに決める
+        // （フォーカスを戻せる出来事が無い）、キーボードを閉じた時と同じに決める。画面の端の幅の中で押した指は、端からのフリックかも
+        // しれないので、指を離してから決める（フリックなら足さずに閉じる。■36）
         dropCommit()
         window.clearTimeout(settleTimer.current)
-        settleTimer.current = window.setTimeout(settle, BLUR_SETTLE_MS)
+        if (a.edge) edgeHeld.current = true
+        else settleTimer.current = window.setTimeout(settle, BLUR_SETTLE_MS)
       }
+    }
+    // 端の幅の中の［足す］を押した指を離した（払って離した・ブラウザが取った）: 外れたフォーカスを、押さずに外れた時と同じく少し待って
+    // から決める（端からのフリックなら、もう閉じている）
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!edgeHeld.current || (e.touches?.length ?? 0) !== 0) return
+      edgeHeld.current = false
+      window.clearTimeout(settleTimer.current)
+      settleTimer.current = window.setTimeout(settle, BLUR_SETTLE_MS)
     }
     // 画面の端を押した指を、閉じずに終えた（払って離した・ブラウザが取った）: 押している間に入力欄・［足す］から外れたフォーカスは、
     // 押さずに外れた時と同じく、少し待ってから決める（キーボードの✓。入力欄に残っていれば何もしない）
@@ -474,6 +493,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       endPress()
     }
     const onDown = (e: PointerEvent) => {
+      // 前に端の幅の中の［足す］を押した指の、離した出来事が来なかった（この押しで決める）
+      edgeHeld.current = false
       // 元に戻す・やり直すのボタン（KEEP_QUICK_ADD）の上では閉じない
       const keep = e.target instanceof Element && e.target.closest(`[${KEEP_QUICK_ADD}]`) !== null
       const outside = !!box.current && e.target instanceof Node && !box.current.contains(e.target) && !keep
@@ -573,6 +594,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     window.addEventListener('pointerdown', onDown, true)
     window.addEventListener('pointerup', onUp, true)
     window.addEventListener('pointercancel', cancelPress, true)
+    window.addEventListener('touchend', onTouchEnd, true)
+    window.addEventListener('touchcancel', onTouchEnd, true)
     window.addEventListener('mousedown', onMouseDown, true)
     window.addEventListener('click', onClick, true)
     window.addEventListener('blur', onWindowBlur)
@@ -601,11 +624,14 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       press.current = null
       addPress.current = null
       edge.current = null
+      edgeHeld.current = false
       if (closing.current && !pending.current) return false
       closing.current = true
       window.clearTimeout(settleTimer.current)
+      discarded.current = true
       finish('flick')
-      // キーボードを閉じる（閉じると決めた後なので、続く blur では何もしない。ページは動かさない）
+      // キーボードを閉じる（閉じると決めた後なので、続く blur では何もしない。外れた時にブラウザが変換の途中の字を決めて書いても
+      // （WebKit）、書きかけには入れない（change）。ページは動かさない）
       const active = document.activeElement
       if (active instanceof HTMLElement && box.current?.contains(active)) active.blur()
       return true
@@ -617,6 +643,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('pointerup', onUp, true)
       window.removeEventListener('pointercancel', cancelPress, true)
+      window.removeEventListener('touchend', onTouchEnd, true)
+      window.removeEventListener('touchcancel', onTouchEnd, true)
       window.removeEventListener('mousedown', onMouseDown, true)
       window.removeEventListener('click', onClick, true)
       window.removeEventListener('blur', onWindowBlur)
@@ -666,6 +694,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   }, [added])
 
   const change = (next: string) => {
+    // 端からのフリックでやめた後（閉じる前に、外れた欄へブラウザが変換の途中の字を決めて書いた）: 書きかけに戻さない
+    if (discarded.current) return
     setDraft({ key, text: next })
     latest.current = { ...latest.current, text: next }
     // 空白だけの書きかけは控えない
@@ -699,7 +729,9 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
   const onAddPointerDown = (e: ReactPointerEvent) => {
     const el = input.current
     if (e.button !== 0 || !composingText.current || commit.current || !el || !latest.current.text.trim()) return
-    addPress.current = { id: e.pointerId, up: false }
+    // iPhone・iPad で画面の端の幅の中を指で押した（端からのフリックの指かもしれない。離さずにブラウザが取ったら、離してから決める）
+    const edgePress = e.pointerType === 'touch' && currentPopSource() === 'edge-flick' && edgeOfScreen(e.clientX) !== null
+    addPress.current = { id: e.pointerId, up: false, edge: edgePress }
     startCommit(el)
   }
 
@@ -723,8 +755,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
    */
   const settle = () => {
     settleTimer.current = undefined
-    // 画面の端を押している間は、離した時に決める（edgeEnded）
-    if (closing.current || press.current || edge.current || away.current) return
+    // 画面の端を押している間は、離した時に決める（edgeEnded・onTouchEnd）
+    if (closing.current || press.current || edge.current || edgeHeld.current || away.current) return
     const active = document.activeElement
     if (active && box.current?.contains(active)) return
     if (document.visibilityState !== 'visible' || !document.hasFocus()) return

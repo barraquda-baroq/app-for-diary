@@ -74,8 +74,8 @@ let arming = false
  * 離すまで。features/dnd の TopDnd が付ける dragging）は何もしない。離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印
  * data-dnd-dragging はまだ残る。pageTurnDom の dragActive）は、もう掴んでいないので、ふつうに扱う（3.1）。リストのメニュー・小窓が
  * 開いていれば（iPhone の端からのフリックで、払い始めに外を押したことになって先に閉じた時も）、それだけを閉じる（リストは畳まず、
- * 打ちかけも残す。src/features/lists/common/listPopups.ts）。iPhone・iPad の端からのフリックで、カレンダーの画面で打っている間
- * （すばやく足すを開いている・リストの欄にフォーカスがある）は、入力をやめて欄を閉じるだけ（モードを回さない・リストを畳まない。
+ * 打ちかけも残す。src/features/lists/common/listPopups.ts）。iPhone・iPad の端からのフリックで、カレンダー・MIM の画面で打っている
+ * 間（すばやく足すを開いている・リストの欄にフォーカスがある）は、入力をやめて欄を閉じるだけ（モードを回さない・リストを畳まない。
  * typingCancel.ts。■36）。片付けた時 true
  */
 export function consumeBackPress(): boolean {

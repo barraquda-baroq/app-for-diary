@@ -5,7 +5,7 @@
 // - listOpenNow: 積んだ所の形・見ている所・畳んだ状態（useStackedLists。StackedTop が出す）を stackModel.ts の listToClose に渡す。
 //   StackedTop を出していない時（L・ほかの画面）は形が無いので false。決めるのに画面（DOM・ルーター・matchMedia）は読まない。設定で
 //   記録を取っている時だけ、決めた時の形とページの位置・見えている所（visualViewport）を list-decide に控える（src/history/swipeLog.ts。
-//   M1 の報告で、打っている間に見ている所がどこと決まっていたかを後で調べるため。開発）
+//   ■36 の時の作者の報告（22.）で、打っている間に見ている所がどこと決まっていたかを後で調べるため。開発）
 // - closeShownList: 見ているリストの入力欄の打ちかけを捨て（common/listDraft.ts の discardListDraft。聞かない・足さない。変換の途中なら
 //   決めずに捨てる。その場の直しは捨てない）、ページの位置を跳ばさずに畳む（stackedFold.ts の foldListInPlace。カレンダーへ
 //   スクロールで戻さない・フォーカスはそのリストの中にあった時だけそのリストの見出しの畳む・開くボタンへ）
