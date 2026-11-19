@@ -865,4 +865,128 @@ describe('■36 打っている欄が見える所の上の外にある時（iPho
     expect(scrollTo).toHaveBeenCalledWith({ top: 594, behavior: 'auto' })
     expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"favorite","moved":64,"space":64\}/)
   })
+
+  it('S: Task List の［依頼者］の欄（入力欄の下のチップの行）の上の端だけが 2px 隠れていて、その上の4行の書きかけの入力欄は見える所の上の外にある時に払うと、縮むのは見える所の上の入力欄と箱なので、縮んだ分（114px）を全部送って、見えている下の行を同じ所に残す（依頼者の欄の隠れていた 2px までにしない）', async () => {
+    const { history } = await openTop()
+    await openList('task')
+    const input = field('task')
+    act(() => input.focus())
+    fireEvent.change(input, { target: { value: '1行目の頼まれ事\n2行目\n3行目\n4行目' } })
+    fireEvent.click(screen.getByTestId(listTestIds.taskChip('requester')))
+    const requester = screen.getByTestId(taskTestIds.chipRequesterInput) as HTMLInputElement
+    expect(document.activeElement).toBe(requester)
+    fireEvent.change(requester, { target: { value: '総務' } })
+    const box = input.closest('.list-input-box')
+    const row = screen.getByTestId(listTestIds.row('task', 't1'))
+    const grown = () => input.value !== ''
+    // 見える所の上の端は 93px。入力欄（-60〜44px）は上の外、依頼者の欄は 91px から（2px だけ隠れている）。やめると入力欄が 64px、
+    // チップの行が 50px 縮み、下の行は 114px 上がる
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === box
+          ? { top: -60, height: grown() ? 190 : 76 }
+          : el === input
+            ? { top: -60, height: grown() ? 104 : 40 }
+            : el === requester
+              ? { top: 91, height: 36 }
+              : el === row
+                ? { top: grown() ? 150 : 36, height: 44 }
+                : null),
+    )
+    const scrollTo = fakePageScroll(1500)
+    startLog()
+    act(() => history.flick(-1))
+    expect(input.value).toBe('')
+    expect(screen.queryByTestId(taskTestIds.chipRequesterInput)).toBeNull()
+    await nextFrame()
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1386, behavior: 'auto' })
+    expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"task","moved":-114\}/)
+    expect(swipeLogText()).not.toContain('総務')
+  })
+
+  it('S の週に物が少なく、週の中のスクロールする所が溢れていない（中では送れない）時: すばやく足すの入力欄がページの見える所の上の外にあって払っても、縮むのは高さの決まった週の中だけなので、ページを送らない（週の下のリストを動かさない。週の中も送らない）', async () => {
+    const { history } = await openTop('/week/2026-11-08')
+    fireEvent.click(screen.getByTestId(testIds.weekAdd('2026-11-08', 'work')))
+    const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '買い物' } })
+    const quick = input.closest('.cp-quick')
+    const week = screen.getByTestId(testIds.view('week'))
+    week.style.overflowY = 'auto'
+    Object.defineProperty(week, 'scrollHeight', { configurable: true, value: 600 })
+    Object.defineProperty(week, 'clientHeight', { configurable: true, value: 600 })
+    Object.defineProperty(week, 'scrollTop', { configurable: true, writable: true, value: 0 })
+    const weekScroll = vi.fn()
+    week.scrollTo = weekScroll as typeof week.scrollTo
+    const nextDay = screen.getByTestId(testIds.weekCol('2026-11-09'))
+    const open = () => screen.queryByTestId(testIds.quickAddInput) !== null
+    // ページは送ってあり、週（60px から高さ 600px）の入力欄（80〜120px）はヘッダーと切り替えの列（93px）の下に 13px 隠れている。
+    // 閉じると次の日のかたまりは週の中で 12px 上がるが、週の高さは替わらない
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === week
+          ? { top: 60, height: 600 }
+          : el === quick || el === input
+            ? { top: 80, height: 40, left: 0, width: 160 }
+            : el === nextDay
+              ? { top: open() ? 130 : 118, height: 300 }
+              : null),
+    )
+    const scrollTo = fakePageScroll(206)
+    startLog()
+    act(() => history.flick(-1))
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    await nextFrame()
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(weekScroll).not.toHaveBeenCalled()
+    expect(swipeLogText()).not.toContain('type-cancel-keep')
+  })
+
+  it('M: ページをいちばん下まで読み進めて、全部見えている入力欄（6行の書きかけ）で払い、縮むとページが画面より短くなる時も、いちばん下の空きを画面より短くなった分まで足して元の位置へ戻す（ブラウザに位置を上へ止め直させない）', async () => {
+    const { history } = await openTop('/month/2026-11', { width: 'M' })
+    // 見出しのボタンで開く（切り替えの列で飛ばないので、いちばん下の空きは 0 のまま）
+    act(() => lists().setCollapsed('task', false))
+    const input = field('task')
+    act(() => input.focus())
+    fireEvent.change(input, { target: { value: '1行目\n2行目\n3行目\n4行目\n5行目\n6行目' } })
+    const spacer = screen.getByTestId('top-stack-spacer')
+    const space = () => Number.parseFloat(spacer.style.height) || 0
+    Object.defineProperty(spacer, 'offsetHeight', { configurable: true, get: space })
+    const grown = () => input.value !== ''
+    // 空きより上の中身は 823px（やめると 108px 縮んで 715px）。画面の高さは 768px なので、やめるとページは画面より短くなる
+    const content = () => (grown() ? 823 : 715)
+    const pageHeight = () => Math.max(content() + space(), window.innerHeight)
+    // ブラウザは、ページの高さに合わせて位置を止め直す（いちばん下の 55px にいた）
+    Object.defineProperty(window, 'scrollY', {
+      configurable: true,
+      get: () => Math.min(55, pageHeight() - window.innerHeight),
+    })
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, get: pageHeight })
+    disposers.push(() => {
+      delete (document.documentElement as { scrollHeight?: number }).scrollHeight
+    })
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === input
+          ? { top: 600, height: grown() ? 148 : 40 }
+          : el === spacer
+            ? { top: content() - window.scrollY, height: space() }
+            : null),
+    )
+    const scrollTo = vi.fn()
+    window.scrollTo = scrollTo as typeof window.scrollTo
+    expect(window.scrollY).toBe(55)
+    startLog()
+    act(() => history.flick(-1))
+    expect(input.value).toBe('')
+    await nextFrame()
+    // 足りないのは、縮んだ 108px（今の位置 0px から 55px へ戻し、画面より短い 53px も埋める）
+    expect(spacer.style.height).toBe('108px')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 55, behavior: 'auto' })
+    expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"task","moved":55,"space":108\}/)
+  })
 })

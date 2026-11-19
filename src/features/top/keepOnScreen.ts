@@ -6,17 +6,20 @@
 // - やめる前に measureKeep（欄）で目印を選んで上の端を控え、やめて描き直した後・描く前に、返された関数を呼ぶ。目印が中身の中で動いた分
 //   （ブラウザがスクロールの位置を替えた分は除く）だけ、すぐ（なめらかにせず）スクロールして元の所へ戻す。ブラウザがもう保っていれば
 //   （Chromium の錨）、今の位置がもうそこなので送らない
-// - 送るのは、縮んだ分のうち、欄の上の端が見える所の上の端より上に隠れていた分まで: 欄の上の端が少しだけ隠れていた時は、欄の上の端が
-//   見える所の上の端に来るまで送るだけで、欄より上の物は下ろさない（縮んだ残りの分は、欄が全部見えている時と同じく下の物が上がって
-//   くる。隠れていた分が縮んだ分より大きければ、下の物は動かない）
+// - 送るのは、縮んだ分のうち、縮む所の上の端が見える所の上の端より上に隠れていた分まで: 縮む所の上の端が少しだけ隠れていた時は、
+//   そこが見える所の上の端に来るまで送るだけで、それより上の物は下ろさない（縮んだ残りの分は、欄が全部見えている時と同じく下の物が
+//   上がってくる。隠れていた分が縮んだ分より大きければ、下の物は動かない）。縮む所の上の端は欄の上の端。リストの入力の箱の下の
+//   チップの行の欄（Task List の［依頼者］）で打っている時は、その上の書きかけの入力欄も縮むので、その上の端（上の方）
 // - 欄の上の端が見える所の上の端より下（全部見えている）なら目印は選ばない（縮んでも、欄より上の見えている物は動かない。今までどおり、
 //   アプリはスクロールしない）
 // - S・M のページの終わりの近くで、縮んでページが短くなり、ブラウザが位置を上へ止め直した時（欄が全部見えていても）は、いちばん下の
 //   空き（TopPage.tsx の top-stack-spacer。■34 で畳む時と同じ物）を足りない分だけ足して、位置を戻す（欄も欄より上の物も下りてこない。
-//   空きは次に切り替えの列で飛んだ時に合わせ直す）
-// - 見える所: 欄を入れたいちばん近いスクロールする所（L は右の列 .top-side、S の週は週の中）の中で、上に固定した物の分（その箱の
-//   scroll-padding-top。S の週の名札の行）と、上に固定したヘッダー・切り替えの列の下。無ければページで、その上の端は上に固定した
-//   ヘッダーと S・M の切り替えの列の下
+//   縮んでページが画面より短くなる時は、短い分も足す。空きは次に切り替えの列で飛んだ時に合わせ直す）
+// - 見える所: 欄を入れたいちばん近いスクロールする所（overflow-y が auto・scroll。L は右の列 .top-side、S の週は週の中）の中で、上に
+//   固定した物の分（その箱の scroll-padding-top。S の週の名札の行）と、上に固定したヘッダー・切り替えの列の下。無ければページで、
+//   その上の端は上に固定したヘッダーと S・M の切り替えの列の下。そのスクロールする所が今は溢れていない時（S の週に物が少ない時など）
+//   は何もしない（その箱は送れず、週・日はカレンダーの区切りの高さが決まっているので、縮んでも動くのはその中だけ。ページを送ると、
+//   動かなかった週の下のリストが動いてしまう）
 // - 目印: 欄の箱（リストの入力欄は下のチップも入れた入力の箱、行の中の直しはその行、すばやく足すはその入力の行）より後ろの物のうち、
 //   欄の箱の下の端より下から始まり、見える所の上の端（欄の箱の下の端の方が下ならそこ）より下まで届く、文書の順でいちばん初めの物。
 //   欄の箱の中の物・やめて外れる物・欄の箱より上から始まる物や横に並んだ物（S の週の隣の半分など。縮んでも動かない）とその中・
@@ -57,12 +60,15 @@ function barsBottom(): number {
   return bottom
 }
 
-/** 欄を入れたいちばん近いスクロールする所の見える所（無ければページの、ヘッダーと切り替えの列の下から画面の下の端まで） */
+/**
+ * 欄を入れたいちばん近いスクロールする所（今は溢れていなくても）の見える所（無ければページの、ヘッダーと切り替えの列の下から画面の
+ * 下の端まで）
+ */
 function viewOf(field: HTMLElement): View {
   const bars = barsBottom()
   for (let p = field.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
     const style = getComputedStyle(p)
-    if (SCROLLS.has(style.overflowY) && p.scrollHeight > p.clientHeight) {
+    if (SCROLLS.has(style.overflowY)) {
       const top = p.getBoundingClientRect().top + p.clientTop
       return {
         scroller: p,
@@ -77,6 +83,16 @@ function viewOf(field: HTMLElement): View {
 /** 欄の箱（リストの入力欄は下のチップも入れた入力の箱、行の中の直しはその行、すばやく足すはその入力の行。どれでもなければ欄） */
 function holderOf(field: HTMLElement): HTMLElement {
   return field.closest<HTMLElement>('.list-input-box, .list-row, .cp-quick') ?? field
+}
+
+/**
+ * 縮む所の上の端（画面の上から）: 欄の上の端。リストの入力の箱の中で、欄より上に書きかけの入力欄がある時（下のチップの行の［依頼者］の
+ * 欄で打っている時）は、その入力欄も縮むので、上の方
+ */
+function shrinkTop(field: HTMLElement, holder: HTMLElement): number {
+  const top = field.getBoundingClientRect().top
+  const entry = holder.classList.contains('list-input-box') ? holder.querySelector<HTMLElement>('.list-input') : null
+  return entry ? Math.min(top, entry.getBoundingClientRect().top) : top
 }
 
 /** スクロールの位置（スクロールする所。null はページ） */
@@ -122,20 +138,26 @@ function markAfter(holder: HTMLElement, box: DOMRect, root: Element, line: numbe
 
 /**
  * 打っている欄 field をやめる前に呼ぶ（上の決まり）: 欄が見える所の上の端より上にはみ出していれば目印を選んで上の端を控え、やめて
- * 描き直した後（描く前）に呼ぶ関数を返す。その関数は、目印が中身の中で動いた分（隠れていた分まで）だけすぐスクロールして戻し、S・M の
- * ページの終わりでブラウザが位置を上へ止め直していれば、いちばん下の空きを足して戻す。送った時はその px と足した空きを返す（送らな
- * かった時は null）。目印が無く、ページの終わりの直しも無い所（スクロールする所の中）では null
+ * 描き直した後（描く前）に呼ぶ関数を返す。その関数は、目印が中身の中で動いた分（縮む所の隠れていた分まで）だけすぐスクロールして戻し、
+ * S・M のページの終わりでブラウザが位置を上へ止め直していれば、いちばん下の空きを足して戻す。送った時はその px と足した空きを返す（送ら
+ * なかった時は null）。目印が無く、ページの終わりの直しも無い所（スクロールする所の中）と、スクロールする所が溢れていない時は null
  */
 export function measureKeep(field: HTMLElement): (() => Kept | null) | null {
   const view = viewOf(field)
   const { scroller } = view
+  // スクロールする所が今は溢れていない: 送れる所が無く、縮んでも動くのはその中だけ（上の決まり）
+  if (scroller && scroller.scrollHeight <= scroller.clientHeight) return null
   const spacer = scroller ? null : document.querySelector<HTMLElement>('.top-stack-spacer')
   const before = scrollOf(scroller)
-  const hidden = view.top - field.getBoundingClientRect().top
+  // いちばん下の空きより後ろの高さ（ページの終わりを、縮んでページが画面より短くなった時も測れるように。scrollHeight は画面の高さより
+  // 小さくならない）
+  const trailing = spacer ? document.documentElement.scrollHeight - (spacer.getBoundingClientRect().bottom + before) : 0
+  let hidden = 0
   let mark: HTMLElement | null = null
   let markTop = 0
-  if (hidden > 0) {
+  if (field.getBoundingClientRect().top < view.top) {
     const holder = holderOf(field)
+    hidden = view.top - shrinkTop(field, holder)
     const box = holder.getBoundingClientRect()
     if (box.bottom < view.bottom) {
       mark = markAfter(holder, box, scroller ?? field.closest('main') ?? document.body, Math.max(view.top, box.bottom))
@@ -158,7 +180,8 @@ export function measureKeep(field: HTMLElement): (() => Kept | null) | null {
     if (Math.abs(target - now) <= KEEP_MIN_PX) return null
     let space = 0
     if (spacer && target > now) {
-      const lack = target - maxPageScroll()
+      // ページのいちばん下の位置（縮んでページが画面より短くなった時は負）に足りない分
+      const lack = target - (spacer.getBoundingClientRect().bottom + now + trailing - window.innerHeight)
       if (lack > 0) {
         space = Math.ceil(lack)
         spacer.style.height = `${spacer.offsetHeight + space}px`

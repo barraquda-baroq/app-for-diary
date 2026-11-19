@@ -5,8 +5,9 @@
 // 「画面の上下移動もなし、入力のキャンセルと入力ボックスを閉じるだけでいいです」）。打っていない時の次のフリックは今までどおり
 // （■34 で見ている開いたリストを畳む・モードを回す）。打っている欄が見える所の上の外にあって、やめて縮んでも、見えている物は動かない
 // （WebKit と同じくスクロールの錨を止めて確かめる。錨のある Chromium のままでも、ブラウザが保った分に足して送らない）。欄の上の端が
-// 少しだけ隠れている時は隠れていた分だけ送り、すばやく足す（S の週の中）も同じく保ち、ページのいちばん下ではいちばん下の空きを
-// 足して位置を保つ。
+// 少しだけ隠れている時は隠れていた分だけ送り（［依頼者］の欄で打っている時は、上の書きかけの入力欄の隠れていた分まで）、すばやく
+// 足す（S の週の中）も同じく保ち（週の中が溢れていない時は、ページも送らない）、ページのいちばん下ではいちばん下の空きを足して位置を
+// 保つ（縮んでページが画面より短くなる時も）。
 // Android（Pixel 7）・PC の［戻る］は今までどおり（打っていても畳む・閉じるかを聞く）。iPhone は Chromium に iPhone の UA（ブラウザの
 // 履歴は1つのまま）、iPad は縦向き（M）・横向き（L）の UA。指は e2e/helpers.ts の
 // edgeFlick（iPhone と同じく 12px で pointer を取り消す合成した指）で、打っている欄の上から始めない高さ（欄の上からはフリックに
@@ -762,6 +763,140 @@ test.describe(
         await expect(input).toHaveValue('')
         await expect.poll(() => storedDraft(page, 'task')).toBeNull()
         expect((await rectOf(input)).height, '欄が縮んだ').toBeLessThan(before.height - 40)
+        expect(Math.abs((await listScroll(page, 'page')) - y0), 'ページの位置').toBeLessThanOrEqual(1)
+        expect(Math.abs((await rectOf(input)).top - before.top), '欄の上の端').toBeLessThanOrEqual(1)
+        expect(await hashOf(page)).toBe(hash)
+        await expectCollapsed(page, 'task', false)
+        expect(await swipeLogOf(page)).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"task","moved":\d[^}]*"space":\d/)
+      })
+
+      test('Task List: 4行の書きかけの入力欄の下の［依頼者］の欄で打っていて、依頼者の欄の上の端だけが見える所の上の端より 2px 上に隠れている（書きかけの入力欄は上の外）時に払うと、縮むのは見える所の上の入力欄と箱なので、縮んだ分を全部送り、見えている下の物は動かない（スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await keepSwipeLog(page)
+        await openLists(page, MONTH, { extra: longFavorites() })
+        await stopScrollAnchoring(page)
+        // Task List の下を長くする（Favorite List の長い物を全部見せる）
+        await openStackedList(page, 'favorite')
+        await longMore(page).tap()
+        await expect(longMore(page)).toHaveText('畳む')
+        await openStackedList(page, 'task')
+        const input = listInput(page, 'task')
+        await input.click()
+        await input.fill(['1行目の頼まれ事', '2行目', '3行目', '4行目'].join('\n'))
+        await draftStored(page, 'task', '4行目')
+        await page.getByTestId(listTestIds.taskChip('requester')).click()
+        const requester = page.getByTestId('task-chip-requester-input')
+        await expect(requester).toBeFocused()
+        await page.keyboard.type('総務')
+        const view = await visibleBox(page, 'page')
+        await scrollListBy(page, 'page', Math.round((await rectOf(requester)).top - (view.lo - 2)))
+        await listScrollStill(page, 'page')
+        await expect(requester).toBeFocused()
+        const gap = view.lo - (await rectOf(requester)).top
+        expect(gap, '依頼者の欄の上の端は見える所の上の端より上').toBeGreaterThan(0)
+        expect(gap, '依頼者の欄の大部分は見えている').toBeLessThan(10)
+        expect((await rectOf(input)).bottom, '書きかけの入力欄は見える所の上の外').toBeLessThan(view.lo)
+        const box = page.locator('[data-list="task"] .list-input-box')
+        const boxBefore = await rectOf(box)
+        const x = Math.round((page.viewportSize()?.width ?? 390) / 2)
+        const tops = await markAt(page, x, [view.lo + 60, (view.lo + view.hi) / 2, view.hi - 20])
+        const y0 = await scrollY(page)
+        const hash = await hashOf(page)
+        await edgeFlick(page, 'left', { y: Math.round((view.lo + view.hi) / 2) })
+        await historySettled(page)
+        await listScrollStill(page, 'page')
+        await expect(input).toHaveValue('')
+        await expect(requester).toHaveCount(0)
+        await expect.poll(() => storedDraft(page, 'task')).toBeNull()
+        const shrink = boxBefore.height - (await rectOf(box)).height
+        expect(shrink, '入力の箱が縮んだ').toBeGreaterThan(gap + 40)
+        for (const d of await movedMarks(page, tops)) expect(Math.abs(d), '見えている物が動いた（px）').toBeLessThanOrEqual(1)
+        expect(Math.abs((await scrollY(page)) - (y0 - shrink)), '縮んだ分だけ送った').toBeLessThanOrEqual(1)
+        expect(await hashOf(page)).toBe(hash)
+        await expectCollapsed(page, 'task', false)
+        const moved = await keptMoved(page)
+        expect(moved, '記録の type-cancel-keep').not.toBeNull()
+        expect(Math.abs((moved ?? 0) + shrink)).toBeLessThanOrEqual(1)
+        expect(await swipeLogOf(page)).not.toContain('総務')
+      })
+
+      test('すばやく足す（S の週に物が少なく、週の中が溢れていない時）: ページを送って入力欄がヘッダーと切り替えの列の下に隠れている時に払うと、足さずに閉じるだけで、縮むのは高さの決まった週の中だけなので、ページは送らず、週の下のリストは動かない（スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await keepSwipeLog(page)
+        await openLists(page, '/week/2026-12-06')
+        await page.addStyleTag({ content: '*, *::before, *::after { overflow-anchor: none !important; }' })
+        await page.getByTestId('week-add-2026-12-06-work').tap()
+        const quick = page.getByTestId('quick-add-input')
+        await expect(quick).toBeFocused()
+        await page.keyboard.type('買い物')
+        const key = 'diary-studio:draft:quick:2026-12-06:work'
+        await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toContain('買い物')
+        expect(
+          await page.locator('.wk-v').evaluate((e) => e.scrollHeight - e.clientHeight),
+          '週の中は溢れていない',
+        ).toBeLessThanOrEqual(0)
+        const view = await visibleBox(page, 'page')
+        await scrollListBy(page, 'page', Math.round((await rectOf(quick)).top - (view.lo - 20)))
+        await listScrollStill(page, 'page')
+        await expect(quick).toBeFocused()
+        expect((await rectOf(quick)).top, '入力欄の上の端はヘッダーと切り替えの列の下').toBeLessThan(view.lo)
+        const routine = page.getByTestId(listTestIds.fold('routine'))
+        const top = (await rectOf(routine)).top
+        expect(top, '週の下の Routine List の見出しは見えている').toBeLessThan(view.hi)
+        const y0 = await scrollY(page)
+        const hash = await hashOf(page)
+        await edgeFlick(page, 'left', { y: Math.round((view.lo + view.hi) / 2) })
+        await historySettled(page)
+        await expect(quick).toHaveCount(0)
+        await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toBeNull()
+        await page.waitForTimeout(200)
+        expect(Math.abs((await scrollY(page)) - y0), 'ページの位置').toBeLessThanOrEqual(1)
+        expect(Math.abs((await rectOf(routine)).top - top), '週の下のリストが動いた（px）').toBeLessThanOrEqual(1)
+        expect(await hashOf(page)).toBe(hash)
+        const log = await swipeLogOf(page)
+        expect(log).toMatch(/ type-cancel \{"kind":"quick-add"/)
+        expect(log).not.toContain('type-cancel-keep')
+        expect(log).not.toContain('買い物')
+      })
+    })
+
+    test.describe('iPad の縦向き（820×1180・M）', () => {
+      test.use({ userAgent: IPAD_UA, viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true })
+
+      test('Task List: ページをいちばん下まで読み進めて、全部見えている6行の書きかけの入力欄で払い、縮むとページが画面より短くなる時も、いちばん下の空きを足して位置を保ち、欄も欄より上の物も下りてこない（スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await keepSwipeLog(page)
+        const all = listData().items
+        const items = { [LIST_IDS.quoteReply]: all[LIST_IDS.quoteReply], [LIST_IDS.roomBooking]: all[LIST_IDS.roomBooking] }
+        await openLists(page, MONTH, { lists: false, extra: { items } })
+        await stopScrollAnchoring(page)
+        // 見出しのボタンで開く（切り替えの列で飛ばないので、いちばん下の空きは 0 のまま）
+        await page.getByTestId(listTestIds.fold('task')).tap()
+        await expectCollapsed(page, 'task', false)
+        const input = listInput(page, 'task')
+        await input.click()
+        await input.fill(['1行目', '2行目', '3行目', '4行目', '5行目', '6行目'].join('\n'))
+        await draftStored(page, 'task', '6行目')
+        await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }))
+        await listScrollStill(page, 'page')
+        await expect(input).toBeFocused()
+        const view = await visibleBox(page, 'page')
+        const before = await rectOf(input)
+        expect(before.top, '欄は全部見えている').toBeGreaterThanOrEqual(view.lo)
+        const y0 = await listScroll(page, 'page')
+        expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeLessThanOrEqual(y0 + 1)
+        // 縮む分（6行から1行へ）が、いちばん下の位置より大きい: 縮むとページは画面より短くなる
+        expect(before.height - 48, '縮むとページが画面より短くなる').toBeGreaterThan(y0)
+        const hash = await hashOf(page)
+        await edgeFlick(page, 'left', { y: Math.round((view.lo + before.top) / 2) })
+        await historySettled(page)
+        await listScrollStill(page, 'page')
+        await expect(input).toHaveValue('')
+        await expect.poll(() => storedDraft(page, 'task')).toBeNull()
+        expect((await rectOf(input)).height, '欄が縮んだ').toBeLessThan(before.height - 80)
         expect(Math.abs((await listScroll(page, 'page')) - y0), 'ページの位置').toBeLessThanOrEqual(1)
         expect(Math.abs((await rectOf(input)).top - before.top), '欄の上の端').toBeLessThanOrEqual(1)
         expect(await hashOf(page)).toBe(hash)
