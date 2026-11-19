@@ -4,7 +4,7 @@
 // 閉じ、直してから戻ると「書きかけを捨てますか？」）、自動で伸びる欄は6行ほどで中でスクロール。スマホは Enter が改行で［足す］で
 // 足し、書きかけは読み込み直しても残り、360px でもはみ出さない。データは作り物（e2e/fixtures/listData.ts）
 import { expect, test, type Page } from '@playwright/test'
-import { LIST_IDS, listData } from './fixtures/listData'
+import { LIST_IDS, listData, LONG_FAVORITE_ID, longFavorites } from './fixtures/listData'
 import { goBack, historySettled, historyShape, noHorizontalScroll, tapSize } from './helpers'
 import { listAdd, listInput, listTestIds, openLists, openStackedList, pageScrollStill, storedDraft } from './listHelpers'
 
@@ -21,20 +21,9 @@ const toast = (page: Page, text: string) => page.locator('.toast', { hasText: te
 /** 「続き」「畳む」（同じボタン） */
 const more = (page: Page, id: string) => page.getByTestId(listTestIds.favoriteMore(id))
 
-/** 長い物（61行。いちばん上）と、その下に短い物を30件足した Favorite List（長い物を開いて下まで読み進めてから畳む確かめ。作り物） */
-const LONG = 'list-f-long-books'
-function longFavorites(): Pick<ReturnType<typeof listData>, 'favorites'> {
-  const base = listData()
-  const favorite = base.favorites[I.bakery]
-  const favorites = { ...base.favorites }
-  const lines = Array.from({ length: 60 }, (_, i) => `${i + 1}冊目の候補`)
-  favorites[LONG] = { ...favorite, id: LONG, text: ['読んでみたい本', ...lines].join('\n'), order: -100 }
-  for (let i = 0; i < 30; i++) {
-    const id = `list-f-short-${i}`
-    favorites[id] = { ...favorite, id, text: `行ってみたい所 ${i + 1}`, order: 100 + i }
-  }
-  return { favorites }
-}
+/** 長い物（61行。いちばん上）の id（その下に短い物を30件足した Favorite List は fixtures/listData の longFavorites。長い物を開いて下まで
+ * 読み進めてから畳む確かめ。作り物） */
+const LONG = LONG_FAVORITE_ID
 
 /** 幅で行の数が替わる物（スマホの幅では3行を超え、M の 700px では3行に収まる。いちばん上。作り物） */
 const WIDE = 'list-f-wide-shop'

@@ -13,6 +13,9 @@
 // - 行の中で直している欄（件名・本文・L の行の依頼者）: Esc と同じく保存せずにやめ（common/fieldCancel）、欄から外す（Favorite の
 //   0.6秒の自動保存で保存した分は、Esc と同じく残る）
 // - ほかのリストの中の文字を打つ欄: 欄から外すだけ
+// やめて縮む欄が見える所の上の端より上にはみ出していた時（開いた長い物を下まで読み進めた・書きかけで伸びた欄を上へ送った）は、
+// 縮んだ分で見えている物が上へ動かないよう、描く前にその分だけ送って戻す（keepOnScreen.ts。iPhone・iPad の WebKit には、Chromium の
+// スクロールの錨が無い。ブラウザが保った時は送らない）
 // 端に指を置いた時に打っていて、払い終える前にその入力が閉じた時も、そのフリックは使い切る（モードを回さない。common/listPopups の
 // 「押した時に開いていた」と同じ形）。リストの入力欄から外れていた時（変換の途中に端の幅の中の［足す］から払うと、［足す］が押した時に
 // 変換を決めるために欄から外す。■15）は、その打ちかけも上と同じく捨てる。すばやく足すをキーボードの✓で外していて、端の指をブラウザが
@@ -20,7 +23,8 @@
 // 先に来ても、その押しで初めに見た物で決める（間に押した［足す］が欄から外しても、押した時は打っていた）。
 // 打っていない時（キーボードの✓で外した後）は今までどおり（■34 で見ている開いたリストを畳む・モードを回す）。
 // 記録（設定で取る時だけ。src/history/swipeLog.ts）: type-cancel（kind: quick-add・list-input・inline-edit・other、list。打った字は
-// 控えない。押した時に打っていて閉じていた時は gone）
+// 控えない。押した時に打っていて閉じていた時は gone）と、見えている物を戻した時の type-cancel-keep（kind・list と、目印が動いて送った
+// px の moved）
 import { useEffect } from 'react'
 import { edgeOfScreen } from '../../history/edgeFlick'
 import { swipeLog } from '../../history/swipeLog'
@@ -33,6 +37,7 @@ import { cancelQuickAddByFlick, quickAddOpen } from '../calendar/common/parts/Qu
 import { useCurrentLocation } from '../calendar/common/sheets'
 import { fieldCancelOf } from '../lists/common/fieldCancel'
 import { discardListDraft } from '../lists/common/listDraft'
+import { measureKeep } from './keepOnScreen'
 
 /** 端に指を置いた時に打っていた物を、指を離した後もその押しの物とみなす長さ（ms。common/listPopups の PRESS_GRACE_MS と同じ） */
 export const TYPING_GRACE_MS = 300
@@ -96,12 +101,27 @@ export function cancelTypingOnFlick(): boolean {
     cancelQuickAddByFlick()
     return true
   }
+  // 欄が見える所の上の端より上にはみ出していれば、やめて縮む前に目印を控える（keepOnScreen.ts）
+  const keep = typing.field ? measureKeep(typing.field) : null
   if (typing.kind === 'list-input' && typing.list) discardListDraft(typing.list)
   else if (typing.kind === 'inline-edit' && typing.field) fieldCancelOf(typing.field)?.()
   // キーボードを閉じる（やめた後なので、離れた時に保存する欄も保存しない。フォーカスを移す所が無ければ body。ページは動かさない）
   const active = document.activeElement
   if (active instanceof HTMLElement && isTextEntry(active)) active.blur()
+  if (keep) keepAfterCancel(keep, typing)
   return true
+}
+
+/**
+ * やめて欄が縮んだ後、描く前に、見えている物を元の所へ戻す（keepOnScreen.ts。動いた分だけ送った時は type-cancel-keep に控える）。
+ * やめた描き直しは、払った指の出来事（touchend・popstate）の後のマイクロタスクで React が済ませる（すぐ済ませる種類の出来事の更新）
+ * ので、次の描画の前（requestAnimationFrame）に測れば、描き直した後・描く前になる
+ */
+function keepAfterCancel(keep: () => number, typing: Typing): void {
+  requestAnimationFrame(() => {
+    const moved = keep()
+    if (moved !== 0) swipeLog('type-cancel-keep', { kind: typing.kind, list: typing.list, moved: Math.round(moved * 10) / 10 })
+  })
 }
 
 /**

@@ -1,7 +1,8 @@
 // 段階3のリストと履歴の E2E（docs/SPEC.md の 3.1・3.5・3.6・3.8・22. の ■25・■27・■34 の作者の答え）: S・M で開いているリストを
 // 見ている時は、iPhone・iPad の端からのフリック（左右どちらでも）と Android・PC の OS の［戻る］で、そのリストをその場で畳み
-// （いちばん上のカレンダーへスクロールで戻さない・フォーカスはそのリストの中にあった時だけそのリストの畳む・開くボタンへ）、そのリストの
-// 入力欄の打ちかけを捨てる（変換の途中でも決めずに。ほかのリストの打ちかけと、ほかの畳み方の打ちかけは残る）。履歴は動かさず、
+// （いちばん上のカレンダーへスクロールで戻さない・畳んだ後のページが画面より短くなる長いリストでも位置を上へ跳ばさない・フォーカスは
+// そのリストの中にあった時だけそのリストの畳む・開くボタンへ）、そのリストの入力欄の打ちかけを捨てる（変換の途中でも決めずに。ほかの
+// リストの打ちかけと、ほかの畳み方の打ちかけは残る）。履歴は動かさず、
 // 「進む」は何もせず、■25（もう一度［戻る］で閉じる）も構えない。畳んだ後・カレンダーを見ている時は今までどおり（モードを回す・
 // 閉じるかを聞く）。iPhone・iPad で打っている間（入力欄・行の中で直している欄にフォーカスがある間）のフリックは、打っていた物を
 // やめて欄から外すだけで、畳むのは次のフリック（■36。e2e/typing-flick.spec.ts）。リストの［詳しく］は L では右の列の上のパネル、
@@ -15,7 +16,7 @@ import { devices, expect, test, type Locator, type Page } from '@playwright/test
 import { EDGE_ZONE_CHOICES, EDGE_ZONE_PX } from '../src/features/calendar/common/swipe'
 import { FOLD_MS } from '../src/features/lists/listInfo'
 import { EDGE_ZONE_KEY } from '../src/history/edgeZone'
-import { LIST_IDS, listData } from './fixtures/listData'
+import { LIST_IDS, listData, longFavorites } from './fixtures/listData'
 import {
   armHistory,
   collectDiagnosticsOnFailure,
@@ -171,6 +172,43 @@ async function foldAtPageEnd(page: Page, trigger: () => Promise<void>) {
   expect(after.calendarHeadingFocused).toBe(false)
 }
 
+/**
+ * 長い Favorite List（fixtures/listData の longFavorites。61行の物を含む36件）を畳んでも上へ跳ばない（■34）: 畳んで縮むと、畳んだ
+ * 後のページが画面より短くなる時も、いちばん下の空きを足りない分だけ足して位置を保つ。切り替えの列で開いた所（見出しが切り替えの列の
+ * すぐ下）で trigger で畳むと、ページの位置と見出しの所はそのまま。開き直してページの終わりまで読み進めてから畳むと、見出しを切り替えの
+ * 列のすぐ下（開いた時と同じ所）まで戻すだけ。どちらも見出しが見えたままで、フォーカスはカレンダーの見出しへ移らない
+ */
+async function foldLongList(page: Page, trigger: () => Promise<void>) {
+  await showList(page, 'favorite')
+  const height = await bodyHeight(page, 'favorite')
+  const pre = await measure(page, 'favorite')
+  expect(pre.scrollY).toBeGreaterThan(0)
+  // 畳んだ後のいちばん下（今の高さ − 縮む分 − 画面）は 0 より上: 畳んだ後のページは画面より短い
+  expect(pre.max - height, JSON.stringify({ pre, height })).toBeLessThan(0)
+  const check = async (what: string) => {
+    await expectCollapsed(page, 'favorite', true)
+    await afterFold(page)
+    await scrollSettled(page)
+    const after = await measure(page, 'favorite')
+    const info = JSON.stringify({ what, pre, after })
+    expect(Math.abs(after.scrollY - pre.scrollY), info).toBeLessThanOrEqual(1)
+    expect(Math.abs(after.headTop - pre.headTop), info).toBeLessThanOrEqual(1)
+    expect(after.headBottom).toBeLessThanOrEqual(after.innerHeight)
+    expect(after.calendarHeadingFocused).toBe(false)
+  }
+  await trigger()
+  await check('切り替えの列で開いた所')
+  // 開き直して、ページの終わりまで読み進めてから（見出しは切り替えの列の下に隠れている）
+  await showList(page, 'favorite')
+  await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }))
+  await scrollSettled(page)
+  const end = await measure(page, 'favorite')
+  expect(end.scrollY).toBeGreaterThanOrEqual(end.max - 1)
+  expect(end.headTop).toBeLessThan(0)
+  await trigger()
+  await check('ページの終わりまで読み進めた所')
+}
+
 // ---------- iPhone（Chromium に iPhone の UA。ブラウザの履歴は1つのまま） ----------
 test.describe('S3 iPhone の端からのフリックで開いているリストを畳む（Chromium に iPhone の UA。■34）', { tag: ['@s'] }, () => {
   test.use({ userAgent: IPHONE_UA })
@@ -276,6 +314,13 @@ test.describe('S3 iPhone の端からのフリックで開いているリスト�
     await foldAtPageEnd(page, () => edgeFlick(page, 'left'))
     await edgeFlick(page, 'left')
     await expect(page.getByTestId('view-week')).toBeVisible()
+  })
+
+  test('長い Favorite List（61行の物を含む36件）を見ている時に払って畳むと、畳んだ後のページが画面より短くなっても上へ跳ばない（切り替えの列で開いた所でも、ページの終わりまで読み進めた所でも。■34）', async ({
+    page,
+  }) => {
+    await openLists(page, MONTH, { extra: longFavorites() })
+    await foldLongList(page, () => edgeFlick(page, 'left'))
   })
 
   test('払った指を離した所のチェックは、すぐ後に押されても済みにしない（離した所の押す操作は1つ打ち消す。S3-FRAME-026・TASK-236）', async ({
@@ -389,6 +434,14 @@ test.describe('S3 Android の［戻る］で開いているリストを畳む（
     await expect(closeDialog(page)).toHaveCount(0)
   })
 
+  test('長い Favorite List（61行の物を含む36件）を見ている時に［戻る］で畳むと、畳んだ後のページが画面より短くなっても上へ跳ばない（切り替えの列で開いた所でも、ページの終わりまで読み進めた所でも。■34）', async ({
+    page,
+  }) => {
+    await openLists(page, MONTH, { extra: longFavorites() })
+    await foldLongList(page, () => goBack(page))
+    await expect(closeDialog(page)).toHaveCount(0)
+  })
+
   test('カレンダーを見ている時の［戻る］は、開いているリストが下にあっても今までどおり閉じるかを聞く（リストは開いたまま）', async ({
     page,
   }) => {
@@ -477,6 +530,15 @@ test.describe('S3 M の積んだ所の［戻る］（タブレット。■34）'
     await goBack(page)
     await expect(closeDialog(page)).toBeVisible()
     await page.getByTestId('app-close-cancel').click()
+  })
+
+  test('長い Favorite List（61行の物を含む36件）を見ている時に［戻る］で畳むと、畳んだ後のページが画面より短くなっても上へ跳ばない（切り替えの列で開いた所でも、ページの終わりまで読み進めた所でも）', async ({
+    page,
+  }) => {
+    await openLists(page, MONTH, { extra: longFavorites() })
+    await expect(page.getByTestId('top-page')).toHaveAttribute('data-width', 'M')
+    await foldLongList(page, () => goBack(page))
+    await expect(closeDialog(page)).toHaveCount(0)
   })
 })
 

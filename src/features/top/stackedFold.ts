@@ -6,7 +6,8 @@
 //   今の位置からいちばん近い所にとどめる（見出しが切り替えの列の下に隠れていれば、切り替えの列のすぐ下（切り替えの列で飛んだ時と同じ
 //   所）まで戻すだけ。見えていれば動かさない。畳んで下の物が上がってきても、見出しはその所に残る）。ページの終わりが近くて、畳んで
 //   縮んだ分だけブラウザが位置を上へ止め直してしまう時は、いちばん下の空き（切り替えの列で飛ぶ時と同じ top-stack-spacer）を足りない分
-//   だけ足して、位置を動かさない（foldSpacerHeight。空きは次に切り替えの列で飛んだ時に合わせ直す）
+//   だけ足して、位置を動かさない（foldSpacerHeight。畳んだ後のページが画面より短くなる時も。空きは次に切り替えの列で飛んだ時に合わせ
+//   直す）
 // - フォーカスは、フォーカスがそのリストの中にあった時だけ、そのリストの見出しの畳む・開くボタンへ preventScroll で移す（カレンダーの
 //   見出しへは移さない。iPhone のキーボードも閉じる。common/ListSection の releaseFocusBeforeFold）
 // - 見ている所（切り替えの列で選ばれた物）は、畳んだ後のスクロールの位置で今までの決まりどおりに決め直す（切り替えで固定していた物は外す）
@@ -43,7 +44,8 @@ export function foldScrollTop(top: number, margin: number, scrollY: number): num
 
 /**
  * 畳むと縮む高さ（lost。そのリストの中身の高さ）でページの終わりが近くなり、ブラウザが畳む前の位置（scrollY。見出しを戻した時は戻した
- * 位置）を上へ止め直してしまう時に、いちばん下の空きを何 px にするか（今の空き spacer に足りない分を足した高さ。足りている時は null）
+ * 位置）を上へ止め直してしまう時に、いちばん下の空きを何 px にするか（今の空き spacer に足りない分を足した高さ。足りている時・いちばん
+ * 上にいる時は null）。畳んだ後のページが画面より短くなる時（畳んだ後のいちばん下の位置 maxAfter が負）は、短い分も足す
  */
 export function foldSpacerHeight(p: {
   scrollY: number
@@ -53,7 +55,7 @@ export function foldSpacerHeight(p: {
   lost: number
 }): number | null {
   if (p.lost <= 0) return null
-  const maxAfter = Math.max(0, p.scrollHeight - p.lost - p.innerHeight)
-  if (p.scrollY <= maxAfter) return null
+  const maxAfter = p.scrollHeight - p.lost - p.innerHeight
+  if (p.scrollY <= Math.max(0, maxAfter)) return null
   return p.spacer + Math.ceil(p.scrollY - maxAfter)
 }

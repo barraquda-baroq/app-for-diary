@@ -206,3 +206,23 @@ export function listData(today: string = LIST_TODAY): Pick<AppData, 'items' | 'r
 
   return { items, routines, routineChecks, favorites }
 }
+
+/** longFavorites のいちばん上の長い物（61行）の id */
+export const LONG_FAVORITE_ID = 'list-f-long-books'
+
+/**
+ * Favorite List を長くした物（listData の Favorite List に、61行の長い物をいちばん上に、短い物を30件その下に足す。済みを入れて 36件）。
+ * 長い物を開いて下まで読み進める・長いリストを畳む確かめに使う（openLists の extra に渡す。作り物）
+ */
+export function longFavorites(today: string = LIST_TODAY): Pick<AppData, 'favorites'> {
+  const base = listData(today)
+  const favorite = base.favorites[LIST_IDS.bakery]
+  const favorites = { ...base.favorites }
+  const lines = Array.from({ length: 60 }, (_, i) => `${i + 1}冊目の候補`)
+  favorites[LONG_FAVORITE_ID] = { ...favorite, id: LONG_FAVORITE_ID, text: ['読んでみたい本', ...lines].join('\n'), order: -100 }
+  for (let i = 0; i < 30; i++) {
+    const id = `list-f-short-${i}`
+    favorites[id] = { ...favorite, id, text: `行ってみたい所 ${i + 1}`, order: 100 + i }
+  }
+  return { favorites }
+}

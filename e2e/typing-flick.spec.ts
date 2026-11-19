@@ -3,12 +3,14 @@
 // 欄（とキーボード）を閉じるだけ: 打ちかけ・チップ・端末の書きかけは消え、欄からフォーカスが外れ、行き先・モード・ページの位置・
 // ブラウザの履歴の数は替わらず、リストは開いたまま（作者「入力中の払いは、入力画面のキャンセルのみで、モード移行はなしでいいです」
 // 「画面の上下移動もなし、入力のキャンセルと入力ボックスを閉じるだけでいいです」）。打っていない時の次のフリックは今までどおり
-// （■34 で見ている開いたリストを畳む・モードを回す）。Android（Pixel 7）・PC の［戻る］は今までどおり（打っていても畳む・閉じるかを
-// 聞く）。iPhone は Chromium に iPhone の UA（ブラウザの履歴は1つのまま）、iPad は横向き（L）の UA。指は e2e/helpers.ts の
+// （■34 で見ている開いたリストを畳む・モードを回す）。打っている欄が見える所の上の外にあって、やめて縮んでも、見えている物は動かない
+// （WebKit と同じくスクロールの錨を止めて確かめる。錨のある Chromium のままでも、ブラウザが保った分に足して送らない）。
+// Android（Pixel 7）・PC の［戻る］は今までどおり（打っていても畳む・閉じるかを聞く）。iPhone は Chromium に iPhone の UA（ブラウザの
+// 履歴は1つのまま）、iPad は縦向き（M）・横向き（L）の UA。指は e2e/helpers.ts の
 // edgeFlick（iPhone と同じく 12px で pointer を取り消す合成した指）で、打っている欄の上から始めない高さ（欄の上からはフリックに
 // しない。3.1）で払う。データは作り物（e2e/fixtures/listData.ts）
 import { devices, expect, test, type Locator, type Page } from '@playwright/test'
-import { LIST_IDS } from './fixtures/listData'
+import { LIST_IDS, LONG_FAVORITE_ID, longFavorites } from './fixtures/listData'
 import {
   collectDiagnosticsOnFailure,
   edgeFlick,
@@ -366,6 +368,207 @@ test.describe('■36 iPad の横向き（1180×820・L の右の列。Chromium �
     expect(await historyCalls(page)).toEqual([])
   })
 })
+
+// ---------- 打っている欄が見える所の上にはみ出している時（iPhone・iPad の WebKit にはスクロールの錨が無い） ----------
+
+/** リストの入る所: S・M はページ、L は右の列（.top-side） */
+type Where = 'page' | 'side'
+
+/** 見える所の上下の端（画面の上から。S・M はヘッダーと切り替えの列の下から画面の下の端まで、L は右の列の中） */
+function visibleBox(page: Page, where: Where): Promise<{ lo: number; hi: number }> {
+  return page.evaluate((w) => {
+    if (w === 'side') {
+      const side = document.querySelector('.top-side')!
+      const lo = side.getBoundingClientRect().top + side.clientTop
+      return { lo, hi: lo + side.clientHeight }
+    }
+    return { lo: document.querySelector('[data-testid="top-switcher"]')!.getBoundingClientRect().bottom, hi: window.innerHeight }
+  }, where)
+}
+
+/** リストの入る所のスクロールの位置 */
+const listScroll = (page: Page, where: Where) =>
+  page.evaluate((w) => (w === 'side' ? document.querySelector('.top-side')!.scrollTop : window.scrollY), where)
+
+/** リストの入る所を dy だけすぐ（なめらかにせず）スクロールする */
+async function scrollListBy(page: Page, where: Where, dy: number): Promise<void> {
+  await page.evaluate(
+    ({ w, dy }) => {
+      if (w === 'side') document.querySelector('.top-side')!.scrollBy({ top: dy, behavior: 'instant' })
+      else window.scrollBy({ top: dy, behavior: 'instant' })
+    },
+    { w: where, dy },
+  )
+}
+
+/** リストの入る所のスクロールの位置が、続けて読んで2回同じになるまで待つ */
+async function listScrollStill(page: Page, where: Where): Promise<void> {
+  let last = Number.NaN
+  let still = 0
+  await expect
+    .poll(
+      async () => {
+        const y = await listScroll(page, where)
+        still = y === last ? still + 1 : 0
+        last = y
+        return still
+      },
+      { intervals: [60] },
+    )
+    .toBeGreaterThanOrEqual(2)
+}
+
+/** その物の上下の端（画面の上から）と高さ */
+const rectOf = (target: Locator) =>
+  target.evaluate((e) => {
+    const r = e.getBoundingClientRect()
+    return { top: r.top, bottom: r.bottom, height: r.height }
+  })
+
+/**
+ * WebKit（iPhone・iPad の Safari・Chrome）と同じく、スクロールの錨（中身の高さが替わった時に、ブラウザがページの位置を替えて見えて
+ * いる物を保つ。Chromium にはあり、WebKit には無い）を止める
+ */
+const stopScrollAnchoring = (page: Page) =>
+  page.addStyleTag({ content: 'html, body, .top-side { overflow-anchor: none !important; }' })
+
+/** 端からのフリックの記録を取る（設定の「開発」と同じ。開く前に） */
+const keepSwipeLog = (page: Page) => page.addInitScript(() => localStorage.setItem('diary-studio:swipe-log', '1'))
+/** 記録（1行に1つ） */
+const swipeLogOf = (page: Page) => page.evaluate(() => window.__ds.swipeLog())
+
+/** 長い物（61行）の「続き」「畳む」 */
+const longMore = (page: Page) => page.getByTestId(listTestIds.favoriteMore(LONG_FAVORITE_ID))
+
+/**
+ * 長い Favorite List（fixtures/listData の longFavorites）を出し、いちばん上の長い物を「続き」で全部見せ、入力欄に4行の書きかけを打って
+ * から、開いた物を下まで読み進めて（「畳む」を見える所の下の端の 40px 上に）、打っている入力欄を見える所の上の外へ出す（anchoring が
+ * false の時は、開いてすぐ WebKit と同じくスクロールの錨を止める）
+ */
+async function draftAboveView(page: Page, where: Where, anchoring: boolean): Promise<void> {
+  await keepSwipeLog(page)
+  await openLists(page, MONTH, { extra: longFavorites() })
+  if (!anchoring) await stopScrollAnchoring(page)
+  if (where === 'page') await openStackedList(page, 'favorite')
+  await longMore(page).tap()
+  await expect(longMore(page)).toHaveText('畳む')
+  const input = listInput(page, 'favorite')
+  await input.click()
+  const one = (await rectOf(input)).height
+  await input.fill(['1行目の書きかけ', '2行目の書きかけ', '3行目の書きかけ', '4行目の書きかけ'].join('\n'))
+  await draftStored(page, 'favorite', '4行目の書きかけ')
+  expect((await rectOf(input)).height, '書きかけで入力欄が伸びた').toBeGreaterThan(one + 40)
+  const view = await visibleBox(page, where)
+  await scrollListBy(page, where, Math.round((await rectOf(longMore(page))).bottom - (view.hi - 40)))
+  await listScrollStill(page, where)
+  await expect(input).toBeFocused()
+  expect((await rectOf(input)).bottom, '入力欄は見える所の上の外').toBeLessThan(view.lo)
+}
+
+/**
+ * 払った後: 入力をやめただけ（欄は空・フォーカスは外れ・書きかけは無く・行き先はそのまま・リストは開いたまま）で、欄が縮んでも
+ * 見えている物（mark。払う前の上の端 top）は動かない（±1px）
+ */
+async function keptInView(page: Page, where: Where, mark: Locator, top: number, hash: string): Promise<void> {
+  await historySettled(page)
+  await listScrollStill(page, where)
+  await expect(listInput(page, 'favorite')).toHaveValue('')
+  expect(await focused(listInput(page, 'favorite'))).toBe(false)
+  await expect.poll(() => storedDraft(page, 'favorite')).toBeNull()
+  expect(Math.abs((await rectOf(mark)).top - top), '見えている物が動いた（px）').toBeLessThanOrEqual(1)
+  expect(await hashOf(page)).toBe(hash)
+  await expectCollapsed(page, 'favorite', false)
+}
+
+/**
+ * 4行の書きかけの入力欄を見える所の上の外へ出して払う（anchoring が false の時は、WebKit と同じくスクロールの錨を止めて。その時は
+ * アプリが縮んだ分だけ送って戻し、記録の type-cancel-keep に控える。打った字は控えない）
+ */
+async function flickDraftAboveView(page: Page, where: Where, anchoring: boolean): Promise<void> {
+  await draftAboveView(page, where, anchoring)
+  const top = (await rectOf(longMore(page))).top
+  const hash = await hashOf(page)
+  await edgeFlick(page, 'left', { y: Math.round((page.viewportSize()?.height ?? 800) * 0.5) })
+  await keptInView(page, where, longMore(page), top, hash)
+  await expect(longMore(page)).toHaveText('畳む')
+  const log = await swipeLogOf(page)
+  if (!anchoring) expect(log).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"favorite","moved":-\d/)
+  expect(log).not.toContain('書きかけ')
+}
+
+const ABOVE_TITLE =
+  '入力欄に4行の書きかけを打ったまま、開いた長い物を下まで読み進めて入力欄が見える所の上に隠れている時に払うと、入力をやめるだけで、欄が縮んでも見えている物は動かない（「画面の上下移動もなし」）'
+
+test.describe(
+  '■36 打っている欄が見える所の上にはみ出している時のフリック（Chromium に iPhone・iPad の UA）',
+  { tag: ['@s'] },
+  () => {
+    test.describe('iPhone（S）', () => {
+      test.use({ userAgent: IPHONE_UA })
+
+      test(`Favorite List: ${ABOVE_TITLE}（スクロールの錨なし: WebKit と同じ）`, async ({ page }) => {
+        await flickDraftAboveView(page, 'page', false)
+      })
+
+      test(`Favorite List: ${ABOVE_TITLE}（Chromium のスクロールの錨あり: ブラウザが保った分に足して送らない）`, async ({
+        page,
+      }) => {
+        await flickDraftAboveView(page, 'page', true)
+      })
+
+      test('行の中で直している Favorite List の本文（開いた長い物）が見える所の上の外にある時に払うと、保存せずにやめるだけで、欄が縮んで3行に戻っても見えている物は動かない（スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await keepSwipeLog(page)
+        await openLists(page, MONTH, { extra: longFavorites() })
+        await stopScrollAnchoring(page)
+        await openStackedList(page, 'favorite')
+        await longMore(page).tap()
+        await expect(longMore(page)).toHaveText('畳む')
+        const title = (await page.getByTestId(listTestIds.rowTitle('favorite', LONG_FAVORITE_ID)).boundingBox())!
+        await page.touchscreen.tap(title.x + 30, title.y + 20)
+        const edit = page.getByTestId(listTestIds.rowEdit('favorite', LONG_FAVORITE_ID))
+        await expect(edit).toBeFocused()
+        // 下の短い物（11件目）を見える所の真ん中へ: 直している欄は見える所の上の外
+        const mark = page.getByTestId(listTestIds.row('favorite', 'list-f-short-10'))
+        const view = await visibleBox(page, 'page')
+        await scrollListBy(page, 'page', Math.round((await rectOf(mark)).top - (view.lo + view.hi) / 2))
+        await listScrollStill(page, 'page')
+        await expect(edit).toBeFocused()
+        expect((await rectOf(edit)).bottom, '直している欄は見える所の上の外').toBeLessThan(view.lo)
+        const top = (await rectOf(mark)).top
+        const hash = await hashOf(page)
+        const text = await page.evaluate((id) => window.__ds.getData().favorites[id]?.text, LONG_FAVORITE_ID)
+        await edgeFlick(page, 'left', { y: Math.round((page.viewportSize()?.height ?? 800) * 0.5) })
+        await historySettled(page)
+        await listScrollStill(page, 'page')
+        await expect(edit).toHaveCount(0)
+        await expect(longMore(page)).toHaveText('続き')
+        expect(await page.evaluate((id) => window.__ds.getData().favorites[id]?.text, LONG_FAVORITE_ID)).toBe(text)
+        expect(Math.abs((await rectOf(mark)).top - top), '見えている物が動いた（px）').toBeLessThanOrEqual(1)
+        expect(await hashOf(page)).toBe(hash)
+        await expectCollapsed(page, 'favorite', false)
+        expect(await swipeLogOf(page)).toMatch(/ type-cancel-keep \{"kind":"inline-edit","list":"favorite","moved":-\d/)
+      })
+    })
+
+    test.describe('iPad の縦向き（820×1180・M）', () => {
+      test.use({ userAgent: IPAD_UA, viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true })
+
+      test(`Favorite List: ${ABOVE_TITLE}（スクロールの錨なし）`, async ({ page }) => {
+        await flickDraftAboveView(page, 'page', false)
+      })
+    })
+
+    test.describe('iPad の横向き（1180×820・L の右の列）', () => {
+      test.use({ userAgent: IPAD_UA, viewport: { width: 1180, height: 820 }, hasTouch: true, isMobile: true })
+
+      test(`右の列の Favorite List: ${ABOVE_TITLE}（スクロールの錨なし）`, async ({ page }) => {
+        await flickDraftAboveView(page, 'side', false)
+      })
+    })
+  },
+)
 
 // ---------- キーボード（作り物の visualViewport。src/ui/keyboardInset.ts） ----------
 

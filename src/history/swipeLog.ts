@@ -6,8 +6,8 @@
 // vpop・vreplace・vcollapse）・前の版が残した履歴への popstate（pop・adopt・pop-act・pop-skip）・書けなかった時（write-fail）、
 // src/history/edgeFlick.ts の画面の端で下ろした指（edge-down: 端の幅も）・数えなかった訳（edge-skip）・離した指（edge-up）、
 // src/features/calendar/common/useSwipe.ts の払い、PageTurn.tsx のめくる動き、QuickAdd.tsx のすばやく足すの閉じ方、
-// src/features/top/typingCancel.ts の打っている間のフリックでやめた物（type-cancel）、listBack.ts の開いているリストの決め
-// （list-decide））。設定の「開発」
+// src/features/top/typingCancel.ts の打っている間のフリックでやめた物（type-cancel）と見えている物を戻した分（type-cancel-keep）、
+// listBack.ts の開いているリストの決め（list-decide））。設定の「開発」
 // （src/features/appSettings/DevSettings.tsx。iPhone・iPad だけ）で取る・コピーする・消す
 const STORAGE_KEY = 'diary-studio:swipe-log'
 

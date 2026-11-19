@@ -156,6 +156,29 @@ describe('S3 その場で畳む（foldListInPlace。■34）', () => {
     expect(spacer.style.height).toBe('')
   })
 
+  it('長いリストを畳むと、畳んだ後のページが画面より短くなる時も、短い分まで空きを足して位置を保つ（ブラウザに位置を上へ止め直させない）', async () => {
+    await renderAt('/month/2026-11', { width: 'S' })
+    await openTask()
+    const pane = screen.getByTestId(listTestIds.section('task'))
+    pane.style.scrollMarginTop = '96px'
+    const scrollTo = vi.fn()
+    window.scrollTo = scrollTo as typeof window.scrollTo
+    vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ top: 105, bottom: 1950 } as DOMRect)
+    vi.spyOn(screen.getByTestId(listTestIds.body('task')), 'getBoundingClientRect').mockReturnValue({
+      height: 1793,
+    } as DOMRect)
+    // 2575 の高さで 956 の画面、位置は 600。畳むと 782 になり画面より 174 短いので、600 を保つには 774 の空きが要る
+    const restore = fakeGeometry({ scrollY: 600, scrollHeight: 2575, innerHeight: 956 })
+    try {
+      act(() => foldListInPlace('task'))
+    } finally {
+      restore()
+    }
+    expect(lists().collapsed.task).toBe(true)
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(screen.getByTestId('top-stack-spacer').style.height).toBe('774px')
+  })
+
   it('見出しを切り替えの列のすぐ下まで戻した時は、戻した位置を保つように空きを足す', async () => {
     await renderAt('/month/2026-11', { width: 'S' })
     await openTask()
@@ -236,8 +259,12 @@ describe('S3 畳む前のスクロールの直し（foldScrollTop・foldSpacerHe
     expect(foldSpacerHeight({ ...base, scrollY: 1000, spacer: 40 })).toBe(240)
     expect(foldSpacerHeight({ ...base, scrollY: 1000.4 })).toBe(201)
     expect(foldSpacerHeight({ ...base, scrollY: 1000, lost: 0 })).toBeNull()
-    // ページが画面より短くなる時も、いちばん上（0）より下へは要らない
+    // いちばん上（0）にいる時は、ページが画面より短くなっても位置は動かないので要らない
     expect(foldSpacerHeight({ scrollY: 0, scrollHeight: 800, innerHeight: 839, spacer: 0, lost: 100 })).toBeNull()
-    expect(foldSpacerHeight({ scrollY: 50, scrollHeight: 900, innerHeight: 839, spacer: 0, lost: 100 })).toBe(50)
+    // 畳んだ後のページ（空きを除いて 800）が画面（839）より短い時は、短い分も足す: 位置 50 を保つには 800 + 空き − 839 ≥ 50 で 89
+    // （前は 0 で止めて 50 にしていたので、ブラウザが位置を 11 に止め直して見出しが上へ跳んだ）
+    expect(foldSpacerHeight({ scrollY: 50, scrollHeight: 900, innerHeight: 839, spacer: 0, lost: 100 })).toBe(89)
+    // 今の空き（120）がある時も同じ: 1200 − 600 − 839 = −239 なので、300 を保つには 120 + 539 = 659
+    expect(foldSpacerHeight({ scrollY: 300, scrollHeight: 1200, innerHeight: 839, spacer: 120, lost: 600 })).toBe(659)
   })
 })

@@ -535,3 +535,213 @@ describe('■36 端の指の出来事の順（iPhone と同じ順で送る）', 
     expect(router.state.location.pathname).toBe('/month/2026-11')
   })
 })
+
+describe('■36 打っている欄が見える所の上の外にある時（iPhone・iPad の WebKit にはスクロールの錨が無い）', () => {
+  /** 次の描画まで待つ（やめた後の送りは、次の描画の前にする） */
+  const nextFrame = () =>
+    act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+    })
+
+  /** 要素ごとの画面の上からの位置と高さを決める（null を返した物は jsdom と同じく 0） */
+  function fakeRects(of: (el: Element) => { top: number; height: number } | null) {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const r = of(this)
+      return r ? new DOMRect(0, r.top, 320, r.height) : new DOMRect(0, 0, 0, 0)
+    })
+  }
+
+  /** ページのスクロールの位置を y にし、scrollTo を見張る（終わったら 0 に戻す） */
+  function fakePageScroll(y: number) {
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: y })
+    const scrollTo = vi.fn()
+    window.scrollTo = scrollTo as typeof window.scrollTo
+    disposers.push(() => Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 }))
+    return scrollTo
+  }
+
+  /** S・M の見える所の上の端（ヘッダー 52px と切り替えの列 41px の下: 93px） */
+  const bars = (el: Element) =>
+    el.classList.contains('app-header')
+      ? { top: 0, height: 52 }
+      : el.classList.contains('top-switcher')
+        ? { top: 52, height: 41 }
+        : null
+
+  it('S: Favorite List の入力欄（4行の書きかけ）が見える所（ヘッダーと切り替えの列の下）の上の外にある時に払うと、やめて欄が縮んだ分（64px）だけ、次の描画の前にページを送って、見えている下の行を同じ所に残す（記録は type-cancel-keep。打った字は控えない）', async () => {
+    const { history } = await openTop()
+    await openList('favorite')
+    const area = field('favorite')
+    act(() => area.focus())
+    fireEvent.change(area, { target: { value: '1行目の書きかけ\n2行目\n3行目\n4行目' } })
+    const box = area.closest('.list-input-box')
+    const row = screen.getByTestId(listTestIds.row('favorite', 'f1'))
+    // 伸びた入力欄は 104px（空にすると 40px）。下の行は、欄が縮むと 64px 上がる
+    const grown = () => area.value !== ''
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === box
+          ? { top: -300, height: grown() ? 112 : 48 }
+          : el === area
+            ? { top: -296, height: grown() ? 104 : 40 }
+            : el === row
+              ? { top: grown() ? 150 : 86, height: 44 }
+              : null),
+    )
+    const scrollTo = fakePageScroll(1500)
+    startLog()
+    act(() => history.flick(-1))
+    expect(area.value).toBe('')
+    expect(document.activeElement).not.toBe(area)
+    await nextFrame()
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1436, behavior: 'auto' })
+    const log = swipeLogText()
+    expect(log).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"favorite","moved":-64\}/)
+    expect(log).not.toContain('書きかけ')
+    expect(lists().collapsed.favorite).toBe(false)
+  })
+
+  it('入力欄が全部見えている時（上の端が見える所の上の端より下）は、欄が縮んで下の物が上がってきても、ページを送らない（今までどおり）', async () => {
+    const { history } = await openTop()
+    await openList('favorite')
+    const area = field('favorite')
+    act(() => area.focus())
+    fireEvent.change(area, { target: { value: '1行目\n2行目\n3行目\n4行目' } })
+    const box = area.closest('.list-input-box')
+    const row = screen.getByTestId(listTestIds.row('favorite', 'f1'))
+    const grown = () => area.value !== ''
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === box
+          ? { top: 120, height: grown() ? 112 : 48 }
+          : el === area
+            ? { top: 124, height: grown() ? 104 : 40 }
+            : el === row
+              ? { top: grown() ? 240 : 176, height: 44 }
+              : null),
+    )
+    const scrollTo = fakePageScroll(1500)
+    startLog()
+    act(() => history.flick(-1))
+    expect(area.value).toBe('')
+    await nextFrame()
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(swipeLogText()).not.toContain('type-cancel-keep')
+  })
+
+  it('ブラウザがもう見えている物を保っていた時（Chromium のスクロールの錨）は、足して送らない', async () => {
+    const { history } = await openTop()
+    await openList('favorite')
+    const area = field('favorite')
+    act(() => area.focus())
+    fireEvent.change(area, { target: { value: '1行目\n2行目\n3行目\n4行目' } })
+    const box = area.closest('.list-input-box')
+    const row = screen.getByTestId(listTestIds.row('favorite', 'f1'))
+    const grown = () => area.value !== ''
+    // 欄は縮むが、ブラウザがページの位置を替えて、下の行は同じ所のまま
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === box
+          ? { top: grown() ? -300 : -236, height: grown() ? 112 : 48 }
+          : el === area
+            ? { top: grown() ? -296 : -232, height: grown() ? 104 : 40 }
+            : el === row
+              ? { top: 150, height: 44 }
+              : null),
+    )
+    const scrollTo = fakePageScroll(1500)
+    act(() => history.flick(-1))
+    expect(area.value).toBe('')
+    await nextFrame()
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('L（iPad の横向き）: 右の列の中で入力欄が右の列の見える所の上の外にある時は、右の列を送る（ページは送らない）', async () => {
+    const { history } = await openTop('/week/2026-11-08', { width: 'L' })
+    const side = screen.getByTestId('side-column')
+    side.style.overflowY = 'auto'
+    Object.defineProperty(side, 'scrollHeight', { configurable: true, value: 3000 })
+    Object.defineProperty(side, 'clientHeight', { configurable: true, value: 768 })
+    Object.defineProperty(side, 'scrollTop', { configurable: true, writable: true, value: 900 })
+    const sideScroll = vi.fn()
+    side.scrollTo = sideScroll as typeof side.scrollTo
+    const area = field('favorite')
+    act(() => area.focus())
+    fireEvent.change(area, { target: { value: '1行目\n2行目\n3行目\n4行目' } })
+    const box = area.closest('.list-input-box')
+    const row = screen.getByTestId(listTestIds.row('favorite', 'f1'))
+    const grown = () => area.value !== ''
+    fakeRects((el) =>
+      el === side
+        ? { top: 52, height: 768 }
+        : el === box
+          ? { top: -100, height: grown() ? 112 : 48 }
+          : el === area
+            ? { top: -96, height: grown() ? 104 : 40 }
+            : el === row
+              ? { top: grown() ? 350 : 286, height: 44 }
+              : null,
+    )
+    const scrollTo = fakePageScroll(0)
+    startLog()
+    act(() => history.flick(1))
+    expect(area.value).toBe('')
+    await nextFrame()
+    expect(sideScroll).toHaveBeenCalledWith({ top: 836, behavior: 'auto' })
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"favorite","moved":-64\}/)
+  })
+
+  it('行の中で直している Favorite List の本文が見える所の上の外にある時: 払うと、保存せずにやめて行が縮んだ分だけ送り、下の行を同じ所に残す。Esc でやめた時は送らない（端からのフリックだけ）', async () => {
+    const data = {
+      ...DATA,
+      favorites: {
+        f1: mkFavorite({ id: 'f1', text: '読んでみたい本\n1冊目\n2冊目\n3冊目\n4冊目\n5冊目', order: 0 }),
+        f2: mkFavorite({ id: 'f2', text: '近所のパン屋に寄る', order: 1 }),
+      },
+    }
+    const { history } = await openTop('/month/2026-11', { data })
+    await openList('favorite')
+    const row = screen.getByTestId(listTestIds.row('favorite', 'f1'))
+    const next = screen.getByTestId(listTestIds.row('favorite', 'f2'))
+    const editId = listTestIds.rowEdit('favorite', 'f1')
+    const editing = () => screen.queryByTestId(editId) !== null
+    // 直している間の行は 160px（直す欄が 148px）、やめると3行の 124px
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === row
+          ? { top: -200, height: editing() ? 160 : 124 }
+          : el.getAttribute('data-testid') === editId
+            ? { top: -194, height: 148 }
+            : el === next
+              ? { top: editing() ? -40 : -76, height: 200 }
+              : null),
+    )
+    const scrollTo = fakePageScroll(1500)
+    // Esc でやめる: 送らない
+    fireEvent.click(screen.getByTestId(listTestIds.rowTitle('favorite', 'f1')))
+    fireEvent.change(screen.getByTestId(editId), { target: { value: '読んでみたい本（直しかけ）' } })
+    fireEvent.keyDown(screen.getByTestId(editId), { key: 'Escape' })
+    expect(editing()).toBe(false)
+    await nextFrame()
+    expect(scrollTo).not.toHaveBeenCalled()
+    // 直し始めて払う: 行が縮んだ 36px だけ送る
+    fireEvent.click(screen.getByTestId(listTestIds.rowTitle('favorite', 'f1')))
+    expect(document.activeElement).toBe(screen.getByTestId(editId))
+    fireEvent.change(screen.getByTestId(editId), { target: { value: '読んでみたい本（直しかけ）' } })
+    startLog()
+    act(() => history.flick(-1))
+    expect(editing()).toBe(false)
+    expect(getData().favorites.f1.text).toBe('読んでみたい本\n1冊目\n2冊目\n3冊目\n4冊目\n5冊目')
+    await nextFrame()
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1464, behavior: 'auto' })
+    expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"inline-edit","list":"favorite","moved":-36\}/)
+    expect(swipeLogText()).not.toContain('直しかけ')
+  })
+})
