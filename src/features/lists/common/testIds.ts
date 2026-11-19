@@ -69,7 +69,7 @@ export const listTestIds = {
   routinePanel: 'routine-panel',
 
   // ----- Favorite List（15.） -----
-  /** 3行を超えた時の「続き」 */
+  /** 3行を超えた時の「続き」（全部見せている間は同じボタンが「畳む」） */
   favoriteMore: (id: ID) => `favorite-more-${id}`,
   /** 足した日 */
   favoriteAdded: (id: ID) => `favorite-added-${id}`,

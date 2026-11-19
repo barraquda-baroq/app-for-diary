@@ -1,5 +1,5 @@
 // Favorite List（src/features/lists/favorite。docs/SPEC.md の 15.・3.6・6.8・6.13・6.15・12.2）をトップの画面の中で確かめる: 行（新しい物が
-// 上・2行以上なら1行目を太く・http(s) のリンク・リンクを押しても直さない・3行を超えたら「続き」・足した日・分類の無い行）、入力欄
+// 上・2行以上なら1行目を太く・http(s) のリンク・リンクを押しても直さない・3行を超えたら「続き」（開くと「畳む」）・足した日・分類の無い行）、入力欄
 // （PC の Enter で足す・Shift+Enter で改行・指の端末の Enter は改行で［足す］で足す・変換中は足さない）、その場で直す（PC の Enter で
 // 保存・指の端末の Enter は改行・止まって 0.6秒で保存・空は元に戻す・Esc でやめる）、済み・「済み n件」・［済みを片付ける］、「…」の
 // ［詳しく］［予定にする］［Task List へ移す］［削除］、［詳しく］のパネル。リンクの新しいタブ・3行の測り・キーボードの上の欄・高さの
@@ -13,7 +13,7 @@ import type { AppData } from '../../../domain/types'
 import { actions } from '../../../store/actions'
 import { getData, useApp } from '../../../store/appStore'
 import { useCalendarUi, usePrefs, useToasts } from '../../../store/uiStore'
-import { renderAt, setupCalendarTests } from '../../../test/renderCalendar'
+import { renderAt, resizeObserved, setupCalendarTests } from '../../../test/renderCalendar'
 import { sheetOf } from '../../calendar/common/sheets'
 import { discardListDraft } from '../common/listDraft'
 import { draftKey } from '../common/listInputModel'
@@ -164,24 +164,130 @@ describe('S3 行（15.2。S3-FRAME-275〜280・S3-ROUTINE-035・170・179〜183�
     expect(document.activeElement).toBe(byId(listTestIds.rowEdit('favorite', I.article)))
   })
 
-  it('3行を超える物だけ「続き」。押すと全部見せ、「続き」は消える', async () => {
-    // 3行に収まらない（測った高さが枠より高い）のは「旅行で行きたい所」だけにする（jsdom は描かないので測る値を決める）
+  /** 3行に収まらない（測った高さが枠より高い）のは「旅行で行きたい所」だけにする（jsdom は描かないので測る値を決める） */
+  const onlyTripsOver = () => {
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('fv-text') && this.textContent?.startsWith('旅行') ? 120 : 60
     })
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('fv-text') ? 60 : 0
     })
+  }
+  const clamped = (id: string) => titleOf(id).querySelector('.fv-text')?.classList.contains('is-clamped')
+
+  it('3行を超える物だけ「続き」。押すと全部見せて同じボタンが「畳む」に、もう一度押すと3行に戻って「続き」（直し始めず、フォーカスはボタンに残る）', async () => {
+    onlyTripsOver()
     const { user } = await open()
     expect(screen.queryByTestId(listTestIds.favoriteMore(I.recipes))).toBeNull()
     const more = byId(listTestIds.favoriteMore(I.trips))
     expect(more.textContent).toBe('続き')
-    expect(titleOf(I.trips).querySelector('.fv-text')?.classList.contains('is-clamped')).toBe(true)
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    expect(clamped(I.trips)).toBe(true)
     await user.click(more)
-    expect(screen.queryByTestId(listTestIds.favoriteMore(I.trips))).toBeNull()
-    expect(titleOf(I.trips).querySelector('.fv-text')?.classList.contains('is-clamped')).toBe(false)
-    // 「続き」を押しても直し始めない
+    // 同じボタンのまま「畳む」に替わる（置き換えないので、フォーカスもそのまま）
+    expect(byId(listTestIds.favoriteMore(I.trips))).toBe(more)
+    expect(more.textContent).toBe('畳む')
+    expect(more.getAttribute('aria-expanded')).toBe('true')
+    expect(clamped(I.trips)).toBe(false)
+    expect(document.activeElement).toBe(more)
+    await user.click(more)
+    expect(byId(listTestIds.favoriteMore(I.trips))).toBe(more)
+    expect(more.textContent).toBe('続き')
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    expect(clamped(I.trips)).toBe(true)
+    expect(document.activeElement).toBe(more)
+    // キーボード（Enter・Space）でも替わる
+    await user.keyboard('{Enter}')
+    expect(more.textContent).toBe('畳む')
+    await user.keyboard(' ')
+    expect(more.textContent).toBe('続き')
+    expect(clamped(I.trips)).toBe(true)
+    // 「続き」「畳む」を押しても直し始めない
     expect(screen.queryByTestId(listTestIds.rowEdit('favorite', I.trips))).toBeNull()
+    expect(getData().favorites[I.trips].text.startsWith('旅行で行きたい所')).toBe(true)
+  })
+
+  it('畳んだ時に「続き」が見える所の上に隠れれば、なめらかにせずすぐ、隠れた分だけページを送る。見えていれば送らない', async () => {
+    onlyTripsOver()
+    const { user } = await open()
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(900)
+    const more = byId(listTestIds.favoriteMore(I.trips))
+    // 開く時は送らない
+    await user.click(more)
+    expect(scrollTo).not.toHaveBeenCalled()
+    // 畳んだ後の「続き」が画面の上の端より 140px 上（jsdom は描かないので、畳んだ後に測る位置を決める）
+    const rect = vi.spyOn(more, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, -140, 40, 24))
+    await user.click(more)
+    expect(more.textContent).toBe('続き')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 760, behavior: 'auto' })
+    // 畳んだ後も見えていれば（画面の上の端より下）送らない
+    rect.mockReturnValue(new DOMRect(0, 300, 40, 24))
+    await user.click(more)
+    await user.click(more)
+    expect(more.textContent).toBe('続き')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('全部見せている間に3行に収まるようになれば（幅が広がった・ほかの端末で短く直された）「畳む」を消し、フォーカスは行の字（リンクのある物は行のチェック）へ移す。また3行を超えれば「畳む」', async () => {
+    // 中身の高さ（先頭の字で決める）を替えられるようにする。畳んでいる間の枠は3行の 60 まで
+    const h: Record<string, number> = { 旅行: 120, 気になる: 120 }
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('fv-text')) return 60
+      const key = Object.keys(h).find((k) => this.textContent?.startsWith(k))
+      return key ? h[key] : 40
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('fv-text')) return 0
+      return this.classList.contains('is-clamped') ? Math.min(60, this.scrollHeight) : this.scrollHeight
+    })
+    const { user } = await open()
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    const more = byId(listTestIds.favoriteMore(I.trips))
+    await user.click(more)
+    expect(more.textContent).toBe('畳む')
+    expect(document.activeElement).toBe(more)
+    const text = titleOf(I.trips).querySelector<HTMLElement>('.fv-text')!
+    // 幅が広がって2行に収まった: 「畳む」は消え、フォーカスはページの外へ落とさず行の字へ（スクロールさせない）
+    h.旅行 = 40
+    act(() => resizeObserved(600, 40, text))
+    expect(screen.queryByTestId(listTestIds.favoriteMore(I.trips))).toBeNull()
+    expect(document.activeElement).toBe(titleOf(I.trips))
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
+    // また狭まって3行を超えた: 開いたまま（全部見せたまま）「畳む」が出る
+    h.旅行 = 120
+    act(() => resizeObserved(300, 120, text))
+    const again = byId(listTestIds.favoriteMore(I.trips))
+    expect(again.textContent).toBe('畳む')
+    expect(again.getAttribute('aria-expanded')).toBe('true')
+    expect(clamped(I.trips)).toBe(false)
+    // フォーカスがほかにあれば、消えても動かさない
+    act(() => input().focus())
+    h.旅行 = 40
+    act(() => resizeObserved(600, 40, text))
+    expect(screen.queryByTestId(listTestIds.favoriteMore(I.trips))).toBeNull()
+    expect(document.activeElement).toBe(input())
+    // リンクのある物（字はボタンでない）をほかの端末で短く直された: フォーカスは行のチェックへ
+    const linkMore = byId(listTestIds.favoriteMore(I.article))
+    await user.click(linkMore)
+    expect(linkMore.textContent).toBe('畳む')
+    expect(document.activeElement).toBe(linkMore)
+    h.気になる = 40
+    act(() =>
+      useApp.setState((s) => ({
+        data: {
+          ...s.data,
+          favorites: {
+            ...s.data.favorites,
+            [I.article]: { ...s.data.favorites[I.article], text: '気になる記事\nhttps://example.com/a' },
+          },
+        },
+      })),
+    )
+    expect(screen.queryByTestId(listTestIds.favoriteMore(I.article))).toBeNull()
+    expect(document.activeElement).toBe(byId(listTestIds.rowCheck('favorite', I.article)))
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
   })
 })
 
