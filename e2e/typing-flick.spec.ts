@@ -6,8 +6,8 @@
 // （■34 で見ている開いたリストを畳む・モードを回す）。打っている欄が見える所の上の外にあって、やめて縮んでも、見えている物は動かない
 // （WebKit と同じくスクロールの錨を止めて確かめる。錨のある Chromium のままでも、ブラウザが保った分に足して送らない）。欄の上の端が
 // 少しだけ隠れている時は隠れていた分だけ送り（［依頼者］の欄で打っている時は、上の書きかけの入力欄の隠れていた分まで）、すばやく
-// 足す（S の週の中）も同じく保ち（週の中が溢れていない時は、ページも送らない）、ページのいちばん下ではいちばん下の空きを足して位置を
-// 保つ（縮んでページが画面より短くなる時も）。
+// 足す（S の週の中）も同じく保ち（週の中が溢れていない時は、ページも送らない。週の中がいちばん上で送れない時は、送らず記録もしない）、
+// ページのいちばん下ではいちばん下の空きを足して位置を保つ（縮んでページが画面より短くなる時も）。
 // Android（Pixel 7）・PC の［戻る］は今までどおり（打っていても畳む・閉じるかを聞く）。iPhone は Chromium に iPhone の UA（ブラウザの
 // 履歴は1つのまま）、iPad は縦向き（M）・横向き（L）の UA。指は e2e/helpers.ts の
 // edgeFlick（iPhone と同じく 12px で pointer を取り消す合成した指）で、打っている欄の上から始めない高さ（欄の上からはフリックに
@@ -852,6 +852,46 @@ test.describe(
         await expect(quick).toHaveCount(0)
         await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toBeNull()
         await page.waitForTimeout(200)
+        expect(Math.abs((await scrollY(page)) - y0), 'ページの位置').toBeLessThanOrEqual(1)
+        expect(Math.abs((await rectOf(routine)).top - top), '週の下のリストが動いた（px）').toBeLessThanOrEqual(1)
+        expect(await hashOf(page)).toBe(hash)
+        const log = await swipeLogOf(page)
+        expect(log).toMatch(/ type-cancel \{"kind":"quick-add"/)
+        expect(log).not.toContain('type-cancel-keep')
+        expect(log).not.toContain('買い物')
+      })
+
+      test('すばやく足す（S の週の中は溢れているが、週の中がいちばん上にある時）: ページを送って入力欄がヘッダーと切り替えの列の下に隠れている時に払うと、足さずに閉じるだけで、週の中はいちばん上より上へは送れないので送らず、記録にも送ったと書かない（ページも送らない。スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await keepSwipeLog(page)
+        await openLists(page, WEEK)
+        await page.addStyleTag({ content: '*, *::before, *::after { overflow-anchor: none !important; }' })
+        await page.getByTestId('week-add-2026-11-08-work').tap()
+        const quick = page.getByTestId('quick-add-input')
+        await expect(quick).toBeFocused()
+        await page.keyboard.type('買い物')
+        const key = 'diary-studio:draft:quick:2026-11-08:work'
+        await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toContain('買い物')
+        const week = page.locator('.wk-v')
+        expect(await week.evaluate((e) => e.scrollHeight - e.clientHeight), '週の中は溢れている').toBeGreaterThan(20)
+        await week.evaluate((e) => e.scrollTo({ top: 0, behavior: 'instant' }))
+        const view = await visibleBox(page, 'page')
+        await scrollListBy(page, 'page', Math.round((await rectOf(quick)).top - (view.lo - 20)))
+        await listScrollStill(page, 'page')
+        await expect(quick).toBeFocused()
+        expect(await week.evaluate((e) => e.scrollTop), '週の中はいちばん上').toBe(0)
+        expect((await rectOf(quick)).top, '入力欄の上の端はヘッダーと切り替えの列の下').toBeLessThan(view.lo)
+        const routine = page.getByTestId(listTestIds.fold('routine'))
+        const top = (await rectOf(routine)).top
+        const y0 = await scrollY(page)
+        const hash = await hashOf(page)
+        await edgeFlick(page, 'left', { y: Math.round((view.lo + view.hi) / 2) })
+        await historySettled(page)
+        await expect(quick).toHaveCount(0)
+        await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toBeNull()
+        await page.waitForTimeout(200)
+        expect(await week.evaluate((e) => e.scrollTop), '週の中').toBe(0)
         expect(Math.abs((await scrollY(page)) - y0), 'ページの位置').toBeLessThanOrEqual(1)
         expect(Math.abs((await rectOf(routine)).top - top), '週の下のリストが動いた（px）').toBeLessThanOrEqual(1)
         expect(await hashOf(page)).toBe(hash)

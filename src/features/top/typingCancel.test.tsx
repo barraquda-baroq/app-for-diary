@@ -944,6 +944,54 @@ describe('■36 打っている欄が見える所の上の外にある時（iPho
     expect(swipeLogText()).not.toContain('type-cancel-keep')
   })
 
+  for (const { scrollTop, moved } of [
+    { scrollTop: 0, moved: null },
+    { scrollTop: 5, moved: -5 },
+  ])
+    it(`S の週の中が溢れていて、週の中が上の端の近く（${scrollTop}px）の時: すばやく足すの入力欄がページの見える所の上の外にあって払うと、週の中は上の端より上へは送れないので、送れる分（${-(moved ?? 0)}px）だけ送り、記録もその分にする（送れない時は送らず、記録もしない。ページは送らない）`, async () => {
+      const { history } = await openTop('/week/2026-11-08')
+      fireEvent.click(screen.getByTestId(testIds.weekAdd('2026-11-08', 'work')))
+      const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+      fireEvent.change(input, { target: { value: '買い物' } })
+      const quick = input.closest('.cp-quick')
+      const week = screen.getByTestId(testIds.view('week'))
+      week.style.overflowY = 'auto'
+      Object.defineProperty(week, 'scrollHeight', { configurable: true, value: 2000 })
+      Object.defineProperty(week, 'clientHeight', { configurable: true, value: 600 })
+      Object.defineProperty(week, 'scrollTop', { configurable: true, writable: true, value: scrollTop })
+      const weekScroll = vi.fn()
+      week.scrollTo = weekScroll as typeof week.scrollTo
+      const nextDay = screen.getByTestId(testIds.weekCol('2026-11-09'))
+      const open = () => screen.queryByTestId(testIds.quickAddInput) !== null
+      // ページは送ってあり、週（60px から高さ 600px）の入力欄（80〜120px）はヘッダーと切り替えの列（93px）の下に 13px 隠れている。
+      // 閉じると次の日のかたまりは週の中で 12px 上がる。保つには週の中を 12px 上へ送ることになるが、上の端より上へは送れない
+      fakeRects(
+        (el) =>
+          bars(el) ??
+          (el === week
+            ? { top: 60, height: 600 }
+            : el === quick || el === input
+              ? { top: 80, height: 40, left: 0, width: 160 }
+              : el === nextDay
+                ? { top: open() ? 130 : 118, height: 300 }
+                : null),
+      )
+      const scrollTo = fakePageScroll(206)
+      startLog()
+      act(() => history.flick(-1))
+      expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+      await nextFrame()
+      expect(scrollTo).not.toHaveBeenCalled()
+      if (moved === null) {
+        expect(weekScroll).not.toHaveBeenCalled()
+        expect(swipeLogText()).not.toContain('type-cancel-keep')
+      } else {
+        expect(weekScroll).toHaveBeenCalledTimes(1)
+        expect(weekScroll).toHaveBeenCalledWith({ top: 0, behavior: 'auto' })
+        expect(swipeLogText()).toMatch(new RegExp(` type-cancel-keep \\{"kind":"quick-add","list":null,"moved":${moved}\\}`))
+      }
+    })
+
   it('M: ページをいちばん下まで読み進めて、全部見えている入力欄（6行の書きかけ）で払い、縮むとページが画面より短くなる時も、いちばん下の空きを画面より短くなった分まで足して元の位置へ戻す（ブラウザに位置を上へ止め直させない）', async () => {
     const { history } = await openTop('/month/2026-11', { width: 'M' })
     // 見出しのボタンで開く（切り替えの列で飛ばないので、いちばん下の空きは 0 のまま）

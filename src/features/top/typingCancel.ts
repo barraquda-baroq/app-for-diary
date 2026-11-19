@@ -24,8 +24,9 @@
 // 先に来ても、その押しで初めに見た物で決める（間に押した［足す］が欄から外しても、押した時は打っていた）。
 // 打っていない時（キーボードの✓で外した後）は今までどおり（■34 で見ている開いたリストを畳む・モードを回す）。
 // 記録（設定で取る時だけ。src/history/swipeLog.ts）: type-cancel（kind: quick-add・list-input・inline-edit・other、list。打った字は
-// 控えない。押した時に打っていて閉じていた時は gone）と、見えている物を戻した時の type-cancel-keep（kind・list と、送った px の
-// moved（上へ送った時は負）。ページの終わりでいちばん下の空きを足した時は、その px の space も）
+// 控えない。押した時に打っていて閉じていた時は gone）と、見えている物を戻した時の type-cancel-keep（kind・list と、本当に送った px の
+// moved（上へ送った時は負。週の中などのいちばん上・いちばん下より先の分は入れない）。ページの終わりでいちばん下の空きを足した時は、
+// その px の space も）
 import { useEffect } from 'react'
 import { edgeOfScreen } from '../../history/edgeFlick'
 import { swipeLog } from '../../history/swipeLog'
