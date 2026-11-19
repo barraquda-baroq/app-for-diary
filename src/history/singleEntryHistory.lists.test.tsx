@@ -16,6 +16,7 @@ import { closeShownList, listOpenNow } from '../features/top/listBack'
 import { useStackedLists } from '../store/uiStore'
 import { renderAt, setupCalendarTests } from '../test/renderCalendar'
 import { FakeWindow } from '../test/fakeHistoryWindow'
+import * as device from '../ui/device'
 import { createAppHistory, setHistoryHandler, type HistoryHandlers } from './appHistory'
 import { SingleEntryHistory } from './singleEntryHistory'
 import { clearSwipeLog, setSwipeLogEnabled, swipeLogText } from './swipeLog'
@@ -266,8 +267,10 @@ describe('S3 本物のトップの画面で（S の積んだ所。■34）', () 
     for (const d of disposers.splice(0)) d()
   })
 
-  /** src/App.tsx と同じく、作った履歴に listOpen・closeList を置いて S のトップを描く */
+  /** src/App.tsx と同じく、作った履歴に listOpen・closeList・consumePop を置いて S のトップを描く（端末は iPhone・iPad） */
   async function openTop(path = '/month/2026-11') {
+    const source = vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
+    disposers.push(() => source.mockRestore())
     const win = new FakeWindow(`#${path}`, { swipes: true })
     const history = createAppHistory({ window: win, source: 'edge-flick', armOnLeaveFail: false, screenOf }) as SingleEntryHistory
     const offs = [
@@ -300,7 +303,8 @@ describe('S3 本物のトップの画面で（S の積んだ所。■34）', () 
     expect(listOpenNow()).toBe(true)
     const input = screen.getByTestId(listTestIds.input('task')) as HTMLTextAreaElement
     fireEvent.change(input, { target: { value: '見積もりの返事' } })
-    input.focus()
+    // フォーカスはリストの中の［足す］（打っている欄にフォーカスがある時のフリックは入力をやめるだけ。■36。src/features/top/typingCancel.test.tsx）
+    screen.getByTestId(listTestIds.add('task')).focus()
     act(() => history.flick(-1))
     expect(lists().collapsed.task).toBe(true)
     expect(listOpenNow()).toBe(false)

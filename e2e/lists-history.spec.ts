@@ -3,8 +3,9 @@
 // （いちばん上のカレンダーへスクロールで戻さない・フォーカスはそのリストの中にあった時だけそのリストの畳む・開くボタンへ）、そのリストの
 // 入力欄の打ちかけを捨てる（変換の途中でも決めずに。ほかのリストの打ちかけと、ほかの畳み方の打ちかけは残る）。履歴は動かさず、
 // 「進む」は何もせず、■25（もう一度［戻る］で閉じる）も構えない。畳んだ後・カレンダーを見ている時は今までどおり（モードを回す・
-// 閉じるかを聞く）。リストの［詳しく］は L では右の列の上のパネル、S・M では下からのシートで、「戻る」・フリック・Esc・外を押す・［×］で
-// 閉じ、読み込み直すと開き直し、幅を替えても閉じない。
+// 閉じるかを聞く）。iPhone・iPad で打っている間（入力欄・行の中で直している欄にフォーカスがある間）のフリックは、打っていた物を
+// やめて欄から外すだけで、畳むのは次のフリック（■36。e2e/typing-flick.spec.ts）。リストの［詳しく］は L では右の列の上のパネル、
+// S・M では下からのシートで、「戻る」・フリック・Esc・外を押す・［×］で閉じ、読み込み直すと開き直し、幅を替えても閉じない。
 // iPhone は Chromium に iPhone の UA（ブラウザの履歴は1つのまま: history.length が開いた時のまま・積む・戻る・進むを一度も呼ばない）。
 // 端の幅はいちばん狭い選べる幅と初めの幅の両方で払う（どちらも定数は src から読む）。Android は Pixel 7（ブラウザのタブと、表示の形を
 // standalone にしたホーム画面のアプリ）、PC は Desktop Chrome。データは作り物（e2e/fixtures/listData.ts）。
@@ -224,7 +225,7 @@ test.describe('S3 iPhone の端からのフリックで開いているリスト�
     })
   }
 
-  test('打っている途中（変換の途中も）に払うと、そのリストの打ちかけを決めずに捨てて畳み（足さない）、フォーカスはそのリストの畳む・開くボタンへ。ほかのリストの打ちかけと、見出しの［▾］で畳んだ時の打ちかけは残る（■34。S3-FRAME-024）', async ({
+  test('打っている途中（変換の途中も）に払うと、そのリストの打ちかけを決めずに捨てて欄から外すだけ（足さない・畳まない。■36）で、フォーカスはそのリストの畳む・開くボタンへ。次のフリックで畳む。ほかのリストの打ちかけと、見出しの［▾］で畳んだ時の打ちかけは残る（■34。S3-FRAME-024）', async ({
     page,
   }) => {
     await spyHistory(page)
@@ -248,10 +249,14 @@ test.describe('S3 iPhone の端からのフリックで開いているリスト�
     await cdp.send('Input.imeSetComposition', { text: 'よやく', selectionStart: 3, selectionEnd: 3 })
     await expect(input).toHaveValue('会議室よやく')
     await edgeFlick(page, 'left')
-    await expectCollapsed(page, 'task', true)
+    // 打っている間のフリックは入力をやめるだけ（畳まない。■36）
+    await expect(input).toHaveValue('')
     await expect.poll(() => storedDraft(page, 'task')).toBeNull()
     expect((await measure(page, 'task')).active).toBe(listTestIds.fold('task'))
-    // 開き直しても空で、何も足していない
+    await expectCollapsed(page, 'task', false)
+    // 次のフリック（打っていない）で畳む。開き直しても空で、何も足していない
+    await edgeFlick(page, 'left')
+    await expectCollapsed(page, 'task', true)
     await listFold(page, 'task').click()
     await expect(listInput(page, 'task')).toHaveValue('')
     expect(await page.evaluate(() => Object.keys(window.__ds.getData().items).length)).toBe(tasks)
@@ -682,7 +687,7 @@ test.describe(
   () => {
     test.use({ userAgent: IPHONE_UA })
 
-    test('Task List を畳むフリックは、件名の打ちかけといっしょに［締め切り日］［依頼者］のチップも捨て、読み込み直しても戻らない。行の中で直している途中の件名は捨てずに保存する（■34。S3-FRAME-024）', async ({
+    test('Task List を畳むフリックは、件名の打ちかけといっしょに［締め切り日］［依頼者］のチップも捨て、読み込み直しても戻らない。行の中で件名を直している途中（打っている間）のフリックは、Esc と同じく保存せずにやめるだけで、畳むのは次のフリック（■34・■36。S3-FRAME-024）', async ({
       page,
     }) => {
       await openLists(page, MONTH)
@@ -702,11 +707,16 @@ test.describe(
       await expect(edit).toBeFocused()
       await edit.fill('見積もりの返事を送る')
       await edgeFlick(page, 'left')
+      // 直している途中のフリックは、Esc と同じく保存せずにやめるだけ（畳まない・入力欄の打ちかけとチップは残る。■36）
+      await expect(edit).toHaveCount(0)
+      await expectCollapsed(page, 'task', false)
+      expect(await page.evaluate((id) => window.__ds.getData().items[id]?.title, LIST_IDS.quoteReply)).toBe('見積もりの返事')
+      expect(await storedDraft(page, 'task')).toContain('人事')
+      // 次のフリック（打っていない）で畳み、打ちかけとチップを捨てる（■34）
+      await edgeFlick(page, 'left')
       await expectCollapsed(page, 'task', true)
       await expect.poll(() => storedDraft(page, 'task')).toBeNull()
-      await expect
-        .poll(() => page.evaluate((id) => window.__ds.getData().items[id]?.title, LIST_IDS.quoteReply))
-        .toBe('見積もりの返事を送る')
+      expect(await page.evaluate((id) => window.__ds.getData().items[id]?.title, LIST_IDS.quoteReply)).toBe('見積もりの返事')
       await page.reload()
       await expect(page.getByTestId('top-page')).toBeVisible()
       await showList(page, 'task')

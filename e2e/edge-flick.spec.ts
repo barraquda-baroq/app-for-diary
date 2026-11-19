@@ -9,8 +9,8 @@
 // こと（開く前に置く物で控える）と、端の指でアプリがすること。指は e2e/helpers.ts の edgeFlick（初めは画面の左右の端から 3px の所から
 // 払う）。端の幅は初め 44px（前は 36px）で、設定の「開発」の「端の幅」で 20・28・36・44px から選ぶ（22. の「端からのフリックの3回目の
 // 直した版（788e842）を試した答え」「端からのフリックの4回目の直した版（5e521a7）を試した答え」）。すばやく足すに字を打ったまま
-// 払うと、足さずに閉じて打った字も捨てる。フォーカスの無い入力欄の上から払っても端からのフリック（フォーカスのある欄の上からは
-// 数えない）。@ios の印の物は CI の WebKit（本物の WebKit の履歴）でも流す。
+// 払うと、足さずに閉じて打った字も捨てるだけで、モードは替えない（次の払いで回す。22. の ■36）。フォーカスの無い入力欄の上から
+// 払っても端からのフリック（フォーカスのある欄の上からは数えない）。@ios の印の物は CI の WebKit（本物の WebKit の履歴）でも流す。
 // 今は 2026年11月10日（火）9:00（e2e/helpers.ts の E2E_NOW）
 import { devices, expect, test, type Page } from '@playwright/test'
 import { DEMO_IDS, demoData } from './fixtures/demoData'
@@ -115,7 +115,7 @@ const deleteConfirm = (page: Page) => page.getByRole('dialog', { name: '『定�
 test.describe('iPhone の画面の端からのフリック（Chromium に iPhone の UA と CI の WebKit）', { tag: ['@s', '@ios'] }, () => {
   test.use({ userAgent: IPHONE_UA })
 
-  test('カレンダー: 左の端から 年→月→週→日→年、右の端から 日→週→月→年→日（見ている日を保ち、ページはめくらない）。すばやく足すに字を打ったまま払うと、足さずに閉じてモードを回し、打った字も捨てる（同じ＋を開き直すと空。Esc で閉じた時は残る。12.1）。ブラウザの履歴は増えず、積む・戻る・進むは呼ばない', async ({
+  test('カレンダー: 左の端から 年→月→週→日→年、右の端から 日→週→月→年→日（見ている日を保ち、ページはめくらない）。すばやく足すに字を打ったまま払うと、足さずに閉じて打った字も捨てるだけで、モードは替えない（次の払いで回す。同じ＋を開き直すと空。Esc で閉じた時は残る。12.1・■36）。ブラウザの履歴は増えず、積む・戻る・進むは呼ばない', async ({
     page,
     browserName,
   }) => {
@@ -125,17 +125,21 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     expect(await historyShape(page)).toMatchObject({ kind: 'single', source: 'edge-flick', depth: 1, index: 0 })
     const length = await historyLength(page)
     await recordTurns(page)
-    // すばやく足すに字を打ったまま左の端から払う: 週 → 日。足さずに閉じ、打った字も捨てる（作者「入力確定前の内容で払ったものは
-    // 登録しない」「文字残しは必要ないです」）
+    // すばやく足すに字を打ったまま左の端から払う: 足さずに閉じ、打った字も捨てるだけ（作者「入力確定前の内容で払ったものは
+    // 登録しない」「文字残しは必要ないです」）。モードは替えない（作者「入力中の払いは、入力画面のキャンセルのみで、モード移行は
+    // なしでいいです」。■36）
     const input = page.getByTestId('quick-add-input')
     const plus = page.getByTestId('week-add-2026-11-12-work')
     await plus.tap()
     await input.fill('資料を送る')
     await edgeFlick(page, 'left')
-    await showing(page, DAY)
     await expect(input).toHaveCount(0)
+    await showing(page, WEEK)
     expect(await countByTitle(page, '資料を送る')).toBe(0)
     await expect(page.locator('.toast', { hasText: '足しました' })).toHaveCount(0)
+    // 次の払い（打っていない）でモードを回す: 週 → 日
+    await edgeFlick(page, 'left')
+    await showing(page, DAY)
     // 右の端から: 日 → 週。同じ＋を開き直すと空（打った字は捨てた）。Esc で閉じた時は今までどおり書きかけに残り、開き直すと出る
     await edgeFlick(page, 'right')
     await showing(page, WEEK)
@@ -146,7 +150,10 @@ test.describe('iPhone の画面の端からのフリック（Chromium に iPhone
     await expect(input).toHaveCount(0)
     await plus.tap()
     await expect(input).toHaveValue('書きかけ')
-    // 開いたまま払うと、また足さずに閉じて字を捨てる
+    // 開いたまま払うと、また足さずに閉じて字を捨てるだけ（モードはそのまま）
+    await edgeFlick(page, 'right')
+    await expect(input).toHaveCount(0)
+    await showing(page, WEEK)
     // 1周（CI の WebKit は重いので、右の端から1回・左の端から1回だけ）
     const rounds: ['left' | 'right', string][] =
       browserName === 'webkit'

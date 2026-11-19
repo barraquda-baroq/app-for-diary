@@ -10,8 +10,9 @@
 // iPhone・iPad の画面の端からのフリック（画面の左右の端から端の幅（初めは 44px。設定の「開発」で選ぶ）の中で押して内へ払った指。
 // アプリが window で受け取る: src/history/edgeFlick.ts）では、モードを円環で1つ回す（左の端から＝年→月→週→日→年、右の端から＝
 // 日→週→月→年→日。アプリの履歴 src/history/singleEntryHistory.ts の flick から nav.ring を呼ぶ。3.1）。動く絵は無く、指を離した時に
-// 替わる。開いているすばやく足すは、字を足さずに閉じ、打った字も捨てる（12.1）
-import { useCallback, useEffect, useMemo, useRef, type ComponentType } from 'react'
+// 替わる。すばやく足すを開いている時と、リストの欄で打っている時のフリックは、その前に入力をやめるだけで使い切り、モードは回さない
+// （src/features/top/typingCancel.ts。12.1・22. の ■36）
+import { useEffect, useMemo, useRef, type ComponentType } from 'react'
 import { setHistoryHandler } from '../../../history/appHistory'
 import { useCalendarUi } from '../../../store/uiStore'
 import { useElementSize } from '../../../ui/hooks'
@@ -21,7 +22,6 @@ import { WeekView } from '../week/WeekView'
 import { YearView } from '../year/YearView'
 import { CalendarToolbar } from './CalendarToolbar'
 import { PageTurn } from './PageTurn'
-import { quickAddModeChanging } from './parts/QuickAdd'
 import { useItemSheets } from './sheets'
 import { swipeEnabled } from './swipe'
 import { testIds } from './testIds'
@@ -51,16 +51,9 @@ export function CalendarView({ width, headingId }: { width: WidthClass; headingI
   const size = useElementSize(body)
   const area = useMemo(() => ({ width: size.width, height: size.height }), [size.width, size.height])
   const swipe = swipeEnabled(mode, width)
-  // 端からのフリックでモードを回す（カレンダーを出している間だけ）。すばやく足すは先に閉じる（字は足さず、捨てる）
-  const ringFromFlick = useCallback(
-    (dir: 1 | -1) => {
-      quickAddModeChanging()
-      nav.ring(dir)
-    },
-    [nav],
-  )
   useSwipe(root, swipe, nav.shift)
-  useEffect(() => setHistoryHandler('ring', ringFromFlick), [ringFromFlick])
+  // 端からのフリックでモードを回す（カレンダーを出している間だけ。打っている間のフリックは、ここへ来る前に入力をやめて使い切る）
+  useEffect(() => setHistoryHandler('ring', nav.ring), [nav])
 
   const View = VIEWS[mode]
   const fixed = width !== 'L' && FIXED.includes(mode)

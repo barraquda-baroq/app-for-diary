@@ -3,8 +3,9 @@
 // 付け、画面の端から指で払う（pointer と touch の出来事。iPhone と同じく pointer が先）。カレンダーではモードを1つ回し（左の端から
 // ＝年→月→週→日→年、右の端から＝日→週→月→年→日）、前後の期間へは移らない（1回の払いで1つだけ）。端の幅（初めは 44px。設定の
 // 「開発」で選ぶ。src/history/edgeZone.ts）は、端の指を受け取る所・なぞりの所の両方で同じ。すばやく足すに字を打ったまま払うと、
-// 足さずに閉じてモードを回し、打った字も捨てる（同じ＋を開き直すと空。22. の「端からのフリックの3回目の直した版（788e842）を試した
-// 答え」）。ブラウザの履歴は増えない
+// 足さずに閉じて打った字も捨てるだけで、モードは替えない（同じ＋を開き直すと空。22. の「端からのフリックの3回目の直した版（788e842）を
+// 試した答え」と ■36。src/App.tsx と同じく、履歴の consumePop に src/features/top/closeApp.ts の consumeBackPress を置く）。ブラウザの
+// 履歴は増えない
 import { act, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screenOf } from '../features/calendar/common/calendarHistory'
@@ -15,7 +16,8 @@ import { quickDraftKey, readLocal } from '../store/localDrafts'
 import { FakeWindow } from '../test/fakeHistoryWindow'
 import { renderAt, setupCalendarTests } from '../test/renderCalendar'
 import * as device from '../ui/device'
-import { createAppHistory, type DsHistory } from './appHistory'
+import { consumeBackPress } from '../features/top/closeApp'
+import { createAppHistory, setHistoryHandler, type DsHistory } from './appHistory'
 import { attachEdgeFlick } from './edgeFlick'
 import { setEdgeZonePx } from './edgeZone'
 
@@ -77,7 +79,9 @@ async function open(path: string, seed?: (win: FakeWindow) => void) {
     isLoginPath: (p) => p === '/login',
   })
   const detach = attachEdgeFlick(h, { win: window, now: () => clock })
+  const off = setHistoryHandler('consumePop', consumeBackPress)
   cleanups.push(() => {
+    off()
     detach?.()
     h.dispose()
   })
@@ -115,17 +119,19 @@ describe('iPhone・iPad の画面の端からのフリック（アプリの行�
     expect(win.calls.filter((c) => c.op !== 'replaceState')).toEqual([])
   })
 
-  it('すばやく足すに字を打ったまま払うと、足さずに閉じてモードを回し、打った字も捨てる（同じ＋を開き直すと空。12.1）', async () => {
+  it('すばやく足すに字を打ったまま払うと、足さずに閉じて打った字も捨てるだけで、モードは替えない（同じ＋を開き直すと空。次の払いでモードを回す。12.1・■36）', async () => {
     const { router } = await open('/week/2026-11-08')
     fireEvent.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
     const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
     fireEvent.change(input, { target: { value: '資料を送る' } })
     expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('資料を送る')
     await edgeFlick(-1)
-    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
     expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
     expect(Object.values(getData().items)).toHaveLength(0)
     expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBeNull()
+    await edgeFlick(-1)
+    expect(router.state.location.pathname).toBe('/day/2026-11-10')
     await edgeFlick(1)
     expect(router.state.location.pathname).toBe('/week/2026-11-08')
     fireEvent.click(screen.getByTestId(testIds.weekAdd('2026-11-12', 'work')))
@@ -133,7 +139,7 @@ describe('iPhone・iPad の画面の端からのフリック（アプリの行�
     expect(Object.values(getData().items)).toHaveLength(0)
   })
 
-  it('前の版が残した履歴へ「戻る」が来て（更新した直後の iPhone の身振り）モードを回す時も、すばやく足すは足さずに閉じ、打った字を捨てる', async () => {
+  it('前の版が残した履歴へ「戻る」が来た（更新した直後の iPhone の身振り）時も、すばやく足すに打っていれば、足さずに閉じて打った字を捨てるだけ（モードは替えない。■36）', async () => {
     const path = '/week/2026-11-08'
     const { router, win } = await open(path, (w) =>
       w.seed(
@@ -152,7 +158,7 @@ describe('iPhone・iPad の画面の端からのフリック（アプリの行�
       win.userGo(-1)
       await new Promise((r) => setTimeout(r, 20))
     })
-    expect(router.state.location.pathname).toBe('/day/2026-11-10')
+    expect(router.state.location.pathname).toBe(path)
     expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
     expect(Object.values(getData().items)).toHaveLength(0)
     expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBeNull()

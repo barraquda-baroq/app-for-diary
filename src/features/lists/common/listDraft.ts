@@ -7,11 +7,13 @@
 // - 今の書きかけは、このファイルの中にも持つ（幅が替わって入力欄が作り直された時、前の欄が控え終える前に新しい欄が読んでも同じ字）
 // - discardListDraft（■34 の作者の答え「打ちかけの文字は残さなくて良いです」）: S・M で開いているリストを端からのフリック（iPhone・
 //   iPad）・OS の［戻る］（Android・PC）で畳む時に使う口（呼ぶ所は src/features/top/listBack.ts の closeShownList。履歴の決まり
-//   src/history/popRules.ts の close-list から呼ばれ、この後にその場で畳む）。そのリストの入力欄の打ちかけだけを捨てる: Task List は
-//   件名の字と［開始日］［締め切り日］［依頼者］、Routine List は件名の字と［指定］、Favorite List は本文の字。画面の欄を空にし
-//   （変換の途中なら決めずに捨てる。欄にフォーカスがあれば、先にそのリストの見出しの畳む・開くボタンへ移してから空にする。
-//   common/useListInput.ts）、端末の書きかけを消し、まだ控えていない書きかけも控えずに捨てる（後で pagehide に書き戻さない）。
-//   聞かない・足さない。行の中で直している途中の件名・本文（その場の直し）は捨てない（保存する物は保存する）。
+//   src/history/popRules.ts の close-list から呼ばれ、この後にその場で畳む）。iPhone・iPad でそのリストの入力欄で打っている間の
+//   端からのフリックも、同じく打ちかけを捨てる（畳まずに欄から外すだけ。src/features/top/typingCancel.ts。■36）。
+//   そのリストの入力欄の打ちかけだけを捨てる: Task List は件名の字と［開始日］［締め切り日］［依頼者］、Routine List は件名の字と
+//   ［指定］、Favorite List は本文の字。画面の欄を空にし（変換の途中なら決めずに捨てる。欄にフォーカスがあれば、先にそのリストの
+//   見出しの畳む・開くボタンへ移してから空にする。common/useListInput.ts）、端末の書きかけを消し、まだ控えていない書きかけも
+//   控えずに捨てる（後で pagehide に書き戻さない）。聞かない・足さない。行の中で直している途中の件名・本文（その場の直し）は
+//   捨てない（保存する物は保存する）。
 //   見出しの［▾］で畳む・切り替えの列で別のリストへ移る・幅が L になる時は呼ばない（打ちかけは残す。3.6・6.13・開発）
 import { markDraftClean, markDraftDirty } from '../../../store/draftRegistry'
 import { readLocal, writeLocal } from '../../../store/localDrafts'

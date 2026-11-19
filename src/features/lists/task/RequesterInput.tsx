@@ -5,12 +5,15 @@
 // - 決めるのは Enter（変換中の Enter は除く。P16）・候補を選ぶ・欄から離れる（blur）。空にして決めると依頼者を消す。Esc は、候補を
 //   出している間は候補だけを閉じ（OptionList）、もう一度押すと決めずにやめる（変換を取り消す Esc ではやめない）
 // - 出した時に、その場でフォーカスする（描いた直後の useLayoutEffect。押した出来事の中で flushSync で出すと、iPhone でもキーボードが出る。P3）
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+// - 出している間は、Esc と同じやめ方を欄に届ける（common/fieldCancel。L の行の依頼者を直している間の、iPhone・iPad の端からの
+//   フリックは、決めずにやめる。■36。入力欄の下のチップの欄は、入力欄の打ちかけと一緒に捨てる: src/features/top/typingCancel.ts）
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { limitChars } from '../../../domain/itemInput'
 import { requesterCandidates } from '../../../domain/requesters'
 import { LIMITS } from '../../../domain/types'
 import { useData } from '../../../store/appStore'
 import { optionId, OptionList } from '../../item/fields/OptionList'
+import { registerFieldCancel } from '../common/fieldCancel'
 
 export interface RequesterInputProps {
   /** 開いた時の字 */
@@ -70,6 +73,12 @@ export function RequesterInput({ initial, onCommit, onCancel, label, className, 
     finished.current = true
     onCancel()
   }
+  const latestCancel = useRef(cancel)
+  latestCancel.current = cancel
+  useEffect(() => {
+    const el = ref.current
+    return el ? registerFieldCancel(el, () => latestCancel.current()) : undefined
+  }, [])
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

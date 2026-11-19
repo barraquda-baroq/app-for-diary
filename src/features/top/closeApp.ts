@@ -10,14 +10,18 @@
 // ほかのダイアログが開いている時の「戻る」は、聞かずにそのダイアログを閉じる（consumeBackPress。どの画面でも、iPhone の端からのフリック
 // でも同じ。掴んでいる間（掴んでから離すまで）の「戻る」は何もしない）。3つのリストのメニュー・小窓（行の「…」・日付のメニュー・小さな
 // 月のカレンダー・チップのメニュー・［指定］の小窓）が開いている時の「戻る」も、それだけを閉じる（S・M の開いたリストを畳むのは次の
-// 「戻る」。src/features/lists/common/listPopups.ts。開発）。
+// 「戻る」。src/features/lists/common/listPopups.ts。開発）。iPhone・iPad で打っている間（すばやく足すを開いている・リストの欄に
+// フォーカスがある）の端からのフリックは、入力をやめて欄を閉じるだけ（モードは替えない・リストは畳まない。typingCancel.ts。■36。
+// Android・PC の OS の戻るは今までどおり）。
 // 確かめのフォーカスは［キャンセル］に置き、題の列の［×］も「キャンセル」と読む（［閉じる］が2つにならないように。開発）
 import { armExitApp, leaveApp, type LeaveResult } from '../../history/appHistory'
 import { saveBeforeLeave } from '../../store/lifecycle'
 import { notify, notifyError, useCalendarUi, useToasts } from '../../store/uiStore'
 import { useSync } from '../../sync/controller'
+import { currentPopSource } from '../../ui/device'
 import { cancelAllDialogs, confirmDialog, hasOpenDialog } from '../../ui/dialogs'
 import { closeListPopups } from '../lists/common/listPopups'
+import { cancelTypingOnFlick } from './typingCancel'
 
 /** 閉じるかの確かめの題 */
 export const CLOSE_TITLE = 'Diary Studio を閉じますか？'
@@ -70,7 +74,9 @@ let arming = false
  * 離すまで。features/dnd の TopDnd が付ける dragging）は何もしない。離した後の、浮いたカードが元の所へ戻る動きの間（dnd-kit の掴んだ印
  * data-dnd-dragging はまだ残る。pageTurnDom の dragActive）は、もう掴んでいないので、ふつうに扱う（3.1）。リストのメニュー・小窓が
  * 開いていれば（iPhone の端からのフリックで、払い始めに外を押したことになって先に閉じた時も）、それだけを閉じる（リストは畳まず、
- * 打ちかけも残す。src/features/lists/common/listPopups.ts）。片付けた時 true
+ * 打ちかけも残す。src/features/lists/common/listPopups.ts）。iPhone・iPad の端からのフリックで、カレンダーの画面で打っている間
+ * （すばやく足すを開いている・リストの欄にフォーカスがある）は、入力をやめて欄を閉じるだけ（モードを回さない・リストを畳まない。
+ * typingCancel.ts。■36）。片付けた時 true
  */
 export function consumeBackPress(): boolean {
   if (hasOpenDialog()) {
@@ -78,7 +84,8 @@ export function consumeBackPress(): boolean {
     return true
   }
   if (useCalendarUi.getState().dragging) return true
-  return closeListPopups()
+  if (closeListPopups()) return true
+  return currentPopSource() === 'edge-flick' && cancelTypingOnFlick()
 }
 
 /** Android のブラウザのタブ・PC の OS の「戻る」でアプリを閉じるかを聞く（src/App.tsx がアプリの履歴に置く） */

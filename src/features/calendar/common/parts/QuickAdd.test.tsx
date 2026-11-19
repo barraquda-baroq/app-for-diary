@@ -22,7 +22,7 @@ import {
   COMMIT_WAIT_MS,
   QuickAdd,
   quickAddDragStarted,
-  quickAddModeChanging,
+  cancelQuickAddByFlick,
   type QuickAddProps,
 } from './QuickAdd'
 
@@ -1175,17 +1175,23 @@ const edgeUp = (target: Element, x = 5, y = 300) =>
 /** iPhone・iPad（ブラウザの「戻る」「進む」は画面の端からのフリック） */
 const onIPhone = () => vi.spyOn(device, 'currentPopSource').mockReturnValue('edge-flick')
 
-describe('iPhone の端からのフリックでモードが替わる時（quickAddModeChanging。docs/SPEC.md の 3.1・12.1）', () => {
+describe('iPhone・iPad の端からのフリックで入力をやめる時（cancelQuickAddByFlick。docs/SPEC.md の 3.1・12.1・22. の ■36。モードは替えない）', () => {
   afterEach(() => {
     setSwipeLogEnabled(false)
     setEdgeZonePx(EDGE_ZONE_PX)
   })
 
-  it('字があっても足さずに閉じ（flick。作者「入力確定前の内容で払ったものは登録しない」）、打った字も捨てる（書きかけを消す。同じ日・同じ区分で開き直すと空。作者「文字残しは必要ないです」）。聞かない', async () => {
+  it('字があっても足さずに閉じ（flick。作者「入力確定前の内容で払ったものは登録しない」）、打った字も捨て（書きかけを消す。同じ日・同じ区分で開き直すと空。作者「文字残しは必要ないです」）、入力欄から外す（キーボードを閉じる。■36）。聞かない。やめた時は true', async () => {
     const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'work' })
     typeText(input, '資料の確認')
     expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBe('資料の確認')
-    act(() => quickAddModeChanging())
+    expect(document.activeElement).toBe(input)
+    let cancelled = false
+    act(() => {
+      cancelled = cancelQuickAddByFlick()
+    })
+    expect(cancelled).toBe(true)
+    expect(document.activeElement).not.toBe(input)
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledWith('flick')
     expect(items()).toHaveLength(0)
@@ -1208,7 +1214,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(readLocal(quickDraftKey('2026-11-13', 'private'))).toBe('別の日の書きかけ')
     const same = await open({ date: '2026-11-12', kind: 'work' })
     typeText(same.input, '払って捨てる')
-    act(() => quickAddModeChanging())
+    act(() => void cancelQuickAddByFlick())
     same.unmount()
     expect(readLocal(quickDraftKey('2026-11-12', 'work'))).toBeNull()
     expect(readLocal(quickDraftKey('2026-11-13', 'private'))).toBe('別の日の書きかけ')
@@ -1216,14 +1222,14 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(back.input.value).toBe('別の日の書きかけ')
   })
 
-  it('(a) 画面の端を押した指（身振りの指。離す出来事は来ない）の後にモードが替わっても、足さずに閉じ、書きかけも捨てる。端を押しただけでは閉じない', async () => {
+  it('(a) 画面の端を押した指（身振りの指。離す出来事は来ない）の後にフリックが来ても、足さずに閉じ、書きかけも捨てる。端を押しただけでは閉じない', async () => {
     onIPhone()
     setSwipeLogEnabled(true)
     const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'private' })
     typeText(input, 'abc')
     edgeDown(screen.getByTestId('outside'))
     expect(onClose).not.toHaveBeenCalled()
-    act(() => quickAddModeChanging())
+    act(() => void cancelQuickAddByFlick())
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledWith('flick')
     expect(items()).toHaveLength(0)
@@ -1249,7 +1255,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(items().map((i) => i.title)).toEqual(['端を押した'])
   })
 
-  it('(c) 画面の端から払って離したが、モードは替わらなかった（回らない向き・短い）時は、閉じず足さない（字も残る）', async () => {
+  it('(c) 画面の端から払って離したが、フリックにならなかった（外へ払った・短い）時は、閉じず足さない（字も残る）', async () => {
     onIPhone()
     const { input, onClose } = await open()
     fakeTimers()
@@ -1265,7 +1271,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(input.value).toBe('払っただけ')
   })
 
-  it('(d) 入力欄と窓からフォーカスが外れた（前の版が残した履歴への iPhone の身振りの始まり・窓の切り替え。iPhone はページのフォーカスを外す）後にモードが替わっても、足さず、書きかけも捨てる', async () => {
+  it('(d) 入力欄と窓からフォーカスが外れた（前の版が残した履歴への iPhone の身振りの始まり・窓の切り替え。iPhone はページのフォーカスを外す）後にフリック（身振りの popstate）が来ても、足さず、書きかけも捨てる', async () => {
     onIPhone()
     const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
     fakeTimers()
@@ -1278,7 +1284,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     })
     advance(BLUR_SETTLE_MS * 2)
     expect(onClose).not.toHaveBeenCalled()
-    act(() => quickAddModeChanging())
+    act(() => void cancelQuickAddByFlick())
     expect(onClose).toHaveBeenCalledWith('flick')
     advance(CLICK_WAIT_MS * 2)
     expect(items()).toHaveLength(0)
@@ -1298,7 +1304,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(read.mock.calls.filter(([k]) => k === 'diary-studio:edge-zone')).toEqual([])
   })
 
-  it('(f) 変換を決める前に［足す］で押し終えた分（変換の終わりを待っている間）は、その後にモードが替わっても1回だけ足す（押した時に決めた分）。ほかは足さない', async () => {
+  it('(f) 変換を決める前に［足す］で押し終えた分（変換の終わりを待っている間）は、その後にフリックが来ても1回だけ足す（押した時に決めた分）。ほかは足さない', async () => {
     onIPhone()
     const { input, onClose } = await open({ date: '2026-11-12', kind: 'private' })
     fakeTimers()
@@ -1307,7 +1313,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     typeText(input, 'かいぎ')
     touchAdd()
     expect(items()).toHaveLength(0)
-    act(() => quickAddModeChanging())
+    act(() => void cancelQuickAddByFlick())
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledWith('flick')
     expect(items().map((i) => i.title)).toEqual(['かいぎ'])
@@ -1384,7 +1390,7 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(items().map((i) => i.title)).toEqual(['押したまま外れた'])
   })
 
-  it('(j) 画面の端を押している間に入力欄からフォーカスが外れ、払って離した（モードは替わらなかった）時は、押さずに外れた時と同じく、少し待ってから字を足して閉じる（blur）', async () => {
+  it('(j) 画面の端を押している間に入力欄からフォーカスが外れ、払って離した（フリックにならなかった）時は、押さずに外れた時と同じく、少し待ってから字を足して閉じる（blur）', async () => {
     onIPhone()
     const { input, onClose } = await open({ date: '2026-11-12', kind: 'work' })
     fakeTimers()
@@ -1402,12 +1408,12 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(items().map((i) => i.title)).toEqual(['払った後'])
   })
 
-  it('押し終わりを待っている（入力欄の外を押した）間にモードが替わっても、足さずに閉じる（後から来る click でも足さない。書きかけも捨てる）', async () => {
+  it('押し終わりを待っている（入力欄の外を押した）間にフリックが来ても、足さずに閉じる（後から来る click でも足さない。書きかけも捨てる）', async () => {
     const { input, onClose, unmount } = await open({ date: '2026-11-12', kind: 'private' })
     typeText(input, '買い物')
     fireEvent.pointerDown(screen.getByTestId('outside'))
     expect(onClose).not.toHaveBeenCalled()
-    act(() => quickAddModeChanging())
+    act(() => void cancelQuickAddByFlick())
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledWith('flick')
     unmount()
@@ -1417,9 +1423,9 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     expect(readLocal(quickDraftKey('2026-11-12', 'private'))).toBeNull()
   })
 
-  it('空の時も閉じる（flick）。Esc で閉じた後は何もしない（Esc で残した書きかけも捨てない）', async () => {
+  it('空の時も閉じる（flick）。Esc で閉じた後は何もしない（false。Esc で残した書きかけも捨てない）', async () => {
     const empty = await open()
-    act(() => quickAddModeChanging())
+    act(() => void cancelQuickAddByFlick())
     expect(empty.onClose).toHaveBeenCalledWith('flick')
     expect(items()).toHaveLength(0)
     expect(toasts()).toHaveLength(0)
@@ -1428,7 +1434,11 @@ describe('iPhone の端からのフリックでモードが替わる時（quickA
     typeText(typed.input, '書きかけ')
     fireEvent.keyDown(typed.input, { key: 'Escape' })
     expect(typed.onClose).toHaveBeenCalledWith('escape')
-    act(() => quickAddModeChanging())
+    let cancelled = true
+    act(() => {
+      cancelled = cancelQuickAddByFlick()
+    })
+    expect(cancelled).toBe(false)
     expect(typed.onClose).toHaveBeenCalledTimes(1)
     expect(items()).toHaveLength(0)
     expect(readLocal(quickDraftKey('2026-11-10', 'work'))).toBe('書きかけ')

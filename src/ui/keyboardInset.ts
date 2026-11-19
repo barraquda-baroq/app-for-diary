@@ -2,8 +2,11 @@
 // アプリ（Capacitor）から届く高さ（--kb-native）と原稿の欄の処理を外し、DS の CSS 変数 --kb に入れるようにした物。
 // Android Chrome はキーボードの分だけ画面（レイアウトの表示領域）が縮むので 0 のまま。iOS は画面が縮まず、見えている範囲
 // （visualViewport）だけが縮むので、その差を --kb に入れる。下からのシート・お知らせ・メニューは bottom: var(--kb) で
-// キーボードの上に収まる（src/styles.css）。入力欄にフォーカスしている時は、その欄がキーボードの上 16px に来るまでスクロールする
-// （キーボードの上のお知らせと重なる時は、その上まで）
+// キーボードの上に収まる（src/styles.css）。入力欄にフォーカスしている時は、キーボードが出た時・高さが変わった時（と、出たまま別の欄へ
+// 移った時）だけ、その欄がキーボードの上 16px に来るまでスクロールする（キーボードの上のお知らせと重なる時は、その上まで）。
+// キーボードが出たまま見えている所が縦に動いた時（ページを指で動かした・iOS が見えている所をずらした。visualViewport の offsetTop が
+// 替わる）は、--kb は替えるが、スクロールはしない（M1 の報告の直し。開発: 前は --kb が替わるたびに欄へ送り直していたので、iOS が
+// 動かしている間・利用者が動かしている間に送り直しが重なり、画面が下へ激しく揺れながら動いた）
 import { useEffect } from 'react'
 import { scrollBehavior } from './motion'
 import { toastEdge } from './scrollWithin'
@@ -12,6 +15,8 @@ import { toastEdge } from './scrollWithin'
 const MAX_SCALE = 1.01
 /** 入力欄とキーボードの間 */
 export const KEYBOARD_GAP = 16
+/** キーボードの高さが替わったとみなす差（px。これ以下の違い（丸めなど）では送り直さない） */
+export const KEYBOARD_CHANGE_PX = 4
 
 /**
  * layoutHeight（レイアウトの表示領域の高さ）のうち、見えている範囲（visualViewport）より下に隠れている高さ。
@@ -23,11 +28,24 @@ export function keyboardInset(layoutHeight: number, vv: { height: number; offset
   return Math.max(0, Math.round(layoutHeight - vv.height - vv.offsetTop))
 }
 
+/**
+ * キーボード（と、その上の候補の列）の高さ: layoutHeight のうち、見えている範囲の高さで覆えない分。見えている範囲がどこにあるか
+ * （offsetTop）は見ないので、キーボードが出たまま見えている所が縦に動いても替わらない（スクロールし直すかを決めるのに使う。--kb には
+ * keyboardInset を入れる）
+ */
+export function keyboardHeight(layoutHeight: number, vv: { height: number; scale: number }): number {
+  if (vv.scale > MAX_SCALE) return 0
+  return Math.max(0, Math.round(layoutHeight - vv.height))
+}
+
+/** 測る時の、レイアウトの表示領域の高さ（innerHeight と documentElement.clientHeight の大きい方。keyboardInset） */
+const layoutHeight = () => Math.max(window.innerHeight, document.documentElement.clientHeight)
+
 /** 今のキーボードの高さ（visualViewport が無い所では 0） */
 export function currentKeyboardInset(): number {
   const vv = window.visualViewport
   if (!vv) return 0
-  return keyboardInset(Math.max(window.innerHeight, document.documentElement.clientHeight), vv)
+  return keyboardInset(layoutHeight(), vv)
 }
 
 /** 文字を打つ欄か（入力欄・複数行の欄・選ぶ欄・書ける要素） */
@@ -67,14 +85,22 @@ export function useKeyboardInset(): void {
     const root = document.documentElement
     let frame = 0
     let last = -1
+    /** 最後に送るかを決めた時のキーボードの高さ（keyboardHeight。見えている所の動きでは替わらない） */
+    let lastHeight = 0
     const apply = () => {
       const inset = currentKeyboardInset()
-      if (inset === last) return
-      last = inset
-      root.style.setProperty('--kb', `${inset}px`)
-      // キーボードが出た・高さが変わった時、打っている欄が隠れたら見える所まで送る（シートが持ち上がった後に測る）
+      if (inset !== last) {
+        last = inset
+        root.style.setProperty('--kb', `${inset}px`)
+      }
+      // キーボードが出た・高さが変わった時だけ、打っている欄が隠れたら見える所まで送る（シートが持ち上がった後に測る）。見えている所が
+      // 縦に動いただけの時（offsetTop だけが替わる）は送らない
+      const vv = window.visualViewport
+      const height = vv ? keyboardHeight(layoutHeight(), vv) : 0
+      if (Math.abs(height - lastHeight) <= KEYBOARD_CHANGE_PX) return
+      lastHeight = height
       const active = document.activeElement
-      if (inset > 0 && isTypingField(active)) requestAnimationFrame(() => revealAboveKeyboard(active))
+      if (height > KEYBOARD_CHANGE_PX && isTypingField(active)) requestAnimationFrame(() => revealAboveKeyboard(active))
     }
     const update = () => {
       cancelAnimationFrame(frame)
@@ -82,7 +108,7 @@ export function useKeyboardInset(): void {
     }
     // キーボードが出たまま別の欄へ移った時
     const onFocus = (e: FocusEvent) => {
-      if (last > 0 && isTypingField(e.target as Element)) revealAboveKeyboard(e.target as HTMLElement)
+      if (lastHeight > KEYBOARD_CHANGE_PX && isTypingField(e.target as Element)) revealAboveKeyboard(e.target as HTMLElement)
     }
     apply()
     // 測る相手は毎回 window.visualViewport から読む（テストで高さを差し替えて resize を送れるように）

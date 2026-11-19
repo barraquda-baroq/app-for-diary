@@ -95,6 +95,107 @@ describe('useKeyboardInset', () => {
     button.remove()
   })
 
+  it('キーボードが出たまま見えている所が縦に動いた（ページを指で動かした・iPhone が見えている所をずらした）だけでは送らない。--kb は今までどおり見えている所の下に隠れた高さ（M1 の報告。2.7）', () => {
+    const vv = fakeViewport(844)
+    const scrollBy = vi.fn()
+    document.documentElement.scrollBy = scrollBy as unknown as typeof document.documentElement.scrollBy
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.documentElement })
+    const input = document.createElement('input')
+    document.body.append(input)
+    vi.spyOn(input, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 800, 300, 40))
+    render(createElement(Inset))
+    input.focus()
+    const step = () =>
+      act(() => {
+        vi.runOnlyPendingTimers()
+        vi.runOnlyPendingTimers()
+      })
+    // キーボードが出た: 1回だけ送る
+    vv.height = 508
+    act(() => vv.dispatchEvent(new Event('resize')))
+    step()
+    expect(scrollBy).toHaveBeenCalledTimes(1)
+    expect(document.documentElement.style.getPropertyValue('--kb')).toBe('336px')
+    // キーボードはそのままで、見えている所が縦に動く（iOS は、ページが動く間 offsetTop を替えて scroll を送る）: 送らない
+    for (const top of [40, 120, 260, 90]) {
+      vv.offsetTop = top
+      act(() => vv.dispatchEvent(new Event('scroll')))
+      step()
+      expect(document.documentElement.style.getPropertyValue('--kb')).toBe(`${336 - top}px`)
+    }
+    act(() => window.dispatchEvent(new Event('resize')))
+    step()
+    expect(scrollBy).toHaveBeenCalledTimes(1)
+    input.remove()
+  })
+
+  it('キーボードの高さが変わった時（候補の列が出た・閉じた）は送る。数 px の違いでは送らない。キーボードを閉じた時は送らない', () => {
+    const vv = fakeViewport(844)
+    const scrollBy = vi.fn()
+    document.documentElement.scrollBy = scrollBy as unknown as typeof document.documentElement.scrollBy
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.documentElement })
+    const input = document.createElement('input')
+    document.body.append(input)
+    vi.spyOn(input, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 800, 300, 40))
+    render(createElement(Inset))
+    input.focus()
+    const resize = (height: number, offsetTop = vv.offsetTop) => {
+      vv.height = height
+      vv.offsetTop = offsetTop
+      act(() => {
+        vv.dispatchEvent(new Event('resize'))
+        vi.runOnlyPendingTimers()
+        vi.runOnlyPendingTimers()
+      })
+    }
+    resize(508)
+    expect(scrollBy).toHaveBeenCalledTimes(1)
+    // 見えている所が動いた後に、候補の列が出てキーボードが高くなった
+    resize(470, 60)
+    expect(scrollBy).toHaveBeenCalledTimes(2)
+    // 2px だけ（丸めの違いなど）
+    resize(468)
+    expect(scrollBy).toHaveBeenCalledTimes(2)
+    // 閉じた
+    resize(844, 0)
+    expect(scrollBy).toHaveBeenCalledTimes(2)
+    expect(document.documentElement.style.getPropertyValue('--kb')).toBe('0px')
+    input.remove()
+  })
+
+  it('キーボードが出たまま見えている所が動いた後に、別の欄へ移った時は送る', () => {
+    const vv = fakeViewport(844)
+    const scrollBy = vi.fn()
+    document.documentElement.scrollBy = scrollBy as unknown as typeof document.documentElement.scrollBy
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.documentElement })
+    const first = document.createElement('input')
+    const second = document.createElement('textarea')
+    document.body.append(first, second)
+    vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 400, 300, 40))
+    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 900, 300, 80))
+    render(createElement(Inset))
+    first.focus()
+    vv.height = 508
+    act(() => {
+      vv.dispatchEvent(new Event('resize'))
+      vi.runOnlyPendingTimers()
+      vi.runOnlyPendingTimers()
+    })
+    expect(scrollBy).not.toHaveBeenCalled()
+    vv.offsetTop = 120
+    act(() => {
+      vv.dispatchEvent(new Event('scroll'))
+      vi.runOnlyPendingTimers()
+      vi.runOnlyPendingTimers()
+    })
+    expect(scrollBy).not.toHaveBeenCalled()
+    act(() => second.focus())
+    expect(scrollBy).toHaveBeenCalledTimes(1)
+    expect(scrollBy).toHaveBeenLastCalledWith(expect.objectContaining({ top: 980 - (120 + 508 - KEYBOARD_GAP) }))
+    first.remove()
+    second.remove()
+  })
+
   it('打っている欄がキーボードに隠れたら、キーボードの上 16px まで送る', () => {
     fakeViewport(508)
     const scroller = document.createElement('div')

@@ -1,8 +1,10 @@
 // S・M で開いているリストを「戻る」・端からのフリックで畳む（src/features/top/listBack.ts。docs/SPEC.md の 3.1・■34 の作者の答え）:
 // listOpenNow は useStackedLists の形・見ている所・畳んだ状態だけで決め（画面は読まない）、closeShownList は見ているリストの入力欄の
 // 打ちかけを捨ててから（discardListDraft）、その場で畳む（foldListInPlace）。畳むリストが無い時は何もしない（打ちかけも残す）。
-// 本物の画面での確かめは src/history/appHistory.lists.test.ts・singleEntryHistory.lists.test.tsx と stackedFold.test.tsx
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// 本物の画面での確かめは src/history/appHistory.lists.test.ts・singleEntryHistory.lists.test.tsx と stackedFold.test.tsx。
+// 設定で記録を取っている時だけ、listOpenNow は決めた時の形とページの位置を list-decide に控える（取っていない時は何も読まない）
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearSwipeLog, setSwipeLogEnabled, swipeLogText } from '../../history/swipeLog'
 import { useStackedLists, type ListKey, type PaneKey, type StackedLayout } from '../../store/uiStore'
 import { closeShownList, listOpenNow } from './listBack'
 
@@ -69,5 +71,44 @@ describe('S3 closeShownList（■34 の作者の答え）', () => {
     put({ width: 'S', fullMim: true }, 'favorite')
     closeShownList()
     expect(calls).toEqual([])
+  })
+})
+
+describe('記録（list-decide。M1 の報告の調べ。開発）', () => {
+  afterEach(() => {
+    setSwipeLogEnabled(false)
+    vi.restoreAllMocks()
+  })
+
+  it('記録を取っている時は、決めるたびに形（幅・全面の MIM か・見ている所・その所を畳んでいるか・決めた物）とページの位置・見えている所を1つ控える', () => {
+    setSwipeLogEnabled(true)
+    clearSwipeLog()
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(812.6)
+    const vv = { offsetTop: 41.4, height: 507.8 }
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: vv })
+    put({ width: 'S', fullMim: false }, 'task')
+    expect(listOpenNow()).toBe(true)
+    put({ width: 'S', fullMim: false }, 'calendar')
+    expect(listOpenNow()).toBe(false)
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: undefined })
+    const lines = swipeLogText().split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toMatch(
+      / list-decide \{"width":"S","fullMim":false,"shown":"task","collapsed":false,"result":"task","scrollY":813,"vvTop":41,"vvHeight":508\}$/,
+    )
+    expect(lines[1]).toMatch(/ list-decide \{"width":"S","fullMim":false,"shown":"calendar","collapsed":null,"result":null,/)
+  })
+
+  it('記録を取っていない時は控えず、ページの位置も見えている所も読まない', () => {
+    setSwipeLogEnabled(false)
+    const scroll = vi.spyOn(window, 'scrollY', 'get')
+    const vvRead = vi.fn(() => undefined)
+    Object.defineProperty(window, 'visualViewport', { configurable: true, get: vvRead })
+    put({ width: 'S', fullMim: false }, 'task')
+    expect(listOpenNow()).toBe(true)
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: undefined })
+    expect(scroll).not.toHaveBeenCalled()
+    expect(vvRead).not.toHaveBeenCalled()
+    expect(swipeLogText()).toBe('')
   })
 })

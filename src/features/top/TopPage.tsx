@@ -14,7 +14,8 @@
 // カレンダーの領域は src/features/calendar/common/CalendarView（行き先・操作の列・モードの画面）、小さな画面は、カレンダーから開いた
 // 登録・詳細が SheetHost（MIM を開いている間は置かない）、リストから開いた物（「タスク」の詳細・ルーチンとやりたいことの［詳しく］・
 // ［予定にする］の登録）が ListSheetHost（どの幅でも・MIM を開いている時も）。裏から戻って6時間たった時に今日へ移す決まり（6.4）も
-// ここで見張る。MIM（段階4）はまだ無い
+// ここで見張る。iPhone・iPad で打っている間の端からのフリック（入力をやめるだけ。■36）に、カレンダーの画面かを届ける
+// （typingCancel.ts）。MIM（段階4）はまだ無い
 import { useEffect, useId, useRef, useState, type ComponentType } from 'react'
 import { useLocation } from 'react-router-dom'
 import { calendarModeOf, isMimPath } from '../../routes'
@@ -37,6 +38,7 @@ import { TaskListBody } from '../lists/task/TaskListBody'
 import type { ListBodyProps, ListCounts } from '../lists/types'
 import { MimPlaceholder } from './MimPlaceholder'
 import { foldScrollTop, foldSpacerHeight, provideStackedFold } from './stackedFold'
+import { useTypingFlick } from './typingCancel'
 import './top.css'
 
 const PANES: readonly PaneKey[] = ['calendar', ...LIST_ORDER]
@@ -56,6 +58,7 @@ export function TopPage() {
   const counts = useListCounts()
   useDocumentTitle(mimOpen ? 'MIM' : undefined)
   useReturnToToday()
+  useTypingFlick()
   // トップ #/ は前回のモードに置き換わる
   useEndOffMode(mimOpen ? null : (calendarModeOf(pathname) ?? lastMode))
   return (

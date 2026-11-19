@@ -11,11 +11,14 @@
 //   保存する（trim。Favorite の本文も。開発）。保存した値が今と同じ時は書かない
 // - 打っている間の字（まだ保存していない物）は src/store/draftRegistry に届け、画面を閉じる・裏に回る時にも保存する（保存する物は
 //   保存する。■34 の打ちかけを捨てる時も、その場の直しは捨てない）
+// - 直している間は、Esc と同じやめ方（cancel）を欄ごとに届ける（common/fieldCancel。iPhone・iPad で直している間の端からのフリックは、
+//   Esc と同じく保存せずにやめる。■36。Favorite の 0.6秒の自動保存で保存した分は、Esc と同じく残る）
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { markDraftClean, markDraftDirty } from '../../../store/draftRegistry'
 import { useMediaQuery } from '../../../ui/hooks'
+import { registerFieldCancel } from './fieldCancel'
 
 export interface InlineEditOptions {
   /** 保存してある値（直している間に替わっても、打っている字はそのまま） */
@@ -105,6 +108,13 @@ export function useInlineEdit({ value, onSave, multiline = false, autosaveMs }: 
     }
     stop()
   }, [save, stop])
+
+  // 直している間は、欄のやめ方（Esc と同じ）を届ける（■36）
+  useEffect(() => {
+    const el = field.current
+    if (!editing || !el) return
+    return registerFieldCancel(el, cancel)
+  }, [editing, cancel])
 
   // 外れる時（行が消えた・幅が替わった）も、打っていた字は保存する
   useEffect(

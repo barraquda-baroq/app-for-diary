@@ -33,6 +33,7 @@ import {
 import { resetUndoForTests } from '../store/undoStore'
 import { resetListDraftsForTests } from '../features/lists/common/listDraft'
 import { resetListPopupsForTests } from '../features/lists/common/listPopups'
+import { resetTypingFlickForTests } from '../features/top/typingCancel'
 import { WIDTH_M, type WidthClass } from '../ui/hooks'
 import type { ViewProps } from '../features/calendar/common/types'
 import { fakePersistence } from './fakePersistence'
@@ -138,6 +139,7 @@ export function setupCalendarTests({ now = T0 }: { now?: Date | number } = {}): 
     useStackedLists.setState({ collapsed: { routine: true, task: true, favorite: true }, shown: 'calendar', layout: null })
     resetListDraftsForTests()
     resetListPopupsForTests()
+    resetTypingFlickForTests()
     useCalendarUi.setState(initialCalendarUi())
     useToasts.setState({ toasts: [] })
     resetUndoForTests()

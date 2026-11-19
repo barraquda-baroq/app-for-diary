@@ -26,7 +26,7 @@
 //   （pointercancel）時は、キーボードを閉じた時と同じ。押した出来事の無い click（読み上げの操作など）は、その中で外して戻す
 //   （iPhone ではキーボードへ伝わらないことがある。できるだけの扱い）
 // - 足さずに閉じるのは Esc と、キーボード（Tab）でフォーカスを外の物へ移した時（書きかけは残り、次に開くと出る。［足す］へは Tab で
-//   移れ、その次の Tab で外へ出ると閉じる）と、iPhone の端からのフリックでモードが替わった時（下。この時だけ書きかけも捨てる）と、
+//   移れ、その次の Tab で外へ出ると閉じる）と、iPhone・iPad の端からのフリックの時（下。この時だけ書きかけも捨てる）と、
 //   外を押してそのままカードをドラッグした時（WeekDnd が quickAddDragStarted で伝える。
 //   離した後に、ドラッグのお知らせと重ねて足さない。ドラッグを Esc でやめた時も足さない）。窓・アプリの切り替えで外れただけの時と、
 //   ドラッグを始めて画面がフォーカスを外した時（押している間なので、押した方で決める）は、足さず閉じない
@@ -42,16 +42,19 @@
 // - 押さずに外れたフォーカスは、BLUR_SETTLE_MS 待ってから決める（窓・アプリの切り替えは、要素の blur の後に window の blur・
 //   見えなくなる出来事が来ることがある。来たら決めるのをやめる。その間に押した時は、押した方で決める）
 // - 書きかけは diary-studio:draft:quick:{日付}:{区分} に控え（閉じても残し、同じ日・同じ区分で開き直すと戻る）、足したら消す。
-//   端からのフリックでモードが替わって閉じた時も消す（下）。［元に戻す］で戻した字は、同じ日・同じ区分の入力欄が空で開いていれば、
-//   そこにも出す
-// - iPhone・iPad の端からのフリックでモードが替わる時（quickAddModeChanging。CalendarView。画面の端から払った指は、アプリが window で
-//   受け取る: src/history/edgeFlick.ts。前の版が残した履歴への iPhone の身振りで回す時も同じ）は、字があっても足さずに閉じ（flick。
-//   作者「入力確定前の内容で払ったものは登録しない」。22. の a228a81 を試した答え）、打った字も捨てる（その日・その区分の書きかけを
-//   消す。同じ日・同じ区分で開き直すと空。聞かない。作者「文字残しは必要ないです」。22. の「端からのフリックの3回目の直した版
-//   （788e842）を試した答え」）。外を押して押し終わりを待っていた分も足さない。変換を決める前に［足す］で押し終えた分（変換の終わりを
+//   端からのフリックで閉じた時も消す（下）。［元に戻す］で戻した字は、同じ日・同じ区分の入力欄が空で開いていれば、そこにも出す
+// - iPhone・iPad の端からのフリック（cancelQuickAddByFlick。src/features/top/typingCancel.ts が、履歴の consumePop（closeApp.ts の
+//   consumeBackPress）から呼ぶ。画面の端から払った指は、アプリが window で受け取る: src/history/edgeFlick.ts。前の版が残した履歴への
+//   iPhone の身振りも同じ）は、入力をやめるだけ: 字があっても足さずに閉じ（flick。作者「入力確定前の内容で払ったものは登録しない」。
+//   22. の a228a81 を試した答え）、打った字も捨て（その日・その区分の書きかけを消す。同じ日・同じ区分で開き直すと空。聞かない。作者
+//   「文字残しは必要ないです」。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）、入力欄からフォーカスを外す
+//   （キーボードを閉じる）。モードは替えず、ページも動かさない（そのフリックは使い切る。作者「カレンダーのクイック入力（年月週日の右の
+//   ＋ではない方）も、入力画面をキャンセルするだけでモード移行は必要ないです、画面の上下移動もなし」。22. の ■36。前の版は、閉じてから
+//   モードを回していた）。外を押して押し終わりを待っていた分も足さない。変換を決める前に［足す］で押し終えた分（変換の終わりを
 //   待っている間）は、押した時に決めたので足す。iPhone・iPad で画面の端（左右の端の幅の中。初めは 44px。設定の「開発」で選ぶ。
 //   edgeOfScreen で、端からのフリックと同じ幅で決める）を指で押した時は、外を押したとはまだ扱わず、離した時に決める（端からのフリックの
-//   指: 動かさずに離せば外を押した時と同じく押し終わってから足して閉じ、払って離せば閉じず足さない。12.1）。端を押している間に
+//   指: 動かさずに離せば外を押した時と同じく押し終わってから足して閉じ、払って離せば、ここでは閉じず足さない（フリックになれば上の
+//   とおり閉じる）。12.1）。端を押している間に
 //   入力欄から外れたフォーカス（キーボードの✓・ドラッグを掴んだ時に画面が外した）も、離した時に決める（払って離した時は、押さずに
 //   外れた時と同じく少し待ってから決める）。端を押した指のまま長押しでカード・●を掴んだ（quickAddDragStarted）時は、外を押して
 //   ドラッグした時と同じく、離した後に足さずに閉じる（書きかけは残る。端の幅を広げて、端の幅の中にもカード・●が来るため）。前の版が
@@ -112,8 +115,8 @@ export const COMMIT_WAIT_MS = 150
 
 /**
  * 閉じたきっかけ: Esc・入力欄の外を押し終えた・キーボード（Tab）でフォーカスを外の物へ移した・押さずにフォーカスが外れた
- * （iPhone のキーボードの上の✓など）・外を押してそのままドラッグした（離した後。足さない）・iPhone の端からのフリックでモードが
- * 替わった（足さず、打った字も捨てる）
+ * （iPhone のキーボードの上の✓など）・外を押してそのままドラッグした（離した後。足さない）・iPhone・iPad の端からのフリック
+ * （足さず、打った字も捨てる。モードは替えない。■36）
  */
 export type QuickAddCloseReason = 'escape' | 'press' | 'focus' | 'blur' | 'drag' | 'flick'
 
@@ -141,16 +144,23 @@ export function quickAddDragStarted(): void {
   for (const fn of dragListeners) fn()
 }
 
-/** 開いているすばやく足すの、モードが替わる時に閉じる物 */
-const modeListeners = new Set<() => void>()
+/** 開いているすばやく足すの、端からのフリックで入力をやめる物（やめた時 true。Esc などでもう閉じていた時は false） */
+const flickListeners = new Set<() => boolean>()
+
+/** すばやく足すが開いているか（src/features/top/typingCancel.ts が、画面の端に指を置いた時に見る） */
+export function quickAddOpen(): boolean {
+  return flickListeners.size > 0
+}
 
 /**
- * iPhone の端からのフリックでモードが替わる（CalendarView の ring。docs/SPEC.md の 3.1・12.1）: 開いているすばやく足すを、字があっても
- * 足さずに閉じ、打った字も捨てる（flick。その日・その区分の書きかけを消す）。身振りが取った指は離す出来事が来ないので、押し終わりを
- * 待たない
+ * iPhone・iPad の端からのフリック（docs/SPEC.md の 3.1・12.1・22. の ■36。src/features/top/typingCancel.ts が呼ぶ）: 開いている
+ * すばやく足すを、字があっても足さずに閉じ、打った字も捨て（flick。その日・その区分の書きかけを消す）、入力欄から外す（キーボードを
+ * 閉じる）。モードは替えない。身振りが取った指は離す出来事が来ないので、押し終わりを待たない。やめた物があれば true
  */
-export function quickAddModeChanging(): void {
-  for (const fn of [...modeListeners]) fn()
+export function cancelQuickAddByFlick(): boolean {
+  let cancelled = false
+  for (const fn of [...flickListeners]) cancelled = fn() || cancelled
+  return cancelled
 }
 
 /**
@@ -354,7 +364,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
     input.current?.focus({ preventScroll: true })
   }
 
-  /** 打った字を捨てる（その日・その区分の書きかけを消す。端からのフリックでモードが替わって閉じる時） */
+  /** 打った字を捨てる（その日・その区分の書きかけを消す。端からのフリックで閉じる時） */
   const discard = () => {
     const { key } = latest.current
     writeLocal(key, null)
@@ -364,7 +374,7 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
 
   /**
    * 画面へ閉じたと伝える（外を押した・キーボードを閉じた時は、字があれば足してから。外を押してドラッグした時は足さない。端からの
-   * フリックでモードが替わった時は、足さずに打った字を捨てる）
+   * フリックの時は、足さずに打った字を捨てる）
    */
   const finish = (pressed: QuickAddCloseReason) => {
     pending.current = null
@@ -486,7 +496,8 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       const g = edge.current
       if (g && g.id === e.pointerId) {
         edge.current = null
-        // 画面の端を押して払った（モードが替わらなかった）: 閉じず足さない（押している間に外れたフォーカスは、ここで決める）
+        // 画面の端を押して払った: ここでは閉じず足さない（フリックになれば cancelQuickAddByFlick で閉じる。押している間に外れた
+        // フォーカスは、ここで決める）
         if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > SWIPE_SLOP_PX) {
           edgeEnded()
           return
@@ -581,23 +592,28 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       if (press.current) dragged.current = true
     }
     dragListeners.add(onDrag)
-    // モードが替わる（端からのフリック）: 押し終わりを待たずに、字があっても足さずに閉じ、打った字も捨てる（作者「入力確定前の内容で
-    // 払ったものは登録しない」「文字残しは必要ないです」。外を押して押し終わりを待っていた分も足さない。［足す］で押し終えた分は
-    // finish が足す）。Esc で閉じた後なら何もしない（Esc で残した書きかけも捨てない）
-    const onModeChange = () => {
+    // 端からのフリック: 押し終わりを待たずに、字があっても足さずに閉じ、打った字も捨て、入力欄から外す（作者「入力確定前の内容で
+    // 払ったものは登録しない」「文字残しは必要ないです」「入力画面をキャンセルするだけでモード移行は必要ないです」。外を押して押し
+    // 終わりを待っていた分も足さない。［足す］で押し終えた分は finish が足す）。Esc で閉じた後なら何もしない（false。Esc で残した
+    // 書きかけも捨てない）
+    const onFlick = () => {
       if (press.current) window.clearTimeout(press.current.timer)
       press.current = null
       addPress.current = null
       edge.current = null
-      if (closing.current && !pending.current) return
+      if (closing.current && !pending.current) return false
       closing.current = true
       window.clearTimeout(settleTimer.current)
       finish('flick')
+      // キーボードを閉じる（閉じると決めた後なので、続く blur では何もしない。ページは動かさない）
+      const active = document.activeElement
+      if (active instanceof HTMLElement && box.current?.contains(active)) active.blur()
+      return true
     }
-    modeListeners.add(onModeChange)
+    flickListeners.add(onFlick)
     return () => {
       dragListeners.delete(onDrag)
-      modeListeners.delete(onModeChange)
+      flickListeners.delete(onFlick)
       window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('pointerup', onUp, true)
       window.removeEventListener('pointercancel', cancelPress, true)
