@@ -4,13 +4,16 @@
 // ブラウザの履歴の数は替わらず、リストは開いたまま（作者「入力中の払いは、入力画面のキャンセルのみで、モード移行はなしでいいです」
 // 「画面の上下移動もなし、入力のキャンセルと入力ボックスを閉じるだけでいいです」）。打っていない時の次のフリックは今までどおり
 // （■34 で見ている開いたリストを畳む・モードを回す）。打っている欄が見える所の上の外にあって、やめて縮んでも、見えている物は動かない
-// （WebKit と同じくスクロールの錨を止めて確かめる。錨のある Chromium のままでも、ブラウザが保った分に足して送らない）。
+// （WebKit と同じくスクロールの錨を止めて確かめる。錨のある Chromium のままでも、ブラウザが保った分に足して送らない）。欄の上の端が
+// 少しだけ隠れている時は隠れていた分だけ送り、すばやく足す（S の週の中）も同じく保ち、ページのいちばん下ではいちばん下の空きを
+// 足して位置を保つ。
 // Android（Pixel 7）・PC の［戻る］は今までどおり（打っていても畳む・閉じるかを聞く）。iPhone は Chromium に iPhone の UA（ブラウザの
 // 履歴は1つのまま）、iPad は縦向き（M）・横向き（L）の UA。指は e2e/helpers.ts の
 // edgeFlick（iPhone と同じく 12px で pointer を取り消す合成した指）で、打っている欄の上から始めない高さ（欄の上からはフリックに
 // しない。3.1）で払う。データは作り物（e2e/fixtures/listData.ts）
 import { devices, expect, test, type Locator, type Page } from '@playwright/test'
-import { LIST_IDS, LONG_FAVORITE_ID, longFavorites } from './fixtures/listData'
+import type { Item } from '../src/domain/types'
+import { LIST_IDS, listData, LONG_FAVORITE_ID, longFavorites } from './fixtures/listData'
 import {
   collectDiagnosticsOnFailure,
   edgeFlick,
@@ -565,6 +568,215 @@ test.describe(
 
       test(`右の列の Favorite List: ${ABOVE_TITLE}（スクロールの錨なし）`, async ({ page }) => {
         await flickDraftAboveView(page, 'side', false)
+      })
+    })
+  },
+)
+
+/**
+ * 長い Favorite List を出して入力欄に4行の書きかけを打ち、欄の上の端が見える所の上の端より hidden px だけ上になる所へ送る
+ * （anchoring が false の時は、開いてすぐ WebKit と同じくスクロールの錨を止める）。送った後に本当に隠れている px を返す
+ */
+async function draftPartlyAbove(page: Page, where: Where, anchoring: boolean, hidden: number): Promise<number> {
+  await keepSwipeLog(page)
+  await openLists(page, MONTH, { extra: longFavorites() })
+  if (!anchoring) await stopScrollAnchoring(page)
+  if (where === 'page') await openStackedList(page, 'favorite')
+  const input = listInput(page, 'favorite')
+  await input.click()
+  await input.fill(['1行目の書きかけ', '2行目の書きかけ', '3行目の書きかけ', '4行目の書きかけ'].join('\n'))
+  await draftStored(page, 'favorite', '4行目の書きかけ')
+  const view = await visibleBox(page, where)
+  await scrollListBy(page, where, Math.round((await rectOf(input)).top - (view.lo - hidden)))
+  await listScrollStill(page, where)
+  await expect(input).toBeFocused()
+  return view.lo - (await rectOf(input)).top
+}
+
+/** 記録の type-cancel-keep の moved（px。無ければ null） */
+async function keptMoved(page: Page): Promise<number | null> {
+  const m = / type-cancel-keep \{[^}]*"moved":(-?[\d.]+)/.exec(await swipeLogOf(page))
+  return m ? Number(m[1]) : null
+}
+
+/** S の週を長くする予定（水〜土に8件ずつ。作り物） */
+function manyWeekItems(): Record<string, Item> {
+  const base = listData().items[LIST_IDS.dentist]
+  const items: Record<string, Item> = {}
+  for (const date of ['2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14'])
+    for (let i = 0; i < 8; i++) {
+      const id = `week-long-${date}-${i}`
+      items[id] = {
+        ...base,
+        id,
+        title: `打ち合わせ ${date.slice(8)}-${i + 1}`,
+        kind: 'work',
+        start: date,
+        startTime: null,
+        endTime: null,
+        listed: false,
+        order: 1000 + i,
+      }
+    }
+  return items
+}
+
+/** 見える所の中の点（x, y の並び）にある物に印を付け、その上の端を返す（後で movedMarks で、動いた px を見る） */
+async function markAt(page: Page, x: number, ys: number[]): Promise<number[]> {
+  return page.evaluate(
+    ({ x, ys }) =>
+      ys.map((y, i) => {
+        const el = document.elementFromPoint(x, y) as HTMLElement | null
+        if (!el) return Number.NaN
+        el.dataset.e2eMark = String(i)
+        return el.getBoundingClientRect().top
+      }),
+    { x, ys },
+  )
+}
+const movedMarks = (page: Page, tops: number[]) =>
+  page.evaluate(
+    (tops) =>
+      tops.map((top, i) => {
+        const el = document.querySelector(`[data-e2e-mark="${i}"]`)
+        return el ? el.getBoundingClientRect().top - top : Number.NaN
+      }),
+    tops,
+  )
+
+test.describe(
+  '■36 打っている欄が見える所の上の端に掛かっている・すばやく足す・ページの終わりのフリック（Chromium に iPhone・iPad の UA）',
+  { tag: ['@s'] },
+  () => {
+    /**
+     * 欄の上の端が少しだけ隠れている時に払う: 隠れていた分だけ送って欄の上の端を見える所の上の端に合わせるだけで、欄より上の物は
+     * 下ろさない（縮んだ残りの分は、下の物が上がってくる。欄が全部見えている時と同じ）
+     */
+    async function flickPartlyAbove(page: Page, where: Where, anchoring: boolean, hidden: number) {
+      const gap = await draftPartlyAbove(page, where, anchoring, hidden)
+      const input = listInput(page, 'favorite')
+      const view = await visibleBox(page, where)
+      const before = await rectOf(input)
+      expect(gap, '欄の上の端は見える所の上の端より上').toBeGreaterThan(0)
+      expect(gap, '欄の大部分は見えている').toBeLessThan(before.height - 40)
+      const row = page.getByTestId(listTestIds.row('favorite', LONG_FAVORITE_ID))
+      const rowTop = (await rectOf(row)).top
+      const y0 = await listScroll(page, where)
+      const hash = await hashOf(page)
+      await edgeFlick(page, 'left', { y: Math.round((page.viewportSize()?.height ?? 800) * 0.6) })
+      await historySettled(page)
+      await listScrollStill(page, where)
+      await expect(input).toHaveValue('')
+      expect(await focused(input)).toBe(false)
+      await expect.poll(() => storedDraft(page, 'favorite')).toBeNull()
+      const after = await rectOf(input)
+      const shrink = before.height - after.height
+      expect(shrink, '欄が縮んだ').toBeGreaterThan(gap + 10)
+      // 送ったのは隠れていた分だけ（欄より上の物は下りてこない）
+      expect(Math.abs((await listScroll(page, where)) - (y0 - gap)), 'ページ（右の列）を送った px').toBeLessThanOrEqual(1)
+      expect(Math.abs(after.top - view.lo), '欄の上の端は見える所の上の端').toBeLessThanOrEqual(1)
+      // 縮んだ残りの分だけ、下の物が上がってくる
+      expect(Math.abs((await rectOf(row)).top - (rowTop - (shrink - gap))), '下の行').toBeLessThanOrEqual(1)
+      expect(await hashOf(page)).toBe(hash)
+      await expectCollapsed(page, 'favorite', false)
+      const moved = await keptMoved(page)
+      expect(moved, '記録の type-cancel-keep').not.toBeNull()
+      expect(Math.abs((moved ?? 0) + gap)).toBeLessThanOrEqual(1)
+    }
+
+    test.describe('iPhone（S）', () => {
+      test.use({ userAgent: IPHONE_UA })
+
+      test('Favorite List: 4行の書きかけの入力欄の上の端が見える所の上の端より 2px だけ上に隠れている時に払うと、隠れていた 2px だけ送って欄の上の端を見える所の上の端に合わせ、欄より上の物は下ろさない（スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await flickPartlyAbove(page, 'page', false, 2)
+      })
+
+      test('Favorite List: 4行の書きかけの入力欄の上の端が見える所の上の端より 30px 上に隠れている時に払うと、隠れていた 30px だけ送る（Chromium のスクロールの錨あり: ブラウザは欄を目印にして送らないので、同じく送る）', async ({
+        page,
+      }) => {
+        await flickPartlyAbove(page, 'page', true, 30)
+      })
+
+      test('すばやく足す（S の週）: 字を打ったまま週の中を送って入力欄が見える所の上の外にある時に払うと、足さずに閉じるだけで、「＋」の行に戻って縮んでも見えている週の物は動かない（週の中のスクロールの錨も止めて）', async ({
+        page,
+      }) => {
+        await keepSwipeLog(page)
+        await openLists(page, WEEK, { extra: { items: manyWeekItems() } })
+        await page.addStyleTag({ content: '*, *::before, *::after { overflow-anchor: none !important; }' })
+        await page.getByTestId('week-add-2026-11-08-work').tap()
+        const quick = page.getByTestId('quick-add-input')
+        await expect(quick).toBeFocused()
+        await page.keyboard.type('買い物')
+        const key = 'diary-studio:draft:quick:2026-11-08:work'
+        await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toContain('買い物')
+        const week = page.locator('.wk-v')
+        // 週の見える所の上の端は、上に固定した名札の行（.wk-vtags）の下
+        const lo = await page.locator('.wk-vtags').evaluate((e) => e.getBoundingClientRect().bottom)
+        const hi = await week.evaluate((e) => e.getBoundingClientRect().top + e.clientHeight)
+        const dy = Math.round((await rectOf(quick)).bottom - (lo - 40))
+        await week.evaluate((e, dy) => e.scrollBy({ top: dy, behavior: 'instant' }), dy)
+        await expect.poll(() => week.evaluate((e) => e.scrollTop)).toBeGreaterThan(dy - 2)
+        await expect(quick).toBeFocused()
+        expect((await rectOf(quick)).bottom, '入力欄は週の見える所の上の外').toBeLessThan(lo)
+        const x = Math.round(((await quick.boundingBox())?.x ?? 0) + 20)
+        const tops = await markAt(page, x, [lo + (hi - lo) * 0.33, lo + (hi - lo) * 0.66, hi - 8])
+        const y0 = await scrollY(page)
+        const hash = await hashOf(page)
+        await edgeFlick(page, 'left', { y: Math.round((lo + hi) / 2) })
+        await historySettled(page)
+        await expect(quick).toHaveCount(0)
+        await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), key)).toBeNull()
+        await page.waitForTimeout(200)
+        for (const d of await movedMarks(page, tops)) expect(Math.abs(d), '見えている週の物が動いた（px）').toBeLessThanOrEqual(1)
+        expect(Math.abs((await scrollY(page)) - y0)).toBeLessThanOrEqual(1)
+        expect(await hashOf(page)).toBe(hash)
+        expect(await swipeLogOf(page)).toMatch(/ type-cancel-keep \{"kind":"quick-add","list":null,"moved":-\d/)
+        expect(await swipeLogOf(page)).not.toContain('買い物')
+      })
+
+      test('Task List: 4行の書きかけの入力欄が全部見えていて、ページをいちばん下まで読み進めていた時に払うと、縮んだ分だけブラウザに位置を上へ止め直させず（いちばん下の空きを足す）、欄も欄より上の物も下りてこない（スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await keepSwipeLog(page)
+        await openLists(page, MONTH)
+        await stopScrollAnchoring(page)
+        await openStackedList(page, 'task')
+        const input = listInput(page, 'task')
+        await input.click()
+        await input.fill(['1行目の頼まれ事', '2行目', '3行目', '4行目'].join('\n'))
+        await draftStored(page, 'task', '4行目')
+        await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }))
+        await listScrollStill(page, 'page')
+        await expect(input).toBeFocused()
+        const view = await visibleBox(page, 'page')
+        const before = await rectOf(input)
+        expect(before.top, '欄は全部見えている').toBeGreaterThanOrEqual(view.lo)
+        const y0 = await listScroll(page, 'page')
+        expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeLessThanOrEqual(y0 + 1)
+        const hash = await hashOf(page)
+        await edgeFlick(page, 'left', { y: Math.round((page.viewportSize()?.height ?? 800) * 0.75) })
+        await historySettled(page)
+        await listScrollStill(page, 'page')
+        await expect(input).toHaveValue('')
+        await expect.poll(() => storedDraft(page, 'task')).toBeNull()
+        expect((await rectOf(input)).height, '欄が縮んだ').toBeLessThan(before.height - 40)
+        expect(Math.abs((await listScroll(page, 'page')) - y0), 'ページの位置').toBeLessThanOrEqual(1)
+        expect(Math.abs((await rectOf(input)).top - before.top), '欄の上の端').toBeLessThanOrEqual(1)
+        expect(await hashOf(page)).toBe(hash)
+        await expectCollapsed(page, 'task', false)
+        expect(await swipeLogOf(page)).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"task","moved":\d[^}]*"space":\d/)
+      })
+    })
+
+    test.describe('iPad の横向き（1180×820・L の右の列）', () => {
+      test.use({ userAgent: IPAD_UA, viewport: { width: 1180, height: 820 }, hasTouch: true, isMobile: true })
+
+      test('右の列の Favorite List: 4行の書きかけの入力欄の上の端が右の列の見える所の上の端より 30px 上に隠れている時に払うと、隠れていた 30px だけ右の列を送る（スクロールの錨なし）', async ({
+        page,
+      }) => {
+        await flickPartlyAbove(page, 'side', false, 30)
       })
     })
   },

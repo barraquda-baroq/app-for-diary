@@ -51,7 +51,8 @@
 //   「文字残しは必要ないです」。22. の「端からのフリックの3回目の直した版（788e842）を試した答え」）、入力欄からフォーカスを外す
 //   （キーボードを閉じる。外れた時にブラウザが変換の途中の字を決めて書いても、書きかけには入れない）。モードは替えず、ページも
 //   動かさない（そのフリックは使い切る。作者「カレンダーのクイック入力（年月週日の右の＋ではない方）も、入力画面をキャンセルする
-//   だけでモード移行は必要ないです、画面の上下移動もなし」。22. の ■36。前の版は、閉じてからモードを回していた）。外を押して
+//   だけでモード移行は必要ないです、画面の上下移動もなし」。22. の ■36。前の版は、閉じてからモードを回していた。入力欄が見える所の
+//   上の外にある時に、閉じて「＋」の行に戻って縮んでも見えている物が動かないようにするのは、src/features/top/keepOnScreen.ts）。外を押して
 //   押し終わりを待っていた分も足さない。変換を決める前に［足す］で押し終えた分（変換の終わりを待っている間）は、押した時に決めた
 //   ので足す。iPhone・iPad で画面の端（左右の端の幅の中。初めは 44px。設定の「開発」で選ぶ。
 //   edgeOfScreen で、端からのフリックと同じ幅で決める）を指で押した時は、外を押したとはまだ扱わず、離した時に決める（端からのフリックの
@@ -152,6 +153,24 @@ const flickListeners = new Set<() => boolean>()
 /** すばやく足すが開いているか（src/features/top/typingCancel.ts が、画面の端に指を置いた時に見る） */
 export function quickAddOpen(): boolean {
   return flickListeners.size > 0
+}
+
+/** 開いているすばやく足すの入力欄（の ref） */
+const openInputs = new Set<{ readonly current: HTMLInputElement | null }>()
+
+/**
+ * 開いているすばやく足すの入力欄（フォーカスのある物を先に。無ければ null）。src/features/top/typingCancel.ts が、端からのフリックで
+ * 閉じて「＋」の行に戻る前に、見えている物を保つために測る（keepOnScreen.ts）
+ */
+export function quickAddField(): HTMLElement | null {
+  let first: HTMLElement | null = null
+  for (const ref of openInputs) {
+    const el = ref.current
+    if (!el) continue
+    if (el === document.activeElement) return el
+    first ??= el
+  }
+  return first
 }
 
 /**
@@ -637,9 +656,11 @@ export function QuickAdd({ date, kind, onClose, className }: QuickAddProps) {
       return true
     }
     flickListeners.add(onFlick)
+    openInputs.add(input)
     return () => {
       dragListeners.delete(onDrag)
       flickListeners.delete(onFlick)
+      openInputs.delete(input)
       window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('pointerup', onUp, true)
       window.removeEventListener('pointercancel', cancelPress, true)

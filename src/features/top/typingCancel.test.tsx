@@ -543,11 +543,11 @@ describe('■36 打っている欄が見える所の上の外にある時（iPho
       await new Promise((r) => requestAnimationFrame(() => r(null)))
     })
 
-  /** 要素ごとの画面の上からの位置と高さを決める（null を返した物は jsdom と同じく 0） */
-  function fakeRects(of: (el: Element) => { top: number; height: number } | null) {
+  /** 要素ごとの画面の上からの位置と高さ（と左の端・幅。既定は 0・320px）を決める（null を返した物は jsdom と同じく 0） */
+  function fakeRects(of: (el: Element) => { top: number; height: number; left?: number; width?: number } | null) {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
       const r = of(this)
-      return r ? new DOMRect(0, r.top, 320, r.height) : new DOMRect(0, 0, 0, 0)
+      return r ? new DOMRect(r.left ?? 0, r.top, r.width ?? 320, r.height) : new DOMRect(0, 0, 0, 0)
     })
   }
 
@@ -743,5 +743,126 @@ describe('■36 打っている欄が見える所の上の外にある時（iPho
     expect(scrollTo).toHaveBeenCalledWith({ top: 1464, behavior: 'auto' })
     expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"inline-edit","list":"favorite","moved":-36\}/)
     expect(swipeLogText()).not.toContain('直しかけ')
+  })
+
+  it('S: 入力欄の上の端が見える所の上の端より少し（2px）だけ上に隠れている時に払うと、隠れていた 2px だけ送って欄の上の端を見える所の上の端に合わせ、欄より上の物は下ろさない（縮んだ残りの 62px は、下の行が上がってくる）', async () => {
+    const { history } = await openTop()
+    await openList('favorite')
+    const area = field('favorite')
+    act(() => area.focus())
+    fireEvent.change(area, { target: { value: '1行目の書きかけ\n2行目\n3行目\n4行目' } })
+    const box = area.closest('.list-input-box')
+    const row = screen.getByTestId(listTestIds.row('favorite', 'f1'))
+    const grown = () => area.value !== ''
+    // 見える所の上の端は 93px。欄の上の端は 91px（2px だけ隠れている）
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === box
+          ? { top: 87, height: grown() ? 112 : 48 }
+          : el === area
+            ? { top: 91, height: grown() ? 104 : 40 }
+            : el === row
+              ? { top: grown() ? 207 : 143, height: 44 }
+              : null),
+    )
+    const scrollTo = fakePageScroll(1500)
+    startLog()
+    act(() => history.flick(-1))
+    expect(area.value).toBe('')
+    await nextFrame()
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1498, behavior: 'auto' })
+    expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"favorite","moved":-2\}/)
+  })
+
+  it('S の週: すばやく足すの入力欄が週の中のスクロールする所の見える所の上の外にある時に払うと、足さずに閉じて「＋」の行に戻り縮んだ分（12px）だけ、次の描画の前に週の中を送る（隣の半分の中の物は目印にしない。ページは送らない）', async () => {
+    const { router, history } = await openTop('/week/2026-11-08')
+    fireEvent.click(screen.getByTestId(testIds.weekAdd('2026-11-08', 'work')))
+    const input = screen.getByTestId(testIds.quickAddInput) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '買い物' } })
+    const quick = input.closest('.cp-quick')
+    const week = screen.getByTestId(testIds.view('week'))
+    week.style.overflowY = 'auto'
+    Object.defineProperty(week, 'scrollHeight', { configurable: true, value: 2000 })
+    Object.defineProperty(week, 'clientHeight', { configurable: true, value: 600 })
+    Object.defineProperty(week, 'scrollTop', { configurable: true, writable: true, value: 142 })
+    const weekScroll = vi.fn()
+    week.scrollTo = weekScroll as typeof week.scrollTo
+    const privateHalf = week.querySelector('.wk-half[data-tier="private"][data-date="2026-11-08"]')
+    const privatePlus = screen.getByTestId(testIds.weekAdd('2026-11-08', 'private'))
+    const nextDay = screen.getByTestId(testIds.weekCol('2026-11-09'))
+    expect(privateHalf).not.toBeNull()
+    const open = () => screen.queryByTestId(testIds.quickAddInput) !== null
+    // 週の見える所は 192px から。入力欄（136〜176px）は上の外。隣（プライベート）の半分は同じ高さから始まり、その中の「＋」は
+    // 入力欄より下にあるが、縮んでも動かない。次の日のかたまりは、閉じて縮んだ 12px だけ上がる
+    fakeRects((el) =>
+      el === week
+        ? { top: 192, height: 600 }
+        : el === quick || el === input
+          ? { top: 136, height: 40, left: 0, width: 160 }
+          : el === privateHalf
+            ? { top: 100, height: 400, left: 160, width: 160 }
+            : el === privatePlus
+              ? { top: 300, height: 28, left: 160, width: 160 }
+              : el === nextDay
+                ? { top: open() ? 186 : 174, height: 300 }
+                : null,
+    )
+    const scrollTo = fakePageScroll(0)
+    startLog()
+    act(() => history.flick(-1))
+    expect(screen.queryByTestId(testIds.quickAddInput)).toBeNull()
+    expect(readLocal(quickDraftKey('2026-11-08', 'work'))).toBeNull()
+    await nextFrame()
+    expect(weekScroll).toHaveBeenCalledTimes(1)
+    expect(weekScroll).toHaveBeenCalledWith({ top: 130, behavior: 'auto' })
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(router.state.location.pathname).toBe('/week/2026-11-08')
+    expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"quick-add","list":null,"moved":-12\}/)
+    expect(swipeLogText()).not.toContain('買い物')
+  })
+
+  it('S: ページをいちばん下まで読み進めて、全部見えている入力欄（4行の書きかけ）で払うと、縮んだ分だけブラウザが位置を上へ止め直しても、いちばん下の空きをその分足して元の位置へ戻す（欄も、欄より上の物も下りてこない）', async () => {
+    const { history } = await openTop()
+    await openList('favorite')
+    const area = field('favorite')
+    act(() => area.focus())
+    fireEvent.change(area, { target: { value: '1行目\n2行目\n3行目\n4行目' } })
+    const box = area.closest('.list-input-box')
+    const row = screen.getByTestId(listTestIds.row('favorite', 'f1'))
+    // いちばん下の空きは今 100px
+    const spacer = screen.getByTestId('top-stack-spacer')
+    Object.defineProperty(spacer, 'offsetHeight', { configurable: true, value: 100 })
+    const grown = () => area.value !== ''
+    fakeRects(
+      (el) =>
+        bars(el) ??
+        (el === box
+          ? { top: 120, height: grown() ? 112 : 48 }
+          : el === area
+            ? { top: 124, height: grown() ? 104 : 40 }
+            : el === row
+              ? { top: grown() ? 240 : 176, height: 44 }
+              : null),
+    )
+    // いちばん下（594px）にいて、欄が 64px 縮むと、ページの高さも 64px 縮み、ブラウザが位置を 530px へ止め直す
+    const scrollTo = fakePageScroll(0)
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => (grown() ? 594 : 530) })
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      configurable: true,
+      get: () => (grown() ? 594 : 530) + window.innerHeight,
+    })
+    disposers.push(() => {
+      delete (document.documentElement as { scrollHeight?: number }).scrollHeight
+    })
+    startLog()
+    act(() => history.flick(-1))
+    expect(area.value).toBe('')
+    await nextFrame()
+    expect(spacer.style.height).toBe('164px')
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 594, behavior: 'auto' })
+    expect(swipeLogText()).toMatch(/ type-cancel-keep \{"kind":"list-input","list":"favorite","moved":64,"space":64\}/)
   })
 })
